@@ -1,0 +1,65 @@
+name: site
+
+on:
+  push:
+    branches: [pre-release]
+    paths:
+      - site/**
+      - docs/**
+      - api/openapi.yaml
+      - sdk/*/README.md
+      - cmd/differently/**
+      - .github/workflows/site.yml
+  pull_request:
+    paths:
+      - site/**
+      - docs/**
+      - api/openapi.yaml
+      - sdk/*/README.md
+      - cmd/differently/**
+      - .github/workflows/site.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+        working-directory: site
+      # Syncs docs/, SDK READMEs, the OpenAPI spec and CLI help, builds, and validates every internal link.
+      - run: npm run build
+        working-directory: site
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: site/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

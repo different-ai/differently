@@ -1,0 +1,20 @@
+{
+  "name": "differently-site",
+  "version": "1.0.0",
+  "description": "Website and docs for Differently",
+  "scripts": {
+    "sync": "node scripts/sync-docs.mjs",
+    "dev": "npm run sync && astro dev",
+    "build": "npm run sync && astro build",
+    "preview": "astro preview"
+  },
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.7",
+    "astro": "^7.4.3",
+    "starlight-links-validator": "^0.27.0",
+    "yaml": "^2.9.1"
+  },
+  "private": true
+}

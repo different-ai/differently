@@ -1,0 +1,290 @@
+---
+import '../styles/landing.css';
+import { Code } from 'astro:components';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const repo = 'https://github.com/different-ai/differently';
+
+const samples = [
+  {
+    id: 'ts',
+    label: 'TypeScript',
+    lang: 'ts',
+    code: `import { Differently } from "@differently/sdk";
+
+const differently = new Differently({ apiKey: process.env.DIFFERENTLY_API_KEY });
+
+// Ask for a shape and a policy. Never a backend.
+const sandbox = await differently.sandboxes.create({
+  profile: "small",
+  placement: { strategy: "private-first", external: "never" },
+});
+
+const result = await sandbox.exec("node --version");
+console.log(result.exitCode, result.stdout);
+
+await sandbox.files.write("/work/a.txt", "hi");
+await sandbox.delete();`,
+  },
+  {
+    id: 'py',
+    label: 'Python',
+    lang: 'python',
+    code: `from differently import Differently
+
+client = Differently()  # DIFFERENTLY_API_KEY, DIFFERENTLY_URL
+
+# A sandbox is a context manager that deletes itself on exit.
+with client.sandboxes.create(
+    profile="small",
+    placement={"strategy": "private-first", "external": "never"},
+) as sandbox:
+    result = sandbox.exec("python3 --version")
+    print(result.exit_code, result.stdout)
+
+    for ev in sandbox.exec_stream("make test"):
+        print(ev.type, getattr(ev, "data", ""))`,
+  },
+  {
+    id: 'cli',
+    label: 'CLI',
+    lang: 'sh',
+    code: `differently doctor
+differently sandbox create --profile small --wait
+differently sandbox exec sbx_123 -- 'echo hello from $(uname -s)'
+differently sandbox files put sbx_123 ./README.md /work/README.md
+
+# Where did it run, and why?
+differently sandbox placement sbx_123
+
+# Operators: where can work go, and what can't be proven?
+differently admin trust-report`,
+  },
+];
+
+const features = [
+  {
+    k: '01',
+    title: 'Self-hosted, end to end',
+    body: 'API, dashboard, auth, keys, scheduler, queue, quotas, audit and metering all run in your cluster. Postgres is the only production dependency. There is no license server, telemetry or phone-home path.',
+    href: '/docs/deploy/',
+    cta: 'Deployment overview',
+  },
+  {
+    k: '02',
+    title: 'Policy-gated overflow',
+    body: 'Registering Daytona or Freestyle authorizes nothing. Work leaves your pools only when global, organization and project policy, the data classification and the request all allow it. Anything unclear fails closed.',
+    href: '/docs/guides/hybrid-overflow/',
+    cta: 'Hybrid overflow guide',
+  },
+  {
+    k: '03',
+    title: 'Placement you can read',
+    body: 'Every placement records the pools considered, the ones filtered out and the reason, then ranks what is left. Ask any sandbox why it runs where it does with one call.',
+    href: '/docs/scheduling/placement-policy/',
+    cta: 'Placement policy',
+  },
+  {
+    k: '04',
+    title: 'A trust report, not a promise',
+    body: 'Operators get one view of external endpoints, credentials by reference, external placements, admin actions, the tamper-evident audit chain status, and an explicit list of what Differently cannot prove.',
+    href: '/docs/security/trust-model/',
+    cta: 'Security and trust model',
+  },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Differently · Run VMs differently: own them</title>
+    <meta name="description" content="Open-source, self-hosted control plane for sandboxes and Firecracker microVMs. Your infrastructure. Your rules. One API." />
+    <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+    <script is:inline>
+      try {
+        const t = localStorage.getItem('starlight-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <div class="status" role="note">
+      <strong>Pre-release.</strong> Implemented and covered by unit and in-process integration tests, but not yet run on real KVM hardware or live Daytona/Freestyle accounts. Not for production workloads yet.
+      <a href={`${base}/docs/roadmap/`}>Roadmap</a>
+    </div>
+
+    <header class="nav wrap">
+      <a class="brand" href={`${base}/`}>
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="1.5" y="1.5" width="29" height="29" rx="8" /><circle cx="16" cy="13" r="4.5" /><path d="M13.6 16.5h4.8l1.4 8.5h-7.6z" /></svg>
+        Differently
+      </a>
+      <nav>
+        <a href={`${base}/docs/`}>Docs</a>
+        <a href={`${base}/docs/reference/api/`}>API</a>
+        <a href={repo}>GitHub</a>
+        <button class="theme" type="button" aria-label="Toggle color theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" /></svg>
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero wrap">
+        <p class="eyebrow">Open source · Apache-2.0 · Self-hosted</p>
+        <h1>Run VMs differently:<br /><em>own them.</em></h1>
+        <p class="lede">
+          Differently is a control plane for sandboxes and Firecracker microVMs that you install in the
+          Kubernetes cluster you already run. Your developers get one simple API. You keep the keys,
+          the nodes, the data and the audit trail.
+        </p>
+        <div class="ctas">
+          <a class="btn primary" href={`${base}/docs/guides/quickstart/`}>Read the quickstart</a>
+          <a class="btn" href={repo}>View on GitHub</a>
+        </div>
+        <div class="install">
+          <span>$</span><code>helm install differently deploy/helm/differently</code>
+        </div>
+        <ul class="pillars">
+          <li><b>Your infrastructure.</b> KVM nodes you control.</li>
+          <li><b>Your rules.</b> Policy decides where work may go.</li>
+          <li><b>One API.</b> Applications never name a backend.</li>
+        </ul>
+      </section>
+
+      <section class="how wrap" id="how">
+        <div class="section-head">
+          <p class="eyebrow">How it works</p>
+          <h2>One door in. Every room is yours.</h2>
+          <p>Stateless API replicas admit requests against quota and queue them in Postgres. A single elected scheduler places each sandbox on an eligible pool. Node agents run Firecracker microVMs on hosts labelled for KVM. External providers sit behind a policy gate that is closed by default.</p>
+        </div>
+        <figure class="diagram">
+          <svg viewBox="0 0 960 360" role="img" aria-labelledby="dtitle">
+            <title id="dtitle">Apps call differently-server, which stores state in Postgres and lets the scheduler place sandboxes on your KVM node agents, or on external pools only if policy allows.</title>
+            <defs>
+              <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah" /></marker>
+            </defs>
+            <rect class="zone" x="190" y="16" width="560" height="328" rx="18" />
+            <text class="zone-label" x="210" y="44">YOUR CLUSTER · YOUR KEYS</text>
+
+            <g class="node"><rect x="16" y="140" width="140" height="80" rx="12" /><text x="86" y="174">App · SDK</text><text x="86" y="196" class="sub">CLI · dashboard</text></g>
+            <g class="node strong"><rect x="230" y="120" width="190" height="120" rx="12" /><text x="325" y="160">differently-server</text><text x="325" y="184" class="sub">API · auth · quotas</text><text x="325" y="204" class="sub">audit · scheduler leader</text></g>
+            <g class="node"><rect x="260" y="270" width="130" height="56" rx="12" /><text x="325" y="304">Postgres</text></g>
+            <g class="node"><rect x="490" y="64" width="230" height="84" rx="12" /><text x="605" y="98">differently-agent</text><text x="605" y="122" class="sub">KVM node · Firecracker microVMs</text></g>
+            <g class="node"><rect x="490" y="176" width="230" height="84" rx="12" /><text x="605" y="210">differently-agent</text><text x="605" y="234" class="sub">KVM node · Firecracker microVMs</text></g>
+            <g class="node ext"><rect x="790" y="140" width="154" height="80" rx="12" /><text x="867" y="174">Daytona</text><text x="867" y="196" class="sub">Freestyle · remote</text></g>
+
+            <path class="edge" d="M156 180H226" marker-end="url(#arr)" />
+            <text class="elabel" x="191" y="166">one API</text>
+            <path class="edge" d="M325 240V266" marker-end="url(#arr)" />
+            <path class="edge" d="M420 160C455 160 455 106 486 106" marker-end="url(#arr)" />
+            <path class="edge" d="M420 200C455 200 455 218 486 218" marker-end="url(#arr)" />
+            <path class="edge ext" d="M420 228C600 300 760 270 786 200" marker-end="url(#arr)" />
+            <g class="gate"><circle cx="760" cy="268" r="15" /><circle cx="760" cy="264" r="4" /><path d="M758 267h4l1 7h-6z" /></g>
+            <text class="elabel ext" x="640" y="316">only if every policy allows</text>
+          </svg>
+        </figure>
+        <ol class="steps">
+          <li><b>Request.</b> Your code asks for a profile, capabilities and a placement policy.</li>
+          <li><b>Filter, then rank.</b> Pools that fail any rule are dropped with a reason; the rest are ranked.</li>
+          <li><b>Run and record.</b> The sandbox runs; the decision, usage and audit events are stored.</li>
+        </ol>
+      </section>
+
+      <section class="code wrap" id="code">
+        <div class="section-head">
+          <p class="eyebrow">Developer experience</p>
+          <h2>Same shape in every language.</h2>
+          <p>TypeScript, Python and Go SDKs and a CLI, all thin clients of one <a href={`${base}/docs/reference/api/`}>OpenAPI contract</a>. Exec, streaming output, files, snapshots, fork and ports where the placed backend supports them.</p>
+        </div>
+        <div class="tabs" role="tablist">
+          {samples.map((s, i) => (
+            <button role="tab" type="button" aria-selected={i === 0 ? 'true' : 'false'} aria-controls={`panel-${s.id}`} id={`tab-${s.id}`}>{s.label}</button>
+          ))}
+        </div>
+        {samples.map((s, i) => (
+          <div class="panel" role="tabpanel" id={`panel-${s.id}`} aria-labelledby={`tab-${s.id}`} hidden={i !== 0}>
+            <Code code={s.code} lang={s.lang as any} themes={{ light: 'github-light', dark: 'vitesse-dark' }} />
+          </div>
+        ))}
+        <p class="note">Try it on a laptop with <code>./bin/differently-server --dev</code>. Dev mode runs commands directly on your machine with no isolation; it exists to exercise the API, not to contain untrusted code.</p>
+      </section>
+
+      <section class="features wrap" id="features">
+        <div class="section-head">
+          <p class="eyebrow">What you get</p>
+          <h2>Sovereign by default.</h2>
+        </div>
+        <div class="grid">
+          {features.map((f) => (
+            <article>
+              <span class="k">{f.k}</span>
+              <h3>{f.title}</h3>
+              <p>{f.body}</p>
+              <a href={`${base}${f.href}`}>{f.cta} →</a>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section class="honest wrap">
+        <div>
+          <p class="eyebrow">Where it stands</p>
+          <h2>Honest about what is proven.</h2>
+        </div>
+        <div class="cols">
+          <div>
+            <h3>Built and tested</h3>
+            <p>Control plane, scheduler, policy engine, node agent, adapters, CLI, SDKs, Helm chart and docs, covered by fast unit and in-process integration tests.</p>
+          </div>
+          <div>
+            <h3>Not yet verified</h3>
+            <p>Firecracker on real KVM hosts, live Daytona and Freestyle accounts, Postgres failover at scale and the jailer. Each has a proof of concept and acceptance criteria.</p>
+          </div>
+          <div>
+            <h3>Read before you deploy</h3>
+            <p><a href={`${base}/docs/deploy/`}>Support matrix</a>, <a href={`${base}/docs/security/hardening-checklist/`}>hardening checklist</a>, <a href={`${base}/docs/proof-of-concepts/`}>proofs of concept</a> and the <a href={`${base}/docs/feature-parity/`}>feature parity</a> table.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="cta wrap">
+        <h2>Bring your own metal.</h2>
+        <p>Built in the open by the OpenWork team. Issues, ideas and pull requests welcome.</p>
+        <div class="ctas">
+          <a class="btn primary" href={`${base}/docs/`}>Browse the docs</a>
+          <a class="btn" href={repo}>Star on GitHub</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap">
+      <span>Differently · Apache-2.0 · by <a href="https://github.com/different-ai">OpenWork</a></span>
+      <span><a href={`${base}/docs/adr/`}>Decision records</a> · <a href={`${repo}/blob/pre-release/SECURITY.md`}>Security policy</a></span>
+    </footer>
+
+    <script>
+      const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+      tabs.forEach((tab) =>
+        tab.addEventListener('click', () => {
+          tabs.forEach((t) => {
+            const on = t === tab;
+            t.setAttribute('aria-selected', String(on));
+            document.getElementById(t.getAttribute('aria-controls')!)!.hidden = !on;
+          });
+        }),
+      );
+      document.querySelector('.theme')!.addEventListener('click', () => {
+        const root = document.documentElement;
+        const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+        const next = dark ? 'light' : 'dark';
+        root.dataset.theme = next;
+        try { localStorage.setItem('starlight-theme', next); } catch {}
+      });
+    </script>
+  </body>
+</html>

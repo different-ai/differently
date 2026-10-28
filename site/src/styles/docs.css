@@ -1,0 +1,46 @@
+/* Differently palette for Starlight: brass on deep forest, warm paper in light mode. */
+:root {
+  --sl-font: 'IBM Plex Sans', system-ui, sans-serif;
+  --sl-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --sl-color-accent-low: #2b2210;
+  --sl-color-accent: #e2a93b;
+  --sl-color-accent-high: #f5d79a;
+  --sl-color-white: #f3efe4;
+  --sl-color-gray-1: #e2ddcf;
+  --sl-color-gray-2: #bdb7a8;
+  --sl-color-gray-3: #8c9289;
+  --sl-color-gray-4: #555d57;
+  --sl-color-gray-5: #323a35;
+  --sl-color-gray-6: #1c2420;
+  --sl-color-black: #111714;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #f3e2bd;
+  --sl-color-accent: #8f5a0b;
+  --sl-color-accent-high: #4d3006;
+  --sl-color-white: #141a17;
+  --sl-color-gray-1: #232b27;
+  --sl-color-gray-2: #39423d;
+  --sl-color-gray-3: #5d665f;
+  --sl-color-gray-4: #8c9289;
+  --sl-color-gray-5: #cdc7b8;
+  --sl-color-gray-6: #ece7da;
+  --sl-color-gray-7: #f4f0e6;
+  --sl-color-black: #faf7f0;
+}
+
+.site-title { font-family: 'Bricolage Grotesque', var(--sl-font); font-weight: 700; letter-spacing: -0.01em; }
+.sl-markdown-content h1, h1#_top { font-family: 'Bricolage Grotesque', var(--sl-font); letter-spacing: -0.02em; }
+.sl-markdown-content h2, .sl-markdown-content h3 { font-family: 'Bricolage Grotesque', var(--sl-font); }
+
+pre.mermaid {
+  background: transparent;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  text-align: center;
+  overflow-x: auto;
+}
+pre.mermaid:not([data-processed]) { color: var(--sl-color-gray-3); font-size: 0.8em; text-align: left; }
+.sl-markdown-content table { display: block; overflow-x: auto; }
