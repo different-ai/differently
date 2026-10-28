@@ -236,7 +236,8 @@
           "additionalProperties": false,
           "properties": {
             "file": {"type": "string", "pattern": "^$|^/var/lib/differently/"},
-            "recordCommands": {"type": "boolean"}
+            "recordCommands": {"type": "boolean"},
+            "failClosed": {"type": "boolean"}
           }
         },
         "dashboard": {
@@ -481,6 +482,7 @@
           "additionalProperties": false,
           "properties": {
             "ingressFrom": {"$ref": "#/definitions/k8sList"},
+            "metricsFrom": {"$ref": "#/definitions/k8sList"},
             "egress": {
               "type": "object",
               "additionalProperties": false,
@@ -507,6 +509,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "port": {"type": "integer", "minimum": 0, "maximum": 65535},
         "serviceMonitor": {
           "type": "object",
           "additionalProperties": false,

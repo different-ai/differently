@@ -112,11 +112,11 @@ Then stage them in one of these ways:
 | From | To | Port | Purpose |
 |---|---|---|---|
 | Clients, dashboard users | Server (Service or ingress) | 8080 / 443 | API and dashboard |
-| Agents | Server | 8080 / 443 | Heartbeats (`/internal/v1/agents/heartbeat`, agent token) |
-| Server | Agents | 9090 | Sandbox lifecycle, exec, files (agent token) |
+| Agents | Server | 8080 / 443 | Heartbeats (`/internal/v1/agents/heartbeat`, agent token plus per-agent secret) |
+| Server | Agents | 9090 | Sandbox lifecycle, exec, files (that agent's own secret) |
 | Server | PostgreSQL | 5432 | State |
 | Server | Daytona / Freestyle APIs | 443 | Only when a provider is enabled |
-| Prometheus | Server | 8080 | `/metrics` (unauthenticated) |
+| Prometheus | Server | 9091 | `/metrics` (unauthenticated; `metrics.port`) |
 
 - **Agent traffic is unencrypted.** Server-to-agent traffic is plain HTTP.
   Keep it on a private network, or use an encrypting CNI (for example

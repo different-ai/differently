@@ -194,6 +194,9 @@ chart-managed keys (listen, dataDir, store.driver) and provider pools.
 {{- $cfg := deepCopy (.Values.config | default dict) -}}
 {{- $_ := set $cfg "listen" (printf ":%v" .Values.server.containerPort) -}}
 {{- $_ := set $cfg "dataDir" "/var/lib/differently" -}}
+{{- if .Values.metrics.port -}}
+{{- $_ := set $cfg "metrics" (dict "listen" (printf ":%v" .Values.metrics.port)) -}}
+{{- end -}}
 {{- $store := deepCopy ($cfg.store | default dict) -}}
 {{- $_ := set $store "driver" (include "differently.storeDriver" .) -}}
 {{- $_ := set $cfg "store" $store -}}

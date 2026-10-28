@@ -69,20 +69,20 @@ func (f *fakeLauncher) Launch(vm *VM) (int, error) {
 	return f.next, nil
 }
 
-func (f *fakeLauncher) Kill(pid int) error {
+func (f *fakeLauncher) Kill(vm *VM) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, c := range f.alive[pid] {
+	for _, c := range f.alive[vm.PID] {
 		c.Close()
 	}
-	delete(f.alive, pid)
+	delete(f.alive, vm.PID)
 	return nil
 }
 
-func (f *fakeLauncher) Alive(pid int) bool {
+func (f *fakeLauncher) Alive(vm *VM) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	_, ok := f.alive[pid]
+	_, ok := f.alive[vm.PID]
 	return ok
 }
 
@@ -244,7 +244,7 @@ func TestRestartRecoversVMs(t *testing.T) {
 		t.Fatal(err)
 	}
 	vmB, _ := m.lookup("sbx_b")
-	_ = l.Kill(vmB.PID) // VM b dies while the agent is down
+	_ = l.Kill(vmB) // VM b dies while the agent is down
 	m2, err := New(m.cfg, l, r)
 	if err != nil {
 		t.Fatal(err)

@@ -263,9 +263,10 @@ and the comments explain each one. Useful ones:
 
 Exposure notes:
 
-- The ingress publishes the API, the dashboard, the agent heartbeat endpoint
-  (token-protected) and `/metrics` (unauthenticated) on one host. Block
-  `/metrics` at the ingress controller if it must stay internal.
+- The ingress publishes the API, the dashboard and the agent heartbeat
+  endpoint (agent token plus per-agent secret) on one host. `/metrics` is on
+  `metrics.port` (default 9091), which the ingress never routes to; set
+  `metrics.port: 0` only if you want it back on the API port.
 - The upstream ingress-nginx project has been retired. Prefer a maintained
   controller or Gateway API. An HTTPRoute pointing at
   `dly-differently-server:8080` works the same way.

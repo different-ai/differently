@@ -24,3 +24,4 @@ in [ADR 0001](0001-record-architecture-decisions.md).
 | [0015](0015-defer-jailer-integration.md) | Defer Firecracker jailer integration; state the gap | Accepted (gap open) |
 | [0016](0016-single-leader-scheduler-advisory-lock.md) | Single scheduler leader elected with a Postgres advisory lock | Accepted |
 | [0017](0017-exec-and-files-proxied-through-control-plane.md) | Proxy exec and file traffic through the control plane | Accepted |
+| [0018](0018-per-agent-secrets-until-mtls.md) | Per-agent secrets pinned at first registration until mTLS | Accepted (interim) |

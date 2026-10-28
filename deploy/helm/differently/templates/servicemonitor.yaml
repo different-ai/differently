@@ -16,7 +16,7 @@ spec:
     matchLabels:
       {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "server") | nindent 6 }}
   endpoints:
-    - port: http
+    - port: {{ ternary "metrics" "http" (gt (int .Values.metrics.port) 0) }}
       path: /metrics
       interval: {{ .Values.metrics.serviceMonitor.interval }}
       scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}

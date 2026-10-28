@@ -105,6 +105,11 @@ spec:
             - name: http
               containerPort: {{ .Values.server.containerPort }}
               protocol: TCP
+            {{- if .Values.metrics.port }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
           env:
             {{- include "differently.serverEnv" . | nindent 12 }}
             - name: GOMEMLIMIT

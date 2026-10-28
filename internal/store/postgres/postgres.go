@@ -672,13 +672,22 @@ func (s *Store) ListAudit(ctx context.Context, f store.AuditFilter) ([]api.Audit
 		ORDER BY seq LIMIT $5`, f.AfterSeq, f.OrgID, f.Resource, f.Action, limit)
 }
 
-func (s *Store) UpsertAgent(ctx context.Context, a api.Agent) error {
+func (s *Store) UpsertAgent(ctx context.Context, a store.AgentRecord) error {
 	_, err := s.pool.Exec(ctx, "INSERT INTO agents (id, pool, doc) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET pool = EXCLUDED.pool, doc = EXCLUDED.doc", a.ID, a.Pool, a)
 	return err
 }
 
-func (s *Store) ListAgents(ctx context.Context, pool string) ([]api.Agent, error) {
-	return listDocs[api.Agent](ctx, s.pool, "SELECT doc FROM agents WHERE $1 = '' OR pool = $1 ORDER BY id", pool)
+func (s *Store) GetAgent(ctx context.Context, aid string) (store.AgentRecord, error) {
+	return getDoc[store.AgentRecord](ctx, s.pool, "agent", aid, "SELECT doc FROM agents WHERE id = $1", aid)
+}
+
+func (s *Store) ListAgents(ctx context.Context, pool string) ([]store.AgentRecord, error) {
+	return listDocs[store.AgentRecord](ctx, s.pool, "SELECT doc FROM agents WHERE $1 = '' OR pool = $1 ORDER BY id", pool)
+}
+
+func (s *Store) DeleteAgent(ctx context.Context, aid string) error {
+	_, err := s.pool.Exec(ctx, "DELETE FROM agents WHERE id = $1", aid)
+	return err
 }
 
 // TryLeader holds a session advisory lock on a dedicated connection. If the

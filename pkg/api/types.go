@@ -421,6 +421,10 @@ type UsageReport struct {
 	Note    string      `json:"note"`
 }
 
+// AgentSecretHeader carries a node agent's own secret on heartbeats. The
+// secret is fixed at first registration (trust on first use).
+const AgentSecretHeader = "Differently-Agent-Secret"
+
 // Agent is a registered node agent serving a private pool.
 type Agent struct {
 	ID             string    `json:"id"`

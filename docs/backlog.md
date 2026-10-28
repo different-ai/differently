@@ -50,34 +50,36 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   `putPolicy`. *Acceptance:* an organization key with `policies:write`
   receives `404` for `DELETE /v1/policies/project:<other org's project>`; a
   cross-tenant test covers `PUT` and `DELETE` for `org:` and `project:` scopes.
-- **E0.2 Pin agent identity until mTLS lands** (P0). In `agentHeartbeat`,
-  refuse a heartbeat that changes the endpoint of an existing agent ID unless
-  an operator approves it (`POST /v1/admin/agents/{id}/approve-endpoint`), and
-  refuse agent IDs registered to a different pool. *Acceptance:* a heartbeat
-  with a new endpoint for a known ID returns `409` and is audited with outcome
-  `failure`; existing agents keep heartbeating; documented as interim until
-  E3.
+- ✅ **E0.2 Pin agent identity until mTLS lands** (P0). Implemented as
+  trust-on-first-use per-agent secrets rather than operator approval of
+  endpoint changes, so pod restarts that change IPs keep working: each agent
+  sends its own secret on every heartbeat, a known ID with another secret or
+  pool is refused (`409`, audited as an `agent.register` failure), the control
+  plane calls each agent with its own secret, and
+  `DELETE /v1/admin/agents/{id}` retires a rebuilt node's identity
+  ([ADR 0018](adr/0018-per-agent-secrets-until-mtls.md)). *Covered by*
+  `TestAgentIdentityIsPinned`, `TestPoolPlacesAndRoutesAcrossAgents`.
 - ✅ **E0.3 Bound responses from the guest** (P0). Limit the size the agent
   decodes from the guest for sync exec, listings and streamed exec totals
   (`internal/guest/client.go`). *Acceptance:* a malicious fake guest returning
   1 GiB of JSON makes the agent return an error without exceeding a fixed
   memory budget.
-- **E0.4 PID reuse safety** (P1). Before treating a PID as the VM's
+- ✅ **E0.4 PID reuse safety** (P1). Before treating a PID as the VM's
   Firecracker process (`recover`, `Kill`, `Alive`), verify its identity (for
   example `/proc/<pid>/cmdline` contains the VM's API socket path, or a
   pidfd). *Acceptance:* a test with a reused PID marks the VM stopped and sends
   no signal to the unrelated process.
-- **E0.5 Audit fail-closed option** (P1). Add `audit.failClosed`; when set,
+- ✅ **E0.5 Audit fail-closed option** (P1). Add `audit.failClosed`; when set,
   mutating requests fail with `503` if the audit append fails. Add a metric for
   append failures in both modes. *Acceptance:* with a store that fails appends,
   creates return `503` and nothing is admitted; the metric increments.
 - ✅ **E0.6 Complete the trust report limitations** (P1). Add the absent jailer,
   the shared-token plaintext agent channel, plaintext sandbox environment
   values, fail-open audit (unless E0.5 is enabled) and missing IPv6 egress
-  rules to `server.Limitations`, each removed automatically when its fix is
+  rules to the trust report's limitations (`limitations` in `internal/server/admin.go`), each removed automatically when its fix is
   configured. *Acceptance:* `TestHybridOverflowAndPrivateOnly` (or a new test)
   asserts the entries.
-- **E0.7 Protect `/metrics`** (P1). Optional separate listen address or bearer
+- ✅ **E0.7 Protect `/metrics`** (P1). Optional separate listen address or bearer
   token for `/metrics`. *Acceptance:* with `metrics.listen` set, `/metrics` is
   absent from the public listener.
 - **E0.8 Rate limiting before key lookup** (P2). Add a per-client-IP limiter

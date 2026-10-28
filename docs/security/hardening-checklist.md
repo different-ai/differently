@@ -28,8 +28,12 @@ Background: [trust model](trust-model.md).
 - [ ] Use the Postgres store (`store.driver: postgres`) and at least two
       replicas with a `PodDisruptionBudget`. The memory store loses all state
       on restart and cannot be shared.
-- [ ] Do not expose `/metrics` publicly; it is unauthenticated. Scrape it from
-      inside the cluster.
+- [ ] Serve `/metrics` on its own port (`metrics.listen`; the Helm default is
+      `9091`, which the ingress never routes to) and restrict scrapers with
+      `networkPolicy.server.metricsFrom`.
+- [ ] Consider `audit.failClosed: true` so state-changing requests are refused
+      when they cannot be audited, and alert on
+      `differently_audit_append_failures_total`.
 - [ ] Restrict who can reach `/internal/v1/agents/heartbeat`: only agent nodes
       need it (Helm `networkPolicy.server.ingressFrom` plus the agent selector).
 - [ ] Configure your load balancer for long-lived, unbuffered responses on
@@ -73,9 +77,12 @@ Background: [trust model](trust-model.md).
       `org:admin` and `keys:write` for humans.
 - [ ] Set `ttlHours` on keys you create. There is no enforced maximum, and
       revoking a key does not revoke keys it created **(gap)**.
-- [ ] Rotate the agent token on a schedule and after any node compromise. One
-      token is shared by every node and by the control plane
-      **(gap: [backlog E3](../backlog.md#e3-authenticated-agent-channel))**.
+- [ ] Rotate the shared agent registration token on a schedule and after any
+      node compromise. It lets a node register new agent IDs; it cannot take
+      over existing ones, which are pinned to per-agent secrets. After
+      rebuilding a node (wiped state directory), remove its old identity with
+      `DELETE /v1/admin/agents/{id}` so it can register again
+      **(remaining gap: unencrypted channel, [backlog E3](../backlog.md#e3-authenticated-agent-channel))**.
 
 ## Network
 
@@ -183,15 +190,18 @@ Background: [trust model](trust-model.md).
 - [ ] Set `audit.file` and ship the JSON lines to write-once storage or a SIEM.
       Periodically record the `headHash` from `GET /v1/admin/audit/verify`
       outside the database.
-- [ ] Alert on `audit append failed` log lines. Audit is fail-open: the action
-      still happens.
+- [ ] Alert on `differently_audit_append_failures_total` and `audit append
+      failed` log lines. Unless `audit.failClosed` is set, the action still
+      happens.
 - [ ] Leave `audit.recordCommands` off unless you need command lines; they can
       contain secrets.
 - [ ] Alert on `differently_reconcile_actions_total` (orphans deleted,
       instances lost, adoptions), on pools whose health is not `healthy`, and
       on `differently_placement_decisions_total{outcome="rejected"}`.
-- [ ] Watch for `agent.register` audit events with an unexpected endpoint
-      change; with the shared token this is how an agent hijack would show.
+- [ ] Alert on `agent.register` audit events with outcome `failure`: they mean
+      a node presented another agent's ID with the wrong secret (a hijack
+      attempt, or a rebuilt node that needs its old identity removed). Review
+      `agent.endpoint_change` events too.
 
 ## Upgrades and incidents
 

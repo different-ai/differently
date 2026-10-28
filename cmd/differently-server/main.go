@@ -156,8 +156,15 @@ func serve(cfgPath string, dev bool, listen, dataDir string) error {
 	go sch.Run(ctx)
 
 	httpSrv := &http.Server{Addr: cfg.Listen, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
 	go func() { errc <- httpSrv.ListenAndServe() }()
+	var metricsSrv *http.Server
+	if cfg.Metrics.Listen != "" {
+		mux := http.NewServeMux()
+		mux.Handle("GET /metrics", srv.MetricsHandler())
+		metricsSrv = &http.Server{Addr: cfg.Metrics.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		go func() { errc <- metricsSrv.ListenAndServe() }()
+	}
 	log.Info("differently-server started", "listen", cfg.Listen, "version", version.Version, "installation", installation, "store", cfg.Store.Driver, "dev", cfg.Dev)
 	if cfg.Dev {
 		log.Warn("DEV MODE: the devhost pool runs commands directly on this machine with no isolation",
@@ -173,6 +180,9 @@ func serve(cfgPath string, dev bool, listen, dataDir string) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	log.Info("shutting down")
+	if metricsSrv != nil {
+		_ = metricsSrv.Shutdown(shutdown)
+	}
 	return httpSrv.Shutdown(shutdown)
 }
 

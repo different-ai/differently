@@ -470,10 +470,23 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request, _ auth.Pri
 }
 
 // agentHeartbeat registers or refreshes a node agent.
+//
+// The shared agent token only lets a node register. Each agent also sends
+// its own secret, fixed when its ID first registers (trust on first use):
+// later heartbeats for that ID must present the same secret, and the control
+// plane calls the agent with it. A node holding the shared token can
+// therefore add itself, but cannot take over another node's ID or traffic.
+// An operator removes a rebuilt node's old identity with
+// DELETE /v1/admin/agents/{id}.
 func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if s.AgentToken == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.AgentToken)) != 1 {
 		writeErr(w, r, api.Errorf(api.CodeUnauthenticated, "invalid agent token"))
+		return
+	}
+	secret := r.Header.Get(api.AgentSecretHeader)
+	if len(secret) < 32 {
+		writeErr(w, r, api.Errorf(api.CodeInvalidRequest, "missing %s header (at least 32 characters)", api.AgentSecretHeader))
 		return
 	}
 	var a api.Agent
@@ -490,15 +503,44 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, api.Errorf(api.CodeNotFound, "no firecracker pool named %s is registered", a.Pool))
 		return
 	}
-	known, _ := s.Store.ListAgents(r.Context(), a.Pool)
-	isNew := !slices.ContainsFunc(known, func(k api.Agent) bool { return k.ID == a.ID && k.Endpoint == a.Endpoint })
-	a.LastSeen, a.Healthy = s.now(), true
-	if err := s.Store.UpsertAgent(r.Context(), a); err != nil {
+	reject := func(reason string) {
+		s.Audit.Record(r.Context(), api.AuditEvent{Actor: "agent:" + a.ID, Action: "agent.register", Resource: a.ID, Outcome: "failure",
+			Details: map[string]string{"pool": a.Pool, "endpoint": a.Endpoint, "reason": reason}, RequestID: requestID(r)})
+		writeErr(w, r, api.Errorf(api.CodeConflict, "%s; if this node was rebuilt, an operator can remove the old identity with DELETE /v1/admin/agents/%s", reason, a.ID))
+	}
+	action := ""
+	existing, err := s.Store.GetAgent(r.Context(), a.ID)
+	switch {
+	case api.IsCode(err, api.CodeNotFound):
+		action = "agent.register"
+	case err != nil:
 		writeErr(w, r, err)
 		return
+	case subtle.ConstantTimeCompare([]byte(existing.Secret), []byte(secret)) != 1:
+		reject("agent " + a.ID + " is registered with a different identity")
+		return
+	case existing.Pool != a.Pool:
+		reject("agent " + a.ID + " is registered to pool " + existing.Pool)
+		return
+	case existing.Endpoint != a.Endpoint:
+		action = "agent.endpoint_change"
 	}
-	if isNew {
-		s.Audit.Record(r.Context(), api.AuditEvent{Actor: "agent:" + a.ID, Action: "agent.register", Resource: a.ID, Details: map[string]string{"pool": a.Pool, "node": a.Node, "endpoint": a.Endpoint, "version": a.Version}, RequestID: requestID(r)})
+	if action != "" {
+		ev := api.AuditEvent{Actor: "agent:" + a.ID, Action: action, Resource: a.ID, RequestID: requestID(r),
+			Details: map[string]string{"pool": a.Pool, "node": a.Node, "endpoint": a.Endpoint, "previousEndpoint": existing.Endpoint, "version": a.Version}}
+		if s.Config.Audit.FailClosed {
+			if err := s.Audit.Require(r.Context(), ev); err != nil {
+				writeErr(w, r, auditUnavailable())
+				return
+			}
+		} else {
+			defer s.Audit.Record(r.Context(), ev)
+		}
+	}
+	a.LastSeen, a.Healthy = s.now(), true
+	if err := s.Store.UpsertAgent(r.Context(), store.AgentRecord{Agent: a, Secret: secret}); err != nil {
+		writeErr(w, r, err)
+		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "installation": s.Installation})
 }

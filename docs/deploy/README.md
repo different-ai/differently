@@ -114,11 +114,13 @@ operator, and a private pool is only as private as the hardware under it.
 External pools see the code, data and environment of the sandboxes placed on
 them.
 
-Traffic between the control plane and agents is plain HTTP authenticated with
-the shared agent token. Keep it on a private network, or use an encrypting CNI
-or mesh.
+Traffic between the control plane and agents is plain HTTP. Nodes register
+with the shared agent token, and each agent is then bound to its own secret,
+so a node cannot impersonate another, but the traffic is not encrypted. Keep
+it on a private network, or use an encrypting CNI or mesh.
 
-`/metrics` is unauthenticated. Sandbox egress is controlled only by the node
+`/metrics` has no authentication; the chart serves it on a separate port
+(`metrics.port`, default 9091) that the ingress does not expose. Sandbox egress is controlled only by the node
 networking you configure. Block the cloud metadata endpoint
 (`169.254.169.254`) from sandboxes.
 

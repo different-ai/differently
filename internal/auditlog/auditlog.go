@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/different-ai/differently/internal/metrics"
 	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/pkg/api"
 )
@@ -36,8 +37,13 @@ func New(st store.Store, log *slog.Logger, path string) (*Recorder, error) {
 	return r, nil
 }
 
-// Record stores ev. Audit failures are logged, never silently dropped.
-func (r *Recorder) Record(ctx context.Context, ev api.AuditEvent) {
+// Record stores ev. Failures are logged and counted, never silently
+// dropped, but the caller proceeds (fail-open).
+func (r *Recorder) Record(ctx context.Context, ev api.AuditEvent) { _ = r.Require(ctx, ev) }
+
+// Require stores ev and returns any failure, for callers that must not act
+// without an audit record (audit.failClosed).
+func (r *Recorder) Require(ctx context.Context, ev api.AuditEvent) error {
 	if ev.Time.IsZero() {
 		ev.Time = time.Now().UTC()
 	}
@@ -46,8 +52,9 @@ func (r *Recorder) Record(ctx context.Context, ev api.AuditEvent) {
 	}
 	sealed, err := r.Store.AppendAudit(context.WithoutCancel(ctx), ev)
 	if err != nil {
+		metrics.AuditFailures.Inc()
 		r.Log.Error("audit append failed", "action", ev.Action, "resource", ev.Resource, "err", err)
-		return
+		return err
 	}
 	if r.file != nil {
 		r.mu.Lock()
@@ -55,6 +62,7 @@ func (r *Recorder) Record(ctx context.Context, ev api.AuditEvent) {
 		_, _ = r.file.Write(append(b, '\n'))
 		r.mu.Unlock()
 	}
+	return nil
 }
 
 // Close closes the mirror file.

@@ -38,16 +38,29 @@ type harness struct {
 // pools: "fc" (private, 4 CPU) and "burst" (external, unbounded).
 func newHarness(t *testing.T, policy api.PlacementPolicy) *harness {
 	t.Helper()
+	return newHarnessWith(t, policy, nil, nil)
+}
+
+// newHarnessWith lets a test adjust the config and wrap the store.
+func newHarnessWith(t *testing.T, policy api.PlacementPolicy, tweak func(*config.Config), wrap func(store.Store) store.Store) *harness {
+	t.Helper()
 	t.Setenv("DIFFERENTLY_BOOTSTRAP_TOKEN", operatorToken)
 	cfg := config.Default()
 	cfg.Policy = policy
 	cfg.Policy.Scope = "global"
 	cfg.RateLimit.RequestsPerSecond = 0
+	if tweak != nil {
+		tweak(&cfg)
+	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	st := store.NewMemory()
+	mem := store.NewMemory()
+	var st store.Store = mem
+	if wrap != nil {
+		st = wrap(mem)
+	}
 	rec, _ := auditlog.New(st, log, "")
 	pm := pools.NewManager(pools.Deps{Store: st, Logger: log})
-	h := &harness{t: t, store: st,
+	h := &harness{t: t, store: mem,
 		fc:  fake.New(fake.Options{Trust: api.TrustPrivate, TotalCPU: 4, TotalMemoryMiB: 16384}),
 		ext: fake.New(fake.Options{Trust: api.TrustExternal, Features: []string{adapter.FeatureExec, adapter.FeatureFiles, adapter.FeaturePorts}}),
 	}

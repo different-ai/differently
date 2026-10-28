@@ -36,6 +36,10 @@ var (
 	RequestSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "differently_api_request_seconds", Help: "API request latency.", Buckets: prometheus.DefBuckets,
 	}, []string{"route"})
+	// AuditFailures counts audit events that could not be stored.
+	AuditFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "differently_audit_append_failures_total", Help: "Audit events that could not be appended to the chain.",
+	})
 	// Reconciled counts reconciler corrections.
 	Reconciled = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "differently_reconcile_actions_total", Help: "Corrections made by the reconciler.",
@@ -44,5 +48,5 @@ var (
 
 func init() {
 	Registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	Registry.MustRegister(Transitions, Placements, ProvisionSeconds, QueueSeconds, Requests, RequestSeconds, Reconciled)
+	Registry.MustRegister(Transitions, Placements, ProvisionSeconds, QueueSeconds, Requests, RequestSeconds, Reconciled, AuditFailures)
 }

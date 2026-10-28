@@ -20,7 +20,7 @@ the availability of the operator's hardware or of external providers.
 | Exec overhead | Control-plane-added latency of `exec` for `true` | not instrumented (needs tracing, [backlog E11](backlog.md#e11-opentelemetry-tracing)) | p50 ≤ 30 ms on Firecracker pools |
 | Drift detection | Time from a backend instance vanishing to the sandbox being marked failed | `differently_reconcile_actions_total{action="lost"}` | ≤ 2 × `reconcileIntervalSeconds` (60 s) |
 | Leader failover | Time from leader process death to the next dispatch | not instrumented | ≤ 10 s on process crash; bounded by Postgres TCP keepalives on host loss |
-| Audit completeness | Share of state-changing calls with an audit event | not measurable today (audit is fail-open, failures only logged) | 100 %; requires alerting on `audit append failed` |
+| Audit completeness | Share of state-changing calls with an audit event | measurable with `differently_audit_append_failures_total`; with `audit.failClosed` unaudited changes are refused | 100 %; alert on any increase of the failure counter |
 
 Missing instrumentation worth adding before SLOs can be enforced: leader
 status per replica, agent heartbeat age, reconcile errors, audit append
@@ -28,7 +28,7 @@ failures, adapter call latency by operation, and end-to-end traces.
 
 ## 2. Telemetry available today
 
-`internal/metrics/metrics.go` (Prometheus, unauthenticated `/metrics`):
+`internal/metrics/metrics.go` (Prometheus `/metrics`, on `metrics.listen` when set):
 
 | Metric | Labels |
 |---|---|

@@ -23,6 +23,19 @@ All notable changes are recorded here. The format follows
 - Documentation: architecture RFC, ADRs, security model, adapter spec,
   placement policy, feature parity, deployment guides, roadmap and backlog.
 
+### Security
+
+- Node agents are bound to per-agent secrets pinned at first registration;
+  the control plane calls each agent with its own secret, so one node can no
+  longer impersonate or command another (`DELETE /v1/admin/agents/{id}`
+  retires a rebuilt node's identity).
+- The agent signals a Firecracker PID only after confirming it is that VM's
+  process.
+- `audit.failClosed` refuses state-changing requests that cannot be audited;
+  `differently_audit_append_failures_total` counts audit failures.
+- `metrics.listen` serves `/metrics` on its own port; the Helm chart does this
+  by default (port 9091), keeping metrics off the ingress.
+
 ### Not yet verified
 
 - No run on real KVM hardware or live Daytona/Freestyle accounts yet.

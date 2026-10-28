@@ -149,7 +149,9 @@ func (s *Server) Handler() http.Handler {
 	public("GET /version", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, api.VersionInfo{Version: version.Version, Commit: version.Commit, APIVersion: "v1", Installation: s.Installation})
 	})
-	mux.Handle("GET /metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
+	if s.Config.Metrics.Listen == "" {
+		mux.Handle("GET /metrics", s.MetricsHandler())
+	}
 	public("GET /openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write(apispec.OpenAPI)
@@ -168,6 +170,16 @@ func (s *Server) Handler() http.Handler {
 	s.tenancyRoutes(authed)
 	s.adminRoutes(authed)
 	return s.recover(mux)
+}
+
+// MetricsHandler serves Prometheus metrics. With metrics.listen set the
+// caller serves it on that separate address instead of the API listener.
+func (s *Server) MetricsHandler() http.Handler {
+	return promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{})
+}
+
+func auditUnavailable() error {
+	return api.Errorf(api.CodeProviderUnavailable, "the audit log is unavailable and audit.failClosed is set; refusing to change state")
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
@@ -284,6 +296,17 @@ func (s *Server) authenticate(h handlerFunc) http.Handler {
 		if p.OrgID != "" {
 			if org, err := s.Store.GetOrg(r.Context(), p.OrgID); err == nil && org.Suspended && r.Method != http.MethodGet {
 				writeErr(w, r, api.Errorf(api.CodeSuspended, "organization %s is suspended", org.ID))
+				return
+			}
+		}
+		if s.Config.Audit.FailClosed && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			// Record the request before acting on it, so nothing changes
+			// without an audit trail.
+			if err := s.Audit.Require(r.Context(), api.AuditEvent{
+				Actor: p.Actor(), OrgID: p.OrgID, ProjectID: p.ProjectID, Action: "api.request",
+				Resource: r.Method + " " + r.URL.Path, Outcome: "requested", RequestID: requestID(r),
+			}); err != nil {
+				writeErr(w, r, auditUnavailable())
 				return
 			}
 		}
