@@ -1,4 +1,4 @@
-"""Music bed + sound effects for the intro, locked to the same 120 BPM grid as the cuts.
+"""Music bed + sound effects for the intro, locked to the same 80 BPM grid as the cuts.
 
 Reads ../src/scenes.json for scene start beats, writes ../public/audio/soundtrack.wav
 (stereo, 48 kHz, peak-safe; loudness is normalised afterwards with ffmpeg loudnorm).
@@ -17,8 +17,9 @@ from synth import (SR, adsr, bandpass, convolve_reverb, exp_env, highpass, lowpa
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCENES = json.load(open(os.path.join(HERE, '..', 'src', 'scenes.json')))
-BPM = 120
+BPM = 80
 B = 60 / BPM  # seconds per beat
+FPB = 3600 // BPM  # video frames per beat at 60 fps
 TOTAL = max(s + l for s, l in SCENES.values()) * B
 N = int(TOTAL * SR)
 
@@ -202,22 +203,27 @@ A_MIN_PENTA = [57, 60, 62, 64, 67, 69, 72, 74, 76, 79, 81, 84]
 
 # Act 1 (crowd + mine): playful mallet arps over a half-time beat, getting tense.
 act1_end = at('reveal', 0)
-for b in np.arange(0, SCENES['mine'][0] + SCENES['mine'][1], 0.5):
+glue_from = at('mine', 4)
+for b in np.arange(0, SCENES['mine'][0] + SCENES['mine'][1], 0.25):
     tt = b * B
     if tt >= act1_end - 0.25:
         break
-    step = int(b * 2)
+    step = int(round(b * 4))
+    sixteenth = step % 2 == 1
+    if sixteenth and tt < glue_from:
+        continue  # 8ths through the crowd, 16ths once the glue piles up
     seq = [0, 4, 2, 5, 3, 6, 4, 7]
-    note = A_MIN_PENTA[seq[step % 8] + (2 if (step // 16) % 2 else 0)]
-    tense = max(0.0, (tt - at('mine', 4)) / (act1_end - at('mine', 4)))
-    detune = 1 + 0.012 * tense * np.sin(step)
-    place(music, pan(mallet(note + 12 * (step % 16 == 15), 0.4) * (0.7 + 0.3 * (step % 2 == 0)), (-0.4, 0.4)[step % 2]), tt)
-    if step % 2 == 0:
-        place(drums, hat(), tt + 0.25 * B, 0.8)
-    if b % 2 == 0:
+    note = A_MIN_PENTA[seq[(step // 2) % 8] + (2 if (step // 32) % 2 else 0)]
+    if tt >= at('crowd', 1):
+        place(music, pan(mallet(note + 12 * ((step // 2) % 16 == 15), 0.35) * (0.75 if sixteenth else 1.0), (-0.4, 0.4)[(step // 2) % 2]), tt, 0.85)
+    if step % 4 == 2 and tt >= at('crowd', 2):
+        place(drums, hat(), tt, 0.8)
+    if sixteenth and tt >= glue_from:
+        place(drums, hat(), tt, 0.4)
+    if step % 4 == 0 and tt >= at('crowd', 2):
         kicks.append(tt)
         place(drums, kick(0.8), tt)
-    if b % 4 == 2 and tt > 2:
+    if step % 8 == 4 and tt >= at('crowd', 4):
         place(drums, clap(), tt, 0.6)
 # Bass under act 1 (Am – F – C – G), wobbling more as the glue piles up.
 for i, root in enumerate([45, 41, 48, 43] * 4):
@@ -236,7 +242,7 @@ place(music, pan(dr, 0), at('reveal', 0))
 # Act 2 (logo → diagram): warm groove in C: C – G – Am – F.
 CHORDS = [[48, 55, 60, 64], [43, 50, 55, 59], [45, 52, 57, 60], [41, 48, 53, 57]]
 groove_start = at('reveal', 4)
-groove_end = at('outro', 4)
+groove_end = at('outro', 4.7)
 bar = 4 * B
 nbar = int(np.ceil((groove_end - groove_start) / bar))
 for i in range(nbar):
@@ -251,9 +257,9 @@ for i in range(nbar):
         if tt >= groove_end:
             break
         place(music, pan(bass(ch[0] - 12 + (12 if k % 4 == 3 else 0), B / 2 * 0.9, 600 if full else 380), 0), tt, 0.8 if full else 0.5)
-    for k in range(16):  # arp sparkle
+    for k in range(16):  # arp sparkle on 16ths
         tt = t0 + k * B / 4
-        if not full or tt >= groove_end or k % 2:
+        if not full or tt >= groove_end:
             continue
         m = ch[1:][k // 2 % 3] + 24
         place(music, pan(mallet(m, 0.3, 0.5), np.sin(k) * 0.6), tt, 0.35)
@@ -267,11 +273,14 @@ for i in range(nbar):
             place(drums, pan(hat(open_=True), 0.3), tt + B / 2, 0.7)
             if k % 2 == 1:
                 place(drums, clap(), tt, 0.8)
+            if k == 2:  # a pickup kick keeps 80 BPM from dragging
+                kicks.append(tt + 0.75 * B)
+                place(drums, kick(0.7), tt + 0.75 * B)
             for h in range(4):
                 place(drums, pan(hat(), -0.3), tt + h * B / 4, 0.5 if h % 2 else 0.25)
 
 # Outro: final chord rings out from the end-card hit.
-end_hit = at('outro', 4)
+end_hit = at('outro', 4.7)
 for m in [48, 55, 60, 64, 67, 72]:
     place(music, pan(saw_voice(m, 5.0, cutoff=2400, attack=0.01, release=3.0, sustain=0.5) * 0.1, (m % 5 - 2) / 3), end_hit)
 place(music, pan(mallet(84, 1.2, 0.5), -0.2), end_hit + B * 1.5, 0.4)
@@ -286,28 +295,30 @@ CROWD = json.load(open(os.path.join(HERE, '..', 'src', 'crowd.json')))
 n_cards = CROWD['cards']['wide']
 for i in range(n_cards):
     rank = (i * CROWD['rankStride']) % n_cards
-    arrive = round(CROWD['firstBeat'] * 30) + round(round(CROWD['spanBeats'] * 30) * (rank / n_cards) ** CROWD['power'])
-    land = (arrive + 6) / 60
-    note = A_MIN_PENTA[min(len(A_MIN_PENTA) - 1, rank * len(A_MIN_PENTA) // n_cards)] + 12
-    place(fx, pan(pop(note), ((i * 7) % 11 - 5) / 6), land, 0.35 + 0.3 * rank / n_cards)
-    if rank / n_cards >= 0.6:
+    arrive = round(CROWD['firstBeat'] * FPB) + round(round(CROWD['spanBeats'] * FPB) * (rank / n_cards) ** CROWD['power'])
+    dropper = rank < CROWD['droppers']
+    land = (arrive + (11 if dropper else 6)) / 60
+    note = A_MIN_PENTA[min(len(A_MIN_PENTA) - 1, rank * len(A_MIN_PENTA) // n_cards)] + (0 if dropper else 12)
+    place(fx, pan(pop(note), ((i * 7) % 11 - 5) / 6), land, 0.6 if dropper else 0.35 + 0.3 * rank / n_cards)
+    if dropper or rank / n_cards >= 0.6:
         n = int(0.18 * SR)
         tt = np.arange(n) / SR
         thud = np.sin(2 * np.pi * (60 + 70 * np.exp(-tt * 30)) * tt) * exp_env(n, 0.001, 0.05)
-        place(fx, pan(thud, 0), land, 0.35)
+        place(fx, pan(thud, 0), land, 0.6 if dropper else 0.35)
 # The snap: a whoosh and a quick run of clicks as the grid locks in.
 snap = at('crowd', CROWD['snapBeat'])
 place(fx, pan(whoosh(0.45, up=False), 0), snap - 0.08, 0.7)
 for k in range(18):
     place(fx, pan(lock_click(), ((k % 6) - 2.5) / 3), snap + 0.05 + k * 1.2 / 60 * 1.6, 0.18)
-for b in [4, 6, 8, 10, 12]:
+S = CROWD['snapBeat']
+for b in [S, S + 2, S + 4, S + 6, S + 8]:
     place(fx, pan(tick(), 0), at('crowd', b), 1.2)
-place(fx, pan(whoosh(0.35), 0), at('crowd', 6) - 0.1, 0.5)
+place(fx, pan(whoosh(0.35), 0), at('crowd', S + 2) - 0.1, 0.5)
 for i in range(18):  # padlocks ripple
-    place(fx, pan(lock_click(), ((i % 6) - 2.5) / 3), at('crowd', 8) + ((i % 6) + i // 6) * 3 / 60, 0.25)
+    place(fx, pan(lock_click(), ((i % 6) - 2.5) / 3), at('crowd', S + 4) + ((i % 6) + i // 6) * 3 / 60, 0.25)
 for i in range(5):  # "contact sales" stamps
-    place(fx, pan(pop(72 - i * 2), (i - 2) / 3), at('crowd', 12) + i * 4 / 60 * 1.5, 0.6)
-place(fx, whoosh(0.5, up=False), at('crowd', 13.4), 0.6)
+    place(fx, pan(pop(72 - i * 2), (i - 2) / 3), at('crowd', S + 8) + ((i * 3) % 7) * 4 / 60, 0.6)
+place(fx, whoosh(0.5, up=False), at('crowd', S + 9.4), 0.6)
 
 # Mine: parts drop with squelchy glue on every beat.
 for k, b in enumerate([0, 0.5, 1]):
@@ -355,14 +366,20 @@ for k in range(8):
     place(fx, pan(keyclick(200 + k), 0.3), at('diagram', 15) + 18 / 60 + k * 16 / 60 / 8)
 place(fx, pan(lock_click(), 0.3), at('diagram', 16), 1.0)
 place(fx, pan(chime(), 0.3), at('diagram', 16.05), 0.8)
-place(fx, pan(riser(at('diagram', 22) - at('diagram', 20.2)), 0), at('diagram', 20.2), 0.8)
+# Hand-off: the server box fills the screen; a soft rising air, then a low landing.
+hand = at('diagram', 20.25)
+place(fx, pan(riser(at('diagram', 22) - hand) * 0.7, 0), hand, 0.7)
+place(fx, pan(whoosh(at('diagram', 22) - hand + 0.2), 0), hand, 0.5)
 
 # Outro
+place(fx, pan(boom(), 0), at('outro', 0), 0.45)
+place(fx, pan(whoosh(0.5), 0), at('outro', 0.3), 0.35)
 for i in range(4):
-    place(fx, pan(pop(72 + i * 3), (i - 1.5) / 2), at('outro', 0.6 + i * 0.5), 0.6)
+    place(fx, pan(pop(72 + i * 3), (i - 1.5) / 2), at('outro', 1.5 + i * 0.35), 0.6)
+place(fx, pan(whoosh(0.5), 0), at('outro', 4.2), 0.4)
 place(fx, pan(boom(), 0), end_hit, 0.9)
 for i in range(3):
-    place(fx, pan(tick(), 0), at('outro', 5 + i * 0.75), 1.0)
+    place(fx, pan(tick(), 0), at('outro', 5.2 + i * 0.5), 1.0)
 
 # ---------------------------------------------------------------- mix
 

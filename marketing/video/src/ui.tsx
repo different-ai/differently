@@ -13,6 +13,9 @@ export const useSpring = (delay: number, config = SNAP, durationInFrames?: numbe
   return spring({frame: frame - delay, fps, config, durationInFrames});
 };
 
+/** Where the mark sits on the cut from the diagram into the outro (both scenes use it). */
+export const handoff = (width: number, height: number) => ({x: width / 2, y: height / 2, size: width === height ? 150 : 170});
+
 /** The logo: two overlapping rounded squares. `split` 0 → apart, 1 → resting position. */
 export const Mark: React.FC<{size: number; color: string; split?: number; back?: number; front?: number}> = ({
   size,

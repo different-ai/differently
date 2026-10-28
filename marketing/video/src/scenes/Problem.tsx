@@ -165,9 +165,10 @@ export const Crowd: React.FC = () => {
   const unpush = interpolate(frame, [snapAt, snapAt + 16], [0, 1], {...clamp, easing: OUT});
 
   // "Their SDK." punches into one grid card, then back out.
+  const S = CROWD.snapBeat; // everything after the snap is timed from it
   const focusB = grid(sq ? 2 : 3);
-  const zB = interpolate(frame, [beat(6), beat(6) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(8), beat(8) + 12], [0, 1], {...clamp, easing: OUT}));
-  const zoom = (push + (1 - push) * unpush) * (1 + 0.55 * zB) + interpolate(frame, [snapAt, beat(14)], [0, 0.04], clamp);
+  const zB = interpolate(frame, [beat(S + 2), beat(S + 2) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(S + 4), beat(S + 4) + 12], [0, 1], {...clamp, easing: OUT}));
+  const zoom = (push + (1 - push) * unpush) * (1 + 0.55 * zB) + interpolate(frame, [snapAt, beat(S + 10)], [0, 0.04], clamp);
   const cx = width / 2;
   const cy = top + (rows * ch) / 2;
   const fx = focusB.x * zB + cx * (1 - zB);
@@ -178,11 +179,11 @@ export const Crowd: React.FC = () => {
   // Plain spring() rather than hooks: cards enter and leave the render, so hook counts would vary.
   const sp = (delay: number, config = SNAP) => spring({frame: frame - delay, fps, config});
   const hosted = (i: number) => sp(snapAt + 12 + ((i * 5) % n));
-  const lock = (i: number) => sp(beat(8) + ((i % cols) + Math.floor(i / cols)) * 3);
-  const sales = (i: number) => sp(beat(12) + ((i * 3) % 7) * 4, {damping: 9, stiffness: 220, mass: 0.6});
-  const sdkFlash = (i: number) => interpolate(frame, [beat(6) + (i % n) * 1.2, beat(6) + (i % n) * 1.2 + 6], [0, 1], clamp) * (frame < beat(8) ? 1 : 0);
+  const lock = (i: number) => sp(beat(S + 4) + ((i % cols) + Math.floor(i / cols)) * 3);
+  const sales = (i: number) => sp(beat(S + 8) + ((i * 3) % 7) * 4, {damping: 9, stiffness: 220, mass: 0.6});
+  const sdkFlash = (i: number) => interpolate(frame, [beat(S + 2) + (i % n) * 1.2, beat(S + 2) + (i % n) * 1.2 + 6], [0, 1], clamp) * (frame < beat(S + 4) ? 1 : 0);
 
-  const leave = interpolate(frame, [beat(13.5), beat(14)], [0, 1], {...clamp, easing: Easing.bezier(0.7, 0, 0.84, 0)});
+  const leave = interpolate(frame, [beat(S + 9.5), beat(S + 10)], [0, 1], {...clamp, easing: Easing.bezier(0.7, 0, 0.84, 0)});
   const textW = width - (sq ? 120 : 260);
   const order = cards.map((_, i) => i).sort((a, b) => rank(a) - rank(b)); // later arrivals on top
 
@@ -199,15 +200,16 @@ export const Crowd: React.FC = () => {
           const inGrid = i < n;
           const late = rank(i) / N;
           const pile = pilePose(i, late, width, height, sq);
-          const fly = spring({frame: frame - arrive(i), fps, config: {damping: 15, stiffness: 190, mass: 0.7}});
+          // The first few drop in one by one from above; then they pour in from every edge.
+          const dropper = rank(i) < CROWD.droppers;
+          const fly = spring({frame: frame - arrive(i), fps, config: dropper ? {damping: 10, stiffness: 160, mass: 0.9} : {damping: 15, stiffness: 190, mass: 0.7}});
           if (fly <= 0.001) return null;
-          // Fly in from the nearest edge, spinning slightly, and land on the pile.
           const dx = pile.x - width / 2 || 1;
           const dy = pile.y - height / 2 || 1;
           const dl = Math.hypot(dx, dy);
           const far = Math.max(width, height) * 0.8;
-          let x = pile.x + (dx / dl) * far * (1 - fly);
-          let y = pile.y + (dy / dl) * far * (1 - fly);
+          let x = dropper ? pile.x : pile.x + (dx / dl) * far * (1 - fly);
+          let y = dropper ? pile.y - (pile.y + bh) * (1 - fly) : pile.y + (dy / dl) * far * (1 - fly);
           let rot = pile.rot * (1 + (1 - fly) * 2.5);
           let scale = pile.scale;
           let opacity = 1;
@@ -279,11 +281,11 @@ export const Crowd: React.FC = () => {
       </AbsoluteFill>
       <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 90 : 70}}>
         <div style={{background: t.bg, borderRadius: 24, padding: '0 24px'}}>
-          <Card text="Their cloud." from={snapAt} to={beat(6)} width={textW} max={sq ? 150 : 200} tone="light" />
-          <Card text="Their SDK." from={beat(6)} to={beat(8)} width={textW} max={sq ? 150 : 200} tone="light" />
-          <Card text="Their *rules*." from={beat(8)} to={beat(10)} width={textW} max={sq ? 150 : 200} tone="light" />
-          <Card text="Self-hosting?" from={beat(10)} to={beat(12)} width={textW} max={sq ? 150 : 200} tone="light" />
-          <Card text="“Contact sales.”" from={beat(12)} to={beat(14)} width={textW} max={sq ? 150 : 200} tone="light" exit />
+          <Card text="Their cloud." from={snapAt} to={beat(S + 2)} width={textW} max={sq ? 150 : 200} tone="light" />
+          <Card text="Their SDK." from={beat(S + 2)} to={beat(S + 4)} width={textW} max={sq ? 150 : 200} tone="light" />
+          <Card text="Their *rules*." from={beat(S + 4)} to={beat(S + 6)} width={textW} max={sq ? 150 : 200} tone="light" />
+          <Card text="Self-hosting?" from={beat(S + 6)} to={beat(S + 8)} width={textW} max={sq ? 150 : 200} tone="light" />
+          <Card text="“Contact sales.”" from={beat(S + 8)} to={beat(S + 10)} width={textW} max={sq ? 150 : 200} tone="light" exit />
         </div>
       </AbsoluteFill>
     </AbsoluteFill>

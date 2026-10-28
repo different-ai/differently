@@ -1,9 +1,9 @@
 import React from 'react';
-import {AbsoluteFill, Easing, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, Easing, interpolate, interpolateColors, spring, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Card} from '../kinetic';
 import {inter, mono, tokens} from '../theme';
 import {beat} from '../time';
-import {clamp, Mark, SNAP} from '../ui';
+import {clamp, handoff, Mark, SNAP} from '../ui';
 import {Padlock} from './Problem';
 
 const d = tokens.dark;
@@ -162,16 +162,28 @@ export const Diagram: React.FC = () => {
   const chipText = flip ? 'external: "overflow"' : 'external: "never"';
   const chipTyped = frame < beat(15) ? chipText.length : frame < beat(15) + 18 ? Math.round(interpolate(frame, [beat(15), beat(15) + 18], [chipText.length, 10])) : Math.round(interpolate(frame, [beat(15) + 18, beat(15) + 34], [10, chipText.length], clamp));
 
-  // Zoom-through the server's mark into the light outro.
-  const zoomT = interpolate(frame, [beat(20.4), beat(22)], [0, 1], {...clamp, easing: Easing.bezier(0.8, 0, 0.9, 0.6)});
-  const zoom = 1 + zoomT * 110;
-  // Dive through the open (outlined) square of the server's mark: it is light inside,
-  // so the screen fills with the outro's white instead of a black front square.
+  // Hand-off to the outro: the server box's light fill grows to cover the screen while its
+  // mark glides to the centre at exactly the size and place the outro starts from.
+  const handT = interpolate(frame, [beat(20.25), beat(22) - 1], [0, 1], {...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1)});
+  const handing = frame >= beat(20.25);
   const markSize = sq ? 52 : 58;
   const markCx = L.server.x - L.server.w / 2 + (sq ? 28 : 32) + markSize / 2;
-  const markX = markCx - markSize / 2 + (25 / 32) * markSize;
-  const markY = L.server.y - markSize / 2 + (7 / 32) * markSize;
-  const drift = 1 + frame * 0.00006;
+  const drift = 1 + Math.min(frame, beat(20.25)) * 0.00006;
+  const layerScale = drift * (1 + 0.1 * handT);
+  const H = handoff(width, height);
+  const lerp = (a: number, b: number) => a + (b - a) * handT;
+  const box = {
+    w: lerp(L.server.w * drift, width + 4),
+    h: lerp(L.server.h * drift, height + 4),
+    cx: lerp(L.server.x, width / 2),
+    cy: lerp(L.server.y, height / 2),
+    r: lerp(14 * drift, 0),
+  };
+  const mk = {
+    x: lerp(L.server.x + (markCx - L.server.x) * drift, H.x),
+    y: lerp(L.server.y, H.y),
+    size: lerp(markSize * drift, H.size),
+  };
 
   const serverR = {x: L.server.x + L.server.w / 2, y: L.server.y};
   const serverB = {x: L.server.x, y: L.server.y + L.server.h / 2};
@@ -210,7 +222,7 @@ export const Diagram: React.FC = () => {
 
   return (
     <AbsoluteFill style={{background: d.bg, overflow: 'hidden'}}>
-      <AbsoluteFill style={{transform: `scale(${zoom * drift})`, transformOrigin: `${markX}px ${markY}px`}}>
+      <AbsoluteFill style={{transform: `scale(${layerScale})`, transformOrigin: `${L.server.x}px ${L.server.y}px`, opacity: 1 - handT}}>
         <svg width={width} height={height} style={{position: 'absolute', inset: 0}}>
           <path d={wire(appR, {x: L.server.x - L.server.w / 2, y: L.server.y})} stroke={d.ink} strokeWidth={2.5} fill="none" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - appWire} />
           {sq ? (
@@ -240,7 +252,7 @@ export const Diagram: React.FC = () => {
         </div>
 
         {/* server */}
-        <div style={{position: 'absolute', left: L.server.x - L.server.w / 2, top: L.server.y - L.server.h / 2, width: L.server.w, height: L.server.h, borderRadius: 14, background: d.ink, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 22, padding: sq ? '0 28px' : '0 32px', transform: `scale(${serverPop})`, opacity: Math.min(1, serverPop * 2)}}>
+        <div style={{position: 'absolute', left: L.server.x - L.server.w / 2, top: L.server.y - L.server.h / 2, width: L.server.w, height: L.server.h, borderRadius: 14, background: d.ink, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 22, padding: sq ? '0 28px' : '0 32px', transform: `scale(${serverPop})`, opacity: handing ? 0 : Math.min(1, serverPop * 2)}}>
           <Mark size={sq ? 52 : 58} color={d.bg} />
           <div>
             <div style={{fontFamily: inter, fontWeight: 600, fontSize: sq ? 30 : 36, color: d.bg, letterSpacing: '-0.03em', whiteSpace: 'nowrap'}}>differently-server</div>
@@ -351,7 +363,29 @@ export const Diagram: React.FC = () => {
         ) : null}
       </AbsoluteFill>
 
-      <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 80 : 70, opacity: 1 - zoomT * 4}}>
+      {handing ? (
+        <>
+          <div style={{position: 'absolute', left: box.cx - box.w / 2, top: box.cy - box.h / 2, width: box.w, height: box.h, borderRadius: box.r, background: interpolateColors(handT, [0, 1], [d.ink, tokens.light.bg])}} />
+          <div
+            style={{
+              position: 'absolute',
+              left: (L.server.x - L.server.w / 2 + (sq ? 28 : 32) + markSize + 22 - L.server.x) * drift + L.server.x,
+              top: L.server.y,
+              transform: `translateY(-50%) scale(${drift})`,
+              transformOrigin: 'left center',
+              opacity: 1 - Math.min(1, handT * 4),
+            }}
+          >
+            <div style={{fontFamily: inter, fontWeight: 600, fontSize: sq ? 30 : 36, color: d.bg, letterSpacing: '-0.03em', whiteSpace: 'nowrap'}}>differently-server</div>
+            <div style={{fontFamily: inter, fontWeight: 500, fontSize: sq ? 20 : 23, color: tokens.light.muted, marginTop: 4}}>one API · policy · placement</div>
+          </div>
+          <div style={{position: 'absolute', left: mk.x - mk.size / 2, top: mk.y - mk.size / 2}}>
+            <Mark size={mk.size} color={d.bg} />
+          </div>
+        </>
+      ) : null}
+
+      <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 80 : 70, opacity: 1 - handT * 4}}>
         <Card text="Bring your own *metal*." from={0} to={beat(4)} width={L.textW} max={sq ? 88 : 104} tone="dark" />
         <Card text="Quotas. Audit. Trust report." from={beat(4)} to={beat(7)} width={L.textW} max={sq ? 88 : 104} tone="dark" stagger={beat(0.66)} />
         <Card text="Policy decides where work goes." from={beat(7)} to={beat(10)} width={L.textW} max={sq ? 88 : 104} tone="dark" />
