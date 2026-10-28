@@ -170,7 +170,6 @@ class ClientTests(unittest.TestCase):
         self.mock.on("DELETE /v1/admin/pools/edge", no_content)
         self.mock.on("POST /v1/admin/sandboxes/sbx_1/terminate", reply(202, sandbox_info(status="terminating")))
         self.mock.on("GET /v1/admin/audit/verify", reply(200, {"ok": True, "events": 42}))
-        self.mock.on("GET /v1/admin/agents", reply(200, {"items": []}))
 
         created = self.client.admin.organizations.create("Acme", default_project="default")
         self.assertEqual(created["project"]["id"], "prj_1")
@@ -188,8 +187,6 @@ class ClientTests(unittest.TestCase):
         self.client.admin.pools.delete("edge")
         self.assertEqual(self.client.admin.terminate_sandbox("sbx_1", reason="abuse")["status"], "terminating")
         self.assertTrue(self.client.admin.verify_audit()["ok"])
-        self.client.admin.agents.list(pool="fc")
-        self.assertEqual(self.mock.calls("GET /v1/admin/agents")[0].param("pool"), "fc")
 
 
 if __name__ == "__main__":

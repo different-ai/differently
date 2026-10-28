@@ -30,9 +30,8 @@ guest, CLI, SDKs, Helm chart and Terraform. The OpenAPI document declares it
   ([ADR 0013](0013-no-boat-compatible-facade-in-mvp.md)); Daytona and Freestyle
   adapters are written from their published API descriptions, not copied
   client code.
-- Dependencies must stay Apache-2.0-compatible (today: pgx, mdlayher/vsock,
-  Prometheus client, sigs.k8s.io/yaml, cobra, and their transitive
-  dependencies). A licence check belongs in CI.
+- Dependencies must stay Apache-2.0-compatible (today: pgx, Prometheus client,
+  sigs.k8s.io/yaml, cobra, and their transitive dependencies). A licence check belongs in CI.
 
 ## Alternatives considered
 

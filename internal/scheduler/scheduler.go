@@ -520,9 +520,13 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 		bySandbox[in.SandboxID] = in
 	}
 	// Orphans: backend instances whose sandbox is gone, terminal or elsewhere.
+	// "Elsewhere" means placed on another pool with a different instance: two
+	// pools can front the same backend (one OpenSandbox server registered
+	// twice), so each sees the other's live instances and must leave them be.
 	for _, in := range instances {
 		rec, err := s.Store.GetSandbox(ctx, in.SandboxID)
-		orphan := api.IsCode(err, api.CodeNotFound) || (err == nil && (rec.Status.Terminal() || (rec.Pool != pool && rec.Status != api.StatusQueued)))
+		elsewhere := rec.Pool != pool && in.Ref != rec.BackendRef && rec.Status != api.StatusQueued && rec.Status != api.StatusProvisioning
+		orphan := api.IsCode(err, api.CodeNotFound) || (err == nil && (rec.Status.Terminal() || elsewhere))
 		if !orphan {
 			continue
 		}
@@ -581,8 +585,8 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 }
 
 // reconcileState follows a backend instance that changed state behind the
-// control plane's back, for example microVMs that stopped when their node
-// agent restarted. A stopped instance makes the sandbox stopped (so it can
+// control plane's back, for example sandboxes that stopped when their
+// runtime restarted. A stopped instance makes the sandbox stopped (so it can
 // be started again from its disk); an instance in error fails it.
 func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.SandboxRecord, in adapter.Instance) {
 	if (rec.Status != api.StatusRunning && rec.Status != api.StatusPaused) || s.isInflight(rec.ID) || s.recentlyChanged(rec) {

@@ -1,5 +1,5 @@
-// Package server implements the Differently HTTP API, the built-in dashboard
-// and the node-agent registration endpoint.
+// Package server implements the Differently HTTP API and the built-in
+// dashboard.
 package server
 
 import (
@@ -42,16 +42,15 @@ type Server struct {
 	Audit        *auditlog.Recorder
 	Log          *slog.Logger
 	Installation string
-	AgentToken   string
 
 	limiter *limiter
 	now     func() time.Time
 }
 
 // New wires a server.
-func New(cfg config.Config, st store.Store, pm *pools.Manager, sch *scheduler.Scheduler, rec *auditlog.Recorder, log *slog.Logger, installation, agentToken string) *Server {
+func New(cfg config.Config, st store.Store, pm *pools.Manager, sch *scheduler.Scheduler, rec *auditlog.Recorder, log *slog.Logger, installation string) *Server {
 	return &Server{
-		Config: cfg, Store: st, Pools: pm, Scheduler: sch, Audit: rec, Log: log, Installation: installation, AgentToken: agentToken,
+		Config: cfg, Store: st, Pools: pm, Scheduler: sch, Audit: rec, Log: log, Installation: installation,
 		limiter: newLimiter(cfg.RateLimit.RequestsPerSecond, cfg.RateLimit.Burst),
 		now:     func() time.Time { return time.Now().UTC() },
 	}
@@ -160,7 +159,6 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("GET /dashboard/", http.StripPrefix("/dashboard/", dashboard.Handler()))
 		mux.Handle("GET /{$}", http.RedirectHandler("/dashboard/", http.StatusFound))
 	}
-	public("POST /internal/v1/agents/heartbeat", s.agentHeartbeat)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, api.Errorf(api.CodeNotFound, "no route for %s %s", r.Method, r.URL.Path))
 	})

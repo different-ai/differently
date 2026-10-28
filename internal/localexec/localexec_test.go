@@ -1,9 +1,7 @@
-package guest
+package localexec
 
 import (
 	"context"
-	"net"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -51,35 +49,5 @@ func TestRunnerTimeoutKillsProcessGroup(t *testing.T) {
 	}
 	if res.ExitCode == 0 || res.DurationMs > 10_000 {
 		t.Fatalf("timeout not enforced: %+v", res)
-	}
-}
-
-func TestClientOverHandler(t *testing.T) {
-	srv := httptest.NewServer(Handler(&Runner{Root: t.TempDir()}))
-	defer srv.Close()
-	addr := strings.TrimPrefix(srv.URL, "http://")
-	c := NewClient(func(ctx context.Context) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
-	})
-	ctx := context.Background()
-	if err := c.Health(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.WriteFile(ctx, "/x/y", []byte("data")); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := c.ReadFile(ctx, "/x/y"); err != nil || string(got) != "data" {
-		t.Fatalf("got %q %v", got, err)
-	}
-	var chunks []string
-	code, err := c.ExecStream(ctx, api.ExecRequest{Command: "printf a; printf b >&2"}, func(ev api.ExecEvent) error {
-		chunks = append(chunks, ev.Stream+":"+ev.Data)
-		return nil
-	})
-	if err != nil || code != 0 || len(chunks) != 2 {
-		t.Fatalf("stream code=%d chunks=%v err=%v", code, chunks, err)
-	}
-	if _, err := c.ReadFile(ctx, "/nope"); !api.IsCode(err, api.CodeNotFound) {
-		t.Fatalf("want not_found over the wire, got %v", err)
 	}
 }

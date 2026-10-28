@@ -13,10 +13,10 @@ gitGraph
   commit
   checkout pre-release
   merge feat/ssh-gateway
-  branch fix/agent-heartbeat
+  branch fix/quota-release
   commit
   checkout pre-release
-  merge fix/agent-heartbeat tag: "v0.2.0-rc.1"
+  merge fix/quota-release tag: "v0.2.0-rc.1"
   checkout main
   merge pre-release tag: "v0.2.0"
 ```
@@ -25,7 +25,7 @@ gitGraph
 |---|---|---|---|
 | `pre-release` | Integration line. Every change lands here first. Keep it green. | Any contributor or coding agent with write access, once CI passes | Lightweight: no organization rules, so iteration and back-merges stay fast |
 | `main` (default) | Released code only. Moves when a release is cut. | Maintainers, via a release PR from `pre-release` (or a `hotfix/*` branch) | Organization ruleset: PRs only, linear history, signed commits, code scanning and code quality; CI also rejects PRs from any branch other than `pre-release` or `hotfix/*` |
-| `<type>/<outcome>` | One focused change, e.g. `feat/ssh-gateway`, `fix/agent-heartbeat`, `docs/aws-guide` | Author | — |
+| `<type>/<outcome>` | One focused change, e.g. `feat/ssh-gateway`, `fix/quota-release`, `docs/aws-guide` | Author | — |
 | `hotfix/<outcome>` | Urgent fix for a released version, branched from `main`, merged to `main` and back into `pre-release` | Maintainers | — |
 
 Why: `main` stays a clean record of releases behind the organization's merge
@@ -83,10 +83,10 @@ Every commit needs a `Signed-off-by` line (`git commit -s`) certifying the
 | Node.js | 20 or newer (TypeScript SDK) |
 | Python | 3.9 or newer (Python SDK) |
 | Helm | 3.14 or newer (chart lint) |
-| Docker | optional, for images and the Postgres conformance suite |
+| Docker | optional, for images, the Postgres conformance suite and the e2e suite |
 
 ```bash
-make build            # bin/differently-server, differently-agent, differently-guest, differently
+make build            # bin/differently-server, bin/differently
 make test             # Go unit and integration tests with -race
 make test-postgres    # store conformance suite against a throwaway Postgres container
 make sdk-test         # TypeScript and Python SDK tests
@@ -103,8 +103,8 @@ make dev              # run the server in dev mode (no isolation!)
   missing), both SDKs, and `docs/feature-parity.md`.
 - **Adapters:** implement only the optional interfaces you really support and
   declare matching features; see `docs/adapters/specification.md`.
-- **Security-sensitive code** (auth, policy, store transactions, agent
-  networking): explain the threat you considered in the PR.
+- **Security-sensitive code** (auth, policy, store transactions, backend
+  credentials and placement): explain the threat you considered in the PR.
 - **Docs:** user-visible behaviour needs docs in the same PR. Say what is
   verified and what is not.
 - **Dependencies:** prefer the standard library; justify new modules.

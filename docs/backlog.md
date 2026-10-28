@@ -6,36 +6,159 @@
 | Scope | Implementation-ready epics for Phase 3 (solidification) and the P2 items after it. Phase 4 themes are listed in [roadmap.md](roadmap.md). |
 | Priorities | **P0** gates any production recommendation · **P1** next, user-facing or operational · **P2** after P0/P1, or needs a decision first |
 | Conventions | Branches `<type>/<short-outcome>` into `pre-release` ([ADR 0012](adr/0012-pre-release-integration-branch-model.md)). Every behavioural change ships with a test; changes to the public API update `api/openapi.yaml` and the SDKs. |
+| Runtime change | [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md) removed Differently's Firecracker node agent; OpenSandbox is the default private runtime. Epics that only concerned the agent are marked **obsolete** and kept as history. |
 
 ## Dependency overview
 
 ```mermaid
 flowchart LR
-  E0["E0 review fixes"] --> E1["E1 real KVM"]
-  E1 --> E4["E4 jailer"]
-  E1 --> E6["E6 preview URLs"]
-  E1 --> E7["E7 SSH / PTY"]
-  E1 --> E9["E9 memory snapshots"]
-  E1 --> E12["E12 egress allow-lists"]
-  E3["E3 agent mTLS"] --> E6
-  E3 --> E7
-  E0 --> E2["E2 live provider accounts"]
+  E18["E18 Fast Sandbox spike<br/>(next)"] --> E19["E19 OpenSandbox egress"]
+  E18 --> E21["E21 OpenSandbox version pinning"]
+  E0["E0 review fixes"] --> E2["E2 live provider accounts"]
+  E20["E20 Credential Vault evaluation"] --> E13["E13 secrets by reference"]
   E5["E5 Postgres CI / scale"] --> E10["E10 webhooks"]
+  E14["E14 process sessions"] --> E7["E7 SSH / PTY"]
   E11["E11 tracing"]
-  E13["E13 secrets by reference"]
-  E14["E14 process sessions"] --> E7
   E15["E15 Go SDK"]
   E8["E8 Kueue batch lane"]
   E16["E16 Boat facade evaluation"]
   E17["E17 retention"]
 ```
 
+Obsolete since ADR 0020, kept below as history: E1 (Firecracker on real
+KVM), E3 (authenticated agent channel), E4 (Firecracker jailer), E6 (preview
+URLs for Firecracker pools), E9 (memory snapshots on Firecracker). E12
+(per-sandbox egress) is superseded by E19.
+
+---
+
+## E18. Fast Sandbox spike
+
+Run OpenSandbox's Firecracker runtime (Fast Sandbox) on KVM targets through
+the `opensandbox` adapter.
+
+**Priority** P0, first. **Depends on** nothing. **Why**
+[ADR 0020](adr/0020-opensandbox-replaces-node-agent.md) made OpenSandbox the
+runtime before [ADR 0019](adr/0019-opensandbox-backend-first.md)'s criteria
+were met. Only the Docker runtime has run through Differently
+([spike](research/opensandbox-spike.md)); containers share the host kernel.
+Until this epic is done, microVM isolation through Differently is unverified.
+
+- **E18.1 Host preparation.** Meet Fast Sandbox's documented host
+  requirements: Linux ≥ 5.10, `/dev/kvm`, `/dev/net/tun`, cgroup v2, an XFS
+  filesystem with reflink for images, and an enlarged `/dev/shm`. First on the
+  `colima-differently` VM (nested KVM, tun and cgroup v2 already present; its
+  ext4 root needs an added XFS volume), then on one x86_64 cloud KVM target
+  (`.metal` or nested virtualization; see the cloud notes in
+  [deploy/](deploy/README.md)). *Acceptance:* an OpenSandbox server with the
+  Fast Sandbox runtime is healthy on both, with server, `execd` and runtime
+  versions recorded.
+- **E18.2 Through the adapter.** Register the server as an `opensandbox` pool
+  with `isolation: microvm`. Run `TestLiveOpenSandbox` and the end-to-end
+  suite against it: boot, isolation, pause/resume, snapshot and fork, recovery
+  after restarts. *Acceptance:*
+  [POC 11](proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter)
+  success criteria.
+- **E18.3 Memory snapshots.** Check that a process survives snapshot and
+  restore and that clones get distinct identity. Only then document adding
+  `snapshots.memory` to the pool's `config.features`. *Acceptance:* a fork of a
+  running sandbox keeps a running process, or the guide records why
+  `snapshots.memory` stays off.
+- **E18.4 Egress and isolation probes.** Probe from inside a microVM: cloud
+  metadata, node addresses, other sandboxes, the control plane, a public host.
+  Feeds E19. *Acceptance:* results recorded per target.
+- **E18.5 Measurements.** Benchmarks B1 and B2
+  ([reliability-and-performance.md §4](reliability-and-performance.md#4-benchmark-plan))
+  on the Fast Sandbox runtime, compared with the Docker runtime on the same
+  host.
+- **E18.6 Footprint.** Which OpenSandbox components Fast Sandbox needs (its
+  per-node runtime agent among them), how it is installed next to the
+  Differently chart, and multi-node behaviour. *Acceptance:* a deploy guide
+  section with tested steps.
+- **E18.7 Record.** Update the spike, the trust model and (with its owner)
+  [feature-parity.md](feature-parity.md) from "unverified" to what was
+  observed.
+
+## E19. OpenSandbox network policy and egress
+
+**Priority** P1. **Depends on** E18 for microVM results; the Docker runtime
+part can start now. **Supersedes** E12. **Why** Differently enforces no
+isolation or egress itself. OpenSandbox has network-policy and egress specs
+(its server config already names an egress image), but the adapter sends no
+network settings, so sandbox egress is whatever the runtime's defaults
+allow.
+
+- **E19.1 Read the contract.** Review OpenSandbox's network-policy and egress
+  specs at the pinned version (E21) and record what each runtime (Docker,
+  Kubernetes, Fast Sandbox) enforces.
+- **E19.2 API.** `network: {egress: "deny" | "allow", allow: [CIDR or domain]}`
+  on create, capped by organization and project policy (stricter wins), as
+  planned in E12.1.
+- **E19.3 Adapters.** Map the request to OpenSandbox's network policy on
+  create; to Freestyle firewall rules and Daytona
+  `networkBlockAll`/`networkAllowList`; reject what a backend cannot enforce
+  (`unsupported_capability`). Advertise `network.egress-control` only on pools
+  where it is enforced.
+- **E19.4 Trust report.** State per pool whether egress is enforced by the
+  backend, or left to the runtime's defaults.
+- **E19.5 Probes.** From inside a sandbox on each runtime: cloud metadata,
+  node and pod addresses, the control plane, other sandboxes, a public host.
+  *Acceptance:* a sandbox created with `egress: deny` reaches nothing; with an
+  allow-list, only the listed destinations.
+
+The control plane's own egress is a separate matter: the Helm chart's
+NetworkPolicy lets the server reach OpenSandbox on port 8090, and that
+restricts the control plane, not sandboxes.
+
+## E20. Credential Vault evaluation
+
+**Priority** P2. **Depends on** nothing. **Informs** E13. **Why** sandbox
+environment values are stored unencrypted in Differently's database and
+passed to the backend at create. The spike listed OpenSandbox's Credential
+Vault API as a possible way to give sandboxes credentials without Differently
+storing them; it has not been reviewed.
+
+- **E20.1 Review.** At the pinned OpenSandbox version: what the vault stores,
+  who can read it, how a sandbox receives a credential, whether values ever
+  leave the server, and how it relates to the single server-wide API key.
+- **E20.2 Prototype.** Resolve E13's `secretRefs` into vault entries on
+  OpenSandbox pools instead of plain `env`.
+- **E20.3 Decision.** Record the result in E13 (or an ADR) with a short threat
+  analysis. *Acceptance:* if adopted, a database dump contains no secret values
+  for sandboxes on OpenSandbox pools.
+
+## E21. OpenSandbox version pinning and upgrade testing
+
+**Priority** P1. **Depends on** nothing. **Why** the published OpenSandbox
+specs run ahead of the images its server deploys by default; the spike found
+four differences that would each have broken a spec-only adapter
+([spike](research/opensandbox-spike.md)). ADR 0019 requires the live test on
+every OpenSandbox upgrade, and no CI job runs it today.
+
+- **E21.1 Pin.** State the OpenSandbox server and `execd` versions each
+  Differently release supports (today server `release-1.2.0` with `execd`
+  v1.1.0, the versions in `test/opensandbox/`), in the OpenSandbox guide and
+  the release notes.
+- **E21.2 CI.** A job that starts `test/opensandbox/compose.yaml` and runs
+  `go test -tags live ./internal/adapters/opensandbox/` and the end-to-end
+  suite (`make e2e-prepare e2e-up e2e`) against the pinned images.
+  *Acceptance:* the job runs on every PR into `pre-release`.
+- **E21.3 Upgrade test.** Before raising the pin, run both suites against the
+  next OpenSandbox release; then upgrade a running server in place and check
+  that existing sandboxes are still listed by their `differently-installation`
+  metadata and still answer exec. *Acceptance:* a recorded upgrade run per
+  pin change.
+- **E21.4 Keep the fake honest.** Every skew found is reproduced in the fake
+  server in `internal/adapters/opensandbox/opensandbox_test.go`.
+
 ---
 
 ## E0. Correctness and security fixes from the code review
 
 **Status (2026-10-28):** items marked ✅ were fixed before the initial import,
-with tests; the rest are open.
+with tests; the rest are open. Items that only concerned the removed node
+agent are marked obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md));
+their tests left with the agent.
 
 **Priority** P0 (security and data-loss items), P1/P2 per task. **Depends on**
 nothing. **Why** issues found while documenting the code on 2026-10-28
@@ -50,38 +173,30 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   `putPolicy`. *Acceptance:* an organization key with `policies:write`
   receives `404` for `DELETE /v1/policies/project:<other org's project>`; a
   cross-tenant test covers `PUT` and `DELETE` for `org:` and `project:` scopes.
-- ✅ **E0.2 Pin agent identity until mTLS lands** (P0). Implemented as
-  trust-on-first-use per-agent secrets rather than operator approval of
-  endpoint changes, so pod restarts that change IPs keep working: each agent
-  sends its own secret on every heartbeat, a known ID with another secret or
-  pool is refused (`409`, audited as an `agent.register` failure), the control
-  plane calls each agent with its own secret, and
-  `DELETE /v1/admin/agents/{id}` retires a rebuilt node's identity
-  ([ADR 0018](adr/0018-per-agent-secrets-until-mtls.md)). *Covered by*
-  `TestAgentIdentityIsPinned`, `TestPoolPlacesAndRoutesAcrossAgents`.
-- ✅ **E0.3 Bound responses from the guest** (P0). Limit the size the agent
-  decodes from the guest for sync exec, listings and streamed exec totals
-  (`internal/guest/client.go`). *Acceptance:* a malicious fake guest returning
-  1 GiB of JSON makes the agent return an error without exceeding a fixed
-  memory budget.
-- ✅ **E0.4 PID reuse safety** (P1). Before treating a PID as the VM's
-  Firecracker process (`recover`, `Kill`, `Alive`), verify its identity (for
-  example `/proc/<pid>/cmdline` contains the VM's API socket path, or a
-  pidfd). *Acceptance:* a test with a reused PID marks the VM stopped and sends
-  no signal to the unrelated process.
-- ✅ **E0.5 Audit fail-closed option** (P1). Add `audit.failClosed`; when set,
-  mutating requests fail with `503` if the audit append fails. Add a metric for
-  append failures in both modes. *Acceptance:* with a store that fails appends,
-  creates return `503` and nothing is admitted; the metric increments.
-- ✅ **E0.6 Complete the trust report limitations** (P1). Add the absent jailer,
-  the shared-token plaintext agent channel, plaintext sandbox environment
-  values, fail-open audit (unless E0.5 is enabled) and missing IPv6 egress
-  rules to the trust report's limitations (`limitations` in `internal/server/admin.go`), each removed automatically when its fix is
-  configured. *Acceptance:* `TestHybridOverflowAndPrivateOnly` (or a new test)
-  asserts the entries.
-- ✅ **E0.7 Protect `/metrics`** (P1). Optional separate listen address or bearer
-  token for `/metrics`. *Acceptance:* with `metrics.listen` set, `/metrics` is
-  absent from the public listener.
+- **E0.2 Pin agent identity until mTLS lands.** *Obsolete (ADR 0020): there
+  are no node agents.* It was implemented as trust-on-first-use per-agent
+  secrets ([ADR 0018](adr/0018-per-agent-secrets-until-mtls.md)); the code
+  and `TestAgentIdentityIsPinned` were removed with the agent.
+- **E0.3 Bound responses from the guest.** *Obsolete (ADR 0020): the guest
+  agent and its client were removed.* The same concern for backends is open
+  as E0.35.
+- **E0.4 PID reuse safety.** *Obsolete (ADR 0020): Differently no longer
+  supervises VMM processes.*
+- ✅ **E0.5 Audit fail-closed option** (P1). `audit.failClosed`; when set,
+  mutating requests fail with `503` if the audit append fails;
+  `differently_audit_append_failures_total` counts failures in both modes.
+  *Covered by* `TestAuditFailClosed`.
+- ✅ **E0.6 Complete the trust report limitations** (P1). The trust report's
+  limitations (`limitations` in `internal/server/admin.go`) list what
+  Differently cannot control; conditional entries (fail-open audit, `/metrics`
+  on the API listener) disappear when their fix is configured. Since ADR 0020
+  the entries about the jailer, the agent channel and IPv6 egress rules are
+  gone, replaced by the statement that isolation and egress come from each
+  pool's backend runtime. *Covered by* `TestAuditFailClosed`,
+  `TestHybridOverflowAndPrivateOnly`.
+- ✅ **E0.7 Protect `/metrics`** (P1). `metrics.listen` serves `/metrics` on its
+  own address and removes it from the API listener. *Covered by*
+  `TestMetricsCanLeaveTheAPIListener`.
 - **E0.8 Rate limiting before key lookup** (P2). Add a per-client-IP limiter
   for unauthenticated failures and evict idle per-key buckets. *Acceptance:* a
   flood of invalid keys from one IP is answered `429` without a database read
@@ -94,75 +209,72 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   record the creating key on each key; optional cascade revocation.
   *Acceptance:* minting above the maximum is `400`; revoking with
   `?cascade=true` revokes descendants.
+- **E0.35 Bound synchronous exec output from backends** (P1). The
+  `opensandbox` adapter's `Exec` accumulates stdout and stderr in memory with
+  no cap (only single events are bounded, at 16 MiB), and file reads stop
+  silently at 100 MiB instead of failing. *Acceptance:* a command printing
+  1 GiB through synchronous exec returns an error (or truncated output with a
+  flag) within a fixed memory budget; a file over the limit fails with a clear
+  error.
 
 ### Correctness and data safety
 
-- ✅ **E0.11 Quota check on start** (P0). `POST .../start` must re-reserve CPU and
+- ✅ **E0.11 Quota check on start** (P0). `POST .../start` re-reserves CPU and
   memory through an atomic store operation that locks the organization and
-  runs `CheckActivation`, the same way `ActivateSandbox` does. *Acceptance:* a
-  tenant at its CPU limit cannot start a stopped sandbox (`429
-  quota_exceeded`, sandbox stays `stopped`); a store conformance test runs
-  concurrent starts against a CPU quota.
-- **E0.12 Tolerate agent partitions** (P0). *Status: partly done: the Firecracker pool refuses to list while an agent is within a 10-minute partition grace, so the reconciler neither fails nor orphans its VMs; per-sandbox status reasons remain.* Separate "agent unreachable" from
-  "instance gone": exclude instances on agents past the heartbeat timeout from
-  the lost-instance check, mark their sandboxes with a status reason, fail them
-  only after a configurable grace period, and never delete a returning agent's
-  instances without re-checking their sandboxes. *Acceptance:* POC 8 success
-  criteria; chaos test C4 passes.
+  runs `CheckActivation`. *Covered by* store conformance
+  `ConcurrentStartRespectsCPUQuota`. (OpenSandbox pools have no start; this
+  applies to backends that do.)
+- **E0.12 Tolerate agent partitions.** *Obsolete (ADR 0020): the Firecracker
+  pool and its 10-minute partition grace were removed.* The general rule that
+  remains: when a pool's `List` fails, the reconciler skips that pool for the
+  pass instead of failing its sandboxes (`Scheduler.Reconcile`). Behaviour
+  during real backend outages is
+  [POC 13](proof-of-concepts.md#poc-13-opensandbox-outage-and-recovery).
 - ✅ **E0.13 Reconcile instance state** (P1). When `List` reports an instance as
-  `stopped` or `error` while the sandbox is `running` or `paused`, move the
-  sandbox to `stopped` (or `failed` with the backend message). *Acceptance:*
-  killing a VM's Firecracker process moves its sandbox out of `running` within
-  one reconcile pass (chaos test C12).
-- ✅ **E0.14 Recreate networking on start** (P1). `Manager.Start` runs
-  `setupNetwork` before booting. *Acceptance:* unit test with the recording
-  runner; chaos test C6 (host reboot, then start) passes.
-- ✅ **E0.15 Clean up `pending` VMs after an agent crash** (P1). On recovery,
-  destroy or mark `error` any VM left `pending` and release its capacity; pool
-  and agent `Create` return success only for `running` instances. *Acceptance:*
-  test that crashes during build and retries `Create`.
+  `stopped` or `error` while the sandbox is `running` or `paused`, the sandbox
+  moves to `stopped` (or `failed` with the backend message), after a 30-second
+  grace that keeps it from racing a lifecycle call. *Covered by*
+  `TestFailureRecoveryAndReconcile`. The `opensandbox` adapter never reports
+  `stopped`; an OpenSandbox `Failed` state fails the sandbox.
+- **E0.14 Recreate networking on start.** *Obsolete (ADR 0020): Differently
+  no longer creates per-VM networking.*
+- **E0.15 Clean up `pending` VMs after an agent crash.** *Obsolete (ADR 0020):
+  there is no agent.*
 - ✅ **E0.16 Set TTL on adoption** (P1). The reconciler's adoption path sets
-  `expiresAt` like the provisioning path. *Acceptance:* adopted sandboxes
-  expire.
+  `expiresAt` like the provisioning path.
 - ✅ **E0.17 Exclude failed pools on retry** (P1). `retry` appends the pool to
-  `ExcludedPools` (except when the sandbox is pinned to it); clear the list when
-  no other pool is eligible. *Acceptance:* with two pools and one failing
-  `Create`, the retry lands on the other pool.
+  `ExcludedPools` (except when the sandbox is pinned to it); the list is
+  cleared when no other pool is eligible.
 - ✅ **E0.18 Fail fast on non-transient `Create` errors** (P1). `invalid_request`
   and `not_found` from `Create` fail the sandbox (or retry a bounded number of
-  times) without marking the pool unhealthy. *Acceptance:* a missing template
-  on a node fails the sandbox with the adapter's message and leaves the pool
-  healthy.
-- ✅ **E0.19 Exec and transfer timeouts** (P0). Remove the fixed 5-minute HTTP
-  client timeout for exec, streams and file transfers in `adapterhttp`
-  (derive the deadline from `timeoutSeconds` plus a margin), and raise or
-  derive the provider client timeout in `httpx` the same way. *Acceptance:* a
-  6-minute command succeeds on a Firecracker pool (fake agent) and on the
-  Daytona fake.
+  times) without marking the pool unhealthy. For example, an image the backend
+  cannot pull fails the sandbox with the backend's message.
+- ✅ **E0.19 Exec and transfer timeouts** (P0). No fixed 5-minute HTTP client
+  timeout for exec, streams and file transfers: the `adapterhttp` and `httpx`
+  clients both allow up to 2 h 15 min, and the request context bounds each
+  call.
 - **E0.20 Provider TTL backstops follow TTL changes** (P1). `PATCH ttlSeconds`
-  updates Daytona (`POST /sandbox/{id}/ttl/{minutes}`) and Freestyle
-  (`PATCH /v5/vms/{id}`, noting that its TTL counts from creation), or the API
-  refuses extensions beyond the backstop. *Acceptance:* fake-server tests for
-  both adapters.
+  updates Daytona (`POST /sandbox/{id}/ttl/{minutes}`), Freestyle
+  (`PATCH /v5/vms/{id}`, noting that its TTL counts from creation) and
+  OpenSandbox (whose `timeout` is set once at create; the adapter has no
+  renewal call), or the API refuses extensions beyond the backstop.
+  *Acceptance:* fake-server tests for each adapter.
 - **E0.21 Detect duplicate instances per sandbox** (P1). The reconciler deletes
-  any instance whose sandbox's `backendRef` differs, even on the same pool; the
-  Firecracker pool's idempotency check includes agents that are registered but
-  stale. *Acceptance:* test with two instances for one sandbox on one pool.
-- **E0.22 Terminate on a vanished agent** (P1). An admin endpoint to
-  deregister an agent; terminating sandboxes whose agent is deregistered
-  complete without a backend call (audited). *Acceptance:* a sandbox on a
-  deleted node can be terminated.
+  any instance whose sandbox's `backendRef` differs, even on the same pool.
+  *Acceptance:* test with two instances for one sandbox on one pool.
+- **E0.22 Terminate when a backend is gone** (P1). A terminating sandbox
+  whose pool was removed, or whose backend is permanently unreachable, retries
+  `Delete` on every tick forever (`Scheduler.destroy`). Add an operator path
+  that completes the termination without a backend call (audited). The
+  original item was about deregistered agents. *Acceptance:* a sandbox on a
+  deleted pool can be terminated.
 - ✅ **E0.23 Queue time accounting** (P2). Add only the time since the last
-  enqueue on activation. *Acceptance:* a sandbox retried once reports queue
-  time equal to the actual waiting time.
+  enqueue on activation.
 
 ### Consistency and hygiene
 
-- **E0.24 Make the jailer switch honest** (P1, with the deploy owners). The
-  agent accepts `--jailer` but ignores it, so `agent.jailer.enabled=true` looks
-  like a control and is not. Until E4 lands, log a warning at agent start and
-  report "jailer requested but not in use" in the trust report. *Acceptance:*
-  with the flag set, the warning and the trust-report entry appear.
+- **E0.24 Make the jailer switch honest.** *Obsolete (ADR 0020): the agent and
+  its `--jailer` flag were removed.*
 - **E0.25 Adapter protocol version check** (P1). `adapterhttp.Client` checks
   `Differently-Adapter-Protocol` and `info.protocol` on discovery and marks the
   pool unhealthy on an unknown major version. *Acceptance:* test with a server
@@ -190,39 +302,32 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   `storetest`) covering the checklist in
   [adapters/specification.md §11](adapters/specification.md#11-adapter-conformance-checklist),
   runnable against in-process adapters and against any HTTP endpoint.
-  *Acceptance:* runs against fake, devhost, the Firecracker pool with fake
-  agents, and the Daytona and Freestyle fakes.
+  `pkg/adapter/adapterhttp` has its own round-trip tests against the fake
+  adapter (every operation, error codes, token, unsupported operations), but
+  nothing checks a third-party plugin against the contract. *Acceptance:* runs against fake, devhost, the
+  OpenSandbox, Daytona and Freestyle fakes, a live OpenSandbox server
+  (`-tags live`), and a `remote` pool served by `adapterhttp.Handler`.
 
 ---
 
 ## E1. Firecracker on real KVM
 
-**Priority** P0. **Depends on** E0.12, E0.14, E0.19 for meaningful chaos
-results. **Why** nothing has run on real KVM.
+> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): the node
+> agent, guest agent and image scripts were removed. Running microVMs on real
+> KVM is now [E18](#e18-fast-sandbox-spike), through OpenSandbox's Fast
+> Sandbox runtime. History kept.
 
-- **E1.1 Guest image tooling.** `deploy/images/build-kernel.sh` and
-  `build-rootfs.sh` exist but are marked unverified (syntax-checked only). Run
-  them end to end, boot the result under Firecracker, and resolve guest DNS:
-  `build-rootfs.sh` writes no resolver and expects one to be written "at boot
-  by the guest agent or your template", but the guest agent does not write
-  one and the VM cannot reach cluster DNS. Coordinate with the deploy owners.
-  *Acceptance:* reproducible builds with checksums for amd64 and arm64 that
-  boot, pass the smoke suite and resolve public names.
-- **E1.2 Real-KVM smoke suite.** Go tests behind a build tag (`realkvm`)
-  driving the public API: every advertised feature, 100 iterations, leak checks
-  (VMs, taps, chains, directories). *Acceptance:* passes on one `.metal` node.
-- **E1.3 POC 1, POC 2, POC 5, POC 9.** Run and publish
-  ([proof-of-concepts.md](proof-of-concepts.md)). *Acceptance:* each POC's
-  success criteria met or the gap filed as a task.
-- **E1.4 Nightly real-KVM CI.** A scheduled job on a `.metal` runner (or
-  on-demand cluster) running E1.2 and benchmark B1 on `pre-release`.
-  *Acceptance:* results attached to each release candidate.
-- **E1.5 `doctor` checks.** Add cgroup v2, host kernel line, reflink support of
-  the state directory, `ip_forward`, free disk. *Acceptance:* each check has a
-  failing-case test.
-- **E1.6 Agent restart design.** Implement the POC 2 decision (VMs survive
-  agent upgrades, or sandboxes move to `stopped` reliably) and document the
-  upgrade procedure. *Acceptance:* chaos test C5 passes.
+Before removal, the agent's end-to-end suite booted real Firecracker microVMs
+under nested virtualization on Colima (arm64, 2026-10-28); cloud and
+bare-metal KVM were never run.
+
+- **E1.1 Guest image tooling** (`deploy/images/`, removed). Reproducible
+  kernel and rootfs builds, and a guest DNS resolver.
+- **E1.2 Real-KVM smoke suite** behind a build tag.
+- **E1.3 POC 1, POC 2, POC 5, POC 9** (all obsolete).
+- **E1.4 Nightly real-KVM CI.**
+- **E1.5 `doctor` checks** for the agent.
+- **E1.6 Agent restart design.**
 
 ## E2. External adapters on live accounts
 
@@ -246,40 +351,27 @@ E0.20.
 
 ## E3. Authenticated agent channel
 
-**Priority** P0. **Depends on** none (E0.2 is the interim measure).
+> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): there is
+> no agent channel. The control plane reaches OpenSandbox with the pool's API
+> key; transport security for that link is the operator's (HTTPS `apiURL` or
+> cluster networking). History kept.
 
-- **E3.1 Join flow and per-node identity.** Agents enrol with a short-lived join
-  token and receive a node certificate whose identity is the agent ID; the
-  server keeps a CA (or integrates cert-manager). *Acceptance:* an agent
-  without a valid certificate cannot heartbeat; a node cannot heartbeat as
-  another node's ID.
-- **E3.2 mTLS both ways.** Server-to-agent calls verify the agent certificate
-  against the registered agent ID; agents verify the server. *Acceptance:*
-  traffic capture shows TLS; a man-in-the-middle with a different certificate
-  is rejected.
-- **E3.3 Rotation and revocation.** Certificate rotation without VM
-  disruption; revoking a node's certificate removes it from placement.
-  *Acceptance:* rotation test with running VMs; revoked node gets no traffic.
-- **E3.4 Remote plugin TLS options.** Optional client certificates and CA
-  pinning for `remote` pools. *Acceptance:* config fields documented and
-  tested.
-- **E3.5 Production default.** Plain HTTP to agents allowed only with an
-  explicit `insecureAgentTransport` setting, reported in the trust report.
+- **E3.1 Join flow and per-node identity**, **E3.2 mTLS both ways**, **E3.3
+  Rotation and revocation**, **E3.5 Production default**: agent-only, dropped.
+- **E3.4 Remote plugin TLS options.** Still open for `remote` pools: optional
+  client certificates and CA pinning. *Acceptance:* config fields documented
+  and tested.
 
 ## E4. Firecracker jailer
 
-**Priority** P0. **Depends on** E1 (real KVM), POC 3.
+> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)):
+> Differently no longer launches Firecracker. How Fast Sandbox runs its VMM
+> (jailer, user, seccomp) is recorded as part of
+> [POC 11](proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter).
+> History kept.
 
-- **E4.1 `JailerLauncher`.** Implement the agent `Launcher` with per-VM chroot,
-  unprivileged UID/GID, cgroup v2 limits and chroot-relative socket paths.
-  *Acceptance:* POC 3 success criteria.
-- **E4.2 Agent flag and chart.** The existing `--jailer PATH` flag (accepted
-  but unused today) and any new jailer flags drive the launcher; the chart's
-  `agent.jailer.*` values work end to end.
-- **E4.3 Recovery with jails.** Restart recovery and PID checks (E0.4) work for
-  jailed processes; chroots are cleaned up on delete.
-- **E4.4 Default on.** Jailer enabled by default in production profiles; the
-  trust report limitation removed when it is on.
+- **E4.1 `JailerLauncher`**, **E4.2 Agent flag and chart**, **E4.3 Recovery
+  with jails**, **E4.4 Default on**: never implemented.
 
 ## E5. Postgres in CI, failover and scale
 
@@ -288,8 +380,7 @@ E0.20.
 - **E5.1 Conformance in CI.** The `postgres conformance` job in
   `.github/workflows/ci.yml` exists; make it a required check, and make the
   test fail instead of skipping when CI sets a flag (a skipped test passes
-  today). *Acceptance:* the first CI run on the hosted repository is green,
-  and removing the database URL in CI turns the job red.
+  today). *Acceptance:* removing the database URL in CI turns the job red.
 - **E5.2 POC 6 (failover).** Run and publish; document recommended Postgres
   settings (TCP keepalives, synchronous replication). *Acceptance:* POC 6
   criteria.
@@ -310,33 +401,30 @@ E0.20.
 
 ## E6. Preview URLs for Firecracker pools
 
-**Priority** P1. **Depends on** E1, E3.
+> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): there
+> are no Firecracker pools. OpenSandbox pools advertise `ports.expose` and
+> return OpenSandbox's endpoint URL, but only when OpenSandbox serves the port
+> directly without request headers; endpoints that need the server's API key
+> are refused. History kept.
 
-- **E6.1 Port forwarding over vsock.** The guest agent proxies a TCP stream to
-  `localhost:<port>` over a vsock connection; the agent exposes it through the
-  adapter protocol. (The network path cannot be used: the VM accepts no
-  inbound connections and the agent's namespace drops traffic from taps.)
-  *Acceptance:* HTTP and WebSocket round trips through the agent.
-- **E6.2 Gateway.** An HTTP gateway (in the server or a separate component)
-  serving `https://<port>-<sandbox>.<domain>`, routing to the right agent,
-  with tenancy checks. *Acceptance:* `ports.expose` advertised on Firecracker
-  pools and the existing `POST /v1/sandboxes/{id}/ports` returns a working URL.
-- **E6.3 Access control.** URLs require a signed, expiring token by default;
-  public URLs are an explicit per-request option allowed by policy; every
-  exposure is audited. *Acceptance:* unauthenticated requests to a private URL
-  get `401`.
+- **E6.1 Port forwarding over vsock** and **E6.2 Gateway** were agent-specific.
+- **E6.3 Access control** still applies to any port exposure: URLs returned
+  today carry no Differently token. A signed, expiring access layer (or a
+  gateway in front of OpenSandbox's ingress) remains open work, tracked with
+  E19.
 
 ## E7. SSH gateway and PTY
 
-**Priority** P1. **Depends on** E1, E3; PTY benefits from E14.
+**Priority** P1. **Depends on** E14 for PTY sessions.
 
-- **E7.1 PTY in the guest agent.** Allocate a PTY, resize, signals.
+- **E7.1 PTY through backends.** Use OpenSandbox's `execd` sessions and PTYs
+  (read from its spec, not yet tried) and provider equivalents where they
+  exist.
 - **E7.2 PTY over WebSocket.** `GET /v1/sandboxes/{id}/pty` with the same scope
   and audit as exec. *Acceptance:* interactive shell from the CLI.
 - **E7.3 SSH gateway.** SSH front end that authenticates users with API keys or
-  short-lived certificates and maps `sandbox@gateway` to a PTY session; works
-  for external pools through their exec or SSH APIs where possible.
-  *Acceptance:* `ssh` and `scp` work against a Firecracker sandbox; `ssh` and
+  short-lived certificates and maps `sandbox@gateway` to a PTY session.
+  *Acceptance:* `ssh` and `scp` work against an OpenSandbox sandbox; `ssh` and
   `pty` features advertised accordingly.
 
 ## E8. Kueue batch lane
@@ -357,18 +445,17 @@ ephemeral batch work, not interactive sandboxes
 
 ## E9. Memory snapshots on Firecracker
 
-**Priority** P2. **Depends on** E1, POC 4 ([ADR 0014](adr/0014-defer-memory-snapshots-until-restore-proven.md)).
+> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md); ADR 0014
+> is obsolete with it): Differently no longer captures snapshots itself.
+> Memory snapshots depend on the runtime; an OpenSandbox pool advertises
+> `snapshots.memory` only when the operator adds it to `config.features`.
+> Verifying Fast Sandbox's memory restore is
+> [E18.3](#e18-fast-sandbox-spike). History kept.
 
-- **E9.1 Capture and restore** following
-  [storage-and-lifecycle.md §9](storage-and-lifecycle.md#9-memory-snapshot-plan).
-- **E9.2 Integrity.** HMAC or signature over snapshot files, verified before
-  load; encryption at rest.
-- **E9.3 Clone identity.** Guest hook for re-addressing, machine ID and entropy.
-- **E9.4 Lifetime.** Reference counting of memory files; deletion refused while
-  in use.
-- **E9.5 Advertise.** `snapshots.memory` on agents; fork uses it for running
-  sources; pause to disk. *Acceptance:* a process survives fork; POC 4 criteria
-  hold in the smoke suite.
+- **E9.1 Capture and restore**, **E9.2 Integrity**, **E9.3 Clone identity**,
+  **E9.4 Lifetime**, **E9.5 Advertise**: the Firecracker plan, never
+  implemented. Its clone-identity and integrity questions carry over to
+  [POC 11](proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter).
 
 ## E10. Webhooks
 
@@ -389,9 +476,11 @@ ephemeral batch work, not interactive sandboxes
 **Priority** P1. **Depends on** none.
 
 - **E11.1 Spans.** API handler → placement → activation → adapter call →
-  agent → guest, with sandbox, pool and organization attributes (no env
+  backend request (OpenSandbox lifecycle and `execd` calls, provider APIs,
+  remote plugins), with sandbox, pool and organization attributes (no env
   values, no command lines unless `audit.recordCommands`).
-- **E11.2 Propagation.** `traceparent` through `adapterhttp` and the agent.
+- **E11.2 Propagation.** `traceparent` through `adapterhttp` and the `httpx`
+  backend clients.
 - **E11.3 Off by default.** No exporter unless an OTLP endpoint is configured;
   the trust report states the destination. *Acceptance:* the exec overhead SLI
   in [reliability-and-performance.md](reliability-and-performance.md#1-service-level-objectives-proposed)
@@ -399,40 +488,44 @@ ephemeral batch work, not interactive sandboxes
 
 ## E12. Per-sandbox egress allow-lists
 
-**Priority** P1. **Depends on** E1, POC 9.
+> Superseded by [E19](#e19-opensandbox-network-policy-and-egress)
+> ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): Differently no
+> longer programs node networking, so per-sandbox egress becomes a request
+> field mapped onto each backend's own controls. E12.1 and E12.3 moved to E19;
+> the Firecracker parts are history.
 
-- **E12.1 API.** `network: {egress: "deny" | "allow", allow: [CIDR or domain]}`
-  on create, capped by organization and project policy (stricter wins).
-- **E12.2 Firecracker.** Per-VM chain rules from the request; IPv6 rules;
-  domain allow-lists through a resolver or proxy the agent controls.
-- **E12.3 Providers.** Map to Freestyle firewall rules and Daytona
-  `networkBlockAll`/`networkAllowList`; reject what a backend cannot enforce
-  (`unsupported_capability`).
-- **E12.4 Deny list configuration.** Configurable node deny list that always
-  includes the VM range. *Acceptance:* probes from POC 9 pass per sandbox.
+- **E12.1 API** → E19.2.
+- **E12.2 Firecracker** per-VM chain rules: dropped.
+- **E12.3 Providers** → E19.3.
+- **E12.4 Deny list configuration** for nodes: dropped.
 
 ## E13. Sandbox secrets by reference
 
-**Priority** P1. **Depends on** none. **Why** sandbox environment values are
-stored in plaintext ([ADR 0008](adr/0008-secrets-by-reference-only.md)).
+**Priority** P1. **Depends on** none; E20 may change the design. **Why**
+sandbox environment values are stored in plaintext
+([ADR 0008](adr/0008-secrets-by-reference-only.md)).
 
 - **E13.1 Encryption at rest.** Encrypt `env` values in the store with a key
   from a file or KMS reference; the API still returns keys only.
 - **E13.2 References.** `secretRefs: {NAME: "project-secret:<name>" | "env:..." }`
   resolved at provisioning time; project-level secret objects with their own
   scope.
-- **E13.3 Node handling.** The agent keeps environment values out of `vm.json`
-  (memory or tmpfs only) and re-fetches them after restart.
+- **E13.3 Backend handling.** Values reach the backend at create (OpenSandbox
+  `env`, provider APIs) and are then held by the backend. Document what each
+  backend stores, or deliver them through OpenSandbox's Credential Vault if
+  E20 adopts it. (The original item, keeping values out of the agent's
+  `vm.json`, is obsolete.)
 - **E13.4 Fork policy.** Fork copies secrets only when requested. *Acceptance:*
-  a database dump and a node disk image contain no environment values.
+  a database dump contains no environment values.
 
 ## E14. Process sessions
 
 **Priority** P2. **Depends on** none.
 
-- Detached processes with IDs, attach by output offset, kill, list, in the guest
-  agent and API (the main Boat-parity gap for exec). *Acceptance:* start a
-  long-running process, disconnect, reattach and read output from an offset.
+- Detached processes with IDs, attach by output offset, kill and list in the
+  API (the main Boat-parity gap for exec), mapped onto backend sessions where
+  they exist (OpenSandbox `execd` sessions, not yet tried). *Acceptance:* start
+  a long-running process, disconnect, reattach and read output from an offset.
 
 ## E15. Go SDK polishing
 
@@ -463,8 +556,8 @@ stored in plaintext ([ADR 0008](adr/0008-secrets-by-reference-only.md)).
 **Priority** P2. **Depends on** E5.7.
 
 - Configurable retention for terminated and failed sandbox records; snapshot
-  TTLs and a sweep for backend snapshots without records; agent record
-  pruning; audit archival with signed checkpoints so a pruned chain still
-  verifies from its anchor. *Acceptance:* a year of synthetic history stays
-  within a configured database size, and verification succeeds from the latest
-  checkpoint.
+  TTLs and a sweep for backend snapshots without records; audit archival with
+  signed checkpoints so a pruned chain still verifies from its anchor. (Agent
+  record pruning is gone: migration `0002_drop_agents.sql` drops the table.)
+  *Acceptance:* a year of synthetic history stays within a configured database
+  size, and verification succeeds from the latest checkpoint.

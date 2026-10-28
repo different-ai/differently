@@ -34,12 +34,12 @@ output "vpc_id" {
 }
 
 output "kvm_node_selector" {
-  description = "Label on KVM nodes; the chart's agent DaemonSet selects it."
+  description = "Label on KVM nodes (when kvm_node_group_enabled); select it for OpenSandbox's Fast Sandbox components."
   value       = local.kvm_label
 }
 
 output "kvm_node_taint" {
-  description = "Taint on KVM nodes; the chart's default agent tolerations match it."
+  description = "Taint on KVM nodes (when kvm_node_group_enabled); tolerate it for OpenSandbox's Fast Sandbox components."
   value       = "differently.dev/kvm=true:NoSchedule"
 }
 

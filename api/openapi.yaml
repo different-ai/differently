@@ -161,7 +161,7 @@ paths:
     post:
       tags: [Lifecycle]
       summary: Snapshot a sandbox
-      description: Snapshots live on the pool (and, for Firecracker, the node) that took them; restoring is only possible there.
+      description: Snapshots live on the pool that took them; restoring is only possible there.
       requestBody: { content: { application/json: { schema: { $ref: "#/components/schemas/CreateSnapshotRequest" } } } }
       responses: { "201": { description: Snapshot, content: { application/json: { schema: { $ref: "#/components/schemas/Snapshot" } } } }, "501": { $ref: "#/components/responses/Error" } }
   /v1/sandboxes/{id}/fork:
@@ -290,14 +290,6 @@ paths:
     post: { tags: [Admin], summary: Stop new placements on a pool, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Pool } } }
   /v1/admin/pools/{name}/undrain:
     post: { tags: [Admin], summary: Resume placements on a pool, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Pool } } }
-  /v1/admin/agents:
-    get: { tags: [Admin], summary: List node agents (secrets are never returned), responses: { "200": { description: Agents } } }
-  /v1/admin/agents/{id}:
-    delete:
-      tags: [Admin]
-      summary: Forget an agent identity so a rebuilt node can register again
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
-      responses: { "204": { description: Removed }, "404": { $ref: "#/components/responses/Error" } }
   /v1/admin/sandboxes/{id}/terminate:
     post: { tags: [Admin], summary: Terminate any tenant's sandbox, parameters: [{ $ref: "#/components/parameters/SandboxID" }], responses: { "202": { description: Terminating } } }
   /v1/admin/trust-report:
@@ -306,24 +298,10 @@ paths:
     get: { tags: [Admin], summary: Verify the audit hash chain, responses: { "200": { description: Result } } }
   /v1/admin/reconcile:
     post: { tags: [Admin], summary: Run the reconciler now, responses: { "200": { description: Done } } }
-  /internal/v1/agents/heartbeat:
-    post:
-      tags: [System]
-      security: [{ agentToken: [] }]
-      summary: Node agent registration and capacity heartbeat
-      description: |
-        The shared agent token only permits registration. Each agent also sends its own
-        secret, pinned when its ID first registers; a heartbeat for a known ID with a
-        different secret or pool is refused with 409, and the control plane calls the
-        agent with that secret.
-      parameters:
-        - { name: Differently-Agent-Secret, in: header, required: true, schema: { type: string, minLength: 32 } }
-      responses: { "200": { description: Registered } }
 
 components:
   securitySchemes:
     bearer: { type: http, scheme: bearer, bearerFormat: "dly_<id>_<secret>" }
-    agentToken: { type: http, scheme: bearer, description: Shared node-agent token }
   parameters:
     SandboxID: { name: id, in: path, required: true, schema: { type: string, example: sbx_01j9z3k6c8x2m4n6p8q0r2s4t6 } }
     Path: { name: path, in: query, required: true, schema: { type: string } }

@@ -1,7 +1,8 @@
 # Quickstart
 
 Two ways to try Differently: a laptop with no isolation (minutes), or a
-Kubernetes cluster with KVM nodes (the real thing).
+Kubernetes cluster with an OpenSandbox server as the sandbox runtime (the
+real thing).
 
 ## 1. Laptop (dev mode)
 
@@ -43,18 +44,34 @@ sandbox that never starts:
 # error [unsupported_capability]: no permitted pool supports the requested capabilities
 ```
 
-## 2. Kubernetes with Firecracker nodes
+## 2. Kubernetes with OpenSandbox
 
-Follow [deploy/kubernetes.md](../deploy/kubernetes.md). In short:
+Differently does not run sandboxes itself. Install an
+[OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) server first,
+with its own chart or manifests, and choose its runtime: Docker or
+Kubernetes containers, or Fast Sandbox microVMs on KVM nodes. Only the Docker
+runtime has been run with Differently so far. Then follow
+[deploy/kubernetes.md](../deploy/kubernetes.md). In short:
 
 ```bash
-kubectl label node <kvm-node> differently.dev/kvm=true
-helm install differently deploy/helm/differently -n differently --create-namespace
+kubectl create namespace differently
+kubectl -n differently create secret generic opensandbox-api-key \
+  --from-literal=api-key='<the OpenSandbox server api_key>'
+helm install differently deploy/helm/differently -n differently \
+  --set opensandbox.apiURL=http://opensandbox-server.opensandbox.svc:8090/v1 \
+  --set opensandbox.existingSecret=opensandbox-api-key
 kubectl -n differently get secret differently-tokens -o jsonpath='{.data.bootstrap-token}' | base64 -d
 ```
 
-Then create a tenant and a scoped key as described in
-[organization-onboarding.md](organization-onboarding.md).
+The chart registers the server as a pool named `opensandbox` with
+`trust: private`. Then create a tenant and a scoped key as described in
+[organization-onboarding.md](organization-onboarding.md). Pool options and
+what OpenSandbox supports are in [opensandbox-pools.md](opensandbox-pools.md).
+
+To try a real runtime on one machine instead, `test/opensandbox/compose.yaml`
+starts an OpenSandbox server with the Docker runtime, and
+`test/e2e/config.yaml` shows a server config with an `opensandbox` pool
+pointing at one.
 
 ## 3. Use an SDK
 

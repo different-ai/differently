@@ -5,13 +5,19 @@ what to do and why, with the setting or code it relates to. Items marked
 **(gap)** cannot be fully closed today; the note says how to reduce the risk.
 Background: [trust model](trust-model.md).
 
+Differently does not isolate sandboxes itself
+([ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md)). Most of the
+isolation and egress work below is done in the backend runtime, usually an
+OpenSandbox server, and is marked as such.
+
 ## Before you start
 
 - [ ] Read the [trust model](trust-model.md), especially §6 (known issues) and
       §7 (residual risks). Decide whether they are acceptable for your data.
-- [ ] Remember the evidence level: the Firecracker path has not yet run on
-      real KVM and the Daytona and Freestyle adapters have not run against live
-      accounts. Run your own validation ([proof-of-concepts.md](../proof-of-concepts.md))
+- [ ] Remember the evidence level: OpenSandbox has run through Differently
+      only with the Docker runtime; its Kubernetes runtime and Fast Sandbox
+      have not, and the Daytona and Freestyle adapters have not run against
+      live accounts. Run your own validation ([proof-of-concepts.md](../proof-of-concepts.md))
       before production.
 - [ ] Never run `differently-server --dev` or a `devhost` pool outside a
       laptop. `devhost` runs commands on the server host with no isolation.
@@ -21,10 +27,11 @@ Background: [trust model](trust-model.md).
 - [ ] Terminate TLS in front of the server (ingress, load balancer or
       sidecar). The server listens on plain HTTP (`listen`, default `:8080`).
 - [ ] Run `differently-server preflight` (the Helm chart can run it as an init
-      container). It checks the bootstrap token format, that every credential
-      reference resolves, that the agent token is set for Firecracker pools,
-      that Postgres is reachable, and that external placement is either off or
-      names approved pools.
+      container). It checks the bootstrap token format, that every pool
+      credential reference resolves, that Postgres is reachable, and that
+      external placement is either off or names approved pools. It does not
+      contact OpenSandbox or the providers; check pool health with
+      `differently admin pool list` after start-up.
 - [ ] Use the Postgres store (`store.driver: postgres`) and at least two
       replicas with a `PodDisruptionBudget`. The memory store loses all state
       on restart and cannot be shared.
@@ -34,14 +41,15 @@ Background: [trust model](trust-model.md).
 - [ ] Consider `audit.failClosed: true` so state-changing requests are refused
       when they cannot be audited, and alert on
       `differently_audit_append_failures_total`.
-- [ ] Restrict who can reach `/internal/v1/agents/heartbeat`: only agent nodes
-      need it (Helm `networkPolicy.server.ingressFrom` plus the agent selector).
 - [ ] Configure your load balancer for long-lived, unbuffered responses on
       `POST /v1/sandboxes/{id}/exec` (SSE) and `GET /v1/sandboxes/{id}/wait`
       (up to 300 s).
 - [ ] Set `rateLimit.requestsPerSecond` and `burst` for your traffic. Limits
       are per key and per replica, so the effective limit is multiplied by the
       replica count.
+- [ ] Size server memory for synchronous exec: the OpenSandbox adapter
+      buffers a command's whole output in the replica **(gap: backlog E0.35)**.
+      Prefer streamed exec for commands with large output.
 - [ ] Leave the dashboard on only if you need it (`dashboard.enabled`). It is
       static and uses the viewer's own key.
 
@@ -64,95 +72,86 @@ Background: [trust model](trust-model.md).
 
 ## Secrets and keys
 
-- [ ] Store `DIFFERENTLY_DATABASE_URL`, `DIFFERENTLY_BOOTSTRAP_TOKEN`,
-      `DIFFERENTLY_AGENT_TOKEN` and provider keys in a secret store and pass
-      them as environment variables or mounted files. Config files hold only
-      references (`env:NAME`, `file:/path`).
+- [ ] Store `DIFFERENTLY_DATABASE_URL`, `DIFFERENTLY_BOOTSTRAP_TOKEN`, the
+      OpenSandbox API key (`DIFFERENTLY_OPENSANDBOX_API_KEY` in the chart) and
+      provider keys in a secret store and pass them as environment variables
+      or mounted files. Config files hold only references (`env:NAME`,
+      `file:/path`). With Helm, prefer `opensandbox.existingSecret` over the
+      inline `opensandbox.apiKey`.
 - [ ] Generate tokens with `differently-server token`.
 - [ ] After first start, create a named operator key, store it, and unset the
-      bootstrap token variable. Note that changing the bootstrap variable's
-      value later re-activates the bootstrap key even if it was revoked.
+      bootstrap token variable. A revoked bootstrap key stays revoked even if
+      the variable's value changes.
 - [ ] Give CI and applications project-scoped keys with the fewest scopes
       (`sandboxes:read`, `sandboxes:write`, `sandboxes:exec` as needed). Keep
       `org:admin` and `keys:write` for humans.
 - [ ] Set `ttlHours` on keys you create. There is no enforced maximum, and
       revoking a key does not revoke keys it created **(gap)**.
-- [ ] Rotate the shared agent registration token on a schedule and after any
-      node compromise. It lets a node register new agent IDs; it cannot take
-      over existing ones, which are pinned to per-agent secrets. After
-      rebuilding a node (wiped state directory), remove its old identity with
-      `DELETE /v1/admin/agents/{id}` so it can register again
-      **(remaining gap: unencrypted channel, [backlog E3](../backlog.md#e3-authenticated-agent-channel))**.
+- [ ] Treat the OpenSandbox API key as root for that server: it is
+      server-wide, and anyone holding it can act on every sandbox there
+      without going through Differently. Give it only to the control plane,
+      and rotate it on the OpenSandbox server and in the control plane's
+      Secret together.
 
 ## Network
 
 - [ ] Enable the chart's `NetworkPolicy` and make sure your CNI enforces it.
-      Agents should accept connections only from server pods on the agent
-      port (default 9090).
 - [ ] Restrict server egress (`networkPolicy.server.egress.restricted`) to
-      DNS, agents, Postgres and the CIDRs of approved providers.
-- [ ] Treat the agent port as sensitive: traffic is plain HTTP and carries
-      environment values and file contents **(gap: backlog E3)**. If agents
-      and servers cross an untrusted network, put them on a private network or
-      an encrypted overlay (WireGuard, a service mesh with mTLS).
-- [ ] Decide the egress mode per node pool: `--egress allow` (default; public
-      destinations only) or `--egress deny`.
-- [ ] Block what the built-in deny list does not cover: public IPs of your own
-      nodes and load balancers, IPv6 (no `ip6tables` rules are created), and
-      any internal ranges outside `10/8`, `172.16/12`, `192.168/16`,
-      `100.64/10`, `169.254/16`.
-- [ ] Give guests a DNS resolver they can reach. The VM cannot reach the node
-      or private ranges, so cluster DNS is unreachable; configure a resolver in
-      the rootfs or provide one through an allowed path (untested).
-- [ ] Prefer `agent.hostNetwork: false` (the chart default) so VM taps and
-      rules live in the agent pod's network namespace and NetworkPolicy still
-      applies to the pod.
+      DNS, Postgres, OpenSandbox (`networkPolicy.server.egress.opensandbox`,
+      port 8090 by default) and the CIDRs of approved providers. With
+      `opensandbox.useServerProxy: false` the server also needs each
+      sandbox's endpoint (`networkPolicy.server.egress.extra`); keep the
+      default proxy unless you have measured a need.
+- [ ] Restrict who can reach the OpenSandbox server's port: only the control
+      plane needs it. Apply this in OpenSandbox's namespace or on its host.
+- [ ] Use TLS between the control plane and OpenSandbox when they cross an
+      untrusted network: an `https` `apiURL` or an encrypting mesh. The
+      chart's default URL is plain HTTP inside the cluster and carries the
+      API key, environment values and file contents.
+- [ ] Configure sandbox egress in the runtime, not in Differently: block
+      cloud metadata endpoints (on AWS, IMDSv2 with a hop limit of 1 on the
+      hosts that run sandboxes), private ranges, the control plane and
+      Postgres. Differently does not wire OpenSandbox's network policy yet
+      **(gap: [backlog E19](../backlog.md#e19-opensandbox-network-policy-and-egress))**.
 
-## KVM nodes and the agent
+## Backend runtimes (OpenSandbox)
 
-- [ ] Use hardware that matches Firecracker's tested platforms (AWS `.metal`
-      instance families) for production. Nested virtualization is documented
-      by Firecracker for development only.
-- [ ] Keep host kernels on a Firecracker-supported line (5.10, 6.1 or 6.18),
-      with current microcode and CPU mitigations.
-- [ ] Use cgroup v2 on hosts.
-- [ ] Label KVM nodes `differently.dev/kvm=true` and taint them so only agents
-      run there.
-- [ ] Size `--reserve-cpu`, `--reserve-memory-mib` and `--cpu-overcommit`
-      for the host. Kubernetes does not see VM memory.
-- [ ] Run `differently-agent doctor` (the chart's doctor init container) on
-      every node.
-- [ ] Keep the state directory (`/var/lib/differently/agent`) and images
-      directory on local disk readable only by root. VM records include
-      environment values (`vm.json`, mode 0600) and snapshots are full disk
-      copies.
-- [ ] Prefer the chart's unprivileged mode (`agent.privileged: false` with
-      `NET_ADMIN` and a KVM device plugin) if your platform supports it; it
-      narrows the agent's privileges.
-- [ ] **(gap)** The Firecracker jailer is not integrated
-      ([ADR 0015](../adr/0015-defer-jailer-integration.md)). Setting
-      `agent.jailer.enabled` only makes `doctor` check that the jailer binary
-      exists; microVMs still run without it. Do not count it as a control.
-- [ ] Use the `OnDelete` update strategy for the agent DaemonSet (chart
-      default) and drain a pool (`differently admin pool drain NAME`) before
-      replacing agents. Expect running VMs on a node to stop when its agent
-      container restarts ([POC 2](../proof-of-concepts.md#poc-2-agent-restart-semantics-in-kubernetes)).
-- [ ] Keep the control-plane-to-agent link reliable. If agents miss heartbeats
-      for longer than `scheduler.agentTimeoutSeconds` (default 30 s), the
-      reconciler currently treats their sandboxes as lost and fails them
-      (known issue, [backlog E0](../backlog.md#e0-correctness-and-security-fixes-from-the-code-review)).
-      Consider raising the timeout until that is fixed.
-
-## Guest images
-
-- [ ] Build kernels and rootfs images in a reproducible, reviewed pipeline and
-      verify checksums before they reach nodes. The chart's `guest-images` init
-      container copies whatever its image contains.
-- [ ] Install `differently-guest` as the VM's service on vsock port 10000.
-- [ ] Do not bake secrets into images; every sandbox from a template shares
-      them.
-- [ ] Keep images minimal and patched; they are the attack surface every
-      tenant starts from.
+- [ ] Install OpenSandbox with its own chart or manifests and pin the server,
+      `execd` and runtime image versions. OpenSandbox's published spec has run
+      ahead of its default images; run the adapter's live test
+      (`go test -tags live ./internal/adapters/opensandbox/`) against a
+      staging server on every upgrade
+      ([backlog E21](../backlog.md#e21-opensandbox-version-pinning-and-upgrade-testing)).
+- [ ] Choose the runtime for the data. The Docker and Kubernetes runtimes run
+      containers that share the host kernel. Fast Sandbox runs Firecracker
+      microVMs and needs KVM hosts (Linux ≥ 5.10, `/dev/kvm`, `/dev/net/tun`,
+      cgroup v2, an XFS filesystem with reflink for images, an enlarged
+      `/dev/shm`) **(gap: not yet verified through Differently,
+      [backlog E18](../backlog.md#e18-fast-sandbox-spike))**.
+- [ ] Declare each pool's `isolation` (`container` or `microvm`) to match the
+      runtime you deployed. The trust report shows the declaration and
+      Differently does not check it.
+- [ ] Declare `trust` truthfully: `private` only if you operate the
+      OpenSandbox server and its hosts.
+- [ ] Prefer one pool per OpenSandbox server. A server has one API key and
+      no tenant model, so a second pool on it adds no isolation.
+- [ ] Harden the runtime in OpenSandbox's configuration: drop container
+      capabilities, set `no_new_privileges`, limit PIDs, use seccomp or
+      AppArmor profiles. `test/opensandbox/config.toml` shows the Docker
+      options the live test used; it is a test setup, not a recommendation.
+- [ ] Keep sandbox hosts dedicated to sandboxes, patched, and administered by
+      as few people as possible. Their administrators can read every
+      sandbox.
+- [ ] Pull images and templates only from registries you control, keep them
+      minimal and patched, and do not bake secrets into them; every sandbox
+      from an image shares its contents.
+- [ ] Set `maxConcurrency` on OpenSandbox pools. OpenSandbox reports no
+      capacity, so without a cap the pool is limited only by quotas, and
+      overflow to external pools never happens while it is healthy.
+- [ ] Declare `snapshots.memory` in `features` only if the runtime really
+      captures memory, and declaration-only features (`network.egress-control`,
+      `gpu`) only if it really provides them; they are advertised as
+      declared.
 
 ## External providers
 
@@ -169,19 +168,21 @@ Background: [trust model](trust-model.md).
 - [ ] For Freestyle, leave `config.egress` unset (deny-all) unless guests need
       the internet. Exposed Freestyle ports are public URLs.
 - [ ] For `remote` pools that run on third-party infrastructure, set
-      `trust: external`. The default is `private`.
+      `trust: external`. The default is `private`. Serve plugins over TLS
+      with a bearer token.
+- [ ] For an OpenSandbox server someone else operates, set `trust: external`;
+      it then follows the same approval rules as Daytona and Freestyle.
 - [ ] Review `GET /v1/admin/trust-report` after every policy change.
 
 ## Policy and tenancy
 
 - [ ] Give organization and project admins `policies:write` only if they need
-      to tighten placement. Until the known issue is fixed, an organization
-      key with `policies:write` can delete other tenants' project policies
-      (backlog E0); prefer operator-managed project policies.
+      to tighten placement.
 - [ ] Set organization and project quotas (`maxActiveSandboxes`, `maxCPU`,
       `maxMemoryMiB`, `maxDiskGiB`, `maxQueued`, `maxTTLSeconds`,
-      `maxSnapshots`). Zero means unlimited. Note the known start-after-stop
-      quota bypass (backlog E0); `maxActiveSandboxes` still bounds the total.
+      `maxSnapshots`). Zero means unlimited. The OpenSandbox adapter does not
+      pass `diskGiB` to OpenSandbox, so `maxDiskGiB` limits what tenants ask
+      for, not what they get.
 - [ ] Set `maxQueueSeconds` in a policy if waiting work should fail rather
       than queue indefinitely.
 
@@ -197,21 +198,23 @@ Background: [trust model](trust-model.md).
       contain secrets.
 - [ ] Alert on `differently_reconcile_actions_total` (orphans deleted,
       instances lost, adoptions), on pools whose health is not `healthy`, and
-      on `differently_placement_decisions_total{outcome="rejected"}`.
-- [ ] Alert on `agent.register` audit events with outcome `failure`: they mean
-      a node presented another agent's ID with the wrong secret (a hijack
-      attempt, or a rebuilt node that needs its old identity removed). Review
-      `agent.endpoint_change` events too.
+      on `differently_placement_decisions_total{outcome="rejected"}`. On an
+      OpenSandbox pool, unexpected orphans or lost instances can mean someone
+      is using the server's API key directly.
+- [ ] Keep OpenSandbox's own logs. Actions taken with its API key outside
+      Differently appear only there.
 
 ## Upgrades and incidents
 
 - [ ] Test upgrades on a staging installation; run `differently-server migrate`
-      (the chart's migrate Job) before rolling the Deployment.
+      (the chart's migrate Job) before rolling the Deployment. Upgrade
+      OpenSandbox separately, with the live test above.
 - [ ] Know the kill switches: `POST /v1/admin/organizations/{id}/suspend` with
       `{"terminate": true}`, `POST /v1/admin/pools/{name}/drain`, `PATCH
       /v1/admin/pools/{name}` with `{"enabled": false}`, a global policy with
       `external: never`, and `POST /v1/admin/sandboxes/{id}/terminate`.
-- [ ] After a suspected node compromise: drain its pool, rotate the agent
-      token everywhere, check `agent.register` events and the agents list for
-      endpoint changes, and treat environment values of sandboxes on that pool
-      as exposed.
+- [ ] After a suspected compromise of an OpenSandbox server, its hosts or its
+      API key: drain its pool, rotate the key on the server and in the
+      control plane, review OpenSandbox's logs and the reconciler's actions,
+      and treat the environment values and files of sandboxes on that pool as
+      exposed.

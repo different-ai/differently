@@ -7,25 +7,37 @@ marked UNVERIFIED. Re-check before quoting any of this externally.
 
 ## The short version
 
-1. **Self-hosted, open-source Firecracker on Kubernetes is already done.**
-   [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) (Apache-2.0)
-   has a Fast Sandbox backend whose per-node DaemonSet agent owns Firecracker
-   VMs, with memory-preserving pause/resume. Tencent
-   [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) (Apache-2.0) runs
-   KVM sandboxes behind an E2B-compatible API. E2B's
-   [runtime](https://github.com/e2b-dev/runtime) open-sources its control plane
-   (officially single-node). Differently does not claim to be first here.
-2. **Nobody routes sandboxes across your own microVMs and other vendors by
-   policy, under a control plane you run.** Vendors route only among their own
-   backends; multi-provider tools are client-side libraries
-   ([ComputeSDK](https://github.com/computesdk/computesdk)) or agent platforms
-   that accept several sandbox providers. That server-side,
-   policy-and-classification-driven placement — with per-sandbox placement
-   explanations and an operator trust report — is Differently's position.
-3. **The position is real but copyable.** OpenSandbox or CubeSandbox could add
-   external providers. Differently's durable advantages have to be execution
-   quality: operability (one Helm install, preflight, doctor), honest security
-   boundaries, and a clean adapter contract that others can implement.
+1. **Self-hosted, open-source sandbox runtimes already exist, so Differently
+   uses one instead of building its own.**
+   - [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox)
+     (Apache-2.0) runs sandboxes on Docker, Kubernetes, or Firecracker
+     microVMs through its Fast Sandbox backend, with memory-preserving
+     pause/resume.
+   - Tencent [CubeSandbox](https://github.com/TencentCloud/CubeSandbox)
+     (Apache-2.0) runs KVM sandboxes behind an E2B-compatible API.
+   - E2B's [runtime](https://github.com/e2b-dev/runtime) open-sources its
+     control plane (officially single-node).
+
+   Differently ran its own Firecracker node agent until
+   [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md); OpenSandbox is
+   now its default private runtime.
+2. **Nobody routes sandboxes across your own runtimes and other vendors by
+   policy, under a control plane you run.**
+   - Vendors route only among their own backends.
+   - Multi-provider tools are client-side libraries
+     ([ComputeSDK](https://github.com/computesdk/computesdk)) or agent
+     platforms that accept several sandbox providers.
+
+   Differently's position is server-side placement driven by policy and
+   data classification, with per-sandbox placement explanations, tenancy,
+   quotas and fair queueing, a tamper-evident audit chain and an operator
+   trust report.
+3. **The position is real but copyable.** OpenSandbox or CubeSandbox could
+   add external providers. Differently's durable advantages have to be
+   execution quality:
+   - operability (one Helm install, preflight, doctor);
+   - honest security boundaries;
+   - a clean adapter contract that others can implement.
 
 ## Ownership models
 
@@ -35,7 +47,7 @@ vendor running or managing the control plane.
 
 | Platform | License | Isolation | Self-hosted control plane | BYOC | Routes to other vendors |
 |---|---|---|---|---|---|
-| **Differently** | Apache-2.0 | Firecracker (own nodes) + whatever external pools use | Yes | n/a | **Yes, by policy, fail-closed** |
+| **Differently** | Apache-2.0 | Whatever each pool's runtime provides: OpenSandbox (containers or Fast Sandbox microVMs) by default, plus external pools | Yes | n/a | **Yes, by policy, fail-closed** |
 | Boat | Proprietary | Full VM per sandbox | No ([self-host comparison](https://boat.dev/compare/boat-vs-self-host-baremetal)) | No | No |
 | Daytona | Archived AGPL-3.0 repo; current core private | Containers or VMs | No maintained path | Yes — your runners, Daytona's control plane ([BYOC](https://www.daytona.io/docs/en/bring-your-own-compute.md)) | No |
 | Freestyle | Proprietary (SDK MIT) | Hardware-virtualized microVMs on its own racks | No | No (colocation offered) | No |
@@ -60,46 +72,45 @@ vendor running or managing the control plane.
   transparency. It is behind on detached processes, SSH, port URLs on its own
   pools, webhooks and file-management helpers. See
   [feature-parity.md](feature-parity.md).
-- **OpenSandbox is now also a backend.** The `opensandbox` adapter places
-  Differently sandboxes on an OpenSandbox server, so Differently can
-  orchestrate OpenSandbox alongside its own Firecracker nodes, Daytona and
-  Freestyle. Whether OpenSandbox (with Fast Sandbox) should replace
-  Differently's own node agent as the default runtime is open until the
-  Fast Sandbox spike ([ADR 0019](adr/0019-opensandbox-backend-first.md),
-  [spike](research/opensandbox-spike.md)).
-- **OpenSandbox and CubeSandbox are the closest open-source peers.** Worth
-  tracking closely and borrowing from: OpenSandbox's host checks (kernel ≥5.10,
-  `/dev/kvm`, `/dev/net/tun`, cgroup v2, reflink filesystems) are a good
-  reference for `differently-agent doctor`. If either adds policy-gated external
-  providers, Differently's differentiation narrows to operability and trust
-  tooling.
+- **OpenSandbox is the default runtime, not a competitor to beat.** The
+  `opensandbox` adapter places Differently sandboxes on an OpenSandbox
+  server the operator runs. Differently adds the tenancy, quotas, policy,
+  audit and trust reporting around it, and the same API can also reach
+  Daytona, Freestyle and plugins.
+
+  Isolation is OpenSandbox's: its Docker runtime is verified end to end
+  under Differently, while its Kubernetes and Fast Sandbox runtimes are not
+  yet ([spike](research/opensandbox-spike.md)). Upstream changes to its
+  lifecycle or execd APIs are a dependency risk. The adapter is written
+  against its published specs and checked live, and the e2e suite pins a
+  server release.
+- **CubeSandbox is the closest other open-source peer.** It would make a
+  good second private-runtime adapter. If OpenSandbox or CubeSandbox adds
+  policy-gated external providers, Differently's differentiation narrows to
+  operability and trust tooling.
 - **agent-sandbox is a possible substrate.** It standardizes a Sandbox CRD with
   warm pools; a future Differently adapter could target it for organizations
-  that want gVisor/Kata isolation through Kubernetes instead of Firecracker
-  nodes.
+  that want gVisor/Kata isolation through Kubernetes RuntimeClasses.
 
-## Building blocks and why Differently drives Firecracker directly
+## Runtimes considered, and why OpenSandbox is the default
 
-| Option | Why not the MVP |
+| Option | Outcome |
 |---|---|
-| Kata Containers + Firecracker | Needs a hand-configured devmapper thin-pool, has no filesystem sharing, its Firecracker profile is amd64-only, and Kata offers no checkpoint/restore — so pause, snapshot and fork would be lost. |
+| Differently's own Firecracker node agent | Built and verified end to end on arm64, then removed ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)). It duplicated what OpenSandbox maintains (per-node sandbox management, pause/resume, templates, snapshots) and pulled engineering away from orchestration. |
+| OpenSandbox | Default private runtime. Self-hostable, Apache-2.0, published lifecycle and execd specs, and a choice of Docker, Kubernetes or Fast Sandbox (Firecracker) runtimes behind one API. |
+| CubeSandbox | Candidate second private-runtime adapter; Kubernetes deployment in preview. |
+| Kata Containers + Firecracker | Needs a hand-configured devmapper thin-pool, has no filesystem sharing, its Firecracker profile is amd64-only, and Kata offers no checkpoint/restore, so pause, snapshot and fork would be lost. |
 | firecracker-containerd | No published releases; pinned to containerd 1.7, which reached end of life on 2026-09-30. |
-| KubeVirt | Full VMs with heavier boot and density trade-offs; a good later adapter for long-lived VMs. |
-| Kueue | Quota and admission for batch Jobs/JobSets/pods; preemption deletes pods, which does not fit interactive, stateful sandboxes. A fit for a future ephemeral-jobs API. |
+| KubeVirt | Full VMs with heavier boot and density trade-offs; a possible later adapter for long-lived VMs. |
+| Kueue | Quota and admission for batch Jobs/JobSets/pods; preemption deletes pods, which does not fit interactive, stateful sandboxes. Differently keeps its own quota and fair-queueing layer. |
 
-Firecracker (v1.17.0, 2026-09-10) provides full snapshots, vsock and a stable
-API; it has no GPU passthrough in any release and is validated by its
-maintainers on AWS `.metal` instances. Details and sources:
-[architecture/README.md](architecture/README.md) and
-[adr/](adr/).
-
-## Where KVM is available (affects where Firecracker pools can run)
+## Where KVM is available (affects where microVM runtimes such as Fast Sandbox can run)
 
 | Environment | Status |
 |---|---|
 | AWS | `.metal` instances; nested virtualization now available on Intel 7th/8th-gen C/M/R 7i and 8i families (EKS managed node group support reported, verify before relying on it). |
 | GCP | Nested virtualization on Intel series and AMD N4D; GKE needs privileged pods (Autopilot only for allowlisted workloads). |
-| Azure | Nested virtualization on selected sizes (for example Dsv6); KVM inside Linux VMs works but is not officially supported. AKS Pod Sandboxing uses Microsoft's hypervisor, not KVM, so it cannot host Firecracker agents. |
-| Bare metal | k3s, RKE2 and Talos work; Talos and RKE2's CIS profile block privileged pods by default, so the agent namespace needs an explicit exemption. |
+| Azure | Nested virtualization on selected sizes (for example Dsv6); KVM inside Linux VMs works but is not officially supported. AKS Pod Sandboxing uses Microsoft's hypervisor, not KVM, so it cannot host Firecracker-based runtimes. |
+| Bare metal | k3s, RKE2 and Talos work; Talos and RKE2's CIS profile block privileged pods by default, so a microVM runtime's namespace needs an explicit exemption. |
 
 Step-by-step guides: [deploy/](deploy/README.md).

@@ -1,6 +1,6 @@
 # ADR 0018: Per-agent secrets pinned at first registration until mTLS
 
-- Status: Accepted (interim; superseded when the authenticated agent channel lands)
+- Status: Obsolete ([ADR 0020](0020-opensandbox-replaces-node-agent.md)): node agents, their tokens and per-agent secrets were removed
 - Date: 2026-10-28
 
 ## Context

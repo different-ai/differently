@@ -33,7 +33,7 @@ spec:
       annotations:
         checksum/config: {{ include "differently.config" . | sha256sum }}
         # Explicit secret values (generated tokens never change across upgrades).
-        checksum/secrets: {{ list .Values.auth .Values.postgresql.external .Values.providers | toJson | sha256sum }}
+        checksum/secrets: {{ list .Values.auth .Values.postgresql.external .Values.opensandbox .Values.providers | toJson | sha256sum }}
         {{- with .Values.server.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

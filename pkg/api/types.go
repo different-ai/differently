@@ -1,7 +1,7 @@
 // Package api defines the public, vendor-neutral Differently API resources.
 //
 // These types are the wire contract for /v1. They deliberately contain no
-// Kubernetes, Firecracker or provider-specific fields: backends are reached
+// Kubernetes, runtime or provider-specific fields: backends are reached
 // through pools and capabilities, never named in application code.
 package api
 
@@ -419,29 +419,6 @@ type UsageReport struct {
 	Lines   []UsageLine `json:"lines"`
 	Total   UsageLine   `json:"total"`
 	Note    string      `json:"note"`
-}
-
-// AgentSecretHeader carries a node agent's own secret on heartbeats. The
-// secret is fixed at first registration (trust on first use).
-const AgentSecretHeader = "Differently-Agent-Secret"
-
-// Agent is a registered node agent serving a private pool.
-type Agent struct {
-	ID             string    `json:"id"`
-	Pool           string    `json:"pool"`
-	Node           string    `json:"node"`
-	Endpoint       string    `json:"endpoint"`
-	Version        string    `json:"version"`
-	Arch           string    `json:"arch"`
-	TotalCPU       int       `json:"totalCPU"`
-	FreeCPU        int       `json:"freeCPU"`
-	TotalMemoryMiB int       `json:"totalMemoryMiB"`
-	FreeMemoryMiB  int       `json:"freeMemoryMiB"`
-	Sandboxes      int       `json:"sandboxes"`
-	Capabilities   []string  `json:"capabilities"`
-	Templates      []string  `json:"templates,omitempty"`
-	LastSeen       time.Time `json:"lastSeen"`
-	Healthy        bool      `json:"healthy"`
 }
 
 // List is a paginated collection.

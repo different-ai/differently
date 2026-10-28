@@ -1,17 +1,17 @@
 //go:build e2e
 
-// Package e2e drives a real Differently stack: Postgres, the control plane
-// and a node agent running Firecracker microVMs (test/e2e/compose.yaml).
+// Package e2e drives the real stack: Postgres, the Differently control plane
+// and an OpenSandbox server as its private pool (test/e2e/compose.yaml).
 //
-//	DOCKER_CONTEXT=colima-differently make e2e
+//	make e2e-prepare e2e-up e2e
 //
 // Settings (defaults match compose.yaml):
 //
-//	DIFFERENTLY_E2E_URL          API URL            (http://localhost:18090)
-//	DIFFERENTLY_E2E_TOKEN        operator token     (the compose test token)
-//	DIFFERENTLY_E2E_METRICS_URL  metrics listener   (http://localhost:19091)
-//	DIFFERENTLY_E2E_COMPOSE      compose file; enables tests that restart or
-//	                             inspect containers (needs the docker CLI)
+//	DIFFERENTLY_E2E_URL          API URL                (http://localhost:18090)
+//	DIFFERENTLY_E2E_TOKEN        operator token         (the compose test token)
+//	DIFFERENTLY_E2E_METRICS_URL  metrics listener       (http://localhost:19091)
+//	OPENSANDBOX_E2E_URL          OpenSandbox lifecycle  (http://localhost:18091/v1)
+//	OPENSANDBOX_E2E_KEY          OpenSandbox API key    (test/opensandbox/config.toml)
 package e2e
 
 import (
@@ -22,7 +22,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -36,7 +35,8 @@ var (
 	baseURL    = env("DIFFERENTLY_E2E_URL", "http://localhost:18090")
 	operator   = client.New(baseURL, env("DIFFERENTLY_E2E_TOKEN", "dly_e2eoperator_e2etoken0123456789abcdefghjkmnpqrstvwxyz"))
 	metricsURL = env("DIFFERENTLY_E2E_METRICS_URL", "http://localhost:19091")
-	compose    = os.Getenv("DIFFERENTLY_E2E_COMPOSE")
+	osbURL     = env("OPENSANDBOX_E2E_URL", "http://localhost:18091/v1")
+	osbKey     = env("OPENSANDBOX_E2E_KEY", "osb-live-test-key-0123456789")
 )
 
 func env(k, def string) string {
@@ -53,7 +53,7 @@ func ctx(t *testing.T) context.Context {
 }
 
 // tenant creates an organization and returns a client bound to a project key.
-func tenant(t *testing.T, name string, quota api.Quota) (*client.Client, string) {
+func tenant(t *testing.T, name string, quota api.Quota) *client.Client {
 	t.Helper()
 	var created struct {
 		Organization api.Organization `json:"organization"`
@@ -70,7 +70,7 @@ func tenant(t *testing.T, name string, quota api.Quota) (*client.Client, string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return client.New(baseURL, key.Token), created.Organization.ID
+	return client.New(baseURL, key.Token)
 }
 
 func create(t *testing.T, c *client.Client, req api.CreateSandboxRequest) api.Sandbox {
@@ -105,37 +105,73 @@ func eventually(t *testing.T, timeout time.Duration, what string, ok func() bool
 	}
 }
 
-func docker(t *testing.T, args ...string) string {
+// osb calls OpenSandbox directly, as an operator would behind Differently's back.
+func osb(t *testing.T, method, path string, body, out any) int {
 	t.Helper()
-	if compose == "" {
-		t.Skip("set DIFFERENTLY_E2E_COMPOSE to run container-level checks")
+	var r io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		r = bytes.NewReader(b)
 	}
-	out, err := exec.Command("docker", append([]string{"compose", "-f", compose}, args...)...).CombinedOutput()
+	req, _ := http.NewRequestWithContext(ctx(t), method, osbURL+path, r)
+	req.Header.Set("OPEN-SANDBOX-API-KEY", osbKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("docker compose %v: %v\n%s", args, err, out)
-	}
-	return string(out)
-}
-
-func agents(t *testing.T) []api.Agent {
-	t.Helper()
-	var list api.List[api.Agent]
-	if err := operator.Do(ctx(t), "GET", "/v1/admin/agents", nil, &list); err != nil {
 		t.Fatal(err)
 	}
-	return list.Items
+	defer resp.Body.Close()
+	if out != nil {
+		_ = json.NewDecoder(resp.Body).Decode(out)
+	}
+	return resp.StatusCode
+}
+
+func osbExists(t *testing.T, id string) bool {
+	var sb struct {
+		Status struct {
+			State string `json:"state"`
+		} `json:"status"`
+	}
+	code := osb(t, "GET", "/sandboxes/"+id, nil, &sb)
+	return code == 200 && sb.Status.State != "Terminated"
+}
+
+func backendRef(t *testing.T, id string) string {
+	t.Helper()
+	var explain struct {
+		Decision *api.PlacementDecision `json:"decision"`
+	}
+	if err := operator.Do(ctx(t), "GET", "/v1/sandboxes/"+id+"/placement", nil, &explain); err != nil {
+		t.Fatal(err)
+	}
+	// The backend ID is OpenSandbox's; find it through the ownership metadata.
+	var list struct {
+		Items []struct {
+			ID       string            `json:"id"`
+			Metadata map[string]string `json:"metadata"`
+		} `json:"items"`
+	}
+	osb(t, "GET", "/sandboxes?page=1&pageSize=200", nil, &list)
+	for _, it := range list.Items {
+		if it.Metadata["differently-sandbox-id"] == id {
+			return it.ID
+		}
+	}
+	t.Fatalf("no OpenSandbox sandbox carries Differently ID %s", id)
+	return ""
 }
 
 func TestMain(m *testing.M) {
 	deadline := time.Now().Add(90 * time.Second)
 	for {
-		var list api.List[api.Agent]
-		err := operator.Do(context.Background(), "GET", "/v1/admin/agents", nil, &list)
-		if err == nil && len(list.Items) > 0 && list.Items[0].Healthy {
+		var pools api.List[api.Pool]
+		err := operator.Do(context.Background(), "GET", "/v1/admin/pools", nil, &pools)
+		if err == nil && len(pools.Items) > 0 && pools.Items[0].Health != nil && pools.Items[0].Health.Status == "healthy" {
 			break
 		}
 		if time.Now().After(deadline) {
-			fmt.Fprintf(os.Stderr, "no healthy node agent at %s: %v (is the e2e stack up?)\n", baseURL, err)
+			fmt.Fprintf(os.Stderr, "the OpenSandbox pool at %s is not healthy: %v (is the e2e stack up?)\n", baseURL, err)
 			os.Exit(1)
 		}
 		time.Sleep(time.Second)
@@ -143,48 +179,52 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestMicroVMBootsWithRequestedResources(t *testing.T) {
-	c, _ := tenant(t, "boot", api.Quota{})
+func TestSandboxRunsOnOpenSandboxWithLimits(t *testing.T) {
+	c := tenant(t, "boot", api.Quota{})
 	sb := create(t, c, api.CreateSandboxRequest{Profile: "medium"})
-	if sb.Trust != api.TrustPrivate || sb.Adapter != "firecracker" {
-		t.Fatalf("placed on %s/%s", sb.Adapter, sb.Trust)
+	if sb.Adapter != "opensandbox" || sb.Trust != api.TrustPrivate || sb.Pool != "opensandbox" {
+		t.Fatalf("placed on %s/%s/%s", sb.Pool, sb.Adapter, sb.Trust)
 	}
-	if got := strings.TrimSpace(sh(t, c, sb.ID, "nproc").Stdout); got != "2" {
-		t.Fatalf("nproc = %q, want 2", got)
+	if !osbExists(t, backendRef(t, sb.ID)) {
+		t.Fatal("OpenSandbox does not know the sandbox")
 	}
-	mem := strings.Fields(sh(t, c, sb.ID, "grep MemTotal /proc/meminfo").Stdout)
-	kb, _ := strconv.Atoi(mem[1])
-	if kb < 900_000 || kb > 1_048_576 {
-		t.Fatalf("MemTotal %d kB for a 1024 MiB sandbox", kb)
+	// Differently's resource envelope reaches the runtime as cgroup limits.
+	mem := strings.TrimSpace(sh(t, c, sb.ID, "cat /sys/fs/cgroup/memory.max").Stdout)
+	if mem != strconv.Itoa(1024<<20) {
+		t.Fatalf("memory.max = %q, want 1 GiB", mem)
 	}
-	cmdline := sh(t, c, sb.ID, "cat /proc/cmdline").Stdout
-	if !strings.Contains(cmdline, "ip=172.30.") || !strings.Contains(cmdline, "root=/dev/vda") {
-		t.Fatalf("not a Differently microVM: %s", cmdline)
+	cpu := strings.Fields(sh(t, c, sb.ID, "cat /sys/fs/cgroup/cpu.max").Stdout)
+	if len(cpu) != 2 || cpu[0] == "max" {
+		t.Fatalf("cpu.max = %v, want a 2-CPU quota", cpu)
 	}
-	disk := strings.Fields(sh(t, c, sb.ID, "df -B1 --output=size / | tail -1").Stdout)
-	size, _ := strconv.ParseInt(disk[0], 10, 64)
-	if size < 1_800_000_000 {
-		t.Fatalf("root disk %d bytes; the 2 GiB profile was not applied", size)
+	quota, _ := strconv.Atoi(cpu[0])
+	period, _ := strconv.Atoi(cpu[1])
+	if quota/period != 2 {
+		t.Fatalf("cpu.max = %v, want 2 CPUs", cpu)
 	}
-	t.Logf("guest kernel %s", strings.TrimSpace(sh(t, c, sb.ID, "uname -r").Stdout))
 }
 
 func TestExecSemantics(t *testing.T) {
-	c, _ := tenant(t, "exec", api.Quota{})
+	c := tenant(t, "exec", api.Quota{})
 	sb := create(t, c, api.CreateSandboxRequest{Env: map[string]string{"GREETING": "hello"}})
 	ctx := ctx(t)
 	res, err := c.Exec(ctx, sb.ID, api.ExecRequest{Command: `echo "$GREETING $WHO"; echo oops >&2; exit 7`, Env: map[string]string{"WHO": "world"}})
 	if err != nil || res.ExitCode != 7 || strings.TrimSpace(res.Stdout) != "hello world" || strings.TrimSpace(res.Stderr) != "oops" {
 		t.Fatalf("exec %+v %v", res, err)
 	}
-	res, err = c.Exec(ctx, sb.ID, api.ExecRequest{Args: []string{"cat"}, Stdin: "from stdin"})
-	if err != nil || res.Stdout != "from stdin" {
-		t.Fatalf("stdin %+v %v", res, err)
+	if res := sh(t, c, sb.ID, `printf 'a\nb\n'`); res.Stdout != "a\nb\n" {
+		t.Fatalf("multi-line output %q", res.Stdout)
+	}
+	if res, err := c.Exec(ctx, sb.ID, api.ExecRequest{Args: []string{"sh", "-c", "pwd"}, Cwd: "/tmp"}); err != nil || strings.TrimSpace(res.Stdout) != "/tmp" {
+		t.Fatalf("argv + cwd %+v %v", res, err)
 	}
 	start := time.Now()
 	res, err = c.Exec(ctx, sb.ID, api.ExecRequest{Command: "sleep 30", TimeoutSeconds: 1})
-	if err != nil || res.ExitCode == 0 || time.Since(start) > 10*time.Second {
+	if err == nil && res.ExitCode == 0 || time.Since(start) > 15*time.Second {
 		t.Fatalf("timeout not enforced: %+v %v after %s", res, err, time.Since(start))
+	}
+	if _, err := c.Exec(ctx, sb.ID, api.ExecRequest{Command: "cat", Stdin: "x"}); !api.IsCode(err, api.CodeUnsupportedOperation) {
+		t.Fatalf("stdin should be reported unsupported, got %v", err)
 	}
 	var chunks []string
 	code, err := c.ExecStream(ctx, sb.ID, api.ExecRequest{Command: "for i in 1 2 3; do echo line$i; sleep 0.2; done; echo err >&2; exit 3"}, func(ev api.ExecEvent) {
@@ -197,74 +237,27 @@ func TestExecSemantics(t *testing.T) {
 }
 
 func TestFiles(t *testing.T) {
-	c, _ := tenant(t, "files", api.Quota{})
+	c := tenant(t, "files", api.Quota{})
 	sb := create(t, c, api.CreateSandboxRequest{})
 	data := bytes.Repeat([]byte("differently\x00\xff"), 80_000) // ~1 MiB, binary
-	if err := c.WriteFile(ctx(t), sb.ID, "/work/blob.bin", data); err != nil {
+	if err := c.WriteFile(ctx(t), sb.ID, "/tmp/work/blob.bin", data); err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadFile(ctx(t), sb.ID, "/work/blob.bin")
+	got, err := c.ReadFile(ctx(t), sb.ID, "/tmp/work/blob.bin")
 	if err != nil || !bytes.Equal(got, data) {
 		t.Fatalf("read back %d bytes (want %d): %v", len(got), len(data), err)
 	}
-	if sum := strings.Fields(sh(t, c, sb.ID, "wc -c < /work/blob.bin").Stdout); sum[0] != strconv.Itoa(len(data)) {
-		t.Fatalf("guest sees %v bytes", sum)
+	if n := strings.TrimSpace(sh(t, c, sb.ID, "wc -c < /tmp/work/blob.bin").Stdout); n != strconv.Itoa(len(data)) {
+		t.Fatalf("sandbox sees %s bytes", n)
 	}
-	items, err := c.ListFiles(ctx(t), sb.ID, "/work")
+	items, err := c.ListFiles(ctx(t), sb.ID, "/tmp/work")
 	if err != nil || len(items) != 1 || items[0].Name != "blob.bin" {
 		t.Fatalf("list %+v %v", items, err)
 	}
 }
 
-func TestNetworkIsolation(t *testing.T) {
-	c, _ := tenant(t, "net", api.Quota{})
-	a := create(t, c, api.CreateSandboxRequest{})
-	b := create(t, c, api.CreateSandboxRequest{})
-	if out := sh(t, c, a.ID, `curl -sS -m 15 -o /dev/null -w "%{http_code}" https://example.com`).Stdout; out != "200" {
-		t.Fatalf("internet egress (DNS + HTTPS) = %q", out)
-	}
-	blocked := map[string]string{
-		"cloud metadata":            "curl -sS -m 3 http://169.254.169.254/",
-		"node agent API on gateway": `curl -sS -m 3 http://$(ip route | awk '/default/{print $3}'):9090/healthz`,
-	}
-	if compose != "" {
-		serverIP := strings.TrimSpace(docker(t, "exec", "-T", "agent", "getent", "hosts", "server"))
-		blocked["control plane container"] = "curl -sS -m 3 http://" + strings.Fields(serverIP)[0] + ":8080/healthz"
-	}
-	bIP := strings.Fields(sh(t, c, b.ID, "ip -4 -o addr show eth0").Stdout)[3]
-	bIP = strings.Split(bIP, "/")[0]
-	sh(t, c, b.ID, "nohup nc -lk -p 8000 >/dev/null 2>&1 &")
-	if res := sh(t, c, b.ID, "nc -z -w 2 127.0.0.1 8000"); res.ExitCode != 0 {
-		t.Fatal("listener in sandbox b did not start")
-	}
-	blocked["another sandbox"] = "nc -z -w 3 " + bIP + " 8000"
-	for what, cmd := range blocked {
-		if res := sh(t, c, a.ID, cmd); res.ExitCode == 0 {
-			t.Errorf("%s reachable from a sandbox: %q -> %+v", what, cmd, res)
-		}
-	}
-}
-
-func TestStopStartKeepsDisk(t *testing.T) {
-	c, _ := tenant(t, "stop", api.Quota{})
-	sb := create(t, c, api.CreateSandboxRequest{})
-	sh(t, c, sb.ID, "echo persisted > /root/state")
-	if _, err := c.Action(ctx(t), sb.ID, "stop"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.Exec(ctx(t), sb.ID, api.ExecRequest{Command: "true"}); !api.IsCode(err, api.CodeInvalidState) {
-		t.Fatalf("exec on a stopped sandbox: %v", err)
-	}
-	if _, err := c.Action(ctx(t), sb.ID, "start"); err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.TrimSpace(sh(t, c, sb.ID, "cat /root/state").Stdout); got != "persisted" {
-		t.Fatalf("disk not kept across stop/start: %q", got)
-	}
-}
-
-func TestPauseResume(t *testing.T) {
-	c, _ := tenant(t, "pause", api.Quota{})
+func TestPauseResumeAndUnsupportedStop(t *testing.T) {
+	c := tenant(t, "pause", api.Quota{})
 	sb := create(t, c, api.CreateSandboxRequest{})
 	sh(t, c, sb.ID, "echo 42 > /dev/shm/in-memory")
 	if _, err := c.Action(ctx(t), sb.ID, "pause"); err != nil {
@@ -279,10 +272,14 @@ func TestPauseResume(t *testing.T) {
 	if got := strings.TrimSpace(sh(t, c, sb.ID, "cat /dev/shm/in-memory").Stdout); got != "42" {
 		t.Fatalf("memory not kept across pause/resume: %q", got)
 	}
+	// OpenSandbox has no stop; Differently says so precisely.
+	if _, err := c.Action(ctx(t), sb.ID, "stop"); !api.IsCode(err, api.CodeUnsupportedOperation) {
+		t.Fatalf("stop should be unsupported_operation, got %v", err)
+	}
 }
 
 func TestSnapshotAndFork(t *testing.T) {
-	c, _ := tenant(t, "fork", api.Quota{})
+	c := tenant(t, "fork", api.Quota{})
 	parent := create(t, c, api.CreateSandboxRequest{})
 	sh(t, c, parent.ID, "echo v1 > /root/state && sync")
 	child, err := c.Fork(ctx(t), parent.ID)
@@ -290,24 +287,29 @@ func TestSnapshotAndFork(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = c.DeleteSandbox(context.Background(), child.ID) })
-	child, err = c.WaitSandbox(ctx(t), child.ID, api.StatusRunning, 2*time.Minute)
-	if err != nil {
+	if child, err = c.WaitSandbox(ctx(t), child.ID, api.StatusRunning, 3*time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.TrimSpace(sh(t, c, child.ID, "cat /root/state").Stdout); got != "v1" {
-		t.Fatalf("fork lost the parent's disk: %q", got)
+		t.Fatalf("fork lost the parent's filesystem: %q", got)
 	}
 	sh(t, c, child.ID, "echo child > /root/state")
 	if got := strings.TrimSpace(sh(t, c, parent.ID, "cat /root/state").Stdout); got != "v1" {
 		t.Fatalf("fork is not independent: parent sees %q", got)
 	}
-	if child.Labels["forked-from"] != parent.ID {
-		t.Fatalf("labels %v", child.Labels)
+}
+
+// Scenario I against a real backend: the only pool cannot stop and start.
+func TestCapabilityMismatchIsPrecise(t *testing.T) {
+	c := tenant(t, "caps", api.Quota{})
+	_, err := c.CreateSandbox(ctx(t), api.CreateSandboxRequest{Capabilities: []string{"lifecycle.stop-start"}}, false)
+	if !api.IsCode(err, api.CodeUnsupportedCapability) {
+		t.Fatalf("want unsupported_capability, got %v", err)
 	}
 }
 
 func TestQuotaQueuesAndReleases(t *testing.T) {
-	c, _ := tenant(t, "quota", api.Quota{MaxActiveSandboxes: 1})
+	c := tenant(t, "quota", api.Quota{MaxActiveSandboxes: 1})
 	first := create(t, c, api.CreateSandboxRequest{})
 	second, err := c.CreateSandbox(ctx(t), api.CreateSandboxRequest{}, false)
 	if err != nil {
@@ -326,49 +328,49 @@ func TestQuotaQueuesAndReleases(t *testing.T) {
 	}
 }
 
-// The agent restarting kills its microVMs (they share its container). The
-// control plane must notice, report them stopped, and boot them again from
-// their disks; the agent must keep its identity.
-func TestAgentRestartRecovers(t *testing.T) {
-	if compose == "" {
-		t.Skip("set DIFFERENTLY_E2E_COMPOSE to restart the agent")
-	}
-	c, _ := tenant(t, "restart", api.Quota{})
+func TestDeleteCleansUpBackend(t *testing.T) {
+	c := tenant(t, "cleanup", api.Quota{})
 	sb := create(t, c, api.CreateSandboxRequest{})
-	sh(t, c, sb.ID, "echo survived > /root/state && sync")
-	docker(t, "restart", "agent")
-	eventually(t, 60*time.Second, "the agent to re-register", func() bool {
-		list := agents(t)
-		return len(list) == 1 && list[0].Healthy && time.Since(list[0].LastSeen) < 5*time.Second
-	})
-	eventually(t, 60*time.Second, "the sandbox to be reported stopped", func() bool {
-		got, _ := c.GetSandbox(context.Background(), sb.ID)
-		return got.Status == api.StatusStopped
-	})
-	if _, err := c.Action(ctx(t), sb.ID, "start"); err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.TrimSpace(sh(t, c, sb.ID, "cat /root/state").Stdout); got != "survived" {
-		t.Fatalf("disk lost across agent restart: %q", got)
-	}
-}
-
-func TestDeleteCleansUpNode(t *testing.T) {
-	c, _ := tenant(t, "cleanup", api.Quota{})
-	sb := create(t, c, api.CreateSandboxRequest{})
+	ref := backendRef(t, sb.ID)
 	if err := c.DeleteSandbox(ctx(t), sb.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.WaitSandbox(ctx(t), sb.ID, api.StatusTerminated, time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if compose != "" {
-		eventually(t, 30*time.Second, "the VM's firecracker process to exit", func() bool {
-			// "[f]" keeps pgrep from matching this shell's own command line.
-			out := docker(t, "exec", "-T", "agent", "sh", "-c", "pgrep -f '[f]irecracker.*"+sb.ID+"' >/dev/null && echo alive || echo gone")
-			return strings.TrimSpace(out) == "gone"
-		})
+	eventually(t, 30*time.Second, "OpenSandbox to drop the sandbox", func() bool { return !osbExists(t, ref) })
+}
+
+// Scenario J against a real backend: drift made directly in OpenSandbox is
+// reconciled. An instance carrying this installation's ownership metadata
+// but no Differently sandbox is deleted; a sandbox whose instance was
+// deleted behind Differently's back is failed, and its quota released.
+func TestReconcilesDriftInTheBackend(t *testing.T) {
+	var v api.VersionInfo
+	if err := operator.Do(ctx(t), "GET", "/version", nil, &v); err != nil {
+		t.Fatal(err)
 	}
+	var orphan struct {
+		ID string `json:"id"`
+	}
+	code := osb(t, "POST", "/sandboxes", map[string]any{
+		"image": map[string]string{"uri": "debian:bookworm-slim"}, "entrypoint": []string{"tail", "-f", "/dev/null"},
+		"timeout": 600, "resourceLimits": map[string]string{"cpu": "1", "memory": "256Mi"},
+		"metadata": map[string]string{"differently-sandbox-id": "sbx_orphan_e2e", "differently-installation": v.Installation},
+	}, &orphan)
+	if code != 202 || orphan.ID == "" {
+		t.Fatalf("could not plant an orphan: %d", code)
+	}
+	eventually(t, 60*time.Second, "the reconciler to delete the orphan", func() bool { return !osbExists(t, orphan.ID) })
+
+	c := tenant(t, "drift", api.Quota{MaxActiveSandboxes: 1})
+	sb := create(t, c, api.CreateSandboxRequest{})
+	osb(t, "DELETE", "/sandboxes/"+backendRef(t, sb.ID), nil, nil)
+	eventually(t, 90*time.Second, "the lost sandbox to be failed", func() bool {
+		got, _ := c.GetSandbox(context.Background(), sb.ID)
+		return got.Status == api.StatusFailed
+	})
+	create(t, c, api.CreateSandboxRequest{}) // quota was released
 }
 
 func TestAuditTrustAndMetrics(t *testing.T) {
@@ -383,13 +385,24 @@ func TestAuditTrustAndMetrics(t *testing.T) {
 	if err := operator.Do(ctx(t), "GET", "/v1/audit-events?action=api.request&limit=5", nil, &requests); err != nil || len(requests.Items) == 0 {
 		t.Fatalf("audit.failClosed should record requests before acting: %v %v", requests.Items, err)
 	}
-	var report map[string]any
+	var report struct {
+		Pools []struct {
+			Name, Adapter, Trust, Isolation, Endpoint, CredentialRef string
+		} `json:"pools"`
+		Limitations []string `json:"limitations"`
+	}
 	if err := operator.Do(ctx(t), "GET", "/v1/admin/trust-report", nil, &report); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(report)
-	if strings.Contains(string(raw), `"secret"`) || strings.Contains(string(raw), "fail-open") || strings.Contains(string(raw), "/metrics is served without authentication") {
-		t.Fatalf("trust report leaks a secret or describes settings this stack does not use: %s", raw)
+	if strings.Contains(string(raw), osbKey) {
+		t.Fatal("trust report leaks the OpenSandbox API key")
+	}
+	if len(report.Pools) != 1 || report.Pools[0].Adapter != "opensandbox" || !strings.Contains(report.Pools[0].Isolation, "container") || report.Pools[0].CredentialRef != "env:DIFFERENTLY_OPENSANDBOX_API_KEY" {
+		t.Fatalf("trust report pools %+v", report.Pools)
+	}
+	if !strings.Contains(strings.Join(report.Limitations, " "), "Differently does not isolate sandboxes itself") {
+		t.Fatal("trust report does not state that isolation is the runtime's")
 	}
 	resp, err := http.Get(baseURL + "/metrics")
 	if err != nil {
@@ -405,7 +418,7 @@ func TestAuditTrustAndMetrics(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if !strings.Contains(string(body), `differently_sandbox_transitions_total{pool="fc-local",to="running"}`) {
-		t.Fatal("metrics listener has no sandbox transitions for the real pool")
+	if !strings.Contains(string(body), `differently_sandbox_transitions_total{pool="opensandbox",to="running"}`) {
+		t.Fatal("metrics listener has no sandbox transitions for the OpenSandbox pool")
 	}
 }

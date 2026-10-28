@@ -1,9 +1,8 @@
 // Package config loads and validates the server configuration.
 //
-// Secrets never appear in the file: the database DSN, bootstrap token, agent
-// token and provider credentials are referenced by environment variable or
-// file path and resolved at runtime, so the config can live in a ConfigMap or
-// in Git.
+// Secrets never appear in the file: the database DSN, bootstrap token and
+// backend credentials are referenced by environment variable or file path
+// and resolved at runtime, so the config can live in a ConfigMap or in Git.
 package config
 
 import (
@@ -45,10 +44,9 @@ type StoreConfig struct {
 	DSNEnv string `json:"dsnEnv,omitempty"`
 }
 
-// AuthConfig names the environment variables holding bootstrap secrets.
+// AuthConfig names the environment variable holding the bootstrap secret.
 type AuthConfig struct {
 	BootstrapTokenEnv string `json:"bootstrapTokenEnv"`
-	AgentTokenEnv     string `json:"agentTokenEnv"`
 }
 
 // Defaults apply when an organization, project or request omits a value.
@@ -139,7 +137,6 @@ type SchedulerConfig struct {
 	ProvisionTimeoutSeconds int `json:"provisionTimeoutSeconds"`
 	MaxAttempts             int `json:"maxAttempts"`
 	ReconcileIntervalSecs   int `json:"reconcileIntervalSeconds"`
-	AgentTimeoutSeconds     int `json:"agentTimeoutSeconds"`
 }
 
 // RateLimitConfig is a per-key token bucket.
@@ -180,7 +177,7 @@ func (d DashboardConfig) On() bool { return d.Enabled == nil || *d.Enabled }
 var externalKinds = []string{"daytona", "freestyle"}
 
 // KnownAdapters lists adapter kinds the server can build.
-var KnownAdapters = []string{"firecracker", "devhost", "fake", "remote", "daytona", "freestyle", "opensandbox"}
+var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake"}
 
 // Adapter kinds whose trust boundary depends on who operates the backend, so
 // the operator must declare it.
@@ -223,9 +220,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Auth.BootstrapTokenEnv == "" {
 		c.Auth.BootstrapTokenEnv = "DIFFERENTLY_BOOTSTRAP_TOKEN"
-	}
-	if c.Auth.AgentTokenEnv == "" {
-		c.Auth.AgentTokenEnv = "DIFFERENTLY_AGENT_TOKEN"
 	}
 	if len(c.Classifications) == 0 {
 		c.Classifications = []api.Classification{
@@ -280,9 +274,6 @@ func (c *Config) applyDefaults() {
 	}
 	if s.ReconcileIntervalSecs == 0 {
 		s.ReconcileIntervalSecs = 30
-	}
-	if s.AgentTimeoutSeconds == 0 {
-		s.AgentTimeoutSeconds = 30
 	}
 	if c.RateLimit.RequestsPerSecond == 0 {
 		c.RateLimit.RequestsPerSecond = 50

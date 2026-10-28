@@ -18,12 +18,10 @@ import (
 
 // Deps are shared resources adapter factories may need.
 type Deps struct {
-	Store        store.Store
-	AgentToken   string
-	AgentTimeout time.Duration
-	Dev          bool
-	DataDir      string
-	Logger       *slog.Logger
+	Store   store.Store
+	Dev     bool
+	DataDir string
+	Logger  *slog.Logger
 	// Resolve returns the secret behind a pool's credential reference.
 	Resolve func(ref string) (string, error)
 }

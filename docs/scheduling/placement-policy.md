@@ -115,11 +115,16 @@ An eligible pool **has capacity** unless (first match wins):
 | `maxConcurrency > 0` and active slots ≥ cap (slots: provisioning, running, paused, stopped, terminating) | `at concurrency limit N` |
 | Bounded capacity and the sandbox does not fit (uses the roomiest single node when reported) | `insufficient free capacity` |
 
-Unbounded adapters (Daytona, Freestyle, devhost) always fit; their
-`maxConcurrency` is what limits them. Capacity comes from the pool manager's
-cache, refreshed every 5 seconds, so it can be stale; activation re-checks
-pool concurrency atomically, and the backend can still answer
-`insufficient_capacity`.
+Unbounded adapters (OpenSandbox, Daytona, Freestyle, devhost) always fit;
+their `maxConcurrency` is what limits them. OpenSandbox's API reports no
+capacity, so a healthy OpenSandbox pool without `maxConcurrency` is always
+ready, and under `overflow` it holds external pools back indefinitely (§6).
+Capacity comes from the pool manager's cache, refreshed every 5 seconds, so
+it can be stale; activation re-checks pool concurrency atomically, and the
+backend can still answer `insufficient_capacity` (for HTTP backends, a 429).
+
+Placement chooses a pool, not a host. Which host or node runs the sandbox is
+decided by the backend: OpenSandbox's runtime, or the provider.
 
 ## 6. Overflow
 
@@ -143,12 +148,10 @@ Ready pools (eligible, with capacity, not held) are sorted stably:
 | `spread` | higher free ratio → private before external → pool name |
 
 Free ratio: `freeCPU / totalCPU` for bounded pools that report a total;
-otherwise `1 − active / maxConcurrency` if a cap is set; otherwise 1.
-
-Within a Firecracker pool, the pool adapter then picks the agent with the most
-free memory that fits the sandbox (ties by agent ID), restricted to the
-snapshot's agent for restores and to agents that have the template
-(`internal/adapters/firecracker/pool.go` `Create`).
+otherwise `1 − active / maxConcurrency` if a cap is set; otherwise 1. Every
+built-in production adapter is unbounded, so in practice the free ratio
+comes from `maxConcurrency`; bounded capacity is reported only by the `fake`
+adapter and by `remote` plugins that choose to.
 
 ## 8. Outcomes
 
@@ -190,7 +193,9 @@ For a `placed` decision the scheduler walks the ranked list
 | Attempts reach `scheduler.maxAttempts` (default 3) | none: sandbox `failed` with `provisioning failed after N attempts: <error>` | | |
 | Provisioning interrupted by a crash, no instance found after `provisionTimeoutSeconds` (default 120) | Requeued by the reconciler as a `provider_unavailable` failure | yes | marked unhealthy |
 
-A requeued sandbox is placed again from scratch; it may land on the same pool.
+A requeued sandbox is placed again with the pools whose `Create` failed for
+it excluded (`ExcludedPools`; capacity failures do not count). If that leaves
+no pool, the excluded pools are tried again.
 
 ## 11. Fairness
 
@@ -237,7 +242,11 @@ All examples use two pools like those in `internal/server/server_test.go`:
 | `burst` | external | unbounded | 10 | 0.02 per CPU-hour |
 
 and the default classifications (`internal` is the default and has an
-`overflow` ceiling).
+`overflow` ceiling). Both are `fake` pools in the tests; the name `fc` is
+historical. A real private OpenSandbox pool reports no capacity, so it is
+"full" only when it reaches its `maxConcurrency`: read
+`insufficient free capacity` below as `at concurrency limit N` for such a
+pool.
 
 ### Scenario D: hybrid overflow
 
@@ -323,8 +332,6 @@ Tests: `TestCapabilityMismatch` (policy and server packages).
 Tracked in [backlog E0](../backlog.md#e0-correctness-and-security-fixes-from-the-code-review)
 unless noted.
 
-- `ExcludedPools` is never written, so a sandbox whose provisioning failed can
-  be placed on the same pool again once its next health probe succeeds.
 - `maxQueueSeconds` is only checked when no pool is ready; a sandbox waiting on
   tenant quota never times out.
 - Adapter-reported `regions` (Daytona `target`) are not used; only
@@ -334,4 +341,6 @@ unless noted.
 - There is no bin-packing, anti-affinity, warm pool or preemption.
 - Overflow is evaluated per sandbox per tick, not against a sustained
   utilization threshold.
-- One project-policy delete path lacks an ownership check (trust model §6).
+- Placement cannot see a backend's real headroom when the adapter reports
+  none (OpenSandbox, Daytona, Freestyle); set `maxConcurrency` to match what
+  the backend can run.

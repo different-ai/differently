@@ -1,18 +1,14 @@
-// Package guest runs commands and file operations for a sandbox.
-//
-// The same Runner backs two places: the in-VM guest agent (Root "/"), which
-// the node agent reaches over Firecracker vsock, and the devhost adapter
-// (Root is a host directory, no isolation) used for local development.
-package guest
+// Package localexec runs commands and file operations under a directory on
+// the local host. It backs the devhost adapter (development only, no
+// isolation).
+package localexec
 
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -278,92 +274,3 @@ func (c *capped) String() string { return c.buf.String() }
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
-
-// Handler serves the guest agent API used by the node agent:
-//
-//	GET  /healthz
-//	POST /v1/exec[?stream=1]   body api.ExecRequest
-//	GET  /v1/files?path=       list a directory
-//	GET  /v1/files/content?path=
-//	PUT  /v1/files/content?path=
-func Handler(r *Runner) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
-	mux.HandleFunc("POST /v1/exec", func(w http.ResponseWriter, req *http.Request) {
-		var body api.ExecRequest
-		if err := json.NewDecoder(io.LimitReader(req.Body, 4<<20)).Decode(&body); err != nil {
-			writeErr(w, api.Errorf(api.CodeInvalidRequest, "invalid JSON: %v", err))
-			return
-		}
-		if req.URL.Query().Get("stream") == "" {
-			res, err := r.Exec(req.Context(), body)
-			if err != nil {
-				writeErr(w, err)
-				return
-			}
-			writeJSON(w, http.StatusOK, res)
-			return
-		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		flusher, _ := w.(http.Flusher)
-		enc := json.NewEncoder(w)
-		emit := func(ev api.ExecEvent) error {
-			err := enc.Encode(ev)
-			if flusher != nil {
-				flusher.Flush()
-			}
-			return err
-		}
-		code, err := r.ExecStream(req.Context(), body, emit)
-		if err != nil {
-			_ = emit(api.ExecEvent{Error: err.Error()})
-			return
-		}
-		_ = emit(api.ExecEvent{ExitCode: &code})
-	})
-	mux.HandleFunc("GET /v1/files", func(w http.ResponseWriter, req *http.Request) {
-		items, err := r.ListFiles(req.URL.Query().Get("path"))
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, items)
-	})
-	mux.HandleFunc("GET /v1/files/content", func(w http.ResponseWriter, req *http.Request) {
-		data, err := r.ReadFile(req.URL.Query().Get("path"))
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/octet-stream")
-		_, _ = w.Write(data)
-	})
-	mux.HandleFunc("PUT /v1/files/content", func(w http.ResponseWriter, req *http.Request) {
-		data, err := io.ReadAll(io.LimitReader(req.Body, MaxFileBytes+1))
-		if err == nil && len(data) > MaxFileBytes {
-			err = api.Errorf(api.CodeInvalidRequest, "file larger than %d bytes", MaxFileBytes)
-		}
-		if err == nil {
-			err = r.WriteFile(req.URL.Query().Get("path"), data)
-		}
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-	return mux
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, err error) {
-	e := api.AsError(err)
-	writeJSON(w, e.HTTPStatus(), api.ErrorEnvelope{Error: e})
-}

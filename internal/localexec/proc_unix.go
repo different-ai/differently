@@ -1,6 +1,6 @@
 //go:build unix
 
-package guest
+package localexec
 
 import (
 	"os/exec"

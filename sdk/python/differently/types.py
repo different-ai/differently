@@ -351,27 +351,6 @@ UsageReport = TypedDict(
 )
 
 
-class _AgentRequired(TypedDict):
-    id: str
-    pool: str
-    node: str
-    endpoint: str
-    version: str
-    arch: str
-    totalCPU: int
-    freeCPU: int
-    totalMemoryMiB: int
-    freeMemoryMiB: int
-    sandboxes: int
-    capabilities: Optional[List[str]]
-    lastSeen: str
-    healthy: bool
-
-
-class Agent(_AgentRequired, total=False):
-    templates: List[str]
-
-
 class _OrgResultRequired(TypedDict):
     organization: Organization
 

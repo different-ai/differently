@@ -1,6 +1,6 @@
 # ADR 0015: Defer Firecracker jailer integration; state the gap
 
-- Status: Accepted (gap open)
+- Status: Obsolete ([ADR 0020](0020-opensandbox-replaces-node-agent.md)): Differently no longer runs Firecracker; sandboxing the VMM is the runtime's job
 - Date: 2026-10-28
 
 ## Context

@@ -62,7 +62,7 @@
       "required": ["name", "adapter"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
-        "adapter": {"type": "string", "enum": ["firecracker", "remote", "daytona", "freestyle", "opensandbox", "fake"]},
+        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake"]},
         "trust": {"type": "string", "enum": ["private", "external"]},
         "region": {"type": "string"},
         "labels": {"$ref": "#/definitions/stringMap"},
@@ -87,7 +87,18 @@
         },
         {
           "if": {"properties": {"adapter": {"const": "opensandbox"}}},
-          "then": {"required": ["config", "trust"], "properties": {"config": {"required": ["apiURL"]}}}
+          "then": {
+            "required": ["config", "trust"],
+            "properties": {
+              "config": {
+                "required": ["apiURL"],
+                "properties": {
+                  "isolation": {"enum": ["", "container", "microvm"]},
+                  "useServerProxy": {"enum": ["true", "false"]}
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -125,6 +136,37 @@
             "config": {"$ref": "#/definitions/stringMap"}
           }
         },
+        "existingSecret": {"type": "string"},
+        "existingSecretKey": {"type": "string", "minLength": 1},
+        "apiKey": {"type": "string"},
+        "env": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+      }
+    },
+    "opensandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "apiURL", "trust", "pool", "isolation", "env"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "apiURL": {"type": "string", "pattern": "^$|^https?://", "description": "OpenSandbox lifecycle API base URL, ending in /v1. Required when enabled."},
+        "trust": {"type": "string", "enum": ["private", "external"], "description": "private if you operate the OpenSandbox server, external if someone else does."},
+        "pool": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "region": {"type": "string"},
+            "labels": {"$ref": "#/definitions/stringMap"},
+            "maxConcurrency": {"$ref": "#/definitions/nonNegativeInt"},
+            "costModel": {"$ref": "#/definitions/costModel"}
+          }
+        },
+        "image": {"type": "string"},
+        "templateId": {"type": "string"},
+        "isolation": {"type": "string", "enum": ["container", "microvm"]},
+        "features": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9.-]*$"}},
+        "useServerProxy": {"type": "boolean"},
         "existingSecret": {"type": "string"},
         "existingSecretKey": {"type": "string", "minLength": 1},
         "apiKey": {"type": "string"},
@@ -223,8 +265,7 @@
             "intervalMs": {"$ref": "#/definitions/nonNegativeInt"},
             "provisionTimeoutSeconds": {"$ref": "#/definitions/nonNegativeInt"},
             "maxAttempts": {"$ref": "#/definitions/nonNegativeInt"},
-            "reconcileIntervalSeconds": {"$ref": "#/definitions/nonNegativeInt"},
-            "agentTimeoutSeconds": {"$ref": "#/definitions/nonNegativeInt"}
+            "reconcileIntervalSeconds": {"$ref": "#/definitions/nonNegativeInt"}
           }
         },
         "rateLimit": {
@@ -258,12 +299,12 @@
       "properties": {
         "existingSecret": {"type": "string"},
         "bootstrapTokenKey": {"type": "string", "minLength": 1},
-        "agentTokenKey": {"type": "string", "minLength": 1},
         "bootstrapToken": {"type": "string", "pattern": "^$|^dly_[0-9a-z]+_[0-9a-z]{24,}$"},
-        "agentToken": {"type": "string", "pattern": "^$|^.{32,}$"},
         "keepSecretOnUninstall": {"type": "boolean"}
       }
     },
+
+    "opensandbox": {"$ref": "#/definitions/opensandbox"},
 
     "providers": {
       "type": "object",
@@ -406,65 +447,6 @@
       }
     },
 
-    "agent": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {"type": "boolean"},
-        "image": {"$ref": "#/definitions/image"},
-        "pool": {"type": "string", "minLength": 1},
-        "serverURL": {"type": "string", "pattern": "^$|^https?://"},
-        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
-        "advertiseURL": {"type": "string", "pattern": "^$|^https?://"},
-        "reserveCPU": {"$ref": "#/definitions/nonNegativeInt"},
-        "reserveMemoryMiB": {"$ref": "#/definitions/nonNegativeInt"},
-        "hostDataPath": {"type": "string", "pattern": "^/"},
-        "kernelPath": {"type": "string", "pattern": "^/var/lib/differently/"},
-        "firecrackerPath": {"type": "string", "pattern": "^/"},
-        "jailer": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {"enabled": {"type": "boolean"}, "path": {"type": "string", "pattern": "^/"}}
-        },
-        "doctor": {"type": "object", "additionalProperties": false, "properties": {"enabled": {"type": "boolean"}}},
-        "guestImages": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {"type": "boolean"},
-            "image": {"$ref": "#/definitions/image"},
-            "sourceDir": {"type": "string", "pattern": "^/"}
-          }
-        },
-        "privileged": {"type": "boolean"},
-        "unprivileged": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "capabilities": {"type": "array", "items": {"type": "string"}},
-            "deviceResources": {"type": "object", "additionalProperties": {"type": ["integer", "string"]}}
-          }
-        },
-        "readOnlyRootFilesystem": {"type": "boolean"},
-        "hostNetwork": {"type": "boolean"},
-        "nodeSelector": {"$ref": "#/definitions/stringMap"},
-        "tolerations": {"$ref": "#/definitions/k8sList"},
-        "affinity": {"$ref": "#/definitions/k8sObject"},
-        "priorityClassName": {"type": "string"},
-        "updateStrategy": {
-          "type": "object",
-          "required": ["type"],
-          "properties": {"type": {"type": "string", "enum": ["OnDelete", "RollingUpdate"]}}
-        },
-        "resources": {"$ref": "#/definitions/k8sObject"},
-        "extraArgs": {"type": "array", "items": {"type": "string"}},
-        "extraEnv": {"$ref": "#/definitions/k8sList"},
-        "podAnnotations": {"$ref": "#/definitions/stringMap"},
-        "podLabels": {"$ref": "#/definitions/stringMap"},
-        "terminationGracePeriodSeconds": {"$ref": "#/definitions/nonNegativeInt"}
-      }
-    },
-
     "serviceAccount": {
       "type": "object",
       "additionalProperties": false,
@@ -495,16 +477,20 @@
                 "databaseCIDRs": {"type": "array", "items": {"type": "string"}},
                 "databasePort": {"type": "integer", "minimum": 1, "maximum": 65535},
                 "providerCIDRs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-                "agentCIDRs": {"type": "array", "items": {"type": "string"}},
+                "opensandbox": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "namespaceSelector": {"$ref": "#/definitions/k8sObject"},
+                    "podSelector": {"$ref": "#/definitions/k8sObject"},
+                    "cidrs": {"type": "array", "items": {"type": "string"}},
+                    "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+                  }
+                },
                 "extra": {"$ref": "#/definitions/k8sList"}
               }
             }
           }
-        },
-        "agent": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {"extraIngress": {"$ref": "#/definitions/k8sList"}}
         }
       }
     },

@@ -1,5 +1,6 @@
-# Production-shaped install: external PostgreSQL from an existing Secret,
-# three server replicas, TLS ingress through cert-manager, ServiceMonitor.
+# Production-shaped install: external PostgreSQL, tokens and the OpenSandbox
+# API key from existing Secrets, three server replicas, TLS ingress through
+# cert-manager, ServiceMonitor.
 config:
   store:
     driver: postgres
@@ -15,8 +16,18 @@ postgresql:
 
 auth:
   # kubectl create secret generic differently-tokens \
-  #   --from-literal=bootstrap-token=dly_<id>_<secret> --from-literal=agent-token=<random>
+  #   --from-literal=bootstrap-token=dly_<id>_<secret>
   existingSecret: differently-tokens
+
+opensandbox:
+  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+  trust: private
+  pool:
+    region: dc1
+    maxConcurrency: 100
+  # kubectl create secret generic opensandbox-api-key --from-literal=api-key=...
+  existingSecret: opensandbox-api-key
+  existingSecretKey: api-key
 
 server:
   replicas: 3
@@ -45,11 +56,6 @@ metrics:
     enabled: true
     labels:
       release: prometheus
-
-agent:
-  jailer:
-    enabled: true
-  priorityClassName: system-node-critical
 
 test:
   existingSecret: differently-smoke-key

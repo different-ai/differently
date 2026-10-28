@@ -173,7 +173,6 @@ test("admin namespace", async () => {
   mock.on("DELETE /v1/admin/pools/edge", (_req, res) => void res.writeHead(204).end());
   mock.on("POST /v1/admin/sandboxes/sbx_1/terminate", reply(202, sandboxInfo({ status: "terminating" })));
   mock.on("GET /v1/admin/audit/verify", reply(200, { ok: true, events: 42, headHash: "abc" }));
-  mock.on("GET /v1/admin/agents", reply(200, { items: [] }));
 
   const created = await client.admin.organizations.create({ name: "Acme", defaultProject: "default" });
   assert.equal(created.project?.id, "prj_1");
@@ -184,6 +183,4 @@ test("admin namespace", async () => {
   await client.admin.pools.delete("edge");
   assert.equal((await client.admin.terminateSandbox("sbx_1", { reason: "abuse" })).status, "terminating");
   assert.equal((await client.admin.verifyAudit()).ok, true);
-  await client.admin.agents.list({ pool: "fc" });
-  assert.equal(mock.calls("GET /v1/admin/agents")[0]?.query.get("pool"), "fc");
 });

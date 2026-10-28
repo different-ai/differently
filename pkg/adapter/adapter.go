@@ -2,7 +2,7 @@
 // plane and execution backends.
 //
 // An ExecutionAdapter creates and manages sandbox instances on one backend
-// (direct Firecracker, an external provider API, a community plugin). The
+// (an OpenSandbox server, an external provider API, a community plugin). The
 // required interface is deliberately small; optional behaviour is expressed by
 // implementing the optional interfaces below (FileSystem, Lifecycle, Pauser,
 // Snapshotter, Streamer, PortExposer). The control plane advertises a feature

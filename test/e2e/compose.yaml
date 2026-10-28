@@ -1,11 +1,9 @@
-# End-to-end stack: Postgres, the control plane and one node agent running
-# real Firecracker microVMs. Needs a Docker host with /dev/kvm (see README.md).
+# End-to-end stack: Postgres, the Differently control plane and a real
+# OpenSandbox server (Docker runtime) as its private pool. Runs on any
+# Docker host; see README.md.
 name: differently-e2e
 
-x-tokens: &tokens
-  # Test-only credentials for this throwaway stack.
-  DIFFERENTLY_BOOTSTRAP_TOKEN: dly_e2eoperator_e2etoken0123456789abcdefghjkmnpqrstvwxyz
-  DIFFERENTLY_AGENT_TOKEN: e2e-agent-registration-token
+x-osb-key: &osb_key osb-live-test-key-0123456789 # matches ../opensandbox/config.toml
 
 services:
   postgres:
@@ -18,12 +16,31 @@ services:
       timeout: 3s
       retries: 30
 
+  opensandbox-server:
+    image: opensandbox/server:release-1.2.0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "18091:8090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../opensandbox/config.toml:/etc/opensandbox/config.toml:ro
+    environment:
+      SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   server:
     image: differently-server:e2e
     command: ["--config", "/etc/differently/config.yaml"]
     environment:
-      <<: *tokens
+      # Test-only credentials for this throwaway stack.
+      DIFFERENTLY_BOOTSTRAP_TOKEN: dly_e2eoperator_e2etoken0123456789abcdefghjkmnpqrstvwxyz
       DIFFERENTLY_DATABASE_URL: postgres://postgres:e2e@postgres:5432/postgres?sslmode=disable
+      DIFFERENTLY_OPENSANDBOX_API_KEY: *osb_key
     volumes:
       - ./config.yaml:/etc/differently/config.yaml:ro
     ports:
@@ -32,27 +49,5 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-
-  agent:
-    image: differently-agent-e2e:latest
-    command:
-      - --server=http://server:8080
-      - --pool=fc-local
-      - --node=e2e-node-1
-      - --listen=:9090
-      - --advertise-url=http://agent:9090
-      - --reserve-cpu=0
-      - --reserve-memory-mib=1024
-    environment:
-      DIFFERENTLY_AGENT_TOKEN: e2e-agent-registration-token
-    privileged: true
-    devices:
-      - /dev/kvm
-      - /dev/net/tun
-    volumes:
-      - agent-state:/var/lib/differently/agent
-    depends_on:
-      - server
-
-volumes:
-  agent-state:
+      opensandbox-server:
+        condition: service_healthy

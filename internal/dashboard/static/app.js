@@ -49,10 +49,9 @@ const views = {
       ${table(["#", "Time", "Actor", "Action", "Resource", "Details"], ev.items.slice().reverse().map((e) => [e.seq, esc(new Date(e.time).toLocaleString()), esc(e.actor), esc(e.action), `<code>${esc(e.resource)}</code>`, `<code>${esc(JSON.stringify(e.details || {}))}</code>`]))}`;
   },
   async pools() {
-    const [pools, agents] = await Promise.all([call("GET", "/v1/admin/pools"), call("GET", "/v1/admin/agents")]);
+    const pools = await call("GET", "/v1/admin/pools");
     return `<h1>Pools</h1>${table(["Pool", "Adapter", "Trust", "Enabled", "Draining", "Active", "Free CPU", "Health", ""], pools.items.map((p) => [esc(p.name), esc(p.adapter), esc(p.trust), p.enabled, p.draining, p.active,
-        p.capacity && p.capacity.bounded ? `${p.capacity.freeCPU}/${p.capacity.totalCPU}` : "provider", status(p.health && p.health.status), `<button data-drain="${esc(p.name)}" data-on="${p.draining}">${p.draining ? "Undrain" : "Drain"}</button>`]))}
-      <h2>Node agents</h2>${table(["Agent", "Pool", "Node", "Free CPU", "Free MiB", "VMs", "Last seen", "Healthy"], agents.items.map((a) => [esc(a.id), esc(a.pool), esc(a.node), a.freeCPU, a.freeMemoryMiB, a.sandboxes, esc(new Date(a.lastSeen).toLocaleString()), a.healthy ? "<span class='ok'>yes</span>" : "<span class='bad'>no</span>"]))}`;
+        p.capacity && p.capacity.bounded ? `${p.capacity.freeCPU}/${p.capacity.totalCPU}` : "provider", status(p.health && p.health.status), `<button data-drain="${esc(p.name)}" data-on="${p.draining}">${p.draining ? "Undrain" : "Drain"}</button>`]))}`;
   },
   async tenants() {
     const orgs = await call("GET", "/v1/admin/organizations");

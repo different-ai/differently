@@ -38,8 +38,6 @@ func (s *Server) adminRoutes(authed func(string, handlerFunc)) {
 	admin("DELETE /v1/admin/pools/{name}", s.deletePool)
 	admin("POST /v1/admin/pools/{name}/drain", s.drainPool(true))
 	admin("POST /v1/admin/pools/{name}/undrain", s.drainPool(false))
-	admin("GET /v1/admin/agents", s.listAgents)
-	admin("DELETE /v1/admin/agents/{id}", s.deleteAgent)
 	admin("POST /v1/admin/sandboxes/{id}/terminate", s.forceTerminate)
 	admin("GET /v1/admin/trust-report", s.trustReport)
 	admin("GET /v1/admin/audit/verify", s.verifyAudit)
@@ -322,41 +320,6 @@ func (s *Server) drainPool(drain bool) handlerFunc {
 	}
 }
 
-func (s *Server) listAgents(w http.ResponseWriter, r *http.Request, _ auth.Principal) error {
-	list, err := s.Store.ListAgents(r.Context(), r.URL.Query().Get("pool"))
-	if err != nil {
-		return err
-	}
-	writeJSON(w, 200, api.List[api.Agent]{Items: s.publicAgents(list)})
-	return nil
-}
-
-// publicAgents strips secrets and computes health.
-func (s *Server) publicAgents(list []store.AgentRecord) []api.Agent {
-	cutoff := s.now().Add(-time.Duration(s.Config.Scheduler.AgentTimeoutSeconds) * time.Second)
-	out := make([]api.Agent, 0, len(list))
-	for _, a := range list {
-		a.Healthy = a.LastSeen.After(cutoff)
-		out = append(out, a.Agent)
-	}
-	return out
-}
-
-// deleteAgent forgets an agent identity so a rebuilt node can register
-// again. Sandboxes on that node become unreachable until it does.
-func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
-	a, err := s.Store.GetAgent(r.Context(), r.PathValue("id"))
-	if err != nil {
-		return err
-	}
-	if err := s.Store.DeleteAgent(r.Context(), a.ID); err != nil {
-		return err
-	}
-	s.audit(r, p, "admin.agent_remove", a.ID, "", "", map[string]string{"pool": a.Pool, "endpoint": a.Endpoint})
-	w.WriteHeader(http.StatusNoContent)
-	return nil
-}
-
 func (s *Server) forceTerminate(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
 	var req struct {
 		Reason string `json:"reason"`
@@ -400,7 +363,6 @@ type TrustReport struct {
 	Classifications []api.Classification  `json:"classifications"`
 	Placements      []api.UsageLine       `json:"placementsByPool"`
 	ExternalRecent  []TrustPlacement      `json:"recentExternalPlacements"`
-	Agents          []api.Agent           `json:"agents"`
 	AdminActions    []api.AuditEvent      `json:"recentAdminActions"`
 	AuditChain      audit.VerifyResult    `json:"auditChain"`
 	Limitations     []string              `json:"limitations"`
@@ -414,6 +376,7 @@ type TrustPool struct {
 	Enabled          bool   `json:"enabled"`
 	Draining         bool   `json:"draining"`
 	Region           string `json:"region,omitempty"`
+	Isolation        string `json:"isolation,omitempty"`
 	Endpoint         string `json:"endpoint,omitempty"`
 	CredentialRef    string `json:"credentialRef,omitempty"`
 	ApprovedExternal bool   `json:"approvedForExternalPlacement"`
@@ -435,18 +398,14 @@ type TrustPlacement struct {
 // for how this installation is configured.
 func limitations(cfg config.Config) []string {
 	out := []string{
-		"Host administrators (root on KVM nodes, Kubernetes cluster-admins) can read guest memory and disks; Differently does not protect workloads from the infrastructure operator.",
-		"Cloud providers hosting your nodes can access their hardware; private pools are only as private as the infrastructure under them.",
-		"External providers (trust=external pools) run the workload and can see its code, data and environment variables.",
+		"Differently does not isolate sandboxes itself: isolation and network egress come from each pool's backend runtime (for example OpenSandbox's Docker, Kubernetes or Fast Sandbox runtime). Each pool's declared isolation is listed in this report and should be checked against the runtime you actually deployed.",
+		"Whoever operates a backend (an OpenSandbox server and its hosts, a cloud provider, an external provider) can read the workloads it runs, including code, data and environment variables.",
+		"Actions taken directly on a backend (its own API or console, kubectl, SSH to hosts) bypass Differently and are not in its audit log.",
 		"The audit chain is tamper-evident, not tamper-proof: anyone with database write access can rewrite it. Export events (audit.file) to write-once storage to anchor it.",
-		"Actions taken directly on backends (kubectl, provider consoles, SSH to nodes) bypass Differently and are not in its audit log.",
-		"Egress from Firecracker sandboxes is controlled only by node networking you configure; Differently does not inspect traffic.",
+		"Backend credentials (for example an OpenSandbox API key) are held by the control plane as environment variables or mounted files; anyone who can read its environment can use them.",
+		"Sandbox environment variables are stored unencrypted in the control-plane database; protect it with storage encryption and access controls.",
 		"Exec commands are audited by program name unless audit.recordCommands is enabled; command arguments and outputs are not retained.",
 		"Usage costs are estimates from configured cost models, not reconciled provider invoices.",
-		"Firecracker microVMs do not run under the jailer yet; they rely on Firecracker's built-in seccomp filters and the agent's container isolation.",
-		"Node agents are reached over plain HTTP. Each agent has its own secret, fixed at first registration, so one node cannot impersonate or command another; but anyone holding the shared registration token can register new agent IDs, and traffic is unencrypted until mTLS lands.",
-		"Sandbox environment variables and per-agent secrets are stored unencrypted in the control-plane database; protect it with storage encryption and access controls.",
-		"Sandbox egress rules cover IPv4 only.",
 	}
 	if !cfg.Audit.FailClosed {
 		out = append(out, "Audit logging is fail-open: if an audit append fails the action still proceeds and the failure is only logged and counted (set audit.failClosed to refuse changes instead).")
@@ -480,8 +439,13 @@ func (s *Server) trustReport(w http.ResponseWriter, r *http.Request, _ auth.Prin
 	}
 	endpoints := s.Pools.Endpoints()
 	for _, pl := range pools {
+		isolation := ""
+		if a, err := s.Pools.Adapter(pl.Name); err == nil {
+			isolation = a.Info().Isolation
+		}
 		rep.Pools = append(rep.Pools, TrustPool{
-			Name: pl.Name, Adapter: pl.Adapter, Trust: pl.Trust, Enabled: pl.Enabled, Draining: pl.Draining, Region: pl.Region,
+			Isolation: isolation,
+			Name:      pl.Name, Adapter: pl.Adapter, Trust: pl.Trust, Enabled: pl.Enabled, Draining: pl.Draining, Region: pl.Region,
 			Endpoint: endpoints[pl.Name], CredentialRef: pl.CredentialRef, Health: pl.Health.Status,
 			ApprovedExternal: pl.Trust == api.TrustExternal && rep.GlobalPolicy.External != api.ExternalNever && slices.Contains(rep.GlobalPolicy.ExternalPools, pl.Name),
 		})
@@ -512,8 +476,6 @@ func (s *Server) trustReport(w http.ResponseWriter, r *http.Request, _ auth.Prin
 		rep.Placements = append(rep.Placements, *l)
 	}
 	slices.SortFunc(rep.Placements, func(a, b api.UsageLine) int { return strings.Compare(a.Key, b.Key) })
-	agents, _ := s.Store.ListAgents(ctx, "")
-	rep.Agents = s.publicAgents(agents)
 	events, _ := s.Store.ListAudit(ctx, store.AuditFilter{})
 	rep.AuditChain = audit.Verify(events)
 	for i := len(events) - 1; i >= 0 && len(rep.AdminActions) < 50; i-- {

@@ -4,6 +4,8 @@
 {{- $driver := include "differently.storeDriver" . -}}
 {{- $providers := include "differently.enabledProviders" . | fromJsonArray -}}
 {{- $public := include "differently.publicURL" . -}}
+{{- $o := .Values.opensandbox -}}
+{{- $pools := (include "differently.config" . | fromYaml).pools | default list -}}
 Differently {{ .Chart.AppVersion }} is installed as release "{{ .Release.Name }}" in namespace "{{ $ns }}".
 {{- if eq $driver "memory" }}
 
@@ -15,6 +17,65 @@ only; see docs/deploy/kubernetes.md for PostgreSQL.
 
 WARNING: postgresql.embedded is EVALUATION ONLY (single replica, no backups).
 Use postgresql.external (managed PostgreSQL or CloudNativePG) in production.
+{{- end }}
+{{- if not $pools }}
+
+WARNING: no pool is configured (opensandbox.enabled=false, config.pools and
+providers.* are empty). Sandboxes stay queued until you add one with
+config.pools or POST /v1/admin/pools.
+{{- end }}
+{{- if $o.enabled }}
+{{- $secret := include "differently.opensandboxSecretName" . }}
+{{- $key := include "differently.opensandboxSecretKey" . }}
+
+OpenSandbox runs the sandboxes and is NOT installed by this chart. Install it
+separately with its own Helm chart or manifests
+(https://github.com/opensandbox-group/OpenSandbox), with the runtime you want:
+Docker, Kubernetes, or Fast Sandbox (Firecracker microVMs, needs KVM nodes).
+This release expects its lifecycle API at:
+
+     {{ $o.apiURL }}
+{{- if $o.apiKey }}
+
+The API key comes from opensandbox.apiKey and is stored in Secret
+{{ $secret }}. Prefer opensandbox.existingSecret.
+{{- else }}
+
+The server reads the OpenSandbox server's API key from key {{ $key }} of
+Secret {{ $secret }}. Server pods wait until it exists; create it with:
+
+     kubectl create secret generic {{ $secret }} -n {{ $ns }} \
+       --from-literal={{ $key }}='<the OpenSandbox server api_key>'
+{{- end }}
+
+Pool "{{ $o.pool.name }}" is declared trust={{ $o.trust }} and isolation={{ $o.isolation }}.
+{{- if eq $o.trust "private" }}
+trust=private is only true when you operate the OpenSandbox server and its
+runtime; set opensandbox.trust=external otherwise.
+{{- else }}
+As an external pool it receives work only when config.policy.external allows
+it and config.policy.externalPools lists "{{ $o.pool.name }}".
+{{- end }}
+{{- if eq $o.isolation "container" }}
+Containers share the host kernel. Set opensandbox.isolation=microvm only for
+an OpenSandbox server running Fast Sandbox.
+{{- else }}
+Fast Sandbox has not been verified with Differently yet, so treat microVM
+isolation as declared, not proven.
+{{- end }}
+Differently reports the declared isolation; it does not enforce isolation or
+sandbox egress itself.
+{{- if and .Values.networkPolicy.enabled .Values.networkPolicy.server.egress.restricted }}
+{{- $osb := .Values.networkPolicy.server.egress.opensandbox }}
+
+Server egress is restricted: OpenSandbox is reachable on TCP {{ $osb.port }}
+{{- with (dig "namespaceSelector" "matchLabels" "kubernetes.io/metadata.name" "" $osb) }} in namespace {{ . }}{{ end }}.
+Keep networkPolicy.server.egress.opensandbox in line with opensandbox.apiURL.
+{{- if not $o.useServerProxy }}
+opensandbox.useServerProxy=false: the server connects to each sandbox's execd
+endpoint directly; allow those addresses with networkPolicy.server.egress.extra.
+{{- end }}
+{{- end }}
 {{- end }}
 
 1. Read the bootstrap operator token (admin scope; store it in a vault):
@@ -42,21 +103,13 @@ Use postgresql.external (managed PostgreSQL or CloudNativePG) in production.
 
      curl -fsS "$DIFFERENTLY_URL/readyz"
      curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/admin/trust-report"
-{{- if .Values.agent.enabled }}
 
-3. Node agents run only on nodes labelled differently.dev/kvm=true:
+3. Check the pools:
+{{- if .Values.server.preflight.enabled }}
 
-     kubectl get nodes -l differently.dev/kvm=true
-     kubectl get pods -n {{ $ns }} -l app.kubernetes.io/component=agent -o wide
-     kubectl logs -n {{ $ns }} <agent-pod> -c doctor     # KVM/tun/kernel/image checks
-     curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/admin/agents"
-{{- if eq (.Values.agent.updateStrategy.type | default "") "OnDelete" }}
-
-   Agents use updateStrategy OnDelete: `helm upgrade` does not restart them,
-   because a restart stops that node's microVMs. Roll them node by node
-   (docs/deploy/day-2.md).
+     kubectl logs -n {{ $ns }} deploy/{{ $server }} -c preflight   # config and credential checks
 {{- end }}
-{{- end }}
+     curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/admin/pools"
 {{- if $providers }}
 
 External providers registered (trust=external):

@@ -1,6 +1,6 @@
 # ADR 0007: Small adapter contract with optional interfaces and an HTTP plugin protocol
 
-- Status: Accepted
+- Status: Accepted. Amended by [ADR 0020](0020-opensandbox-replaces-node-agent.md): the node agent that spoke this protocol was removed; `remote` plugins still use it
 - Date: 2026-10-28
 
 ## Context

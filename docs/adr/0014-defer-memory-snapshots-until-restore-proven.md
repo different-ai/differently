@@ -1,6 +1,6 @@
 # ADR 0014: Do not advertise memory snapshots on Firecracker until restore is proven
 
-- Status: Accepted (deferred)
+- Status: Obsolete ([ADR 0020](0020-opensandbox-replaces-node-agent.md)): the Firecracker agent it governed was removed; memory snapshots now depend on the pool's runtime
 - Date: 2026-10-28
 
 ## Context

@@ -31,7 +31,10 @@ For changes touching `internal/store/postgres`, also run `make test-postgres`.
   `internal/store` (atomic admission/activation). Treat changes here as
   security-sensitive and keep the tests in `internal/server/server_test.go`
   (acceptance scenarios A–L) green.
-- Node side: `internal/agent` (Firecracker, networking), `internal/guest`.
+- Backends: `internal/adapters/*` (`opensandbox` is the default private
+  runtime; Differently runs no sandboxes itself), `internal/wiring` (adapter
+  factories), `internal/pools`. The real-stack suite is `test/e2e`
+  (`make e2e-prepare e2e-up e2e`).
 - Docs that must stay truthful: `docs/feature-parity.md`, `docs/roadmap.md`,
   `docs/acceptance-scenarios.md`.
 

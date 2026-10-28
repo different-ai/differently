@@ -1,6 +1,6 @@
 # ADR 0008: Control-plane and provider secrets by reference only
 
-- Status: Accepted. Sandbox environment values are a stated exception.
+- Status: Accepted. Sandbox environment values are a stated exception. Amended by [ADR 0020](0020-opensandbox-replaces-node-agent.md): the agent token and `auth.agentTokenEnv` no longer exist
 - Date: 2026-10-28
 
 ## Context

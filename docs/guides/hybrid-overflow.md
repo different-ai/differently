@@ -55,10 +55,15 @@ Without Helm, declare the pool yourself as below.
 
 ```yaml
 pools:
-  - name: fc-private
-    adapter: firecracker
+  - name: opensandbox         # your private runtime
+    adapter: opensandbox
+    trust: private            # required for opensandbox pools
     region: dc1
     costModel: { cpuHour: 0.010, memoryGiBHour: 0.002 }
+    credentials: { env: DIFFERENTLY_OPENSANDBOX_API_KEY }
+    config:
+      apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+      isolation: container
   - name: daytona-burst
     adapter: daytona          # always trust: external
     region: us
@@ -74,6 +79,11 @@ pools:
 Freestyle is similar (`adapter: freestyle`, `config.snapshot`,
 `config.egress: public` to allow outbound internet; Freestyle VMs are
 deny-all by default).
+
+An OpenSandbox server that someone else operates is an external pool too:
+declare it with `trust: external`, and it follows the same rules as Daytona
+and Freestyle below. With Helm, the chart's `opensandbox` block renders the
+private pool for you (see [opensandbox-pools.md](opensandbox-pools.md)).
 
 ## 3. Authorize overflow explicitly
 
@@ -107,14 +117,19 @@ placed there.
 
 ## Semantics that differ by provider
 
-| | Firecracker (yours) | Daytona | Freestyle |
+| | OpenSandbox (yours) | Daytona | Freestyle |
 |---|---|---|---|
-| Exec output | separate stdout/stderr, streaming | combined into stdout | separate, buffered, ≤5 min inline |
-| stdin on exec | yes | no (`unsupported_operation`) | yes |
-| Pause | memory kept | VM class only | memory kept |
-| Snapshots | disk | filesystem (memory with VM class) | always memory + disk |
-| Stop | guest shutdown, disk kept | provider stop | in-guest `poweroff` |
-| Port URLs | not yet | signed preview URL (1 h) | public `*.style.dev` hostname |
+| Exec output | separate stdout/stderr, streaming, line-based | combined into stdout | separate, buffered, ≤5 min inline |
+| stdin on exec | no (`unsupported_operation`) | no (`unsupported_operation`) | yes |
+| Pause | yes; state kept (checked on the Docker runtime) | VM class only | memory kept |
+| Snapshots | disk; memory only if the runtime captures it and the pool declares `snapshots.memory` (Fast Sandbox, unverified) | filesystem (memory with VM class) | always memory + disk |
+| Stop | no (`unsupported_operation`); pause or delete instead | provider stop | in-guest `poweroff` |
+| Port URLs | only when OpenSandbox serves the port directly without request headers | signed preview URL (1 h) | public `*.style.dev` hostname |
+
+For OpenSandbox, exec, pause and resume, disk snapshots and the stop
+refusal were checked live against release 1.2.0 with the Docker runtime; port
+URLs, restoring or forking from a snapshot, and memory snapshots were not. The Daytona and Freestyle columns
+are checked only against fake servers.
 
 Snapshots and forks stay on the pool that took them. A running sandbox is
 never moved between providers.

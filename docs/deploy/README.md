@@ -1,76 +1,95 @@
 # Deploying Differently
 
 Differently is a self-hosted sandbox orchestration platform, licensed under
-Apache-2.0. It has two parts:
+Apache-2.0. It does not run sandboxes itself. A deployment has two parts:
 
 - **Control plane, `differently-server`:** a Go service. It serves the HTTP API,
   the built-in dashboard (`/dashboard/`) and Prometheus metrics (`/metrics`) on
   port 8080. It keeps state in PostgreSQL (or in memory for evaluation),
-  places sandboxes on pools by policy, and keeps a tamper-evident audit chain.
-- **Node agent, `differently-agent`:** runs on each KVM-capable host and starts
-  Firecracker microVMs there. It listens on port 9090 and sends heartbeats to the
-  control plane. Inside each microVM, a guest agent (`differently-guest`) answers
-  on vsock port 10000.
+  enforces tenancy and quotas, places sandboxes on pools by policy, and keeps
+  a tamper-evident audit chain.
+- **A sandbox runtime behind each pool.** The default private runtime is an
+  [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) server that
+  you install and operate yourself, with its own tooling, and register as a
+  pool (`adapter: opensandbox`). OpenSandbox runs the sandboxes with the
+  runtime you choose for it: Docker or Kubernetes containers, or Firecracker
+  microVMs with Fast Sandbox. See
+  [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md).
 
 Pools are where sandboxes run:
 
-- **`firecracker`:** your own KVM hosts, `trust=private`.
+- **`opensandbox`:** an OpenSandbox server. `trust` must be declared:
+  `private` if you operate the server and its runtime, `external` if someone
+  else does.
 - **`daytona`, `freestyle`:** optional external providers. These are always
   `trust=external`, and sandboxes are placed on them only when policy allows it.
+- **`remote`:** an out-of-process adapter plugin speaking the
+  [adapter protocol](../adapters/specification.md). Its trust is the
+  operator's declaration (default `private`).
 
 ```
              clients, CLI, dashboard
                        |
                        | HTTPS (ingress) / :8080
                        v
-  +----------------------------------------+      +---------------------+
+  +-----------------------------------------+      +---------------------+
   | differently-server (Deployment, N pods) |----->| PostgreSQL          |
   |   API, dashboard, scheduler, audit      |      | (external / CNPG)   |
-  +----------------------------------------+      +---------------------+
-        |  :9090 (agent token)        ^  heartbeats (agent token)
-        v                             |
-  +-------------------------------+   |        policy-gated, disabled by default
-  | differently-agent (DaemonSet) |---+        +------------------------------+
-  |   on nodes differently.dev/   |            | Daytona / Freestyle (HTTPS)  |
-  |   kvm=true, privileged        |            +------------------------------+
-  |   Firecracker microVMs        |
-  |     differently-guest (vsock) |
-  +-------------------------------+
+  +-----------------------------------------+      +---------------------+
+        |  :8090 (OpenSandbox API key,             policy-gated, disabled by default
+        |   by reference)                          +------------------------------+
+        v                                          | Daytona / Freestyle (HTTPS)  |
+  +-----------------------------------------+      +------------------------------+
+  | OpenSandbox server (installed by you)   |
+  |   runtime: Docker | Kubernetes |        |
+  |            Fast Sandbox (KVM nodes)     |
+  |   sandboxes, each with OpenSandbox's    |
+  |   execd                                 |
+  +-----------------------------------------+
 ```
+
+Installing means: install OpenSandbox with its own Helm chart or manifests
+and pick its runtime, then install Differently's chart pointing at it
+([kubernetes.md](kubernetes.md)). Only Fast Sandbox needs KVM hosts; the
+cloud KVM notes in [aws.md](aws.md), [gcp.md](gcp.md) and [azure.md](azure.md)
+are OpenSandbox prerequisites for that runtime.
 
 ## Fail-closed defaults
 
 - No external provider is registered. The global policy is `external: never`,
   so a sandbox can only land on a private pool, whatever its classification.
-- Agents schedule only on nodes labelled `differently.dev/kvm=true`, and
-  tolerate the matching taint.
-- The chart's NetworkPolicy lets agents accept connections only from
-  control-plane pods.
+- An `opensandbox` pool without an explicit `trust` is rejected at start-up,
+  because Differently cannot tell who operates the server.
+- The chart's NetworkPolicy limits server egress to DNS, the database,
+  OpenSandbox (port 8090) and enabled providers.
 - Secrets are never written into the server config. Pools reference
-  credentials by environment variable, and the chart keeps tokens in Secrets.
+  credentials by environment variable or file, and the chart keeps the
+  bootstrap token and the OpenSandbox API key in Secrets.
 - Differently has no telemetry or phone-home code paths (see [air-gapped.md](air-gapped.md)).
 
 ## Guides
 
 | Guide | Use it for |
 |---|---|
-| [prerequisites.md](prerequisites.md) | KVM checks, node labels and taints, kernel and root filesystem, ports |
+| [prerequisites.md](prerequisites.md) | Control-plane requirements, the OpenSandbox server, KVM hosts for Fast Sandbox, ports |
 | [kubernetes.md](kubernetes.md) | Installing on an existing cluster with Helm, step by step to the first sandbox |
-| [aws.md](aws.md) | EKS with `.metal` or nested-virtualization node groups (Terraform in `deploy/terraform/aws`) |
-| [gcp.md](gcp.md) | GKE Standard with a nested-virtualization node pool |
-| [azure.md](azure.md) | AKS with nested-virtualization-capable sizes (experimental) |
-| [bare-metal.md](bare-metal.md) | k3s, RKE2, Talos, and plain Linux hosts with systemd |
+| [aws.md](aws.md) | EKS, with `.metal` or nested-virtualization node groups for Fast Sandbox (Terraform in `deploy/terraform/aws`) |
+| [gcp.md](gcp.md) | GKE Standard, with a nested-virtualization node pool for Fast Sandbox |
+| [azure.md](azure.md) | AKS, with nested-virtualization-capable sizes for Fast Sandbox (experimental) |
+| [bare-metal.md](bare-metal.md) | k3s, RKE2, Talos, and an OpenSandbox server on a plain Linux host |
 | [air-gapped.md](air-gapped.md) | Mirroring images and the chart; running with no external egress |
-| [day-2.md](day-2.md) | Upgrade, rollback, migrations, backup and restore, certificates, node drain, uninstall |
+| [day-2.md](day-2.md) | Upgrade, rollback, migrations, backup and restore, certificates, replacing a backend, uninstall |
+| [../guides/opensandbox-pools.md](../guides/opensandbox-pools.md) | Configuring an OpenSandbox pool and what it supports |
 
 Deployment artifacts:
 
 | Path | Contents |
 |---|---|
-| `deploy/helm/differently/` | Helm chart (server, agent DaemonSet, optional embedded PostgreSQL, NetworkPolicy, ServiceMonitor, `helm test`) |
-| `deploy/terraform/aws/` | EKS cluster with system and KVM node groups |
-| `deploy/systemd/` | Unit file, env file example and installer for plain Linux KVM hosts |
-| `deploy/images/` | Guest kernel and root filesystem build scripts |
+| `deploy/helm/differently/` | Helm chart: control plane, an `opensandbox` pool (on by default), optional embedded PostgreSQL, NetworkPolicy, ServiceMonitor, `helm test` |
+| `deploy/terraform/aws/` | EKS cluster with a system node group, plus a KVM node group for Fast Sandbox only when `kvm_node_group_enabled = true` |
+| `test/opensandbox/` | A Docker Compose OpenSandbox server (Docker runtime) for checking the adapter |
+
+The chart does not install OpenSandbox.
 
 ## Support matrix
 
@@ -79,56 +98,67 @@ Status values:
 - **tested:** a maintainer has run it end to end on real infrastructure.
 - **documented:** steps are written from vendor documentation and this code,
   but have not been executed.
-- **unverified:** depends on a claim from research or secondary sources that
-  still needs a hands-on check.
+- **unverified:** depends on a claim from research or secondary sources, or
+  on a runtime nobody has run with Differently yet.
 
-**The Helm chart has not been applied to a real cluster yet.** It has been
-checked locally: `helm lint` and `helm template` pass for the default,
-external-PostgreSQL-plus-ingress and hybrid-Daytona value sets, and the
-rendered `config.yaml` parses with the server's own strict config loader.
+**The Helm chart (0.2.0) has not been applied to a real cluster, nor
+installed against a live OpenSandbox server.** It has been checked locally:
+`helm lint` and `helm template` pass for every value set in
+`deploy/helm/differently/ci/` (default, external PostgreSQL with ingress,
+OpenSandbox with Fast Sandbox declared, and OpenSandbox with Daytona
+overflow).
 
-The runtime itself is **tested** on one environment: the
-[end-to-end suite](../../test/e2e/README.md) runs the server, Postgres and a
-node agent with real Firecracker microVMs in Docker on a Colima VM with nested
-virtualization (Apple Silicon, arm64). That exercises the same images and
-agent flags the chart uses, but not Kubernetes itself.
+What has run: the `opensandbox` adapter against a real OpenSandbox server
+(release 1.2.0, Docker runtime, `execd` v1.1.0) on a Colima VM (Apple Silicon,
+arm64), both through its live test (`go test -tags live
+./internal/adapters/opensandbox/`) and through `differently-server` with an
+`opensandbox` pool: the pool was healthy, private-first placement chose it,
+exec and pause/resume worked, stop was refused as unsupported, the trust
+report showed the endpoint and the credential only as a reference, delete
+cleaned up in OpenSandbox, and the API key did not appear in the server log.
+See the [spike](../research/opensandbox-spike.md). The
+[end-to-end suite](../../test/e2e/README.md) runs the real control plane and
+Postgres against a real OpenSandbox server with the Docker runtime and passed
+10/10 on arm64 Colima on 2026-10-28.
 
-| Environment | KVM path | Status | Notes |
+| Environment | Runtime path | Status | Notes |
 |---|---|---|---|
-| Docker on Colima, Apple Silicon M3+ (`vz`, nested virtualization) | Nested virtualization, arm64 | **tested** (e2e suite, 2026-10-28) | Development and verification only; Firecracker documents nested virtualization as non-production |
-| Any conformant Kubernetes 1.29+ with KVM nodes | Privileged agent DaemonSet | documented | [kubernetes.md](kubernetes.md) |
-| AWS EKS, `.metal` node group | Bare metal | documented | Matches Firecracker's tested platforms. The Terraform module is **unvalidated** |
-| AWS EKS, nested-virtualization node group | `NestedVirtualization` CPU option (M7i/M8i/C7i/C8i/R7i/R8i…) | unverified | EKS managed node group support was reported fixed in 2026. Firecracker calls nested a development setup |
-| AWS with Karpenter | `EC2NodeClass` nested virtualization (v1.13.0+) | unverified | Not covered by the Terraform module |
-| GCP GKE Standard | Nested virtualization node pool (Intel; not E2, Arm or most AMD) | unverified | Set at pool creation, can't be changed later. Privileged pods required. CPU-bound work runs 10%+ slower |
-| GCP GKE Autopilot | ComputeClasses (GKE 1.37.0-gke.4713000+) | unverified, not recommended | Privileged pods only for allowlisted workloads |
-| GCP bare metal | `-metal` machine types | unverified | GKE does not support C4/Z3 `-metal`. C3 `-metal` on GKE is unknown |
-| Azure AKS | Nested-capable sizes such as Dsv6 | unverified | KVM inside Azure Linux VMs is described as not officially supported. There is no AKS doc for `/dev/kvm` |
-| Azure AKS Pod Sandboxing | Kata on MSHV | not a KVM path | The Firecracker agent cannot use it |
-| k3s, RKE2 | Privileged DaemonSet | documented | Pod Security Admission notes in [bare-metal.md](bare-metal.md) |
-| Talos | Privileged DaemonSet | unverified | Running Firecracker from a container without extra kernel modules is untested |
-| Plain Linux + systemd | Host KVM | documented | [bare-metal.md](bare-metal.md) |
+| OpenSandbox 1.2.0 with the Docker runtime (Docker Compose on Colima, arm64) | Containers on one Docker host | **tested** (adapter live test and a manual run through the server, 2026-10-28) | Checks the API contract, not isolation: containers share the host kernel |
+| Any conformant Kubernetes 1.29+, Differently's chart plus an OpenSandbox server | Whatever OpenSandbox runs | documented | [kubernetes.md](kubernetes.md) |
+| OpenSandbox Kubernetes runtime | Pods | unverified | [POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime) |
+| OpenSandbox Fast Sandbox on KVM nodes | Firecracker microVMs | unverified | Not run on any target yet. [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter), [backlog E18](../backlog.md#e18-fast-sandbox-spike) |
+| AWS EKS, `.metal` node group (Fast Sandbox) | Bare metal | unverified | Matches Firecracker's tested platforms. The Terraform module is **unvalidated** |
+| AWS EKS, nested-virtualization node group (Fast Sandbox) | `NestedVirtualization` CPU option (M7i/M8i/C7i/C8i/R7i/R8i…) | unverified | EKS managed node group support was reported fixed in 2026. Firecracker calls nested a development setup |
+| AWS with Karpenter (Fast Sandbox) | `EC2NodeClass` nested virtualization (v1.13.0+) | unverified | Not covered by the Terraform module |
+| GCP GKE Standard (Fast Sandbox) | Nested virtualization node pool (Intel; not E2, Arm or most AMD) | unverified | Set at pool creation, can't be changed later. CPU-bound work runs 10%+ slower |
+| GCP GKE Autopilot (Fast Sandbox) | ComputeClasses (GKE 1.37.0-gke.4713000+) | unverified, not recommended | Privileged pods only for allowlisted workloads |
+| GCP bare metal (Fast Sandbox) | `-metal` machine types | unverified | GKE does not support C4/Z3 `-metal`. C3 `-metal` on GKE is unknown |
+| Azure AKS (Fast Sandbox) | Nested-capable sizes such as Dsv6 | unverified | KVM inside Azure Linux VMs is described as not officially supported. There is no AKS doc for `/dev/kvm` |
+| Azure AKS Pod Sandboxing | Kata on MSHV | not a KVM path | Fast Sandbox needs KVM |
+| k3s, RKE2 | Differently's chart; OpenSandbox per its docs | documented | Pod Security Admission notes in [bare-metal.md](bare-metal.md) |
+| Talos | Differently's chart; OpenSandbox per its docs | unverified | |
+| OpenSandbox on a plain Linux host, Differently elsewhere | Docker runtime on that host | documented | [bare-metal.md](bare-metal.md#register-an-opensandbox-server-on-a-plain-linux-host) |
 | Air-gapped | Any of the above | documented | [air-gapped.md](air-gapped.md) |
-| arm64 KVM hosts (Graviton `.metal`) | Bare metal | unverified | Firecracker supports aarch64. Multi-arch agent images are assumed |
-| Daytona, Freestyle pools | Provider APIs | unverified | Adapters are checked against the providers' published OpenAPI specs, not live accounts |
+| Daytona, Freestyle pools | Provider APIs | unverified | Adapters are checked against the providers' published OpenAPI specs with fake servers, not live accounts |
 
 ## Security model in one paragraph
 
-Root on a KVM node and Kubernetes cluster-admins can read guest memory and
-disks. Differently does not protect workloads from the infrastructure
-operator, and a private pool is only as private as the hardware under it.
-External pools see the code, data and environment of the sandboxes placed on
-them.
-
-Traffic between the control plane and agents is plain HTTP. Nodes register
-with the shared agent token, and each agent is then bound to its own secret,
-so a node cannot impersonate another, but the traffic is not encrypted. Keep
-it on a private network, or use an encrypting CNI or mesh.
-
-`/metrics` has no authentication; the chart serves it on a separate port
-(`metrics.port`, default 9091) that the ingress does not expose. Sandbox egress is controlled only by the node
-networking you configure. Block the cloud metadata endpoint
-(`169.254.169.254`) from sandboxes.
-
-`GET /v1/admin/trust-report` shows the live trust posture, including which
-external pools policy currently approves.
+Differently does not isolate sandboxes itself. Isolation and network egress
+come from each pool's runtime: with OpenSandbox's Docker or Kubernetes
+runtime, sandboxes are containers that share the host kernel; Fast Sandbox
+gives each one a Firecracker microVM, but that path is unverified. Whoever
+operates the OpenSandbox server and its hosts (and any cloud or external
+provider) can read the workloads it runs. The OpenSandbox API key is held by
+the control plane as an environment variable or file and never reaches
+tenants or sandboxes; the adapter refuses port endpoints that would need it.
+Differently does not wire OpenSandbox's network policy yet, so restrict
+sandbox egress in OpenSandbox's own configuration, with Kubernetes
+NetworkPolicy or with host and VPC firewalls, and always block cloud metadata
+endpoints (`169.254.169.254`). Keep control-plane-to-OpenSandbox traffic on a
+private network or use an `https` `apiURL`. `/metrics` has no
+authentication; the chart serves it on a separate port (`metrics.port`,
+default 9091) that the ingress does not expose. `GET /v1/admin/trust-report`
+shows the live trust posture: each pool's declared isolation, endpoint and
+credential reference, which external pools policy currently approves, and the
+residual risks Differently cannot control. More in the
+[trust model](../security/trust-model.md).

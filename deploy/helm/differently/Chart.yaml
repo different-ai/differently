@@ -1,10 +1,11 @@
 apiVersion: v2
 name: differently
 description: >-
-  Self-hosted sandbox orchestration. Runs the Differently control plane and a
-  node agent DaemonSet that starts Firecracker microVMs on KVM-capable nodes.
+  Self-hosted sandbox orchestration. Runs the Differently control plane
+  (tenancy, quotas, policy-gated placement, audit) and registers an
+  OpenSandbox server, installed separately, as its default private pool.
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.1.0"
 kubeVersion: ">=1.29.0-0"
 home: https://github.com/different-ai/differently
@@ -12,9 +13,9 @@ sources:
   - https://github.com/different-ai/differently
 keywords:
   - sandbox
-  - firecracker
-  - microvm
-  - kvm
+  - opensandbox
+  - orchestration
+  - placement-policy
   - self-hosted
 annotations:
   artifacthub.io/license: Apache-2.0
