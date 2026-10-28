@@ -63,6 +63,31 @@ Follow [deploy/kubernetes.md](../deploy/kubernetes.md). For OpenWork:
   full) or `allowed`, and list the pools in `config.policy.externalPools`.
   A narrower org or project policy can only tighten this.
 
+### On OpenSandbox's Kubernetes runtime (AKS, k3s)
+
+Observed on a single-node k3s install on Azure (OpenSandbox server,
+controller and execd release-1.2.0, BatchSandbox): the end-to-end suite
+passes 8 of 8 with pause and snapshots left out. What that means for
+OpenWork computers:
+
+- **Exact output.** Its Kubernetes runtime already uses `execd`
+  release-1.2.0, so set `opensandbox.lineEndings: kept`.
+- **Pause and snapshots need a registry.** On this runtime, OpenSandbox
+  pauses by committing the sandbox's filesystem to an OCI image and resumes
+  by re-creating it from that image (`controller.snapshot.registry` plus
+  push and pull secrets). That is slower than Docker's memory freeze, and
+  processes don't survive it. Without a registry, leave
+  `lifecycle.pause-resume` and `snapshots.disk` out of `opensandbox.features`.
+  Workbot then can't pause idle computers: the pause fails quietly and the
+  computer runs until its TTL.
+- **Port URLs need OpenSandbox's ingress gateway** (`server.gateway.enabled`),
+  so a desktop viewer needs it, or a Daytona or Freestyle pool.
+- **First image pull.** Pulling a new image can take longer than
+  OpenSandbox's 60-second pod-ready timeout. OpenSandbox then deletes the
+  sandbox and answers the create with a 504. Pre-pull large images, such as
+  Workbot's computer image, on the nodes, or raise that timeout
+  ([OpenSandbox pools](opensandbox-pools.md)).
+
 ## Templates: route one image name to every provider
 
 Workbot boots a prepared image (`HEADLESS_COMPUTER_SNAPSHOT`), and each
