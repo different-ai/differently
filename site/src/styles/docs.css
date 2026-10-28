@@ -52,3 +52,5 @@ pre.mermaid {
 }
 pre.mermaid:not([data-processed]) { color: var(--sl-color-gray-3); font-size: 0.8em; text-align: left; }
 .sl-markdown-content table { display: block; overflow-x: auto; }
+/* Keep callouts monochrome. */
+.starlight-aside { --sl-color-asides-text-accent: var(--sl-color-white); --sl-color-asides-border: var(--sl-color-gray-4); background-color: var(--sl-color-gray-6); }

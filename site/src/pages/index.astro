@@ -92,6 +92,30 @@ const features = [
     cta: 'Security and trust model',
   },
 ];
+
+const fromRuntime = [
+  ['Sandbox runtimes', 'Docker, Kubernetes, and Fast Sandbox (Firecracker microVMs on a per-node agent).'],
+  ['Lifecycle', 'Create, delete, pause and resume; a provider-side timeout as a TTL backstop.'],
+  ['Exec and files', 'Commands with env, cwd, timeouts and streamed output; upload, download and list files.'],
+  ['Snapshots', 'Disk snapshots; memory-preserving pause and OCI snapshots on Fast Sandbox (documented, not yet verified by us).'],
+  ['Open source', 'Apache-2.0, self-hostable, with SDKs in several languages.'],
+];
+const added = [
+  ['Multi-tenancy', 'Organizations, projects and scoped API keys. OpenSandbox has one server-wide key.'],
+  ['Quotas and fair queueing', 'Usage derived from state, enforced at admission, queued fairly across tenants.'],
+  ['Policy-gated placement', 'Global, org and project policy plus data classification decide which pool may run each sandbox. External pools fail closed.'],
+  ['Many backends, one API', 'OpenSandbox pools, Daytona, Freestyle and your own adapters behind one contract and one SDK.'],
+  ['Placement explanations', 'Every decision records the pools considered, the ones rejected and why.'],
+  ['Audit and trust report', 'A tamper-evident audit chain and one report of endpoints, credentials by reference, external placements and limits.'],
+];
+const compare = [
+  ['Where sandboxes can run', 'One runtime or one vendor', 'Every pool you register, chosen per request'],
+  ['When a pool is full or down', 'Wait, fail, or rewrite your app', 'Queue, or overflow to a pool policy allows'],
+  ['Switching providers', 'Change SDKs and application code', 'Change placement policy; code stays the same'],
+  ['Who may use external capacity', 'Whoever holds the key', 'Only tenants, classifications and requests policy allows'],
+  ['Tenancy and quotas', 'Per vendor account, or none', 'Orgs, projects, scoped keys and quotas across all pools'],
+  ['Knowing where work ran', 'Each provider\'s own logs', 'One placement record, audit chain and trust report'],
+];
 ---
 
 <!doctype html>
@@ -124,6 +148,7 @@ const features = [
         Differently
       </a>
       <nav>
+        <a href="#stack">Features</a>
         <a href={`${base}/docs/`}>Docs</a>
         <a href={`${base}/docs/reference/api/`}>API</a>
         <a href={repo}>GitHub</a>
@@ -193,6 +218,32 @@ const features = [
           <li><b>Filter, then rank.</b> Pools that fail any rule are dropped with a reason; the rest are ranked.</li>
           <li><b>Run and record.</b> The sandbox runs; the decision, usage and audit events are stored.</li>
         </ol>
+      </section>
+
+      <section class="stack wrap" id="stack">
+        <div class="section-head">
+          <p class="eyebrow">Features</p>
+          <h2>OpenSandbox runs the sandboxes. Differently runs the fleet.</h2>
+          <p>Differently does not ship its own runtime. Its default private pool is <a href="https://github.com/opensandbox-group/OpenSandbox">OpenSandbox</a>, which you run yourself; Differently adds the multi-tenant orchestration and resource management on top, across every pool you connect.</p>
+        </div>
+        <div class="split">
+          <div>
+            <h3>From OpenSandbox</h3>
+            <dl>{fromRuntime.map(([t, d]) => (<><dt>{t}</dt><dd>{d}</dd></>))}</dl>
+          </div>
+          <div>
+            <h3>Added by Differently</h3>
+            <dl>{added.map(([t, d]) => (<><dt>{t}</dt><dd>{d}</dd></>))}</dl>
+          </div>
+        </div>
+        <h3 class="compare-title">Versus a single provider</h3>
+        <div class="compare">
+          <table>
+            <thead><tr><th></th><th>Single provider</th><th>Differently</th></tr></thead>
+            <tbody>{compare.map(([q, a, b]) => (<tr><th scope="row">{q}</th><td>{a}</td><td>{b}</td></tr>))}</tbody>
+          </table>
+        </div>
+        <p class="note">Full matrix, including what each backend supports today: <a href={`${base}/docs/features/`}>Features</a> and <a href={`${base}/docs/feature-parity/`}>feature parity</a>.</p>
       </section>
 
       <section class="code wrap" id="code">
