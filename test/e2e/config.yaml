@@ -14,6 +14,7 @@ pools:
       apiURL: http://opensandbox-server:8090/v1
       image: debian:bookworm-slim
       isolation: container
+      lineEndings: kept # the stack runs execd release-1.2.0
     credentials:
       env: DIFFERENTLY_OPENSANDBOX_API_KEY
 profiles:

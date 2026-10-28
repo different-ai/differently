@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/different-ai/differently/internal/id"
 	"github.com/different-ai/differently/pkg/adapter"
@@ -35,6 +36,8 @@ var DefaultFeatures = []string{
 type instance struct {
 	adapter.Instance
 	installation string
+	template     string
+	expiry       time.Time
 	resources    api.Resources
 	files        map[string][]byte
 }
@@ -97,6 +100,38 @@ func (a *Adapter) Count() int {
 	return len(a.instances)
 }
 
+// SetExpiry records the backend deadline the control plane asked for.
+func (a *Adapter) SetExpiry(_ context.Context, ref string, at time.Time) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	in, err := a.get(ref)
+	if err != nil {
+		return err
+	}
+	in.expiry = at
+	return nil
+}
+
+// ExpiryOf returns the backend deadline last set for the sandbox's instance.
+func (a *Adapter) ExpiryOf(sandboxID string) time.Time {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if in, ok := a.instances[a.byID[sandboxID]]; ok {
+		return in.expiry
+	}
+	return time.Time{}
+}
+
+// TemplateOf returns the template the sandbox's instance was created with.
+func (a *Adapter) TemplateOf(sandboxID string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if in, ok := a.instances[a.byID[sandboxID]]; ok {
+		return in.template
+	}
+	return ""
+}
+
 // Forget deletes an instance behind the control plane's back.
 func (a *Adapter) Forget(ref string) {
 	a.mu.Lock()
@@ -148,7 +183,7 @@ func (a *Adapter) Create(_ context.Context, req adapter.CreateRequest) (adapter.
 	}
 	a.creates++
 	ref := id.New("fake")
-	in := &instance{Instance: adapter.Instance{Ref: ref, SandboxID: req.ID, State: adapter.StateRunning, Region: a.opts.Region}, installation: req.Installation, resources: req.Resources, files: files}
+	in := &instance{Instance: adapter.Instance{Ref: ref, SandboxID: req.ID, State: adapter.StateRunning, Region: a.opts.Region}, installation: req.Installation, template: req.Template, resources: req.Resources, files: files}
 	a.instances[ref] = in
 	a.byID[req.ID] = ref
 	return in.Instance, nil

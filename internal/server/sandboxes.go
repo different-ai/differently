@@ -340,7 +340,33 @@ func (s *Server) updateSandbox(w http.ResponseWriter, r *http.Request, p auth.Pr
 		return err
 	}
 	s.audit(r, p, "sandbox.update", out.ID, out.OrgID, out.ProjectID, nil)
+	if req.TTLSeconds != nil && out.ExpiresAt != nil && out.BackendRef != "" {
+		if err := s.moveBackendExpiry(r.Context(), out); err != nil {
+			return err
+		}
+	}
 	writeJSON(w, 200, out.Sandbox)
+	return nil
+}
+
+// backendExpiryGrace lets Differently's own, audited expiry run before the
+// backend's deadline.
+const backendExpiryGrace = 5 * time.Minute
+
+// moveBackendExpiry keeps a backend's TTL backstop behind Differently's
+// expiry when the TTL changes. Backends without one are left alone.
+func (s *Server) moveBackendExpiry(ctx context.Context, rec store.SandboxRecord) error {
+	a, err := s.Pools.Adapter(rec.Pool)
+	if err != nil {
+		return nil
+	}
+	ex, ok := a.(adapter.Expirer)
+	if !ok {
+		return nil
+	}
+	if err := ex.SetExpiry(ctx, rec.BackendRef, rec.ExpiresAt.Add(backendExpiryGrace)); err != nil {
+		return api.Errorf(api.CodeProviderUnavailable, "the TTL changed, but the backend's own expiry could not be moved; retry the update: %v", err)
+	}
 	return nil
 }
 

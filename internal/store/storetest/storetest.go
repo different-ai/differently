@@ -163,6 +163,16 @@ func idempotency(t *testing.T, s store.Store) {
 	if err != nil || !existed || second.ID != first.ID {
 		t.Fatalf("idempotent replay returned %s existed=%v err=%v", second.ID, existed, err)
 	}
+	// A key names a live sandbox: once it has ended, the key creates a new one.
+	if _, err := s.UpdateSandbox(ctx, first.ID, func(r *store.SandboxRecord) error { r.Status = api.StatusTerminated; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	c := sandbox(p, 1)
+	c.IdempotencyKey = "req-1"
+	third, existed, err := s.AdmitSandbox(ctx, c, store.Admission{})
+	if err != nil || existed || third.ID == first.ID {
+		t.Fatalf("a key whose sandbox ended should admit a new one, got %s existed=%v err=%v", third.ID, existed, err)
+	}
 }
 
 func fairOrder(t *testing.T, s store.Store) {

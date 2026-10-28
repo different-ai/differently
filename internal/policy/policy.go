@@ -38,7 +38,10 @@ type Input struct {
 	Pools          []PoolView
 	ExcludedPools  []string // pools that already failed this sandbox
 	PinnedPool     string   // e.g. the pool holding a snapshot to restore
-	Now            time.Time
+	// Template is the configured template the sandbox asks for, if any; it
+	// limits the pools and names each pool's own image.
+	Template *api.Template
+	Now      time.Time
 }
 
 // Effective is the merged policy for one request.
@@ -204,7 +207,14 @@ func Decide(in Input) Result {
 		if len(missing) > 0 {
 			reject("missing capabilities: %s", strings.Join(missing, ", "))
 		}
-		if ok, why := pv.Capabilities.Accepts(sb.Resources, sb.Template); !ok {
+		image := sb.Template
+		if in.Template != nil {
+			if ok, why := in.Template.Offers(p.Name); !ok {
+				reject("%s", why)
+			}
+			image = in.Template.ImageFor(p.Name)
+		}
+		if ok, why := pv.Capabilities.Accepts(sb.Resources, image); !ok {
 			reject("%s", why)
 		}
 		cost := p.CostModel.HourlyCost(sb.Resources)
