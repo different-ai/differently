@@ -53,7 +53,9 @@ Follow [deploy/kubernetes.md](../deploy/kubernetes.md). For OpenWork:
   of commands that end without a newline gains one, and OpenWork's exact
   `run` contract fails.
 - **Daytona or Freestyle (external, optional).** Enable
-  `providers.daytona` or `providers.freestyle` with `existingSecret`. Their
+  `providers.daytona` or `providers.freestyle` with `existingSecret`, or add
+  them at runtime with their key stored in Differently
+  ([keys and providers](keys-and-providers.md)). Their
   API keys live in Kubernetes Secrets that only the Differently server reads,
   and never reach OpenWork. See [hybrid-overflow.md](hybrid-overflow.md).
 - **Policy.** Registering a provider authorizes nothing. To route work there,
@@ -92,6 +94,14 @@ differently key create workbot-runner --org <org-id> --key-project <project-id>
 The key holds the default `sandboxes:read`, `sandboxes:write` and
 `sandboxes:exec` scopes and works only in that project. Set project quotas
 (`maxActiveSandboxes`, CPU, memory) to cap what the runner can hold.
+
+To replace the runner's key without downtime, rotate it with a grace period
+(`differently key rotate <key-id> --grace 1h`), set the new token as the
+runner's `DIFFERENTLY_API_KEY`, and let the old key lapse
+([rotating API keys](keys-and-providers.md#rotate-differently-api-keys-without-downtime)).
+Provider keys can be stored in Differently, and which provider new computers
+use can be switched there (`differently admin pool use NAME`), with no change
+to OpenWork ([keys and providers](keys-and-providers.md)).
 
 ## 3. Turn it on in OpenWork
 

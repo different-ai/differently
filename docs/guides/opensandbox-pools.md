@@ -87,9 +87,11 @@ pools:
 ```
 
 Pool `config` values are strings, so `features` is a comma list here. Pools
-can also be registered at runtime with `POST /v1/admin/pools`; the credential
-is still a reference to an environment variable or file on every server
-replica.
+can also be registered at runtime with `POST /v1/admin/pools`. The
+credential is then a reference to an environment variable or file on every
+server replica, or `{secret: name}` for a key stored in Differently. A
+stored key can be replaced without a restart
+([keys and providers](keys-and-providers.md)).
 
 Configuration is rejected when:
 

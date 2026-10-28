@@ -144,6 +144,9 @@ follow the same shape. The HTTP contract is [api/openapi.yaml](api/openapi.yaml)
   runtime, installed with OpenSandbox's own tooling
 - [Onboarding organizations, projects and keys](docs/guides/organization-onboarding.md)
 - [Hybrid overflow to Daytona or Freestyle](docs/guides/hybrid-overflow.md)
+- [Keys and providers](docs/guides/keys-and-providers.md): store Daytona or
+  Freestyle keys in Differently, switch where new sandboxes go, and rotate
+  provider and API keys without restarts
 - [Day-2 operations](docs/deploy/day-2.md)
 
 ## How it compares

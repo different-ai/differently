@@ -278,6 +278,8 @@ type APIKey struct {
 	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
 	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
 	Revoked    bool       `json:"revoked"`
+	// ReplacedBy names the key a rotation issued in place of this one.
+	ReplacedBy string `json:"replacedBy,omitempty"`
 }
 
 // CreateAPIKeyRequest is the body of POST /v1/api-keys.
@@ -293,6 +295,29 @@ type CreateAPIKeyRequest struct {
 type CreateAPIKeyResponse struct {
 	APIKey
 	Token string `json:"token"`
+	// Replaced is the rotated key's new state, on a rotation.
+	Replaced *APIKey `json:"replaced,omitempty"`
+}
+
+// UsePoolRequest makes a pool the one new sandboxes go to.
+type UsePoolRequest struct {
+	// ApproveExternal adds an external pool to the global policy's approved
+	// pools (raising its external mode to overflow if it was never).
+	ApproveExternal bool `json:"approveExternal,omitempty"`
+}
+
+// UsePoolResponse reports what a switch changed.
+type UsePoolResponse struct {
+	Pool    Pool             `json:"pool"`
+	Drained []string         `json:"drained"`
+	Policy  *PlacementPolicy `json:"policy,omitempty"` // the global policy, when the switch approved the pool
+}
+
+// RotateAPIKeyRequest replaces a key. GraceSeconds keeps the old key valid
+// that long (at most a week) so callers can switch without downtime; zero
+// revokes it at once.
+type RotateAPIKeyRequest struct {
+	GraceSeconds int `json:"graceSeconds,omitempty"`
 }
 
 // CostModel prices pool consumption for estimates and chargeback.
@@ -411,6 +436,23 @@ func (t Template) ImageFor(pool string) string {
 		return img
 	}
 	return t.Name
+}
+
+// Secret is a provider credential stored in Differently. Its value is
+// write-only: the API returns only a fingerprint and which pools use it.
+type Secret struct {
+	Name        string    `json:"name"`
+	Fingerprint string    `json:"fingerprint"`
+	CreatedAt   time.Time `json:"createdAt"`
+	CreatedBy   string    `json:"createdBy"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	UpdatedBy   string    `json:"updatedBy"`
+	UsedBy      []string  `json:"usedBy"`
+}
+
+// PutSecretRequest stores or replaces a secret's value.
+type PutSecretRequest struct {
+	Value string `json:"value"`
 }
 
 // AuditEvent is one entry of the tamper-evident audit chain.

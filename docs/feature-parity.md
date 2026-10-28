@@ -36,7 +36,7 @@ and where workloads may go.
 | Trust report (endpoints, credentials by ref, external placements, limits) | ✅ `GET /v1/admin/trust-report` | No | No | No | No | No |
 | Tamper-evident audit log | ✅ hash chain + verify endpoint + JSON-lines export | Audit/OTel export (UNVERIFIED scope) | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
 | Multi-tenant orgs/projects with quotas | ✅ | Orgs, seats, wallets | Orgs, tiers | Account plans | Teams | UNVERIFIED |
-| Provider credentials never stored in the DB | ✅ env/file references only | n/a | n/a | n/a | n/a | n/a |
+| Provider credentials never readable from the DB alone | ✅ env/file references, or stored sealed (AES-256-GCM) under a key that never enters the database ([ADR 0021](adr/0021-provider-credentials-stored-encrypted.md)) | n/a | n/a | n/a | n/a | n/a |
 
 Honest positioning: a self-hosted, open-source sandbox runtime is **not**
 unique (OpenSandbox, Tencent CubeSandbox and E2B's runtime exist), so
@@ -121,12 +121,14 @@ Boat is the developer-experience reference. Boat paths are relative to
 
 | Capability | Boat | Differently | Status |
 |---|---|---|---|
-| Scoped API keys | Yes | `POST /v1/api-keys`; scopes, project-bound, expiry; no-escalation rule | ✅ |
+| Scoped API keys | Yes | `POST /v1/api-keys`; scopes, project-bound, expiry; no-escalation rule; rotation with a grace period of up to 7 days (`POST /v1/api-keys/{id}/rotate`) | ✅ |
+| Provider credentials managed in the product | n/a | `PUT /v1/admin/secrets/{name}`, used by pools as `secret:name`; replacing a value takes effect without a restart. Not yet tried against live Daytona or Freestyle accounts ([guide](guides/keys-and-providers.md)) | ✅ |
 | Organizations / projects | Orgs, seats | Operator-managed orgs, tenant-managed projects | ✅ |
 | Quotas (active, queued, CPU, memory, disk, TTL, snapshots) | Plan limits | Per org and project, enforced atomically | ✅ e2e |
 | Fair queueing across tenants | n/a | Round-robin by least active CPU | ✅ |
 | Suspend a tenant | n/a | `POST /v1/admin/organizations/{id}/suspend` (optionally terminate) | ✅ |
 | Drain a pool | n/a | `POST /v1/admin/pools/{name}/drain` | ✅ |
+| Switch which provider new sandboxes go to | n/a | `POST /v1/admin/pools/{name}/use` drains every other pool; running sandboxes stay; external pools need approval; every replica picks it up within about 5 s | ✅ |
 | Webhooks | 6 lifecycle events, HMAC | — | 📋 |
 | OpenTelemetry | Metrics + logs | Prometheus `/metrics`, structured JSON logs | 🟡 OTel traces 📋 |
 | Integrated coding agents (prompt, steer, events) | Yes | — | — (out of scope: Differently is the substrate agents run on) |

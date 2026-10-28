@@ -87,6 +87,15 @@ class ApiKeys:
         body = compact(name=name, scopes=list(scopes), orgId=org_id, projectId=project_id, ttlHours=ttl_hours)
         return self._http.json("POST", "/v1/api-keys", json=body)
 
+    def get(self, key_id: str) -> ApiKey:
+        return self._http.json("GET", f"/v1/api-keys/{path_segment(key_id)}")
+
+    def rotate(self, key_id: str, *, grace_seconds: Optional[int] = None) -> CreatedApiKey:
+        """Replaces a key with a new one holding the same name, scopes and project, and returns
+        the new ``token`` once. The old key stays valid for ``grace_seconds`` (at most a week),
+        or is revoked at once."""
+        return self._http.json("POST", f"/v1/api-keys/{path_segment(key_id)}/rotate", json=compact(graceSeconds=grace_seconds))
+
     def revoke(self, key_id: str) -> None:
         self._http.json("DELETE", f"/v1/api-keys/{path_segment(key_id)}")
 

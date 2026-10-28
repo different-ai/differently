@@ -207,7 +207,17 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateAPIKeyRequest" } } } }
       responses: { "201": { description: Key and one-time token, content: { application/json: { schema: { $ref: "#/components/schemas/CreateAPIKeyResponse" } } } }, "403": { $ref: "#/components/responses/Error" } }
   /v1/api-keys/{id}:
-    delete: { tags: [Tenancy], summary: Revoke a key, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "204": { description: Revoked } } }
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { tags: [Tenancy], summary: Get a key (keys:write), responses: { "200": { description: Key, content: { application/json: { schema: { $ref: "#/components/schemas/APIKey" } } } }, "404": { $ref: "#/components/responses/Error" } } }
+    delete: { tags: [Tenancy], summary: Revoke a key, responses: { "204": { description: Revoked } } }
+  /v1/api-keys/{id}/rotate:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [Tenancy]
+      summary: Rotate a key
+      description: Issues a replacement with the same name, scopes, organization, project and lifetime, and returns its token once. The old key stays valid for graceSeconds (at most a week), or is revoked at once. The caller must be able to grant every scope the key holds.
+      requestBody: { content: { application/json: { schema: { $ref: "#/components/schemas/RotateAPIKeyRequest" } } } }
+      responses: { "201": { description: Replacement and one-time token, content: { application/json: { schema: { $ref: "#/components/schemas/CreateAPIKeyResponse" } } } }, "403": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" } }
   /v1/quotas:
     get:
       tags: [Usage and audit]
@@ -279,19 +289,38 @@ paths:
     post:
       tags: [Admin]
       summary: Register a pool at runtime
-      description: 'Credentials are references (`{"env": NAME}` or `{"file": PATH}`) resolved on the server, never values.'
+      description: 'Credentials are references, never values: `{"env": NAME}` or `{"file": PATH}` resolved on the server, or `{"secret": name}` for a credential stored with PUT /v1/admin/secrets/{name}.'
       responses: { "201": { description: Pool } }
   /v1/admin/pools/{name}:
     parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
     get: { tags: [Admin], summary: Get a pool, responses: { "200": { description: Pool } } }
-    patch: { tags: [Admin], summary: Enable/disable, set concurrency, cost model or region, responses: { "200": { description: Pool } } }
+    patch: { tags: [Admin], summary: Enable/disable, set concurrency, cost model, region or (for API-registered pools) credentialRef, responses: { "200": { description: Pool } } }
     delete: { tags: [Admin], summary: Remove an API-registered pool with no sandboxes, responses: { "204": { description: Removed } } }
   /v1/admin/pools/{name}/drain:
     post: { tags: [Admin], summary: Stop new placements on a pool, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Pool } } }
+  /v1/admin/pools/{name}/use:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [Admin]
+      summary: Send new sandboxes to this pool
+      description: Undrains the pool and drains every other one; running sandboxes stay where they are. An external pool must be approved by the global policy, or approved here with approveExternal. Private-only work still never leaves private pools.
+      requestBody: { content: { application/json: { schema: { type: object, properties: { approveExternal: { type: boolean } } } } } }
+      responses: { "200": { description: What changed, content: { application/json: { schema: { type: object, properties: { pool: { type: object }, drained: { type: array, items: { type: string } }, policy: { $ref: "#/components/schemas/PlacementPolicy" } } } } } }, "409": { $ref: "#/components/responses/Error" } }
   /v1/admin/pools/{name}/undrain:
     post: { tags: [Admin], summary: Resume placements on a pool, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Pool } } }
   /v1/admin/sandboxes/{id}/terminate:
     post: { tags: [Admin], summary: Terminate any tenant's sandbox, parameters: [{ $ref: "#/components/parameters/SandboxID" }], responses: { "202": { description: Terminating } } }
+  /v1/admin/secrets:
+    get: { tags: [Admin], summary: List stored provider credentials (fingerprints and the pools using them; never values), responses: { "200": { description: Secrets, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Secret" } } } } } } } } }
+  /v1/admin/secrets/{name}:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,62}$" } }]
+    put:
+      tags: [Admin]
+      summary: Store or replace a provider credential
+      description: The value is sealed with AES-256-GCM under the server's secrets key and never returned. Pools whose credential is secret:<name> use the new value without a restart. Needs a secrets key on the server (secrets.keyEnv or secrets.keyFile).
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PutSecretRequest" } } } }
+      responses: { "201": { description: Stored, content: { application/json: { schema: { $ref: "#/components/schemas/Secret" } } } }, "200": { description: Replaced, content: { application/json: { schema: { $ref: "#/components/schemas/Secret" } } } }, "409": { $ref: "#/components/responses/Error" } }
+    delete: { tags: [Admin], summary: Delete a credential no pool uses, responses: { "204": { description: Deleted }, "409": { $ref: "#/components/responses/Error" } } }
   /v1/admin/trust-report:
     get: { tags: [Admin], summary: Where work may go, where it went, and what cannot be proven, responses: { "200": { description: Trust report } } }
   /v1/admin/audit/verify:
@@ -506,6 +535,7 @@ components:
         expiresAt: { type: string, format: date-time }
         lastUsedAt: { type: string, format: date-time }
         revoked: { type: boolean }
+        replacedBy: { type: string, description: The key a rotation issued in place of this one }
     CreateAPIKeyRequest:
       type: object
       required: [name, scopes]
@@ -518,7 +548,24 @@ components:
     CreateAPIKeyResponse:
       allOf:
         - { $ref: "#/components/schemas/APIKey" }
-        - { type: object, properties: { token: { type: string, description: Shown once } } }
+        - { type: object, properties: { token: { type: string, description: Shown once }, replaced: { $ref: "#/components/schemas/APIKey", description: "On a rotation, the old key's new state; its replacedBy names the new key" } } }
+    RotateAPIKeyRequest:
+      type: object
+      properties: { graceSeconds: { type: integer, minimum: 0, maximum: 604800, description: How long the old key stays valid; 0 revokes it at once } }
+    Secret:
+      type: object
+      properties:
+        name: { type: string }
+        fingerprint: { type: string, description: Identifies the value without revealing it }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+        updatedBy: { type: string }
+        usedBy: { type: array, items: { type: string }, description: Pools whose credential is this secret }
+    PutSecretRequest:
+      type: object
+      required: [value]
+      properties: { value: { type: string, maxLength: 16384, writeOnly: true } }
     PlacementPolicy:
       type: object
       properties:

@@ -28,6 +28,7 @@ import (
 	"github.com/different-ai/differently/internal/metrics"
 	"github.com/different-ai/differently/internal/pools"
 	"github.com/different-ai/differently/internal/scheduler"
+	"github.com/different-ai/differently/internal/secrets"
 	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/internal/version"
 	"github.com/different-ai/differently/pkg/api"
@@ -42,6 +43,9 @@ type Server struct {
 	Audit        *auditlog.Recorder
 	Log          *slog.Logger
 	Installation string
+	// Secrets seals provider credentials stored through the API; nil means
+	// none can be stored (env: and file: references still work).
+	Secrets *secrets.Box
 
 	limiter *limiter
 	now     func() time.Time

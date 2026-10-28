@@ -129,6 +129,7 @@ Ordered by priority. P0 items gate any production recommendation.
 | P1 | [E13 Sandbox secrets by reference](backlog.md#e13-sandbox-secrets-by-reference) | 📋 |
 | P1 | [E15 Go SDK polishing](backlog.md#e15-go-sdk-polishing) | 📋 |
 | P2 | [E20 Credential Vault evaluation](backlog.md#e20-credential-vault-evaluation) (informs E13) | 📋 |
+| P2 | [E23 Provider credential follow-ups](backlog.md#e23-provider-credential-follow-ups): external vault behind `secret:`, per-organization credentials, secrets key rotation | 📋 |
 | P2 | [E8 Kueue batch lane](backlog.md#e8-kueue-batch-lane) | 📋 |
 | P2 | [E16 Boat-compatible facade evaluation](backlog.md#e16-boat-compatible-facade-evaluation) | 📋 |
 | P2 | [E14 Process sessions](backlog.md#e14-process-sessions) | 📋 |

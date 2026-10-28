@@ -269,3 +269,34 @@ func (c *Client) CreateAPIKey(ctx context.Context, req api.CreateAPIKeyRequest) 
 	var out api.CreateAPIKeyResponse
 	return out, c.Do(ctx, http.MethodPost, "/v1/api-keys", req, &out)
 }
+
+// ListAPIKeys lists the keys this key may manage.
+func (c *Client) ListAPIKeys(ctx context.Context) ([]api.APIKey, error) {
+	var out api.List[api.APIKey]
+	return out.Items, c.Do(ctx, http.MethodGet, "/v1/api-keys", nil, &out)
+}
+
+// RotateAPIKey replaces a key and returns the new token once. The old key
+// stays valid for grace (zero revokes it at once).
+func (c *Client) RotateAPIKey(ctx context.Context, id string, grace time.Duration) (api.CreateAPIKeyResponse, error) {
+	var out api.CreateAPIKeyResponse
+	return out, c.Do(ctx, http.MethodPost, "/v1/api-keys/"+url.PathEscape(id)+"/rotate", api.RotateAPIKeyRequest{GraceSeconds: int(grace / time.Second)}, &out)
+}
+
+// PutSecret stores or replaces a provider credential (operator keys).
+func (c *Client) PutSecret(ctx context.Context, name, value string) (api.Secret, error) {
+	var out api.Secret
+	return out, c.Do(ctx, http.MethodPut, "/v1/admin/secrets/"+url.PathEscape(name), api.PutSecretRequest{Value: value}, &out)
+}
+
+// ListSecrets lists stored provider credentials, without their values.
+func (c *Client) ListSecrets(ctx context.Context) ([]api.Secret, error) {
+	var out api.List[api.Secret]
+	return out.Items, c.Do(ctx, http.MethodGet, "/v1/admin/secrets", nil, &out)
+}
+
+// UsePool sends new sandboxes to a pool, draining the others.
+func (c *Client) UsePool(ctx context.Context, name string, approveExternal bool) (api.UsePoolResponse, error) {
+	var out api.UsePoolResponse
+	return out, c.Do(ctx, http.MethodPost, "/v1/admin/pools/"+url.PathEscape(name)+"/use", api.UsePoolRequest{ApproveExternal: approveExternal}, &out)
+}

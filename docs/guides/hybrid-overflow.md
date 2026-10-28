@@ -25,10 +25,32 @@ All of these, every time:
 Security and residency constraints are evaluated before cost or speed, and the
 decision — every pool considered, with reasons — is stored on the sandbox.
 
-## 1. Store the provider credential as a secret
+## 1. Store the provider credential
 
-Credentials are references to environment variables or files on the server;
-they never enter the database or any API response, and never reach sandboxes.
+A pool's credential is never returned by the API and never reaches
+sandboxes. It can live in one of two places.
+
+**In Differently.** The value is sealed in the database under the server's
+secrets key ([ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md)).
+This needs no Kubernetes Secret, and replacing the value later takes effect
+without a restart. Store the key, then register the pool at runtime with
+`credentials: {secret: daytona-key}`:
+
+```bash
+differently admin secret put daytona-key --from-file ./daytona-api-key.txt
+differently admin pool add daytona-burst --adapter daytona --trust external \
+  --config target=us --config snapshot=daytona-small --config class=container \
+  --region us --max-concurrency 50 --secret daytona-key
+```
+
+The dashboard's "Add provider" does both steps.
+[keys-and-providers.md](keys-and-providers.md#add-daytona-or-freestyle-with-the-key-stored-in-differently)
+covers the API form, the egress value a runtime-added provider needs
+(`networkPolicy.server.egress.runtimeProviders`), and a limitation with
+several server replicas. Then go to step 3.
+
+**In your secret store.** The pool holds a reference to an environment
+variable or file on the server, and the database holds only that reference:
 
 ```bash
 kubectl -n differently create secret generic provider-daytona --from-literal=api-key="$DAYTONA_API_KEY"
@@ -49,7 +71,8 @@ providers:
       config: { target: us, snapshot: daytona-small, class: container }
 ```
 
-Without Helm, declare the pool yourself as below.
+Without Helm, declare the pool yourself as below. A pool in the config file
+can also use a stored key: `credentials: {secret: daytona-key}`.
 
 ## 2. Declare the pool
 
@@ -94,6 +117,11 @@ policy:
   maxCostPerHour: 0.50
 ```
 
+`differently admin pool use <pool> --approve-external` also approves a pool,
+as a side effect of switching to it. Prefer this explicit policy change,
+which is easier to review
+([approving external providers safely](keys-and-providers.md#approve-external-providers-safely)).
+
 Then narrow per tenant where needed:
 
 ```bash
@@ -104,16 +132,48 @@ differently admin policy org:$REGULATED_ORG never.json
 ## 4. Verify before trusting it
 
 ```bash
-differently-server preflight --config config.yaml   # credential references resolve
+differently-server preflight --config config.yaml   # env:/file: references resolve; a secrets key exists for secret: ones
 differently admin pool list                         # health of each pool
 differently sandbox create --classification internal --wait
 differently sandbox placement <id>                  # outcome, pool, every candidate's reasons
-differently admin trust-report                      # recentExternalPlacements, endpoints, credentials by reference
+differently admin trust-report                      # recentExternalPlacements, endpoints, credentials by reference (env:, file:, secret:)
 ```
 
 The trust report's `recentExternalPlacements` lists each sandbox that ran
 outside your pools, who created it, its classification and the reason it was
 placed there.
+
+## Overflow or switching
+
+Overflow keeps your private pools first and sends work to an approved
+external pool only when no private pool can take it at that moment.
+Sometimes you want all new work on one provider instead: during an outage of
+your own runtime, to move to a new provider, or to test one. For that,
+switch:
+
+```bash
+differently admin pool use daytona-burst    # drains every other pool; running sandboxes stay
+differently admin pool use opensandbox      # back
+```
+
+Switching uses drain flags, not policy. The external pool must still be
+approved, and classifications still apply: `private-only` work is refused
+while every private pool is drained. Switching back leaves the policy
+approval in place. Details:
+[switch new sandboxes between providers](keys-and-providers.md#switch-new-sandboxes-between-providers).
+
+## Rotating the provider key
+
+- **A stored key:** `differently admin secret put daytona-key --from-file
+  new.txt`. Every replica uses the new value within seconds, with no
+  restart.
+- **A `file:` reference:** picked up the same way once the mounted file
+  changes.
+- **An `env:` reference** (the chart's `providers.*`): update the Secret,
+  then restart the server.
+
+See
+[rotate a provider key live](keys-and-providers.md#rotate-a-provider-key-live).
 
 ## Semantics that differ by provider
 

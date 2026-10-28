@@ -84,8 +84,8 @@ spec:
         {{- end }}
       {{- end }}
     {{- end }}
-    {{- if $providers }}
-    # External providers ({{ range $i, $p := $providers }}{{ if $i }}, {{ end }}{{ $p.kind }}{{ end }})
+    {{- if or $providers $egress.runtimeProviders }}
+    # External providers ({{ range $i, $p := $providers }}{{ if $i }}, {{ end }}{{ $p.kind }}{{ end }}{{ if $egress.runtimeProviders }}{{ if $providers }}, {{ end }}added at runtime{{ end }})
     - ports:
         - {port: 443, protocol: TCP}
       to:

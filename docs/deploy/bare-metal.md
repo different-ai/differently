@@ -138,8 +138,10 @@ describe. Register each OpenSandbox server as exactly one pool (see
 [day-2.md](day-2.md#replacing-a-backend)).
 
 Or use the admin API, which creates a pool with `source: api` that survives
-restarts in PostgreSQL. The credential is still a reference: the environment
-variable must already be set on every server replica.
+restarts in PostgreSQL. With an `env:` reference, as below, the environment
+variable must already be set on every server replica. Alternatively, store
+the key in Differently first and use `"credentials":{"secret":"edge-osb-key"}`
+([keys and providers](../guides/keys-and-providers.md)).
 
 ```sh
 curl -fsS -X POST "$DIFFERENTLY_URL/v1/admin/pools" \

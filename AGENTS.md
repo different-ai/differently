@@ -41,6 +41,8 @@ For changes touching `internal/store/postgres`, also run `make test-postgres`.
 ## Rules of thumb
 
 - Fail closed: never widen where work may run as a side effect.
-- Never store or log secrets; credentials are references (`env:`/`file:`).
+- Never log secrets. Credentials are references (`env:`/`file:`) or values
+  sealed by `internal/secrets` and referenced as `secret:`; never return a
+  stored value through the API.
 - Do not claim verification you did not do; mark gaps in docs.
 - Prefer the standard library and existing patterns over new dependencies.

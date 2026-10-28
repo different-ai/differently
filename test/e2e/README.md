@@ -58,6 +58,7 @@ in `compose.yaml` is a test value for this throwaway stack.
 | `TestDeleteCleansUpBackend` | Deleting a sandbox removes it from OpenSandbox |
 | `TestReconcilesDriftInTheBackend` | An orphan carrying this installation's metadata is deleted; a sandbox deleted behind Differently's back is failed and its quota released |
 | `TestAuditTrustAndMetrics` | Audit chain intact with fail-closed request records; the trust report shows the pool's isolation and no secrets; metrics only on their own port |
+| `TestStoredProviderKeyAndSwitching` | A provider key stored in Differently drives a second pool; `use` sends new sandboxes there and back; replacing the stored key takes the pool down and brings it back without a restart |
 
 ## Verified on
 
@@ -65,6 +66,7 @@ in `compose.yaml` is a test value for this throwaway stack.
 |---|---|---|---|
 | 2026-10-28 | Apple M4 Max, macOS 26.5, Colima 0.10.3 (`colima-differently`), arm64 | server 1.2.0, `execd` v1.1.0, Docker runtime | 10/10 passed, twice; sandboxes running in about 0.3–0.8 s |
 | 2026-10-28 | same | server 1.2.0, `execd` release-1.2.0, `lineEndings: kept` | 10/10 passed, including byte-exact output |
+| 2026-10-28 | same | server 1.2.0, `execd` release-1.2.0, `lineEndings: kept` | 11/11 passed, including stored provider keys and switching |
 
 Not covered yet:
 

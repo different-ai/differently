@@ -95,6 +95,19 @@ export class ApiKeys {
     return this.#http.json<CreatedApiKey>({ method: "POST", path: "/v1/api-keys", json: params });
   }
 
+  get(id: string): Promise<ApiKey> {
+    return this.#http.json<ApiKey>({ method: "GET", path: `/v1/api-keys/${enc(id)}` });
+  }
+
+  /**
+   * Replaces a key with a new one holding the same name, scopes and project, and returns
+   * the new `token` once. The old key stays valid for `graceSeconds` (at most a week), or
+   * is revoked at once.
+   */
+  rotate(id: string, params: { graceSeconds?: number } = {}): Promise<CreatedApiKey> {
+    return this.#http.json<CreatedApiKey>({ method: "POST", path: `/v1/api-keys/${enc(id)}/rotate`, json: params });
+  }
+
   async revoke(id: string): Promise<void> {
     await this.#http.json<void>({ method: "DELETE", path: `/v1/api-keys/${enc(id)}` });
   }

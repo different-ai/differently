@@ -1,6 +1,6 @@
 :root { --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --card: #fff; --accent: #0f766e; --bad: #b91c1c; --warn: #b45309; }
 @media (prefers-color-scheme: dark) { :root { --bg: #0c0a09; --fg: #f5f5f4; --muted: #a8a29e; --line: #292524; --card: #1c1917; --accent: #2dd4bf; --bad: #f87171; --warn: #fbbf24; } }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; } [hidden] { display: none !important; }
 body { margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--fg); }
 header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .tag { color: var(--muted); font-size: 12px; }
@@ -21,3 +21,8 @@ input, button, select { font: inherit; padding: 6px 10px; border: 1px solid var(
 button { cursor: pointer; } button.link { border: 0; background: none; color: var(--muted); padding: 0; }
 form { display: flex; gap: 8px; flex-wrap: wrap; } #key { min-width: 280px; flex: 1; }
 .error { color: var(--bad); }
+.notice { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 8px 12px; margin: 12px 0; }
+.token { margin-top: 8px; } .token div { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.token code { flex: 1; user-select: all; word-break: break-all; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.contents { display: contents; } td form { flex-wrap: nowrap; } input:disabled, select:disabled { color: var(--muted); }
+.checks { display: flex; flex-wrap: wrap; gap: 4px 12px; flex-basis: 100%; } .checks label { display: inline-flex; gap: 4px; align-items: center; } .checks input { padding: 0; }

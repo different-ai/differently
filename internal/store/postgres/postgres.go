@@ -285,6 +285,37 @@ func (s *Store) UpdateKey(ctx context.Context, kid string, fn func(*store.KeyRec
 	return out, err
 }
 
+func (s *Store) PutSecret(ctx context.Context, rec store.SecretRecord) error {
+	_, err := s.pool.Exec(ctx, "INSERT INTO secrets (name, doc) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET doc = EXCLUDED.doc", rec.Name, rec)
+	return err
+}
+
+func (s *Store) GetSecret(ctx context.Context, name string) (store.SecretRecord, error) {
+	return getDoc[store.SecretRecord](ctx, s.pool, "secret", name, "SELECT doc FROM secrets WHERE name = $1", name)
+}
+
+func (s *Store) ListSecrets(ctx context.Context) ([]store.SecretRecord, error) {
+	return listDocs[store.SecretRecord](ctx, s.pool, "SELECT doc FROM secrets ORDER BY name")
+}
+
+func (s *Store) DeleteSecret(ctx context.Context, name string) error {
+	return s.tx(ctx, func(tx pgx.Tx) error {
+		var user string
+		err := tx.QueryRow(ctx, "SELECT name FROM pools WHERE doc->>'credentialRef' = $1 LIMIT 1", "secret:"+name).Scan(&user)
+		if err == nil {
+			return api.Errorf(api.CodeConflict, "secret %s is used by pool %s", name, user)
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		tag, err := tx.Exec(ctx, "DELETE FROM secrets WHERE name = $1", name)
+		if err == nil && tag.RowsAffected() == 0 {
+			return store.NotFound("secret", name)
+		}
+		return err
+	})
+}
+
 func (s *Store) UpsertPool(ctx context.Context, p api.Pool) error {
 	p.Health, p.Capacity, p.Active = nil, nil, 0
 	_, err := s.pool.Exec(ctx, "INSERT INTO pools (name, doc) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET doc = EXCLUDED.doc", p.Name, p)

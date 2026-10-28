@@ -150,6 +150,21 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(self.client.policies.put("org:o", {"external": "never"})["external"], "never")
         self.assertEqual(self.mock.calls("PUT /v1/policies/org:o")[0].json(), {"external": "never"})
 
+    def test_key_rotation_provider_secrets_and_switching(self) -> None:
+        key = {"id": "key_2", "name": "ci", "scopes": ["sandboxes:exec"], "createdBy": "k", "createdAt": "t", "revoked": False}
+        secret = {"name": "daytona-key", "fingerprint": "abc", "createdAt": "t", "createdBy": "k", "updatedAt": "t", "updatedBy": "k", "usedBy": []}
+        self.mock.on("POST /v1/api-keys/key_1/rotate", reply(201, {**key, "token": "dly_key_2_s", "replaced": {**key, "id": "key_1"}}))
+        self.mock.on("PUT /v1/admin/secrets/daytona-key", reply(201, secret))
+        self.mock.on("POST /v1/admin/pools/daytona/use", reply(200, {"pool": {"name": "daytona"}, "drained": ["opensandbox"]}))
+
+        rotated = self.client.api_keys.rotate("key_1", grace_seconds=3600)
+        self.assertEqual((rotated["token"], rotated["replaced"]["id"]), ("dly_key_2_s", "key_1"))
+        self.assertEqual(self.mock.calls("POST /v1/api-keys/key_1/rotate")[0].json(), {"graceSeconds": 3600})
+        self.assertEqual(self.client.admin.secrets.put("daytona-key", "dtn_value")["fingerprint"], "abc")
+        self.assertEqual(self.mock.calls("PUT /v1/admin/secrets/daytona-key")[0].json(), {"value": "dtn_value"})
+        self.assertEqual(self.client.admin.pools.use("daytona", approve_external=True)["drained"], ["opensandbox"])
+        self.assertEqual(self.mock.calls("POST /v1/admin/pools/daytona/use")[0].json(), {"approveExternal": True})
+
     def test_audit_events_iterate_with_after_seq(self) -> None:
         def event(seq):
             return {"seq": seq, "time": "t", "actor": "k", "action": "sandbox.create", "resource": "sbx", "outcome": "ok", "prevHash": "", "hash": ""}

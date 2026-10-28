@@ -17,6 +17,7 @@ flowchart LR
   E22["E22 OpenWork sandbox contract"] --> E14["E14 process sessions"]
   E0["E0 review fixes"] --> E2["E2 live provider accounts"]
   E20["E20 Credential Vault evaluation"] --> E13["E13 secrets by reference"]
+  E23["E23 provider credential follow-ups"] --> E13
   E5["E5 Postgres CI / scale"] --> E10["E10 webhooks"]
   E14 --> E7["E7 SSH / PTY"]
   E11["E11 tracing"]
@@ -152,6 +153,48 @@ every OpenSandbox upgrade, and no CI job runs it today.
 - **E21.4 Keep the fake honest.** Every skew found is reproduced in the fake
   server in `internal/adapters/opensandbox/opensandbox_test.go`.
 
+## E23. Provider credential follow-ups
+
+**Priority** P2. **Depends on** nothing. **Why** provider credentials can
+be stored in Differently, sealed under one key-encryption key
+([ADR 0021](adr/0021-provider-credentials-stored-encrypted.md)), and that
+first version has known limits.
+
+- **E23.1 External vault behind `secret:`.** Resolve `secret:` names from
+  Azure Key Vault or HashiCorp Vault (and later cloud secret managers),
+  so the value never enters Differently's database. Keep the existing API:
+  the store holds a pointer and the resolver fetches and caches the value,
+  and the same fingerprint check rebuilds adapters when it changes. Today
+  vault-held values reach the server only as `file:` mounts through the
+  vault's CSI driver. *Acceptance:* a pool whose credential lives in a
+  vault rotates live when the vault's value changes, tested against a fake
+  vault API.
+- **E23.2 Per-organization provider credentials.** Let an organization use
+  its own Daytona or Freestyle account. Either org-scoped pools, or a
+  per-organization credential on a shared pool. Placement, the trust report
+  and usage must show whose account a sandbox ran in, and org admins must
+  not read other organizations' credentials. *Acceptance:* two organizations
+  on one installation place sandboxes in different provider accounts, and
+  the trust report and audit log say which.
+- **E23.3 Rotate the secrets key.** Today changing it makes every sealed
+  value unopenable. Record a key ID on each sealed value and accept a
+  keyring (current key plus previous keys). Add a command that re-seals
+  every value under the current key. *Acceptance:* the key changes on a
+  running installation without re-entering any value, including while
+  replicas run with old and new keyrings during a rolling restart.
+- **E23.4 Show which credential version each pool uses.** Report, per pool
+  and replica, the fingerprint the adapter was built with, so operators can
+  confirm a rotation reached every replica before revoking the old provider
+  key. *Acceptance:* `GET /v1/admin/pools/{name}` shows it, and the
+  rotation guide uses it.
+- ✅ **E23.5 `differently-server secrets-key`.** Prints a new base64
+  32-byte key, like `differently-server token`.
+- **E23.6 Live verification.** Rotate stored keys against live Daytona and
+  Freestyle accounts (with [E2](#e2-external-adapters-on-live-accounts)).
+  Check `file:` pickup from a Kubernetes Secret volume and an Azure Key Vault
+  CSI mount on AKS, and the chart's generated key across upgrade and
+  reinstall.
+
 ---
 
 ## E22. Serve OpenWork's sandbox contract fully
@@ -225,11 +268,17 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   flood of invalid keys from one IP is answered `429` without a database read
   per request; bucket memory stays bounded.
 - ✅ **E0.9 Bootstrap key revocation sticks** (P2). A revoked bootstrap key is
-  not re-activated when the environment value changes unless
-  `--rotate-bootstrap` is passed. *Acceptance:* test for both paths; audit
-  event `key.rotate` only on explicit rotation.
+  not re-activated when the environment value changes. As built, there is no
+  `--rotate-bootstrap` flag: a changed value for a key that is not revoked
+  replaces its hash on start, and every hash change is audited as
+  `key.rotate` with actor `bootstrap`
+  ([the bootstrap operator token](guides/keys-and-providers.md#the-bootstrap-operator-token)).
+  The planned acceptance (a flag, and `key.rotate` only on explicit
+  rotation) was not implemented.
 - **E0.10 Key lifetime controls** (P2). Configurable maximum `ttlHours`;
-  record the creating key on each key; optional cascade revocation.
+  record the creating key on each key; optional cascade revocation. (Rotation
+  with a grace period is done: `POST /v1/api-keys/{id}/rotate`, covered by
+  `TestRotateAPIKey`.)
   *Acceptance:* minting above the maximum is `400`; revoking with
   `?cascade=true` revokes descendants.
 - **E0.35 Bound synchronous exec output from backends** (P1). The
@@ -295,6 +344,21 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
 - ✅ **E0.23 Queue time accounting** (P2). Add only the time since the last
   enqueue on activation.
 
+- ✅ **E0.36 Pool registry changes reach every replica** (P1). Done: each
+  pool refresh (about every 5 s, on every replica) re-reads the store's
+  pool list (`pools.Manager.Recheck`), covered by a two-manager test; a
+  multi-replica cluster has not been tried. It was: pool changes
+  made through the admin API are applied only to the pool manager of the
+  replica that handled the call: `POST /v1/admin/pools`, `PATCH`, `drain`,
+  `undrain`, `use` and `DELETE`. `pools.Manager.Recheck` re-resolves
+  credentials on every replica but rebuilds from its in-memory pool list,
+  not from the store. So until restart, the scheduler leader can keep
+  placing sandboxes on a pool another replica drained, or never see a pool
+  another replica added. Re-read the store's pool list on each refresh, or
+  notify replicas. *Acceptance:* a two-replica test (one Postgres store, two
+  servers, one leader) where `use` on the non-leader changes where the
+  leader places the next sandbox within one refresh interval.
+
 ### Consistency and hygiene
 
 - **E0.24 Make the jailer switch honest.** *Obsolete (ADR 0020): the agent and
@@ -331,6 +395,19 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   nothing checks a third-party plugin against the contract. *Acceptance:* runs against fake, devhost, the
   OpenSandbox, Daytona and Freestyle fakes, a live OpenSandbox server
   (`-tags live`), and a `remote` pool served by `adapterhttp.Handler`.
+  (`TestStoredProviderSecretReachesBackendAndRotatesLive` now registers a
+  `remote` pool served by `adapterhttp.Handler` through the API and checks
+  health against its bearer token. That is not a conformance run.)
+- ✅ **E0.37 Credential changes visible in the trust report** (P2). Done:
+  `secret.*` events are among `recentAdminActions`, `pool.update` records
+  the new `credentialRef`, and the `limitations` text names stored
+  credentials. It was three gaps in what operators can see:
+  - add `secret.*` events to the trust report's `recentAdminActions`;
+  - record the old and new `credentialRef` in `pool.update` details;
+  - update the trust report's `limitations` text, which still describes
+    backend credentials as environment variables or files only.
+
+  *Acceptance:* a server test asserts all three.
 
 ---
 
@@ -531,6 +608,8 @@ sandbox environment values are stored in plaintext
 
 - **E13.1 Encryption at rest.** Encrypt `env` values in the store with a key
   from a file or KMS reference; the API still returns keys only.
+  `internal/secrets` (AES-256-GCM under the secrets key, ADR 0021) can seal
+  them; E23.3's key rotation then applies to both.
 - **E13.2 References.** `secretRefs: {NAME: "project-secret:<name>" | "env:..." }`
   resolved at provisioning time; project-level secret objects with their own
   scope.

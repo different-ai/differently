@@ -4,6 +4,8 @@ package pools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -62,6 +64,7 @@ type entry struct {
 	detail    string
 	checkedAt time.Time
 	buildErr  error
+	credFP    string // fingerprint of the credential the adapter was built with
 }
 
 // Manager owns one adapter per pool.
@@ -86,15 +89,21 @@ func (m *Manager) Set(p api.Pool, a adapter.ExecutionAdapter) {
 	m.entries[p.Name] = &entry{pool: p, adapter: a}
 }
 
-// Sync builds adapters for new or changed pools and drops removed ones.
+// Sync builds adapters for new or changed pools and drops removed ones. A
+// pool whose credential value changed (a rotated stored secret, Kubernetes
+// Secret file or Key Vault mount) is rebuilt with the new value.
 func (m *Manager) Sync(pools []api.Pool) {
+	fps := make(map[string]string, len(pools))
+	for _, p := range pools {
+		fps[p.Name] = m.fingerprint(p)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	seen := map[string]bool{}
 	for _, p := range pools {
 		seen[p.Name] = true
 		old, ok := m.entries[p.Name]
-		if ok && old.adapter != nil && sameBuild(old.pool, p) {
+		if ok && old.adapter != nil && sameBuild(old.pool, p) && old.credFP == fps[p.Name] {
 			old.pool = p
 			continue
 		}
@@ -102,7 +111,7 @@ func (m *Manager) Sync(pools []api.Pool) {
 			old.pool = p // pre-built via Set
 			continue
 		}
-		e := &entry{pool: p}
+		e := &entry{pool: p, credFP: fps[p.Name]}
 		if f := factoryFor(p.Adapter); f == nil {
 			e.buildErr = fmt.Errorf("adapter kind %q is not available in this build", p.Adapter)
 		} else if a, err := f(p, m.deps); err != nil {
@@ -121,6 +130,42 @@ func (m *Manager) Sync(pools []api.Pool) {
 			delete(m.entries, name)
 		}
 	}
+}
+
+// Recheck re-reads the pool registry from the store, so pools added,
+// changed, drained or removed through another replica take effect here too,
+// and rebuilds adapters whose credential changed since they were built.
+func (m *Manager) Recheck() {
+	var list []api.Pool
+	if m.deps.Store != nil {
+		stored, err := m.deps.Store.ListPools(context.Background())
+		if err != nil {
+			m.deps.Logger.Warn("pool registry unavailable; keeping the current pools", "err", err)
+			return
+		}
+		list = stored
+	} else {
+		m.mu.RLock()
+		for _, e := range m.entries {
+			list = append(list, e.pool)
+		}
+		m.mu.RUnlock()
+	}
+	m.Sync(list)
+}
+
+// fingerprint identifies a pool's current credential value without keeping
+// it. Without a resolver, only a changed reference counts as a change.
+func (m *Manager) fingerprint(p api.Pool) string {
+	if p.CredentialRef == "" || m.deps.Resolve == nil {
+		return ""
+	}
+	v, err := m.deps.Resolve(p.CredentialRef)
+	if err != nil {
+		return "unresolved"
+	}
+	sum := sha256.Sum256([]byte(v))
+	return hex.EncodeToString(sum[:8])
 }
 
 func sameBuild(a, b api.Pool) bool {
@@ -149,6 +194,7 @@ func (m *Manager) Adapter(name string) (adapter.ExecutionAdapter, error) {
 
 // Refresh probes every pool's health, capabilities and capacity.
 func (m *Manager) Refresh(ctx context.Context) {
+	m.Recheck()
 	m.mu.RLock()
 	list := make([]*entry, 0, len(m.entries))
 	for _, e := range m.entries {

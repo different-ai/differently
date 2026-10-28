@@ -5,6 +5,6 @@ export type { DifferentlyErrorInit, ErrorCode } from "./errors.js";
 export { Sandbox, SandboxFiles, Sandboxes } from "./sandbox.js";
 export type { CreateOptions, ForkOptions, WaitOptions } from "./sandbox.js";
 export { ApiKeys, AuditEvents, Listing, Policies, Projects, Quotas, Snapshots, Usage } from "./resources.js";
-export { Admin, AdminOrganizations, AdminPools, AdminProjects } from "./admin.js";
+export { Admin, AdminOrganizations, AdminPools, AdminProjects, AdminSecrets } from "./admin.js";
 export { SDK_VERSION } from "./http.js";
 export type * from "./types.js";

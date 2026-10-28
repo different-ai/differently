@@ -13,6 +13,8 @@ from .types import (
     Pool,
     Project,
     Quota,
+    Secret,
+    UsePoolResult,
     SandboxInfo,
     SuspendOrganizationResult,
     TrustReport,
@@ -85,7 +87,7 @@ class AdminPools:
         config: Optional[Mapping[str, str]] = None,
         credentials: Optional[CredentialRef] = None,
     ) -> Pool:
-        """Registers a pool at runtime. ``credentials`` names a server-side env var or file, never a value."""
+        """Registers a pool at runtime. ``credentials`` names a server env var, file or stored ``secret``, never a value."""
         body = compact(
             name=name,
             adapter=adapter,
@@ -108,8 +110,10 @@ class AdminPools:
         max_concurrency: Optional[int] = None,
         cost_model: Optional[CostModel] = None,
         region: Optional[str] = None,
+        credential_ref: Optional[str] = None,
     ) -> Pool:
-        body = compact(enabled=enabled, maxConcurrency=max_concurrency, costModel=cost_model, region=region)
+        """``credential_ref`` (API-registered pools only) is ``env:NAME``, ``file:/path`` or ``secret:name``."""
+        body = compact(enabled=enabled, maxConcurrency=max_concurrency, costModel=cost_model, region=region, credentialRef=credential_ref)
         return self._http.json("PATCH", f"/v1/admin/pools/{path_segment(name)}", json=body)
 
     def drain(self, name: str) -> Pool:
@@ -119,9 +123,32 @@ class AdminPools:
     def undrain(self, name: str) -> Pool:
         return self._http.json("POST", f"/v1/admin/pools/{path_segment(name)}/undrain")
 
+    def use(self, name: str, *, approve_external: bool = False) -> UsePoolResult:
+        """Sends new sandboxes to this pool and drains every other one; running sandboxes stay.
+        An external pool must be approved by the global policy, or approved here."""
+        return self._http.json("POST", f"/v1/admin/pools/{path_segment(name)}/use", json=compact(approveExternal=approve_external or None))
+
     def delete(self, name: str) -> None:
         """Removes an API-registered pool. Pools from the config file cannot be deleted here."""
         self._http.json("DELETE", f"/v1/admin/pools/{path_segment(name)}")
+
+
+class AdminSecrets:
+    """Provider credentials stored in Differently, sealed with the server's secrets key."""
+
+    def __init__(self, http: HttpClient) -> None:
+        self._http = http
+
+    def list(self) -> List[Secret]:
+        return self._http.json("GET", "/v1/admin/secrets").get("items") or []
+
+    def put(self, name: str, value: str) -> Secret:
+        """Stores or replaces a value. Pools using it switch to the new value without a restart."""
+        return self._http.json("PUT", f"/v1/admin/secrets/{path_segment(name)}", json={"value": value})
+
+    def delete(self, name: str) -> None:
+        """Fails while a pool uses the secret."""
+        self._http.json("DELETE", f"/v1/admin/secrets/{path_segment(name)}")
 
 
 class Admin:
@@ -132,6 +159,7 @@ class Admin:
         self.organizations = AdminOrganizations(http)
         self.projects = AdminProjects(http)
         self.pools = AdminPools(http)
+        self.secrets = AdminSecrets(http)
 
     def trust_report(self) -> TrustReport:
         """Where workloads can go, where they went, and what Differently cannot prove."""

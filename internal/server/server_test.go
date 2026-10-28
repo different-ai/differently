@@ -17,6 +17,7 @@ import (
 	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/internal/pools"
 	"github.com/different-ai/differently/internal/scheduler"
+	"github.com/different-ai/differently/internal/secrets"
 	"github.com/different-ai/differently/internal/server"
 	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/pkg/adapter"
@@ -59,7 +60,8 @@ func newHarnessWith(t *testing.T, policy api.PlacementPolicy, tweak func(*config
 		st = wrap(mem)
 	}
 	rec, _ := auditlog.New(st, log, "")
-	pm := pools.NewManager(pools.Deps{Store: st, Logger: log})
+	box, _ := secrets.New(make([]byte, secrets.KeySize))
+	pm := pools.NewManager(pools.Deps{Store: st, Logger: log, Resolve: server.CredentialResolver(st, box)})
 	h := &harness{t: t, store: mem,
 		fc:  fake.New(fake.Options{Trust: api.TrustPrivate, TotalCPU: 4, TotalMemoryMiB: 16384}),
 		ext: fake.New(fake.Options{Trust: api.TrustExternal, Features: []string{adapter.FeatureExec, adapter.FeatureFiles, adapter.FeaturePorts}}),
@@ -79,6 +81,7 @@ func newHarnessWith(t *testing.T, policy api.PlacementPolicy, tweak func(*config
 	h.sched = scheduler.New(st, pm, cfg, inst, rec, log)
 	h.sched.ReconcileGrace = 0 // tests drive the reconciler directly
 	srv := server.New(cfg, st, pm, h.sched, rec, log, inst)
+	srv.Secrets = box
 	if err := srv.Bootstrap(ctx); err != nil {
 		t.Fatal(err)
 	}

@@ -71,6 +71,14 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 {{- end -}}
 
+{{- define "differently.secretsKeySecretName" -}}
+{{- if .Values.secrets.existingSecret -}}
+{{- .Values.secrets.existingSecret -}}
+{{- else -}}
+{{- printf "%s-secrets-key" (include "differently.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "differently.tokensSecretName" -}}
 {{- if .Values.auth.existingSecret -}}
 {{- .Values.auth.existingSecret -}}
@@ -270,6 +278,13 @@ chart-managed keys (listen, dataDir, store.driver), the OpenSandbox pool
     secretKeyRef:
       name: {{ include "differently.tokensSecretName" . }}
       key: {{ .Values.auth.bootstrapTokenKey }}
+{{- if .Values.secrets.enabled }}
+- name: DIFFERENTLY_SECRETS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "differently.secretsKeySecretName" . }}
+      key: {{ .Values.secrets.existingSecretKey }}
+{{- end }}
 {{- if include "differently.usesPostgres" . }}
 - name: DIFFERENTLY_DATABASE_URL
   valueFrom:

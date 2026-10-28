@@ -41,6 +41,8 @@ services:
       DIFFERENTLY_BOOTSTRAP_TOKEN: dly_e2eoperator_e2etoken0123456789abcdefghjkmnpqrstvwxyz
       DIFFERENTLY_DATABASE_URL: postgres://postgres:e2e@postgres:5432/postgres?sslmode=disable
       DIFFERENTLY_OPENSANDBOX_API_KEY: *osb_key
+      # Test-only key that seals provider credentials stored through the API.
+      DIFFERENTLY_SECRETS_KEY: ZGlmZmVyZW50bHktZTJlLXNlY3JldHMta2V5LTAwMDE=
     volumes:
       - ./config.yaml:/etc/differently/config.yaml:ro
     ports:

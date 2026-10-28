@@ -17,11 +17,11 @@ respectively.
 | D | Hybrid overflow | Covered in-process | `TestHybridOverflowAndPrivateOnly`, `TestOverflowWhenPrivateFull` |
 | E | Private-only data stays private | Covered in-process | `TestHybridOverflowAndPrivateOnly`, `TestPrivateOnlyNeverLeaves` |
 | F | Provider substitution by policy | Covered in-process | `TestProviderSubstitution` |
-| G | Register an existing OpenSandbox server or remote plugin as a pool | Partially covered; runtime registration and `remote` pools untested | `TestOpenSandboxCredentialsAndConfig`, `TestOpenSandboxLifecycleExecFiles`, `TestLiveOpenSandbox` |
+| G | Register an existing OpenSandbox server or remote plugin as a pool | Partially covered; a `remote` pool registered through the API with a stored key is tested, runtime OpenSandbox registration is not | `TestOpenSandboxCredentialsAndConfig`, `TestOpenSandboxLifecycleExecFiles`, `TestLiveOpenSandbox`, `TestStoredProviderSecretReachesBackendAndRotatesLive` |
 | H | Scoped keys and tenant isolation | Covered in-process | `TestScopedKeyIsolation`, `TestProjectKeyIsContained` |
 | I | Capability mismatch | Covered in-process | `TestCapabilityMismatch` (server and policy), `TestOpenSandboxLifecycleExecFiles` |
 | J | Failure recovery and reconciliation | Covered in-process; backend outages untested | `TestFailureRecoveryAndReconcile`, `TestIdempotentCreateAndSnapshots` |
-| K | Upgrades and replacing a backend | Partially covered | Postgres conformance (migrations), `TestDrainingAndAllowedPools`, `TestProviderSubstitution`, `TestSuspendOrganization` |
+| K | Upgrades and replacing a backend | Partially covered | Postgres conformance (migrations), `TestDrainingAndAllowedPools`, `TestProviderSubstitution`, `TestSuspendOrganization`, `TestUsePoolSwitchesWhereNewSandboxesGo` |
 | L | Trust visibility | Covered in-process | `TestHybridOverflowAndPrivateOnly`, `TestVerifyDetectsTampering`, `TestAuditFailClosed` |
 
 The server tests share a harness (`newHarness` in
@@ -204,15 +204,17 @@ capacity available through Differently.
   in `/v1`), an explicit `trust` (`private` if you operate the server and its
   runtime, `external` if someone else does; configuration without it is
   rejected), optionally `config.isolation` (`container` or `microvm`), and the
-  server's API key as a credential reference (`credentials.env` or
-  `credentials.file`). OpenSandbox has one API key per server and no tenant
+  server's API key as a credential reference (`credentials.env`,
+  `credentials.file`, or `credentials.secret` for a key stored in
+  Differently). OpenSandbox has one API key per server and no tenant
   model, so one server is one trust domain and one pool.
 - *Any other existing VM or sandbox system:* implement the adapter protocol
   (`pkg/adapter/adapterhttp`) in front of it and register a `remote` pool with
   `config.endpoint` and a token by reference. A `remote` pool defaults to
   `trust: private`; declare `external` if it fronts a third-party service.
 - Pools registered through the API are validated by the same parser as the
-  config file, keep credentials as references only, are audited
+  config file, keep credentials as references (a `secret:` reference names a
+  value stored sealed, never returned), are audited
   (`pool.create` with adapter, trust and credential reference) and become
   placeable only as policy allows. Pools declared in the config file cannot
   be deleted through the API.
@@ -228,7 +230,10 @@ rejected API key reported as `provider_unavailable` without echoing it);
 `TestOpenSandboxLifecycleExecFiles` (the adapter against a fake OpenSandbox
 server, including the spec-versus-image differences found in the spike);
 `TestLiveOpenSandbox` (against a real server); `TestCredentialRef`;
-`TestValidateReportsProblems`.
+`TestValidateReportsProblems`;
+`TestStoredProviderSecretReachesBackendAndRotatesLive`. That test registers a
+`remote` pool through the API with a stored key, and checks that the key
+reaches the plugin, is never returned, and rotates without a restart.
 
 **Known gaps.**
 
@@ -438,4 +443,6 @@ only a reference to its credential ([spike](research/opensandbox-spike.md)).
 | `TestMetricsCanLeaveTheAPIListener` | `/metrics` off the API listener with `metrics.listen` |
 | `TestCostStrategyAndCeiling` | Cost strategy and cost ceiling |
 | `TestValidateReportsProblems`, `TestCredentialRef` | Config validation and credential references |
+| `TestRotateAPIKey` | API key rotation: grace period, immediate revocation, scope and tenancy checks |
+| `TestSealOpenBindsName`, `TestLoad` | Sealing stored provider credentials and loading the secrets key |
 | `TestNewIsSortableAndUnique` | ID generation |
