@@ -104,8 +104,32 @@ kubectl -n differently create secret generic differently-tokens \
   --from-literal=bootstrap-token="dly_bootop1_${SECRET}"
 ```
 
+**Secrets key (generated, or yours for GitOps).** This key seals provider
+credentials that operators store in Differently from the dashboard, CLI or
+API ([ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md)).
+Without your own Secret, the chart does three things:
+
+- it generates 32 random bytes once, into `dly-differently-secrets-key`
+  (key `secrets-key`);
+- it keeps them across upgrades with `lookup`;
+- it leaves the Secret in place on `helm uninstall`.
+
+Renderers that cannot `lookup` would generate a new key on every render,
+and a new key makes every stored credential unreadable. So with them, create
+the Secret yourself:
+
+```sh
+kubectl -n differently create secret generic differently-secrets-key \
+  --from-literal=secrets-key="$(differently-server secrets-key)"   # or: openssl rand -base64 32
+```
+
+Either way, back the key up
+([keys-and-providers.md](../guides/keys-and-providers.md#back-up-the-secrets-key)).
+
 **External providers (optional, off by default).** Skip this unless you want
-Daytona or Freestyle overflow:
+Daytona or Freestyle overflow. You can also add them later from the dashboard
+or CLI with the key stored in Differently instead
+([keys-and-providers.md](../guides/keys-and-providers.md#add-daytona-or-freestyle-with-the-key-stored-in-differently)).
 
 ```sh
 kubectl -n differently create secret generic daytona-credentials --from-literal=api-key='dtn_...'
@@ -161,6 +185,9 @@ postgresql:
 auth:
   existingSecret: differently-tokens
 
+secrets:
+  existingSecret: differently-secrets-key   # omit to let the chart generate the key
+
 server:
   replicas: 3
 
@@ -193,8 +220,14 @@ What the install does:
 - **Preflight.** Each server pod first runs `differently-server preflight`
   (init container `preflight`) and refuses to start on configuration errors,
   including a pool credential reference that does not resolve.
+- **Secrets key.** With `secrets.enabled` (the default), the server gets
+  `DIFFERENTLY_SECRETS_KEY` from `secrets.existingSecret`, or from the
+  generated `dly-differently-secrets-key`. Preflight checks that it is
+  base64 of 32 bytes.
 - **NetworkPolicy.** Server egress is limited to DNS, the database,
-  OpenSandbox and enabled providers. The OpenSandbox rule is
+  OpenSandbox and enabled providers. Providers added later through the
+  dashboard or API need `networkPolicy.server.egress.runtimeProviders: true`,
+  which allows `providerCIDRs` on port 443. The OpenSandbox rule is
   `networkPolicy.server.egress.opensandbox`: by default pods in namespace
   `opensandbox-system` (`namespaceSelector`) on port 80. Change `namespaceSelector`
   or `podSelector` if OpenSandbox runs elsewhere in the cluster, or set
@@ -218,12 +251,17 @@ Enabling the provider alone changes nothing about placement. Policy must also
 allow it, and so must the request's classification: `private-only` never
 leaves private pools, `internal` may overflow, and `public` is allowed.
 A global policy set through `PUT /v1/policies/global` replaces
-`config.policy` at runtime. See [hybrid-overflow.md](../guides/hybrid-overflow.md).
+`config.policy` at runtime, and so does approving a pool with
+`differently admin pool use <pool> --approve-external`. See
+[hybrid-overflow.md](../guides/hybrid-overflow.md) and
+[keys-and-providers.md](../guides/keys-and-providers.md).
 
 ## 6. Create an organization, a project and a project key
 
 The bootstrap token is an operator key (`admin` scope). Use it to set up
-tenancy, then use narrower keys day to day.
+tenancy, then use narrower keys day to day. To create a named operator key
+and retire the bootstrap key, see
+[the bootstrap operator token](../guides/keys-and-providers.md#the-bootstrap-operator-token).
 
 ```sh
 export DIFFERENTLY_API_KEY=$(kubectl -n differently get secret dly-differently-tokens \
@@ -245,6 +283,8 @@ echo "$PROJECT_ID"
 ```
 
 The token is shown only once, so store `PROJECT_KEY` in your secret manager.
+To replace it later without downtime, rotate it with a grace period
+([rotate Differently API keys](../guides/keys-and-providers.md#rotate-differently-api-keys-without-downtime)).
 You can also open `$DIFFERENTLY_URL/dashboard/` and sign in with a key.
 
 ## 7. Create the first sandbox
@@ -305,16 +345,20 @@ and the comments explain each one. Useful ones:
 | `config.store.driver` | `memory` | `postgres` for anything beyond evaluation |
 | `server.replicas` | `1` | Must stay 1 with `memory` |
 | `auth.existingSecret` | chart-managed | Bootstrap token Secret (key `bootstrap-token`) |
+| `secrets.enabled` | `true` | Give the server a secrets key, so provider credentials can be stored in Differently; `false` means none can be stored |
+| `secrets.existingSecret` / `existingSecretKey` | empty (chart generates `<fullname>-secrets-key`) / `secrets-key` | A Secret you manage holding the base64 32-byte key; required for renderers that cannot `lookup` |
 | `opensandbox.*` | enabled | The default pool: see the table in step 5 |
 | `networkPolicy.server.egress.opensandbox` | namespace `opensandbox-system`, port 80 | Where the server may connect to reach OpenSandbox |
 | `providers.daytona/freestyle.enabled` | `false` | Register an external pool (still gated by `config.policy`) |
 | `networkPolicy.server.egress.restricted` | `true` | Server egress limited to DNS, the database, OpenSandbox and enabled providers |
+| `networkPolicy.server.egress.runtimeProviders` | `false` | Also allow `providerCIDRs` on 443 for providers added at runtime (dashboard or API); `providers.*` already open it |
 | `metrics.serviceMonitor.enabled` | `false` | Prometheus Operator scrape of `/metrics` |
 | `global.imageRegistry` | empty | Mirror registry for every image |
 
 Other pools (a second OpenSandbox server, a `remote` plugin) go under
-`config.pools`, with credentials referenced by environment variable as the
-comments in `values.yaml` describe; see
+`config.pools`. Their credentials are referenced by environment variable,
+as the comments in `values.yaml` describe, or name a key stored in
+Differently (`credentials: {secret: name}`). See
 [opensandbox-pools.md](../guides/opensandbox-pools.md) and the
 [adapter specification](../adapters/specification.md). Values from the
 node-agent releases (`agent.*`, `auth.agentToken*`,
@@ -353,6 +397,6 @@ The install worked when all of these hold:
 
 - the `opensandbox` pool is healthy;
 - the trust report shows the OpenSandbox endpoint, the credential only as a
-  reference (`env:...`), the isolation you actually deployed, and
+  reference (`env:...`, or `secret:...` for a key stored in Differently), the isolation you actually deployed, and
   `external: never` or your deliberate hybrid policy;
 - the smoke test passes.

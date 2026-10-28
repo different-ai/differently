@@ -60,9 +60,9 @@ with its own tooling and registered as a pool with `trust: private`.
 |---|---|---|
 | `opensandbox` adapter | ✅ live (Docker runtime) | `internal/adapters/opensandbox`; fake-server tests plus `TestLiveOpenSandbox` against OpenSandbox server `release-1.2.0` and `execd` v1.1.0 (arm64, Colima); a manual run through Differently ([spike](research/opensandbox-spike.md)) |
 | OpenSandbox as the default private runtime | ✅ decided | [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md); the Helm chart's `opensandbox:` values render a pool named `opensandbox` |
-| OpenSandbox Kubernetes runtime | 🟡 | Single-node k3s on Azure: e2e 11/11 and a recorded adapter run; pause and snapshots need OpenSandbox's snapshot registry; multi-node and drain not run ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
+| OpenSandbox Kubernetes runtime | 🟡 | Single-node k3s on Azure: e2e 12/12 and a recorded adapter run; pause and snapshots need OpenSandbox's snapshot registry; multi-node and drain not run ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
 | OpenSandbox Fast Sandbox (Firecracker microVMs) | 📋 | Unverified; first Phase 3 item ([E18](backlog.md#e18-fast-sandbox-spike)) |
-| End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (11/11, arm64 Colima) and the Kubernetes runtime (11/11, k3s on Azure, Helm install), 2026-10-28 ([results](../test/e2e/README.md)). Fast Sandbox not yet |
+| End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (12/12, arm64 Colima) and the Kubernetes runtime (12/12, k3s on Azure, Helm install), 2026-10-28 ([results](../test/e2e/README.md)). Fast Sandbox not yet |
 | Sandbox egress control | 📋 | Not enforced by Differently; OpenSandbox's network policy is not wired up ([E19](backlog.md#e19-opensandbox-network-policy-and-egress)) |
 | Node agent: lifecycle, capacity, heartbeat, `doctor` | ⛔ | Removed (`internal/agent`, `cmd/differently-agent`) |
 | Firecracker API client | ⛔ | Removed (`internal/firecracker`) |
@@ -129,6 +129,7 @@ Ordered by priority. P0 items gate any production recommendation.
 | P1 | [E13 Sandbox secrets by reference](backlog.md#e13-sandbox-secrets-by-reference) | 📋 |
 | P1 | [E15 Go SDK polishing](backlog.md#e15-go-sdk-polishing) | 📋 |
 | P2 | [E20 Credential Vault evaluation](backlog.md#e20-credential-vault-evaluation) (informs E13) | 📋 |
+| P2 | [E23 Provider credential follow-ups](backlog.md#e23-provider-credential-follow-ups): external vault behind `secret:`, per-organization credentials, secrets key rotation | 📋 |
 | P2 | [E8 Kueue batch lane](backlog.md#e8-kueue-batch-lane) | 📋 |
 | P2 | [E16 Boat-compatible facade evaluation](backlog.md#e16-boat-compatible-facade-evaluation) | 📋 |
 | P2 | [E14 Process sessions](backlog.md#e14-process-sessions) | 📋 |

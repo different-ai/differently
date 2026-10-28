@@ -325,7 +325,7 @@ chart with the embedded PostgreSQL:
   image cached), CPU and memory limits as cgroups, exec (exact output with
   `lineEndings: kept`), streaming, files, quotas, drift reconciliation,
   delete, audit and the trust report. `TestLiveOpenSandbox` and the
-  end-to-end suite pass (11/11), and the run is recorded in
+  end-to-end suite pass (12/12), and the run is recorded in
   `internal/adapters/opensandbox/testdata/recordings/kubernetes-1.2.0.json`.
 - **Needs a snapshot registry:** pause is accepted but never starts (the
   sandbox stays `Running`), and snapshots fail with `RegistryNotConfigured`,

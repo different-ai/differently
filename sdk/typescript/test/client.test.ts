@@ -153,6 +153,22 @@ test("tenant resources map to their routes", async () => {
   assert.deepEqual(mock.calls("PUT /v1/policies/org:o")[0]?.json(), { external: "never" });
 });
 
+test("keys rotate, provider secrets and switching map to their routes", async () => {
+  const key = { id: "key_2", name: "ci", scopes: ["sandboxes:exec"], createdBy: "k", createdAt: "t", revoked: false };
+  mock.on("POST /v1/api-keys/key_1/rotate", reply(201, { ...key, token: "dly_key_2_s", replaced: { ...key, id: "key_1", expiresAt: "later" } }));
+  mock.on("PUT /v1/admin/secrets/daytona-key", reply(201, { name: "daytona-key", fingerprint: "abc", createdAt: "t", createdBy: "k", updatedAt: "t", updatedBy: "k", usedBy: [] }));
+  mock.on("POST /v1/admin/pools/daytona/use", reply(200, { pool: { name: "daytona" }, drained: ["opensandbox"] }));
+
+  const rotated = await client.apiKeys.rotate("key_1", { graceSeconds: 3600 });
+  assert.equal(rotated.token, "dly_key_2_s");
+  assert.equal(rotated.replaced?.id, "key_1");
+  assert.deepEqual(mock.calls("POST /v1/api-keys/key_1/rotate")[0]?.json(), { graceSeconds: 3600 });
+  assert.equal((await client.admin.secrets.put("daytona-key", "dtn_value")).fingerprint, "abc");
+  assert.deepEqual(mock.calls("PUT /v1/admin/secrets/daytona-key")[0]?.json(), { value: "dtn_value" });
+  assert.deepEqual((await client.admin.pools.use("daytona", { approveExternal: true })).drained, ["opensandbox"]);
+  assert.deepEqual(mock.calls("POST /v1/admin/pools/daytona/use")[0]?.json(), { approveExternal: true });
+});
+
 test("audit events iterate with afterSeq", async () => {
   const event = (seq: number) => ({ seq, time: "t", actor: "k", action: "sandbox.create", resource: "sbx", outcome: "ok", prevHash: "", hash: "" });
   mock.on("GET /v1/audit-events", reply(200, { items: [event(1), event(2)], nextCursor: "2" }));

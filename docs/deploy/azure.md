@@ -88,6 +88,7 @@ networkPolicy:
   server:
     egress:
       databaseCIDRs: ["<delegated-subnet-cidr>"]
+      # runtimeProviders: true            # Daytona or Freestyle added from the dashboard or API
 ingress:
   enabled: true
   className: <your-ingress-class>       # e.g. the application routing add-on or AGIC
@@ -105,11 +106,125 @@ The chart's NetworkPolicy needs enforcement turned on: Azure Network Policy
 Manager, Calico, or Azure CNI powered by Cilium. Then continue with steps 6
 to 8 of [kubernetes.md](kubernetes.md).
 
+The chart also generates the secrets key, which seals provider credentials
+stored in Differently, in `dly-differently-secrets-key`. Back it up, for
+example to Key Vault as below, or provide your own from Key Vault with
+`secrets.existingSecret`.
+
+## Provider credentials with Azure Key Vault
+
+Unverified: none of this has been run on AKS. The Key Vault parts follow
+Azure's documentation for the Secrets Store CSI Driver (the AKS add-on
+`azure-keyvault-secrets-provider`).
+
+Differently can take credentials from Key Vault in three ways. You can mix
+them across pools.
+
+| Way | What reaches the server | When a new Key Vault version takes effect |
+|---|---|---|
+| A. CSI driver syncs a Kubernetes Secret, which the chart reads | Environment variables (`opensandbox.existingSecret`, `providers.*.existingSecret`, `secrets.existingSecret`) | After the synced Secret updates **and** the server restarts |
+| B. CSI driver mounts files, which pools reference as `file:` | Files under the mount path | Within about 5 seconds of the file changing, no restart |
+| C. Keep only the secrets key in Key Vault, and store provider keys in Differently (`secret:`) | The secrets key (by A); provider keys are in Differently's database, sealed | Provider keys: within seconds of `differently admin secret put` |
+
+The CSI driver runs on the node and fetches from Key Vault itself, so the
+server needs no egress to Key Vault. Give the driver an identity with read
+access to the vault's secrets; Azure recommends workload identity. The
+chart's `serviceAccount.annotations` can carry the workload identity
+annotation.
+
+A `SecretProviderClass` for all three:
+
+```yaml
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: differently-kv
+  namespace: differently
+spec:
+  provider: azure
+  parameters:
+    clientID: <workload-identity-client-id>
+    keyvaultName: <vault>
+    tenantId: <tenant-id>
+    objects: |
+      array:
+        - |
+          objectName: differently-secrets-key
+          objectType: secret
+          objectVersion: <pinned version>   # never let this one change
+        - |
+          objectName: opensandbox-api-key
+          objectType: secret
+        - |
+          objectName: daytona-api-key
+          objectType: secret
+  secretObjects:                            # way A: a Kubernetes Secret the chart reads
+    - secretName: differently-kv
+      type: Opaque
+      data:
+        - {objectName: differently-secrets-key, key: secrets-key}
+        - {objectName: opensandbox-api-key, key: api-key}
+```
+
+The driver creates and updates the synced Secret only while a pod mounts
+the volume, so mount it into the server in every case:
+
+```yaml
+# values-aks.yaml additions; opensandbox.existingSecret replaces opensandbox-api-key from step 4
+server:
+  extraVolumes:
+    - name: kv
+      csi:
+        driver: secrets-store.csi.k8s.io
+        readOnly: true
+        volumeAttributes: {secretProviderClass: differently-kv}
+  extraVolumeMounts:
+    - {name: kv, mountPath: /mnt/kv, readOnly: true}
+secrets:
+  existingSecret: differently-kv              # way A for the secrets key
+  existingSecretKey: secrets-key
+opensandbox:
+  existingSecret: differently-kv              # way A for the OpenSandbox key
+  existingSecretKey: api-key
+```
+
+**Way B, live rotation from Key Vault.** Reference the mounted file from a
+pool: `credentials: {file: /mnt/kv/daytona-api-key}` in `config.pools`, or
+`"credentials":{"file":"/mnt/kv/daytona-api-key"}` with
+`POST /v1/admin/pools`. The driver updates mounted files only with secret
+rotation turned on:
+
+```sh
+az aks addon update --resource-group <rg> --name <cluster> \
+  --addon azure-keyvault-secrets-provider --enable-secret-rotation --rotation-poll-interval 2m
+```
+
+A new Key Vault version then reaches the file within the poll interval, and
+Differently picks it up within about 5 seconds after that. No dedicated test
+covers `file:` pickup; it uses the same code path as stored secrets.
+
+**The secrets key.** Keep it in Key Vault as the backup even if the chart
+generated it
+([back up the secrets key](../guides/keys-and-providers.md#back-up-the-secrets-key)).
+If the server reads it from Key Vault, pin `objectVersion` as above and never
+add a version to that secret. The server reads the key once, at start-up.
+A changed key makes every stored credential unreadable after the next
+restart.
+
+**Egress for providers added at runtime.** A Daytona or Freestyle pool added
+from the dashboard or API needs
+`networkPolicy.server.egress.runtimeProviders: true`. That lets the server
+reach `providerCIDRs` on 443. Providers enabled with the chart's
+`providers.*` values already have this rule.
+
 ## Security notes for Azure
 
 - Block the Instance Metadata Service (`169.254.169.254`) from sandboxes, in
   OpenSandbox's network configuration or with NetworkPolicy in its namespace.
 - Keep any KVM pool tainted and its managed identity minimal.
+- Scope the CSI driver's identity to the one vault, with read access to
+  secrets only. Anyone who can read the secrets key and the database can
+  read every stored provider credential.
 
 ## Verify
 

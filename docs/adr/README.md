@@ -16,7 +16,7 @@ changes part of an earlier one, the earlier record's status line says so
 | [0005](0005-quota-derived-from-state-atomic-activation.md) | Derive quota usage from sandbox state; admit and activate atomically | Accepted |
 | [0006](0006-filter-then-rank-placement-fail-closed-external.md) | Filter-then-rank placement; external providers fail closed | Accepted |
 | [0007](0007-adapter-contract-optional-interfaces-http-protocol.md) | Small adapter contract with optional interfaces and an HTTP plugin protocol | Accepted (amended by 0020) |
-| [0008](0008-secrets-by-reference-only.md) | Control-plane and provider secrets by reference only | Accepted (sandbox env values are a stated exception; amended by 0020) |
+| [0008](0008-secrets-by-reference-only.md) | Control-plane and provider secrets by reference only | Accepted (sandbox env values are a stated exception; amended by 0020 and 0021) |
 | [0009](0009-tamper-evident-audit-chain.md) | Tamper-evident, not tamper-proof, audit hash chain | Accepted |
 | [0010](0010-apache-2-license.md) | Apache-2.0 licence | Accepted |
 | [0011](0011-go-control-plane-ts-python-sdks.md) | Go for control plane and agents; TypeScript and Python SDKs | Accepted (amended by 0020) |
@@ -29,3 +29,4 @@ changes part of an earlier one, the earlier record's status line says so
 | [0018](0018-per-agent-secrets-until-mtls.md) | Per-agent secrets pinned at first registration until mTLS | Obsolete (ADR 0020) |
 | [0019](0019-opensandbox-backend-first.md) | OpenSandbox as a backend first; foundation decision after the Fast Sandbox spike | Accepted (backend); foundation decided by 0020 |
 | [0020](0020-opensandbox-replaces-node-agent.md) | OpenSandbox replaces Differently's Firecracker node agent | Accepted |
+| [0021](0021-provider-credentials-stored-encrypted.md) | Provider credentials can also be stored in Differently, encrypted under a key that stays out of the database | Accepted |

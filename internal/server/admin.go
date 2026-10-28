@@ -38,9 +38,11 @@ func (s *Server) adminRoutes(authed func(string, handlerFunc)) {
 	admin("DELETE /v1/admin/pools/{name}", s.deletePool)
 	admin("POST /v1/admin/pools/{name}/drain", s.drainPool(true))
 	admin("POST /v1/admin/pools/{name}/undrain", s.drainPool(false))
+	admin("POST /v1/admin/pools/{name}/use", s.usePool)
 	admin("POST /v1/admin/sandboxes/{id}/terminate", s.forceTerminate)
 	admin("GET /v1/admin/trust-report", s.trustReport)
 	admin("GET /v1/admin/audit/verify", s.verifyAudit)
+	s.registerSecrets(admin)
 	admin("POST /v1/admin/reconcile", func(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
 		s.Scheduler.Reconcile(r.Context())
 		s.audit(r, p, "admin.reconcile", "installation", "", "", nil)
@@ -229,6 +231,9 @@ func (s *Server) createPool(w http.ResponseWriter, r *http.Request, p auth.Princ
 	}
 	pool := parsed.ToPool()
 	pool.Source = "api"
+	if err := s.checkPoolCredential(r.Context(), pool.CredentialRef); err != nil {
+		return err
+	}
 	if err := s.Store.UpsertPool(r.Context(), pool); err != nil {
 		return err
 	}
@@ -255,6 +260,9 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 		MaxConcurrency *int           `json:"maxConcurrency,omitempty"`
 		CostModel      *api.CostModel `json:"costModel,omitempty"`
 		Region         *string        `json:"region,omitempty"`
+		// CredentialRef moves an API-registered pool to another credential,
+		// for example from env:NAME to a stored secret:name.
+		CredentialRef *string `json:"credentialRef,omitempty"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
@@ -262,6 +270,19 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 	pool, err := s.Store.GetPool(r.Context(), r.PathValue("name"))
 	if err != nil {
 		return err
+	}
+	if req.CredentialRef != nil {
+		ref := *req.CredentialRef
+		switch {
+		case pool.Source == "config":
+			return api.Errorf(api.CodeConflict, "pool %s is declared in the config file; change its credentials there", pool.Name)
+		case config.ParseCredentialRef(ref).String() != ref:
+			return api.Errorf(api.CodeInvalidRequest, "credentialRef must be env:NAME, file:/path or secret:name")
+		}
+		if err := s.checkPoolCredential(r.Context(), ref); err != nil {
+			return err
+		}
+		pool.CredentialRef = ref
 	}
 	if req.Enabled != nil {
 		pool.Enabled = *req.Enabled
@@ -279,7 +300,11 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 		return err
 	}
 	_ = s.SyncPools(r.Context())
-	s.audit(r, p, "pool.update", pool.Name, "", "", nil)
+	var details map[string]string
+	if req.CredentialRef != nil {
+		details = map[string]string{"credentialRef": pool.CredentialRef}
+	}
+	s.audit(r, p, "pool.update", pool.Name, "", "", details)
 	writeJSON(w, 200, pool)
 	return nil
 }
@@ -318,6 +343,76 @@ func (s *Server) drainPool(drain bool) handlerFunc {
 		writeJSON(w, 200, pool)
 		return nil
 	}
+}
+
+// usePool switches where new sandboxes go: it undrains the pool and drains
+// every other one. Running sandboxes stay where they are. An external pool
+// must already be approved by the global policy, or be approved here
+// explicitly; private-only work still never leaves private pools.
+func (s *Server) usePool(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
+	var req api.UsePoolRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	ctx := r.Context()
+	target, err := s.Store.GetPool(ctx, r.PathValue("name"))
+	if err != nil {
+		return err
+	}
+	if !target.Enabled {
+		return api.Errorf(api.CodeInvalidState, "pool %s is disabled; enable it first", target.Name)
+	}
+	out := api.UsePoolResponse{Drained: []string{}}
+	if target.Trust != api.TrustPrivate {
+		global := s.Config.Policy
+		if stored, ok, err := s.Store.GetPolicy(ctx, "global"); err != nil {
+			return err
+		} else if ok {
+			global = stored
+		}
+		approved := global.External != api.ExternalNever && global.External != "" && slices.Contains(global.ExternalPools, target.Name)
+		switch {
+		case !approved && !req.ApproveExternal:
+			return api.Errorf(api.CodeInvalidState, "pool %s is external and the global policy does not approve it; pass approveExternal to approve it", target.Name).With("pool", target.Name)
+		case !approved:
+			if global.External == api.ExternalNever || global.External == "" {
+				global.External = api.ExternalOverflow
+			}
+			if !slices.Contains(global.ExternalPools, target.Name) {
+				global.ExternalPools = append(global.ExternalPools, target.Name)
+			}
+			global.Scope, global.UpdatedAt, global.UpdatedBy = "global", s.now(), p.Actor()
+			if err := s.Store.PutPolicy(ctx, global); err != nil {
+				return err
+			}
+			s.audit(r, p, "policy.update", "global", "", "", map[string]string{"approvedExternalPool": target.Name})
+			out.Policy = &global
+		}
+	}
+	pools, err := s.Store.ListPools(ctx)
+	if err != nil {
+		return err
+	}
+	for _, pool := range pools {
+		want := pool.Name != target.Name
+		if pool.Draining == want || (want && !pool.Enabled) {
+			continue
+		}
+		pool.Draining = want
+		if err := s.Store.UpsertPool(ctx, pool); err != nil {
+			return err
+		}
+		if want {
+			out.Drained = append(out.Drained, pool.Name)
+		} else {
+			target = pool
+		}
+	}
+	_ = s.SyncPools(ctx)
+	s.audit(r, p, "pool.use", target.Name, "", "", map[string]string{"drained": strings.Join(out.Drained, ",")})
+	out.Pool = target
+	writeJSON(w, http.StatusOK, out)
+	return nil
 }
 
 func (s *Server) forceTerminate(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
@@ -402,7 +497,7 @@ func limitations(cfg config.Config) []string {
 		"Whoever operates a backend (an OpenSandbox server and its hosts, a cloud provider, an external provider) can read the workloads it runs, including code, data and environment variables.",
 		"Actions taken directly on a backend (its own API or console, kubectl, SSH to hosts) bypass Differently and are not in its audit log.",
 		"The audit chain is tamper-evident, not tamper-proof: anyone with database write access can rewrite it. Export events (audit.file) to write-once storage to anchor it.",
-		"Backend credentials (for example an OpenSandbox API key) are held by the control plane as environment variables or mounted files; anyone who can read its environment can use them.",
+		"Backend credentials (for example an OpenSandbox or Daytona API key) are held by the control plane as environment variables, mounted files, or values stored in its database sealed with its secrets key; anyone who can read its environment, or its database together with that key, can use them.",
 		"Sandbox environment variables are stored unencrypted in the control-plane database; protect it with storage encryption and access controls.",
 		"Exec commands are audited by program name unless audit.recordCommands is enabled; command arguments and outputs are not retained.",
 		"Usage costs are estimates from configured cost models, not reconciled provider invoices.",
@@ -481,7 +576,7 @@ func (s *Server) trustReport(w http.ResponseWriter, r *http.Request, _ auth.Prin
 	for i := len(events) - 1; i >= 0 && len(rep.AdminActions) < 50; i-- {
 		ev := events[i]
 		if strings.HasPrefix(ev.Action, "admin.") || strings.HasPrefix(ev.Action, "pool.") || strings.HasPrefix(ev.Action, "policy.") ||
-			strings.HasPrefix(ev.Action, "org.") || ev.Action == "key.create" || ev.Action == "key.revoke" || ev.Action == "key.rotate" {
+			strings.HasPrefix(ev.Action, "org.") || strings.HasPrefix(ev.Action, "secret.") || ev.Action == "key.create" || ev.Action == "key.revoke" || ev.Action == "key.rotate" {
 			rep.AdminActions = append(rep.AdminActions, ev)
 		}
 	}

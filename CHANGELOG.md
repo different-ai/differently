@@ -40,6 +40,40 @@ All notable changes are recorded here. The format follows
   contract mapped onto this API.
 - Documentation: architecture RFC, ADRs, security model, adapter spec,
   placement policy, feature parity, deployment guides, roadmap and backlog.
+- Provider credentials stored in Differently
+  ([ADR 0021](docs/adr/0021-provider-credentials-stored-encrypted.md)):
+  - `PUT /v1/admin/secrets/{name}` stores a Daytona, Freestyle, OpenSandbox
+    or plugin key sealed in Postgres (migration `0004_secrets.sql`);
+    `GET /v1/admin/secrets` lists and `DELETE /v1/admin/secrets/{name}`
+    removes. Listings show fingerprints and the pools using each
+    secret, never values. A secret in use cannot be deleted;
+  - pools reference a stored key as `credentials: {secret: name}`, and
+    `PATCH /v1/admin/pools/{name}` can move an API-registered pool to another
+    `credentialRef`;
+  - replacing a stored value, or the file behind a `file:` reference, takes
+    effect within about 5 seconds on every replica, without a restart.
+    `env:` still needs a restart;
+  - config `secrets.keyEnv` (default `DIFFERENTLY_SECRETS_KEY`) and
+    `secrets.keyFile`. Without a key, storing fails with `invalid_state`.
+- `POST /v1/admin/pools/{name}/use` sends new sandboxes to one pool by
+  draining the others; running sandboxes stay. An external pool needs the
+  global policy's approval, or `approveExternal`.
+- `POST /v1/api-keys/{id}/rotate` replaces a key with a grace period of up to
+  7 days, and `GET /v1/api-keys/{id}` reads one key.
+- The surfaces for these:
+  - CLI: `admin secret put|list|delete`, `admin pool add` (with
+    `--api-key-stdin` or `--secret`), `admin pool use`, `key rotate`,
+    `key get`, and `key list` as a table;
+  - the dashboard's Add provider, Use for new sandboxes, Secrets and Keys
+    views;
+  - rotation and secrets in the Go, TypeScript and Python SDKs.
+- Helm:
+  - `secrets.enabled`, `secrets.existingSecret` and `secrets.existingSecretKey`.
+    By default the chart generates the key once, in
+    `<fullname>-secrets-key`, and keeps it across upgrades and uninstalls;
+  - `networkPolicy.server.egress.runtimeProviders` for providers added at
+    runtime.
+- Guide: [keys and providers](docs/guides/keys-and-providers.md).
 
 ### Changed
 
@@ -86,6 +120,23 @@ All notable changes are recorded here. The format follows
   `differently_audit_append_failures_total` counts audit failures.
 - `metrics.listen` serves `/metrics` on its own port; the Helm chart does this
   by default (port 9091), keeping metrics off the ingress.
+- Stored provider credentials:
+  - Values are sealed with AES-256-GCM, with the secret's name bound in,
+    under a 32-byte key-encryption key that never enters the database. A
+    database dump alone reveals no stored credential.
+  - The key is now critical. Losing it makes every stored credential
+    unreadable, and the key plus a database copy opens them all. Back it up
+    apart from database backups. It cannot be rotated yet.
+  - Storing, replacing and deleting are `admin`-only and audited
+    (`secret.put` with the fingerprint, `secret.delete`).
+- Rotating an API key requires being able to grant every scope it holds,
+  and is audited as `key.rotate`.
+- Known gaps, not yet fixed:
+  - with more than one server replica, pool changes made through the API
+    (`use`, drain, undrain, `PATCH`, new pools) reach the other replicas
+    only after a restart (backlog E0.36);
+  - the trust report does not list `secret.*` events among recent admin
+    actions (E0.37).
 
 ### Fixed (found by the end-to-end suite)
 
@@ -101,11 +152,14 @@ All notable changes are recorded here. The format follows
 
 - OpenSandbox's Kubernetes runtime on single-node k3s (Azure, x86_64),
   installed with OpenSandbox's charts and Differently's Helm chart: the
-  end-to-end suite passes 11/11. Real runs of both runtimes are recorded
+  end-to-end suite passes 12/12. Real runs of both runtimes are recorded
   and replayed in `go test` (`internal/adapters/opensandbox/testdata`).
 - End-to-end suite against OpenSandbox 1.2.0 (Docker runtime) on arm64
-  Colima: 11/11. Not yet verified:
+  Colima: 12/12. Not yet verified:
   - OpenSandbox's Fast Sandbox runtime, and pause and snapshots on the
     Kubernetes runtime (they need a snapshot registry);
   - multi-node clusters;
-  - live Daytona and Freestyle accounts.
+  - live Daytona and Freestyle accounts;
+  - stored provider credentials, switching providers and API key rotation
+    beyond unit, in-process API and end-to-end tests (Docker host and
+    single-node k3s): no live provider account or multi-replica run yet.

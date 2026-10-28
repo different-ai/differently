@@ -201,9 +201,14 @@ class ApiKey(_ApiKeyRequired, total=False):
     projectId: str
     expiresAt: str
     lastUsedAt: str
+    replacedBy: str  # the key a rotation issued in place of this one
 
 
-class CreatedApiKey(ApiKey):
+class _CreatedApiKeyOptional(TypedDict, total=False):
+    replaced: ApiKey  # on a rotation, the old key's new state
+
+
+class CreatedApiKey(ApiKey, _CreatedApiKeyOptional):
     """A newly created key. ``token`` is shown only once."""
 
     token: str
@@ -218,10 +223,32 @@ class CostModel(TypedDict, total=False):
 
 
 class CredentialRef(TypedDict, total=False):
-    """Name of a server environment variable or mounted file. Never a secret value."""
+    """Where a pool's credential lives: a server env var, a mounted file, or a credential
+    stored in Differently with ``admin.secrets.put``. Never the value itself."""
 
     env: str
     file: str
+    secret: str
+
+
+class Secret(TypedDict):
+    """A provider credential stored in Differently. Its value is never returned."""
+
+    name: str
+    fingerprint: str
+    createdAt: str
+    createdBy: str
+    updatedAt: str
+    updatedBy: str
+    usedBy: List[str]
+
+
+class UsePoolResult(TypedDict, total=False):
+    """What sending new sandboxes to a pool changed."""
+
+    pool: "Pool"
+    drained: List[str]
+    policy: "PlacementPolicy"
 
 
 class _PoolRequired(TypedDict):

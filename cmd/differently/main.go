@@ -441,10 +441,207 @@ func keyCmd() *cobra.Command {
 	create.Flags().StringVar(&org, "org", "", "organization (operator keys)")
 	create.Flags().StringVar(&project, "key-project", "", "limit the key to one project")
 	create.Flags().IntVar(&ttl, "ttl-hours", 0, "expire after N hours")
-	cmd.AddCommand(create,
-		&cobra.Command{Use: "list", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/api-keys", nil) }},
+	var grace time.Duration
+	rotate := &cobra.Command{Use: "rotate ID", Args: cobra.ExactArgs(1), Short: "Replace a key with a new one (same name, scopes and project); the token is shown once", RunE: func(_ *cobra.Command, a []string) error {
+		out, err := cli().RotateAPIKey(ctx(), a[0], grace)
+		if err != nil {
+			return err
+		}
+		if flagOutput == "json" {
+			return printJSON(out)
+		}
+		old := "revoked now"
+		if out.Replaced != nil && !out.Replaced.Revoked && out.Replaced.ExpiresAt != nil {
+			old = "valid until " + out.Replaced.ExpiresAt.Local().Format(time.DateTime)
+		}
+		fmt.Printf("key %s replaces %s (%s); store this token now, it is not shown again:\n%s\n", out.ID, a[0], old, out.Token)
+		return nil
+	}}
+	rotate.Flags().DurationVar(&grace, "grace", 0, "keep the old key valid this long (e.g. 1h; at most 168h); 0 revokes it now")
+	list := &cobra.Command{Use: "list", Short: "List keys", RunE: func(*cobra.Command, []string) error {
+		keys, err := cli().ListAPIKeys(ctx())
+		if err != nil || flagOutput == "json" {
+			if err == nil {
+				err = printJSON(keys)
+			}
+			return err
+		}
+		var rows [][]string
+		for _, k := range keys {
+			state := "active"
+			switch {
+			case k.Revoked:
+				state = "revoked"
+			case k.ExpiresAt != nil && k.ExpiresAt.Before(time.Now()):
+				state = "expired"
+			}
+			rows = append(rows, []string{k.Name, k.ID, orDash(k.ProjectID), strings.Join(k.Scopes, ","), when(k.ExpiresAt), when(k.LastUsedAt), state})
+		}
+		table("NAME\tID\tPROJECT\tSCOPES\tEXPIRES\tLAST USED\tSTATE", rows)
+		return nil
+	}}
+	cmd.AddCommand(create, rotate, list,
+		&cobra.Command{Use: "get ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("GET", "/v1/api-keys/"+a[0], nil) }},
 		&cobra.Command{Use: "revoke ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("DELETE", "/v1/api-keys/"+a[0], nil) }},
 	)
+	return cmd
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+func when(t *time.Time) string {
+	if t == nil {
+		return "-"
+	}
+	return t.Local().Format(time.DateTime)
+}
+
+// secretValue reads a credential from a file or stdin, never from a flag, so
+// it stays out of shell history and process listings.
+func secretValue(file string) (string, error) {
+	var b []byte
+	var err error
+	if file != "" {
+		b, err = os.ReadFile(file)
+	} else {
+		if fi, statErr := os.Stdin.Stat(); statErr == nil && fi.Mode()&os.ModeCharDevice != 0 {
+			fmt.Fprint(os.Stderr, "value (then Ctrl-D): ")
+		}
+		b, err = io.ReadAll(io.LimitReader(os.Stdin, 64<<10))
+	}
+	if err != nil {
+		return "", err
+	}
+	v := strings.TrimSpace(string(b))
+	if v == "" {
+		return "", errors.New("the value is empty")
+	}
+	return v, nil
+}
+
+func secretCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "secret", Short: "Provider credentials stored in Differently (values are never shown)"}
+	var fromFile string
+	put := &cobra.Command{Use: "put NAME", Args: cobra.ExactArgs(1), Short: "Store or replace a credential, read from stdin or --from-file", RunE: func(_ *cobra.Command, a []string) error {
+		v, err := secretValue(fromFile)
+		if err != nil {
+			return err
+		}
+		sec, err := cli().PutSecret(ctx(), a[0], v)
+		if err != nil {
+			return err
+		}
+		if flagOutput == "json" {
+			return printJSON(sec)
+		}
+		fmt.Printf("secret %s stored (fingerprint %s); pools using it switch to it within seconds\n", sec.Name, sec.Fingerprint)
+		return nil
+	}}
+	put.Flags().StringVar(&fromFile, "from-file", "", "read the value from this file")
+	list := &cobra.Command{Use: "list", RunE: func(*cobra.Command, []string) error {
+		items, err := cli().ListSecrets(ctx())
+		if err != nil || flagOutput == "json" {
+			if err == nil {
+				err = printJSON(items)
+			}
+			return err
+		}
+		var rows [][]string
+		for _, s := range items {
+			rows = append(rows, []string{s.Name, s.Fingerprint, orDash(strings.Join(s.UsedBy, ",")), s.UpdatedAt.Local().Format(time.DateTime), s.UpdatedBy})
+		}
+		table("NAME\tFINGERPRINT\tUSED BY\tUPDATED\tBY", rows)
+		return nil
+	}}
+	cmd.AddCommand(put, list,
+		&cobra.Command{Use: "delete NAME", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("DELETE", "/v1/admin/secrets/"+a[0], nil) }},
+	)
+	return cmd
+}
+
+// poolAddCmd registers a provider at runtime. With --api-key-stdin the key is
+// stored in Differently as <name>-key first, so no Kubernetes Secret is needed.
+func poolAddCmd() *cobra.Command {
+	var adapterKind, trust, region, secret, credential string
+	var settings []string
+	var maxConcurrency int
+	var keyStdin bool
+	cmd := &cobra.Command{Use: "add NAME", Args: cobra.ExactArgs(1), Short: "Add a provider pool (e.g. Daytona or Freestyle) at runtime", RunE: func(_ *cobra.Command, a []string) error {
+		cfg := map[string]string{}
+		for _, kv := range settings {
+			k, v, ok := strings.Cut(kv, "=")
+			if !ok {
+				return fmt.Errorf("--config takes key=value, got %q", kv)
+			}
+			cfg[k] = v
+		}
+		creds := map[string]string{}
+		switch {
+		case keyStdin:
+			v, err := secretValue("")
+			if err != nil {
+				return err
+			}
+			if secret == "" {
+				secret = a[0] + "-key"
+			}
+			if _, err := cli().PutSecret(ctx(), secret, v); err != nil {
+				return fmt.Errorf("storing the key as secret %s: %w", secret, err)
+			}
+			creds["secret"] = secret
+		case secret != "":
+			creds["secret"] = secret
+		case credential != "":
+			kind, ref, _ := strings.Cut(credential, ":")
+			if (kind != "env" && kind != "file") || ref == "" {
+				return fmt.Errorf("--credential takes env:NAME or file:/path")
+			}
+			creds[kind] = ref
+		}
+		body := map[string]any{"name": a[0], "adapter": adapterKind, "trust": trust, "config": cfg, "credentials": creds}
+		if region != "" {
+			body["region"] = region
+		}
+		if maxConcurrency > 0 {
+			body["maxConcurrency"] = maxConcurrency
+		}
+		return raw("POST", "/v1/admin/pools", body)
+	}}
+	f := cmd.Flags()
+	f.StringVar(&adapterKind, "adapter", "", "daytona, freestyle, opensandbox or remote")
+	f.StringVar(&trust, "trust", "", "external (someone else runs it) or private (you do); daytona and freestyle are external")
+	f.StringArrayVar(&settings, "config", nil, "adapter setting key=value (repeatable), e.g. apiURL=https://app.daytona.io/api")
+	f.StringVar(&region, "region", "", "region label")
+	f.IntVar(&maxConcurrency, "max-concurrency", 0, "most sandboxes at once (0: quotas only)")
+	f.StringVar(&secret, "secret", "", "use a credential stored with 'admin secret put'")
+	f.BoolVar(&keyStdin, "api-key-stdin", false, "read the provider's API key from stdin and store it as --secret (default <name>-key)")
+	f.StringVar(&credential, "credential", "", "reference instead of storing: env:NAME or file:/path on the server")
+	_ = cmd.MarkFlagRequired("adapter")
+	return cmd
+}
+
+func poolUseCmd() *cobra.Command {
+	var approve bool
+	cmd := &cobra.Command{Use: "use NAME", Args: cobra.ExactArgs(1), Short: "Send new sandboxes to this pool (drains the others; running sandboxes stay)", RunE: func(_ *cobra.Command, a []string) error {
+		out, err := cli().UsePool(ctx(), a[0], approve)
+		if err != nil {
+			return err
+		}
+		if flagOutput == "json" {
+			return printJSON(out)
+		}
+		fmt.Printf("new sandboxes now go to %s; drained: %s\n", out.Pool.Name, orDash(strings.Join(out.Drained, ", ")))
+		if out.Policy != nil {
+			fmt.Printf("approved %s for external placement (global policy: external %s)\n", out.Pool.Name, out.Policy.External)
+		}
+		return nil
+	}}
+	cmd.Flags().BoolVar(&approve, "approve-external", false, "approve an external pool in the global policy if it is not yet")
 	return cmd
 }
 
@@ -483,13 +680,13 @@ func adminCmd() *cobra.Command {
 		}},
 	)
 	pool := &cobra.Command{Use: "pool", Short: "Execution pools"}
-	pool.AddCommand(
+	pool.AddCommand(poolAddCmd(), poolUseCmd(),
 		&cobra.Command{Use: "list", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/admin/pools", nil) }},
 		&cobra.Command{Use: "get NAME", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("GET", "/v1/admin/pools/"+a[0], nil) }},
 		&cobra.Command{Use: "drain NAME", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("POST", "/v1/admin/pools/"+a[0]+"/drain", nil) }},
 		&cobra.Command{Use: "undrain NAME", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("POST", "/v1/admin/pools/"+a[0]+"/undrain", nil) }},
 	)
-	cmd.AddCommand(org, pool,
+	cmd.AddCommand(org, pool, secretCmd(),
 		&cobra.Command{Use: "trust-report", Short: "Where work can go, where it went, and what cannot be proven", RunE: func(*cobra.Command, []string) error {
 			return raw("GET", "/v1/admin/trust-report", nil)
 		}},

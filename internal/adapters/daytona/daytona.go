@@ -33,7 +33,8 @@ import (
 const DefaultAPIURL = "https://app.daytona.io/api"
 
 // Options configures the adapter. Pool config keys: apiURL, target, snapshot,
-// class (container|linux-vm), autoStopMinutes.
+// class (container|linux-vm). Daytona's own auto-stop is always off:
+// Differently owns TTL and lifecycle.
 type Options struct {
 	APIURL       string
 	APIKey       string

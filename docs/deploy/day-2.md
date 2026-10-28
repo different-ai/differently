@@ -105,8 +105,16 @@ server with the Docker runtime to a new one with Fast Sandbox:
    `curl -X DELETE -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/admin/pools/<old-pool>"`.
    The API refuses to delete a pool that is still declared in the config file.
 
+Once the new pool is healthy, `differently admin pool use <new-pool>` can
+replace step 2: it undrains the new pool and drains every other one in one
+call
+([switch new sandboxes between providers](../guides/keys-and-providers.md#switch-new-sandboxes-between-providers)).
+
 Notes:
 
+- With more than one server replica, a drain, undrain, `use` or new pool
+  made through the API reaches the other replicas, including the scheduler
+  leader, within about 5 seconds.
 - Running sandboxes are never moved between pools. Snapshots stay on the pool
   that took them, and a fork from a snapshot is placed on that pool, so keep
   the old pool until you no longer need its snapshots, or delete them.
@@ -214,6 +222,10 @@ curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/a
 A restore rewinds state:
 
 - **Keys.** Keys created after the backup no longer exist.
+- **Stored provider credentials.** They return to their values at backup
+  time. Store again any key rotated since then, or the pool uses a key the
+  provider may have revoked. Opening them needs the same secrets key as
+  before.
 - **Sandboxes.** Records may point at sandboxes that are gone from the
   backend; the reconciler marks those failed. Sandboxes created after the
   backup have no record any more; the reconciler finds them on the backend
@@ -251,14 +263,37 @@ part:
    stays valid. Revoke it with `DELETE /v1/api-keys/<old-id>`.
 
 Prefer named operator keys for daily work, and keep the bootstrap token
-offline.
+offline, or revoke it
+([the bootstrap operator token](../guides/keys-and-providers.md#the-bootstrap-operator-token)).
+
+**API keys.** Rotate a key with a grace period, so callers can switch
+without downtime:
+
+```sh
+differently key rotate <key-id> --grace 1h    # the new token is shown once
+```
+
+The old key keeps working for the grace period (at most 7 days). See
+[rotate Differently API keys](../guides/keys-and-providers.md#rotate-differently-api-keys-without-downtime).
+
+**Provider keys stored in Differently** (`secret:` credentials). Replace
+the value with `differently admin secret put <name> --from-file new.txt`.
+Every replica uses it within about 5 seconds, with no restart. The same
+holds for a `file:` credential once the mounted file changes
+([rotate a provider key live](../guides/keys-and-providers.md#rotate-a-provider-key-live)).
 
 **OpenSandbox API key.** OpenSandbox has one server-wide key, so there is no
 overlap window. Change the key in OpenSandbox's configuration, update the
 Secret Differently reads it from, and restart the server pods
 (`kubectl -n differently rollout restart deploy/dly-differently-server`); the
 key is read from the environment, which only changes on restart. Calls to the
-pool fail between the two changes, and the pool shows as unavailable.
+pool fail between the two changes, and the pool shows as unavailable. If the
+pool's key is stored in Differently instead, `differently admin secret put`
+replaces the restart.
+
+**Secrets key.** It cannot be rotated yet: changing it makes every stored
+provider credential unreadable. Back it up instead
+([back up the secrets key](../guides/keys-and-providers.md#back-up-the-secrets-key)).
 
 ## Node maintenance and drain
 
@@ -306,20 +341,21 @@ helm uninstall dly -n differently
 | Removed by `helm uninstall` | Kept |
 |---|---|
 | Server Deployment, Services, Ingress, ConfigMap, NetworkPolicies, PDB, ServiceMonitor, ServiceAccount | `dly-differently-tokens` Secret (`auth.keepSecretOnUninstall`, `helm.sh/resource-policy: keep`) |
+| | `dly-differently-secrets-key` Secret, when the chart generated it (`helm.sh/resource-policy: keep`; without it, stored provider credentials cannot be read) |
 | | `dly-differently-postgresql` Secret and its PVC `data-dly-differently-postgresql-0` (embedded database only) |
 | | Your external database and every Secret you created yourself |
 | | OpenSandbox and everything in it: sandboxes, their disks (which may hold workload data), snapshots |
 
 To reinstall onto the same data, use the same release name and namespace.
-Helm adopts the kept Secrets, so the bootstrap token and the embedded
-database password still match. A reinstall with a new, empty database gets a
+Helm adopts the kept Secrets, so the bootstrap token, the secrets key and
+the embedded database password still match. A reinstall with a new, empty database gets a
 new installation ID, so it neither sees nor cleans up sandboxes the old
 installation left in OpenSandbox; delete those with OpenSandbox's tooling.
 
 To remove everything (irreversible):
 
 ```sh
-kubectl -n differently delete secret dly-differently-tokens dly-differently-postgresql --ignore-not-found
+kubectl -n differently delete secret dly-differently-tokens dly-differently-secrets-key dly-differently-postgresql --ignore-not-found
 kubectl -n differently delete pvc -l app.kubernetes.io/instance=dly
 kubectl delete namespace differently
 # then uninstall OpenSandbox and remove its data with its own tooling

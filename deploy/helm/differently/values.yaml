@@ -155,6 +155,23 @@ auth:
   keepSecretOnUninstall: true
 
 # ---------------------------------------------------------------------------
+# Stored provider credentials
+# ---------------------------------------------------------------------------
+# The key that seals provider credentials stored in Differently (the
+# dashboard's "Add provider", `differently admin secret put`,
+# PUT /v1/admin/secrets/{name}). Without it, pools can still reference env:
+# or file: credentials, but none can be stored.
+secrets:
+  enabled: true
+  # A Secret you manage (for example synced from Azure Key Vault or AWS
+  # Secrets Manager) holding a base64 32-byte key. Required for GitOps
+  # renderers that cannot `lookup`. When empty, the chart generates a key once
+  # in <fullname>-secrets-key and keeps it across upgrades and uninstalls.
+  # Back the key up: without it, stored credentials cannot be read.
+  existingSecret: ""
+  existingSecretKey: secrets-key
+
+# ---------------------------------------------------------------------------
 # OpenSandbox (the default sandbox runtime)
 # ---------------------------------------------------------------------------
 # Registers an OpenSandbox server as a pool. OpenSandbox is NOT installed by
@@ -436,6 +453,9 @@ networkPolicy:
       # Destinations for TCP 443 when any provider is enabled. Provider IPs
       # are not stable, so this is usually 0.0.0.0/0 or your egress proxy.
       providerCIDRs: ["0.0.0.0/0"]
+      # Also allow TCP 443 to providerCIDRs for providers added at runtime
+      # (dashboard or API), such as Daytona or Freestyle with a stored key.
+      runtimeProviders: false
       # The OpenSandbox server, allowed when any pool uses the opensandbox
       # adapter. Exec and file traffic goes through its proxy (with
       # opensandbox.useServerProxy=true), so only this port is needed.

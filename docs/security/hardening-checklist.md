@@ -72,16 +72,33 @@ OpenSandbox server, and is marked as such.
 
 ## Secrets and keys
 
-- [ ] Store `DIFFERENTLY_DATABASE_URL`, `DIFFERENTLY_BOOTSTRAP_TOKEN`, the
-      OpenSandbox API key (`DIFFERENTLY_OPENSANDBOX_API_KEY` in the chart) and
-      provider keys in a secret store and pass them as environment variables
-      or mounted files. Config files hold only references (`env:NAME`,
-      `file:/path`). With Helm, prefer `opensandbox.existingSecret` over the
-      inline `opensandbox.apiKey`.
-- [ ] Generate tokens with `differently-server token`.
-- [ ] After first start, create a named operator key, store it, and unset the
-      bootstrap token variable. A revoked bootstrap key stays revoked even if
-      the variable's value changes.
+- [ ] Store `DIFFERENTLY_DATABASE_URL` and `DIFFERENTLY_BOOTSTRAP_TOKEN` in
+      a secret store and pass them as environment variables or mounted files.
+      For the OpenSandbox API key (`DIFFERENTLY_OPENSANDBOX_API_KEY` in the
+      chart) and provider keys, do the same, or store them in Differently
+      (`secret:` references, sealed in the database). Config files hold only
+      references (`env:NAME`, `file:/path`, `secret:name`). With Helm, prefer
+      `opensandbox.existingSecret` over the inline `opensandbox.apiKey`.
+- [ ] If you store credentials in Differently, back up the secrets key
+      (`dly-differently-secrets-key`, or your `secrets.existingSecret`) to a
+      vault, apart from database backups. Losing it makes every stored
+      credential unreadable; anyone holding it and a database copy can read
+      them all. With GitOps renderers that cannot `lookup`, set
+      `secrets.existingSecret`, or every render generates a new key. Do not
+      change the key: it cannot be rotated yet **(gap:
+      [backlog E23](../backlog.md#e23-provider-credential-follow-ups))**. If
+      you store nothing, `secrets.enabled: false` gives the server no key.
+- [ ] Generate tokens with `differently-server token`, and the secrets key
+      with `differently-server secrets-key` (or `openssl rand -base64 32`) if
+      you bring your own.
+- [ ] After first start, create a named operator key and store it, then
+      revoke the bootstrap key (`differently key revoke <id>`). Unsetting
+      the variable does not revoke the key. A revoked bootstrap key stays
+      revoked even if the variable's value changes
+      ([the bootstrap operator token](../guides/keys-and-providers.md#the-bootstrap-operator-token)).
+- [ ] Rotate API keys with a grace period instead of revoking and
+      re-creating them: `differently key rotate <id> --grace 1h`, then
+      update the caller and let the grace lapse.
 - [ ] Give CI and applications project-scoped keys with the fewest scopes
       (`sandboxes:read`, `sandboxes:write`, `sandboxes:exec` as needed). Keep
       `org:admin` and `keys:write` for humans.
@@ -90,15 +107,17 @@ OpenSandbox server, and is marked as such.
 - [ ] Treat the OpenSandbox API key as root for that server: it is
       server-wide, and anyone holding it can act on every sandbox there
       without going through Differently. Give it only to the control plane,
-      and rotate it on the OpenSandbox server and in the control plane's
-      Secret together.
+      and rotate it on the OpenSandbox server and in the control plane
+      (the Secret, or `differently admin secret put`) together.
 
 ## Network
 
 - [ ] Enable the chart's `NetworkPolicy` and make sure your CNI enforces it.
 - [ ] Restrict server egress (`networkPolicy.server.egress.restricted`) to
       DNS, Postgres, OpenSandbox (`networkPolicy.server.egress.opensandbox`,
-      port 80 by default) and the CIDRs of approved providers. With
+      port 80 by default) and the CIDRs of approved providers. Leave
+      `networkPolicy.server.egress.runtimeProviders` off unless operators add
+      providers from the dashboard or API; it opens `providerCIDRs` on 443. With
       `opensandbox.useServerProxy: false` the server also needs each
       sandbox's endpoint (`networkPolicy.server.egress.extra`); keep the
       default proxy unless you have measured a need.
@@ -159,7 +178,10 @@ OpenSandbox server, and is marked as such.
       account for Differently.
 - [ ] Keep the global policy at `external: never` until you have decided which
       classifications may leave. Then approve each external pool by name in
-      `externalPools`.
+      `externalPools`. Prefer that explicit change to
+      `differently admin pool use <pool> --approve-external`, which approves a
+      pool as a side effect of switching, and does not withdraw the approval
+      when you switch back.
 - [ ] Map classifications deliberately. The default classes are
       `private-only` (never), `internal` (overflow, the default class) and
       `public` (allowed).
@@ -173,6 +195,9 @@ OpenSandbox server, and is marked as such.
 - [ ] For an OpenSandbox server someone else operates, set `trust: external`;
       it then follows the same approval rules as Daytona and Freestyle.
 - [ ] Review `GET /v1/admin/trust-report` after every policy change.
+- [ ] Rotate provider keys within the same provider account. A pool pointed
+      at another account loses sight of its existing sandboxes; register a
+      new pool and switch to it instead.
 
 ## Policy and tenancy
 
@@ -196,6 +221,10 @@ OpenSandbox server, and is marked as such.
       happens.
 - [ ] Leave `audit.recordCommands` off unless you need command lines; they can
       contain secrets.
+- [ ] Alert on `secret.put`, `secret.delete`, `pool.create`, `pool.use` and
+      `policy.update` events. The trust report's `recentAdminActions` does not
+      include `secret.*` events, so query
+      `GET /v1/audit-events?action=secret.put` directly.
 - [ ] Alert on `differently_reconcile_actions_total` (orphans deleted,
       instances lost, adoptions), on pools whose health is not `healthy`, and
       on `differently_placement_decisions_total{outcome="rejected"}`. On an
@@ -212,9 +241,16 @@ OpenSandbox server, and is marked as such.
 - [ ] Know the kill switches: `POST /v1/admin/organizations/{id}/suspend` with
       `{"terminate": true}`, `POST /v1/admin/pools/{name}/drain`, `PATCH
       /v1/admin/pools/{name}` with `{"enabled": false}`, a global policy with
-      `external: never`, and `POST /v1/admin/sandboxes/{id}/terminate`.
+      `external: never`, and `POST /v1/admin/sandboxes/{id}/terminate`. Every
+      replica picks up a pool change within about 5 seconds.
 - [ ] After a suspected compromise of an OpenSandbox server, its hosts or its
       API key: drain its pool, rotate the key on the server and in the
       control plane, review OpenSandbox's logs and the reconciler's actions,
       and treat the environment values and files of sandboxes on that pool as
       exposed.
+- [ ] After a suspected leak of a provider key: create a new key at the
+      provider, `differently admin secret put` it (or update the Secret or
+      file), and revoke the old one at the provider.
+- [ ] After a suspected leak of the secrets key together with a database copy
+      or backup: treat every stored credential as exposed. Rotate each one
+      at its provider and store the new values.

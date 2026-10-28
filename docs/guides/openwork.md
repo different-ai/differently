@@ -53,13 +53,40 @@ Follow [deploy/kubernetes.md](../deploy/kubernetes.md). For OpenWork:
   of commands that end without a newline gains one, and OpenWork's exact
   `run` contract fails.
 - **Daytona or Freestyle (external, optional).** Enable
-  `providers.daytona` or `providers.freestyle` with `existingSecret`. Their
+  `providers.daytona` or `providers.freestyle` with `existingSecret`, or add
+  them at runtime with their key stored in Differently
+  ([keys and providers](keys-and-providers.md)). Their
   API keys live in Kubernetes Secrets that only the Differently server reads,
   and never reach OpenWork. See [hybrid-overflow.md](hybrid-overflow.md).
 - **Policy.** Registering a provider authorizes nothing. To route work there,
   set `config.policy.external` to `overflow` (only when private pools are
   full) or `allowed`, and list the pools in `config.policy.externalPools`.
   A narrower org or project policy can only tighten this.
+
+### On OpenSandbox's Kubernetes runtime (AKS, k3s)
+
+Observed on a single-node k3s install on Azure (OpenSandbox server,
+controller and execd release-1.2.0, BatchSandbox): the end-to-end suite
+passes 8 of 8 with pause and snapshots left out. What that means for
+OpenWork computers:
+
+- **Exact output.** Its Kubernetes runtime already uses `execd`
+  release-1.2.0, so set `opensandbox.lineEndings: kept`.
+- **Pause and snapshots need a registry.** On this runtime, OpenSandbox
+  pauses by committing the sandbox's filesystem to an OCI image and resumes
+  by re-creating it from that image (`controller.snapshot.registry` plus
+  push and pull secrets). That is slower than Docker's memory freeze, and
+  processes don't survive it. Without a registry, leave
+  `lifecycle.pause-resume` and `snapshots.disk` out of `opensandbox.features`.
+  Workbot then can't pause idle computers: the pause fails quietly and the
+  computer runs until its TTL.
+- **Port URLs need OpenSandbox's ingress gateway** (`server.gateway.enabled`),
+  so a desktop viewer needs it, or a Daytona or Freestyle pool.
+- **First image pull.** Pulling a new image can take longer than
+  OpenSandbox's 60-second pod-ready timeout. OpenSandbox then deletes the
+  sandbox and answers the create with a 504. Pre-pull large images, such as
+  Workbot's computer image, on the nodes, or raise that timeout
+  ([OpenSandbox pools](opensandbox-pools.md)).
 
 ## Templates: route one image name to every provider
 
@@ -92,6 +119,14 @@ differently key create workbot-runner --org <org-id> --key-project <project-id>
 The key holds the default `sandboxes:read`, `sandboxes:write` and
 `sandboxes:exec` scopes and works only in that project. Set project quotas
 (`maxActiveSandboxes`, CPU, memory) to cap what the runner can hold.
+
+To replace the runner's key without downtime, rotate it with a grace period
+(`differently key rotate <key-id> --grace 1h`), set the new token as the
+runner's `DIFFERENTLY_API_KEY`, and let the old key lapse
+([rotating API keys](keys-and-providers.md#rotate-differently-api-keys-without-downtime)).
+Provider keys can be stored in Differently, and which provider new computers
+use can be switched there (`differently admin pool use NAME`), with no change
+to OpenWork ([keys and providers](keys-and-providers.md)).
 
 ## 3. Turn it on in OpenWork
 

@@ -60,10 +60,14 @@ DIFFERENTLY_E2E_TOKEN="$(cat operator-token)" \
 DIFFERENTLY_E2E_METRICS_URL=http://localhost:29091 \
 OPENSANDBOX_E2E_URL=http://localhost:28091/v1 \
 OPENSANDBOX_E2E_KEY="$(cat opensandbox-api-key)" \
+OPENSANDBOX_E2E_INTERNAL_URL=http://opensandbox-server.opensandbox-system.svc/v1 \
 go test -tags e2e -count=1 -v ./test/e2e/
 ```
 
-The server's config must match [`config.yaml`](config.yaml) where the tests
+`OPENSANDBOX_E2E_INTERNAL_URL` is OpenSandbox as the server reaches it, for
+the pool `TestStoredProviderKeyAndSwitching` registers, and
+`DIFFERENTLY_E2E_POOL` names the config's private pool (`opensandbox`). The
+server's config must match [`config.yaml`](config.yaml) where the tests
 depend on it: the `small` and `medium` profiles, `audit.failClosed: true`
 and a short `scheduler.reconcileIntervalSeconds`. Tests adapt to what the
 pool advertises: where pause or snapshots are not offered (the Kubernetes
@@ -85,6 +89,7 @@ them precisely instead.
 | `TestDeleteCleansUpBackend` | Deleting a sandbox removes it from OpenSandbox |
 | `TestReconcilesDriftInTheBackend` | An orphan carrying this installation's metadata is deleted; a sandbox deleted behind Differently's back is failed and its quota released |
 | `TestAuditTrustAndMetrics` | Audit chain intact with fail-closed request records; the trust report shows the pool's isolation and no secrets; metrics only on their own port |
+| `TestStoredProviderKeyAndSwitching` | A provider key stored in Differently drives a second pool; `use` sends new sandboxes there and back; replacing the stored key takes the pool down and brings it back without a restart |
 
 ## Verified on
 
@@ -92,8 +97,9 @@ them precisely instead.
 |---|---|---|---|
 | 2026-10-28 | Apple M4 Max, macOS 26.5, Colima 0.10.3 (`colima-differently`), arm64 | server 1.2.0, `execd` v1.1.0, Docker runtime | 10/10 passed, twice; sandboxes running in about 0.3–0.8 s |
 | 2026-10-28 | same | server 1.2.0, `execd` release-1.2.0, `lineEndings: kept` | 10/10 passed, including byte-exact output |
-| 2026-10-28 | same | same | 11/11 passed; an unpullable image fails after one attempt in about 1 s |
-| 2026-10-28 | k3s v1.36.5 on an Azure `Standard_D8s_v6`, x86_64; Differently from its Helm chart with embedded PostgreSQL | server, controller and `execd` release-1.2.0, Kubernetes runtime, no snapshot registry | 11/11 passed (pause and snapshots checked as refusals); sandboxes running in about 1.4–2.3 s; an unpullable image retries after OpenSandbox's 60 s pod-ready timeout with the pool healthy |
+| 2026-10-28 | same | server 1.2.0, `execd` release-1.2.0, `lineEndings: kept` | 11/11 passed, including stored provider keys and switching |
+| 2026-10-28 | same | same | 12/12 passed (the combined suite); an unpullable image fails after one attempt in about 1 s |
+| 2026-10-28 | k3s v1.36.5 on an Azure `Standard_D8s_v6`, x86_64; Differently from its Helm chart with embedded PostgreSQL | server, controller and `execd` release-1.2.0, Kubernetes runtime, no snapshot registry | 12/12 passed (pause and snapshots checked as refusals); sandboxes running in about 1.4–2.7 s; an unpullable image retries after OpenSandbox's 60 s pod-ready timeout with the pool healthy |
 
 Not covered yet:
 
