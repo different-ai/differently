@@ -1,6 +1,6 @@
 # ADR 0003: Kubernetes is a deployment substrate, not the sandbox API
 
-- Status: Accepted
+- Status: Accepted. Amended by [ADR 0020](0020-opensandbox-replaces-node-agent.md): the chart no longer deploys a node agent DaemonSet or needs KVM nodes; it deploys the control plane only
 - Date: 2026-10-28
 
 ## Context

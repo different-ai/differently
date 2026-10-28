@@ -10,26 +10,31 @@ Differently is built to run with no internet access:
   binary with `Content-Security-Policy: default-src 'self'`, so the browser
   loads nothing from third parties.
 - **No outbound calls by default.** The only outbound connections the
-  control plane ever makes go to PostgreSQL, to node agents and to
-  external-provider APIs. Provider pools are disabled by default.
+  control plane ever makes go to PostgreSQL, to the backends of its pools
+  (OpenSandbox servers, `remote` plugins) and to external-provider APIs.
+  Provider pools are disabled by default.
+
+OpenSandbox is a separate product with its own images and configuration.
+Whether it runs fully offline, and which of its components reach the
+network, is for its documentation to answer; it has not been checked here.
 
 ## 1. Mirror the images
 
 | Image | Needed for |
 |---|---|
 | `ghcr.io/different-ai/differently-server:0.1.0` | Control plane, migrations, preflight |
-| `ghcr.io/different-ai/differently-agent:0.1.0` | Node agents (includes Firecracker, per the chart's defaults) |
 | `ghcr.io/different-ai/differently-cli:0.1.0` | `helm test` only |
-| your guest-images image (`deploy/images/package-oci.sh`) | Only with `agent.guestImages.enabled` |
 | `docker.io/library/postgres:17` | Only with the evaluation-only `postgresql.embedded` |
 | `docker.io/library/busybox:1.37` | Only for the `kubectl debug` checks in these guides |
+| OpenSandbox's server, `execd` and other component images | Your OpenSandbox installation; see step 3 |
+| The sandbox images your pools create sandboxes from | Pulled by OpenSandbox's runtime, not by Differently |
 
 Copy by digest so the internal tags point at exactly what you reviewed. Use
 `--all` (skopeo) or `crane copy` so multi-architecture indexes come along:
 
 ```sh
 REG=registry.internal.example.com
-for img in differently-server differently-agent differently-cli; do
+for img in differently-server differently-cli; do
   skopeo copy --all docker://ghcr.io/different-ai/$img:0.1.0 docker://$REG/different-ai/$img:0.1.0
 done
 skopeo inspect docker://$REG/different-ai/differently-server:0.1.0 | jq -r .Digest
@@ -43,28 +48,26 @@ production.
 ## 2. Mirror the chart
 
 ```sh
-helm package deploy/helm/differently                 # differently-0.1.0.tgz
-helm push differently-0.1.0.tgz oci://$REG/charts    # or copy the .tgz across the gap
-helm show chart oci://$REG/charts/differently --version 0.1.0
+helm package deploy/helm/differently                 # differently-0.2.0.tgz
+helm push differently-0.2.0.tgz oci://$REG/charts    # or copy the .tgz across the gap
+helm show chart oci://$REG/charts/differently --version 0.2.0
 ```
 
-## 3. Build guest images outside, carry them in
+## 3. Mirror and configure OpenSandbox
 
-The kernel and rootfs builds download from `cdn.kernel.org`,
-`raw.githubusercontent.com`, Debian mirrors and your base image registry.
-Run them on a connected build host:
+Install OpenSandbox from its own chart or manifests, mirrored the same way,
+following its documentation. Point every image it uses at the internal
+registry. In the configuration the adapter was checked against
+(`test/opensandbox/config.toml`), those are at least the server image, the
+`execd` image (`[runtime] execd_image`) and the egress image
+(`[egress] image`); a Fast Sandbox installation adds its own components and
+templates. Pin the same versions you tested.
 
-```sh
-deploy/images/build-kernel.sh --version 6.1.<patch> --out out/
-deploy/images/build-rootfs.sh --image <base-image> --guest-binary ./differently-guest --output out/default.ext4
-(cd out && sha256sum vmlinux *.ext4 > SHA256SUMS)
-```
-
-Carry `out/` across the gap and check `SHA256SUMS`. Then either package it as
-an OCI image into the internal registry (`package-oci.sh --tag $REG/...`) or
-stage it on nodes. For systemd hosts, carry the official Firecracker release
-tarball together with its published SHA-256, and pass `--firecracker-tarball`
-and `--firecracker-sha256` to `install.sh`.
+Sandboxes are created from an image URI (or a Fast Sandbox template). The
+pool's default image is `ubuntu:24.04` unless you set `opensandbox.image`
+(or a Fast Sandbox `opensandbox.templateId`), or the request names a
+template. Mirror those images and use internal URIs,
+or creation fails when OpenSandbox's runtime cannot pull them.
 
 ## 4. Install with no external egress
 
@@ -81,6 +84,12 @@ postgresql:
   external: {existingSecret: differently-database}
 auth:
   existingSecret: differently-tokens
+opensandbox:
+  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+  trust: private
+  isolation: container
+  image: registry.internal.example.com/library/ubuntu:24.04   # mirrored sandbox image
+  existingSecret: opensandbox-api-key
 providers:
   daytona: {enabled: false}
   freestyle: {enabled: false}
@@ -88,42 +97,40 @@ networkPolicy:
   enabled: true
   server:
     egress:
-      restricted: true       # DNS, agents and the database only
+      restricted: true       # DNS, the database and OpenSandbox only
       databaseCIDRs: ["10.20.0.0/24"]
-agent:
-  guestImages:
-    enabled: true
-    image:
-      repository: differently/guest-images
-      tag: "2026-10-28"
 ```
 
 ```sh
-helm install dly oci://$REG/charts/differently --version 0.1.0 -n differently -f values-airgap.yaml
+helm install dly oci://$REG/charts/differently --version 0.2.0 -n differently -f values-airgap.yaml
 ```
 
-With providers disabled, the server NetworkPolicy has no TCP 443 egress rule.
+With providers disabled, the server NetworkPolicy has no TCP 443 egress rule;
+its OpenSandbox rule (`networkPolicy.server.egress.opensandbox`) allows only
+the OpenSandbox namespace (or `cidrs`) on port 8090.
 Even a misconfigured provider pool could not reach the internet from the
 server pods, as long as the CNI enforces NetworkPolicy. For defence in depth,
 add a namespace-wide default-deny egress policy as well.
 
-Sandboxes are a separate matter. Their egress goes through the KVM node's
-networking, not the server's, so close it with node or VPC firewalling if
-sandboxes must not reach the internet.
+Sandboxes are a separate matter. Their egress goes through OpenSandbox's
+runtime and the network under it, not through Differently, which does not
+configure OpenSandbox's network policy. Close it with OpenSandbox's own
+egress settings, NetworkPolicy in OpenSandbox's namespace, or node and VPC
+firewalling if sandboxes must not reach the internet.
 
 ## Verify
 
 ```sh
-# 1. Every image comes from the internal registry.
+# 1. Every image comes from the internal registry (repeat for OpenSandbox's namespace).
 kubectl -n differently get pods -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{range .spec.initContainers[*]}{.image}{"\n"}{end}{end}' | sort -u
 
 # 2. The server reports no telemetry, no approved external pools, and no external pool at all.
 curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/admin/trust-report" \
   | jq '{telemetry, external: .globalPolicy.external, pools: [.pools[] | {name, trust, endpoint, approvedForExternalPlacement}]}'
 #   "telemetry": "none: Differently has no telemetry or phone-home code paths"
-#   every pool has "trust": "private"
+#   every pool has "trust": "private", and the opensandbox endpoint is an internal address
 
-# 3. The server's egress is restricted to DNS, agents and the database.
+# 3. The server's egress is restricted to DNS, the database and OpenSandbox.
 kubectl -n differently get networkpolicy dly-differently-server -o yaml | sed -n '/egress:/,$p'
 
 # 4. Everything still works with egress locked down.
@@ -132,4 +139,4 @@ helm test dly -n differently --logs
 
 For an independent check, watch flows from the server pods with your CNI's
 flow logs (for example Cilium Hubble, or VPC flow logs). Expect only DNS,
-PostgreSQL and agent port 9090.
+PostgreSQL and the OpenSandbox server's port (8090 by default).

@@ -1,6 +1,6 @@
 # ADR 0017: Proxy exec and file traffic through the control plane
 
-- Status: Accepted
+- Status: Accepted. Amended by [ADR 0020](0020-opensandbox-replaces-node-agent.md): adapters now call OpenSandbox or a provider rather than a node agent, and the guest's 10 MiB synchronous exec output cap went with the guest
 - Date: 2026-10-28
 
 ## Context

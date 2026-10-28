@@ -1,8 +1,8 @@
 // Package adapterhttp serves an adapter.ExecutionAdapter over HTTP and
 // provides a client that implements the same interface.
 //
-// This is the out-of-process plugin protocol: the Differently node agent speaks
-// it, and community backends can implement it in any language. Routes live
+// This is the out-of-process plugin protocol (the `remote` pool adapter): any
+// backend can implement it in any language. Routes live
 // under /adapter/v1, bodies are JSON, errors use the api.ErrorEnvelope shape,
 // and streamed exec output is newline-delimited JSON (one api.ExecEvent per
 // line). An optional bearer token authenticates the control plane.

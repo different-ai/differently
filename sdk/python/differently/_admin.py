@@ -5,7 +5,6 @@ from typing import Any, List, Mapping, Optional
 from ._http import HttpClient, path_segment
 from ._sandbox import compact
 from .types import (
-    Agent,
     AuditVerifyResult,
     CostModel,
     CreateOrganizationResult,
@@ -125,14 +124,6 @@ class AdminPools:
         self._http.json("DELETE", f"/v1/admin/pools/{path_segment(name)}")
 
 
-class AdminAgents:
-    def __init__(self, http: HttpClient) -> None:
-        self._http = http
-
-    def list(self, *, pool: Optional[str] = None) -> List[Agent]:
-        return self._http.json("GET", "/v1/admin/agents", query={"pool": pool}).get("items") or []
-
-
 class Admin:
     """Operator-only endpoints. Every call needs a key with the ``admin`` scope."""
 
@@ -141,7 +132,6 @@ class Admin:
         self.organizations = AdminOrganizations(http)
         self.projects = AdminProjects(http)
         self.pools = AdminPools(http)
-        self.agents = AdminAgents(http)
 
     def trust_report(self) -> TrustReport:
         """Where workloads can go, where they went, and what Differently cannot prove."""

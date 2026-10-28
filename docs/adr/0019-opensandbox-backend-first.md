@@ -1,6 +1,7 @@
 # ADR 0019: OpenSandbox as a backend first; foundation decision after the Fast Sandbox spike
 
-- Status: Accepted (backend). Proposed (foundation); see criteria
+- Status: Accepted (backend). Foundation: decided by
+  [ADR 0020](0020-opensandbox-replaces-node-agent.md) ahead of the criteria below
 - Date: 2026-10-28
 - Related: [ADR 0002](0002-direct-firecracker-node-agent.md), [ADR 0007](0007-adapter-contract-optional-interfaces-http-protocol.md), [spike](../research/opensandbox-spike.md)
 

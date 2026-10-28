@@ -2,24 +2,27 @@
 
 **Run VMs differently: own them.** Your infrastructure. Your rules. One API.
 
-Differently is an open-source, fully self-hosted control plane for sandboxes and
-microVMs. Install it in a Kubernetes cluster you already run, point it at
-KVM-capable nodes, and your developers get a simple sandbox API (create, exec,
-files, snapshots) backed by Firecracker microVMs on hardware you control. When
-you choose to, the same API can also place work on external providers such as
-Daytona or Freestyle, but only where your policies explicitly allow it.
+Differently is an open-source, fully self-hosted control plane for sandboxes.
+It does not run sandboxes itself. It decides where they run and keeps
+account of them. Your developers get one sandbox API (create, exec, files,
+snapshots, fork). Differently places each sandbox on a runtime you choose:
+
+- [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) on your
+  own Docker hosts, Kubernetes clusters or Firecracker nodes, by default;
+- Daytona, Freestyle or any service that speaks the adapter protocol, and
+  only where your policies explicitly allow it.
 
 Built by the [OpenWork](https://github.com/different-ai) team, Apache-2.0.
 
 > **Status: pre-release (`0.1.0-dev`).** The control plane, scheduler, policy
-> engine, node agent, adapters, CLI, SDKs, Helm chart and docs are implemented
-> and covered by unit and in-process integration tests. An
-> [end-to-end suite](test/e2e/README.md) runs the real stack — Postgres, the
-> server and a node agent booting Firecracker microVMs — and passes on arm64
-> under nested virtualization (Colima on Apple Silicon). Cloud and bare-metal
-> KVM, x86_64 and live Daytona/Freestyle accounts are not verified yet
-> ([docs/roadmap.md](docs/roadmap.md)). Do not run production workloads on it
-> yet.
+> engine, adapters, CLI, SDKs, Helm chart and docs are implemented. Unit and
+> in-process integration tests cover them. An
+> [end-to-end suite](test/e2e/README.md) runs the real stack, verified on
+> arm64 (Colima on Apple Silicon): Postgres, the server, and an OpenSandbox
+> server (Docker runtime) as the private pool. Not verified yet: OpenSandbox's
+> Kubernetes and Fast Sandbox (microVM) runtimes, real clusters, and live
+> Daytona/Freestyle accounts ([docs/roadmap.md](docs/roadmap.md)). Do not
+> run production workloads on it yet.
 
 ## Why it exists
 
@@ -29,9 +32,11 @@ own IAM, networking and observability. Most sandbox products still ask them to
 add another vendor-run environment, with another trust boundary, another API
 and another place where code, credentials and data end up.
 
-The pieces to do this yourself exist (Firecracker, Kubernetes, Postgres), but
-assembling them into a multi-tenant, quota-enforcing, auditable platform is a
-project in itself. Differently is that assembly, packaged so that:
+Good open-source sandbox runtimes exist (OpenSandbox, CubeSandbox, E2B's
+runtime), and they run sandboxes well. Turning one or more of them into a
+multi-tenant platform is a project in itself: quotas, fair queueing,
+deciding which runtime or provider each sandbox may use, and showing
+operators where work ran. Differently is that layer, packaged so that:
 
 - **Everything is self-hostable**: API, dashboard, auth, keys, scheduler,
   queue, quotas, audit, metering. No OpenWork-hosted service, license server or
@@ -54,24 +59,36 @@ flowchart LR
   app[App / SDK / CLI] -->|one API| api[differently-server<br/>API + auth + quotas]
   api --> pg[(Postgres<br/>state, queue, audit)]
   api --> sched[Scheduler<br/>policy placement]
-  sched -->|adapter protocol| agent1[differently-agent<br/>KVM node]
-  sched -->|adapter protocol| agent2[differently-agent<br/>KVM node]
-  agent1 --> vm1[Firecracker microVMs]
-  agent2 --> vm2[Firecracker microVMs]
+  sched -->|opensandbox adapter| osb[OpenSandbox server<br/>you run it]
+  osb --> rt[Docker / Kubernetes /<br/>Fast Sandbox microVMs]
+  sched -->|remote adapter| plugin[Your own backend<br/>adapter protocol]
   sched -.->|only if policy allows| ext[Daytona / Freestyle<br/>external pools]
 ```
 
-- `differently-server` — stateless API replicas plus one elected scheduler
-  leader. Postgres is the only production dependency.
-- `differently-agent` — a DaemonSet on nodes labelled `differently.dev/kvm=true`
-  that runs Firecracker microVMs, isolates their networks and reports capacity.
-- `differently-guest` — a tiny in-VM agent reached over vsock for exec and files.
-- Adapters — `firecracker` (node agents), `daytona`, `freestyle`, `remote`
-  (any service speaking the [adapter protocol](docs/adapters/specification.md)),
-  and `devhost` for local development only.
+- `differently-server` runs as stateless API replicas plus one elected
+  scheduler leader. Postgres is its only production dependency. It owns:
+  - tenancy (organizations, projects, scoped keys);
+  - quotas and fair queueing;
+  - placement policy;
+  - reconciliation against each backend;
+  - the audit chain;
+  - placement explanations and the trust report.
+- Pools are backends registered with a declared trust (`private` or
+  `external`) and isolation. Adapters:
+  - `opensandbox`, the default private runtime;
+  - `daytona`;
+  - `freestyle`;
+  - `remote`, for any service speaking the
+    [adapter protocol](docs/adapters/specification.md);
+  - `devhost`, for local development only.
+- Isolation, network egress and node security belong to the runtime behind
+  each pool. Differently records what each pool declares and says so in the
+  trust report. It does not enforce isolation itself.
 
 Read the [architecture RFC](docs/architecture/README.md) and the
-[decision records](docs/adr/).
+[decision records](docs/adr/), in particular
+[ADR 0020](docs/adr/0020-opensandbox-replaces-node-agent.md) on why
+Differently stopped running its own Firecracker node agent.
 
 ## Try it locally in two minutes
 
@@ -123,6 +140,8 @@ follow the same shape. The HTTP contract is [api/openapi.yaml](api/openapi.yaml)
   `helm install differently deploy/helm/differently`
 - [AWS](docs/deploy/aws.md), [GCP](docs/deploy/gcp.md), [Azure](docs/deploy/azure.md),
   [bare metal](docs/deploy/bare-metal.md), [air-gapped](docs/deploy/air-gapped.md)
+- [OpenSandbox pools](docs/guides/opensandbox-pools.md), the default private
+  runtime, installed with OpenSandbox's own tooling
 - [Onboarding organizations, projects and keys](docs/guides/organization-onboarding.md)
 - [Hybrid overflow to Daytona or Freestyle](docs/guides/hybrid-overflow.md)
 - [Day-2 operations](docs/deploy/day-2.md)
@@ -133,22 +152,23 @@ follow the same shape. The HTTP contract is [api/openapi.yaml](api/openapi.yaml)
 matrix against Boat, Daytona, Freestyle and others, including what each
 backend supports and what Differently does not do yet.
 [docs/competitive-landscape.md](docs/competitive-landscape.md) explains where
-Differently fits. In short: self-hosted Firecracker on Kubernetes is not unique
-(OpenSandbox, CubeSandbox and E2B's runtime exist); policy-driven placement
-across your own microVMs *and* external providers, under a control plane you
-run, is the gap Differently targets.
+Differently fits. In short: self-hosted sandbox runtimes are not unique, and
+Differently builds on one rather than competing with it. The gap Differently
+targets is policy-driven placement across your own runtimes *and* external
+providers, under a control plane you run.
 
 ## Repository layout
 
 | Path | What |
 |---|---|
-| `cmd/` | `differently-server`, `differently-agent`, `differently-guest`, `differently` (CLI) |
+| `cmd/` | `differently-server` and `differently` (CLI) |
 | `pkg/api`, `pkg/adapter`, `pkg/client` | Public wire types, the versioned adapter contract and plugin protocol, the Go SDK |
-| `internal/` | Server, scheduler, policy, store (memory + Postgres), auth, audit, node agent, adapters |
+| `internal/` | Server, scheduler, reconciler, policy, store (memory + Postgres), auth, audit, adapters |
 | `api/openapi.yaml` | The HTTP API contract (a test keeps it in sync with the router) |
 | `sdk/typescript`, `sdk/python` | Official SDKs |
-| `deploy/` | Helm chart, Terraform (AWS), systemd units, guest image build scripts |
+| `deploy/` | Helm chart (control plane only), Terraform (AWS) |
 | `docs/` | Architecture, ADRs, security model, guides, roadmap, backlog |
+| `test/e2e`, `test/opensandbox` | The real-stack end-to-end suite and the live OpenSandbox adapter check |
 
 ## Development and branches
 

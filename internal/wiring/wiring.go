@@ -8,7 +8,6 @@ import (
 	"github.com/different-ai/differently/internal/adapters/daytona"
 	"github.com/different-ai/differently/internal/adapters/devhost"
 	"github.com/different-ai/differently/internal/adapters/fake"
-	"github.com/different-ai/differently/internal/adapters/firecracker"
 	"github.com/different-ai/differently/internal/adapters/freestyle"
 	"github.com/different-ai/differently/internal/adapters/opensandbox"
 	"github.com/different-ai/differently/internal/config"
@@ -20,12 +19,6 @@ import (
 
 // Register installs every built-in adapter factory.
 func Register() {
-	pools.Register("firecracker", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
-		if d.AgentToken == "" {
-			return nil, fmt.Errorf("firecracker pools need the agent token (auth.agentTokenEnv)")
-		}
-		return firecracker.New(p.Name, d.Store, d.AgentTimeout), nil
-	})
 	pools.Register("remote", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
 		token, err := resolve(p, d)
 		if err != nil {

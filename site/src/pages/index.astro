@@ -66,7 +66,7 @@ const features = [
   {
     k: '01',
     title: 'Providers behind adapters',
-    body: 'Firecracker node agents, Daytona, Freestyle and any service speaking the adapter protocol plug in behind one contract. Applications keep calling the same API while operators change where work goes.',
+    body: 'OpenSandbox servers you run, Daytona, Freestyle and any service speaking the adapter protocol plug in behind one contract. Applications keep calling the same API while operators change where work goes.',
     href: '/docs/adapters/specification/',
     cta: 'Adapter specification',
   },
@@ -100,7 +100,7 @@ const features = [
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Differently · Orchestrate sandboxes on your terms</title>
-    <meta name="description" content="Open-source, self-hosted orchestration for sandboxes and microVMs: one API, policy-gated placement across your pools and providers, quotas, audit and a trust report." />
+    <meta name="description" content="Open-source, self-hosted orchestration for sandboxes: one API, policy-gated placement across your OpenSandbox pools and external providers, quotas, audit and a trust report." />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -114,7 +114,7 @@ const features = [
   </head>
   <body>
     <div class="status" role="note">
-      <strong>Pre-release.</strong> Implemented and covered by unit and in-process integration tests, but not yet run on real KVM hardware or live Daytona/Freestyle accounts. Not for production workloads yet.
+      <strong>Pre-release.</strong> Unit and integration tests cover it, and an end-to-end suite runs it against a real OpenSandbox server. It has not yet run on OpenSandbox's microVM runtime, real clusters or live Daytona/Freestyle accounts. Not for production workloads yet.
       <a href={`${base}/docs/roadmap/`}>Roadmap</a>
     </div>
 
@@ -139,7 +139,7 @@ const features = [
         <h1>Everyone builds sandboxes.<br /><em>We orchestrate them.</em></h1>
         <p class="lede">
           Differently is the orchestration and resource-management layer for sandboxes. Install it in
-          infrastructure you already run, connect your own microVM pools and, if you choose, external
+          infrastructure you already run, connect your own OpenSandbox pools and, if you choose, external
           providers. Your developers get one API; policy decides where each sandbox runs, quotas keep
           usage in check, and every decision is audited.
         </p>
@@ -161,11 +161,11 @@ const features = [
         <div class="section-head">
           <p class="eyebrow">How it works</p>
           <h2>One API in. Policy decides where it runs.</h2>
-          <p>Requests are admitted against quota and queued. A single elected scheduler filters every registered pool against global, organization and project policy, ranks what is left and records why. Adapters run the sandbox on your own microVM nodes or, only where policy allows, on an external provider.</p>
+          <p>Requests are admitted against quota and queued. A single elected scheduler filters every registered pool against global, organization and project policy, ranks what is left and records why. Adapters run the sandbox on an OpenSandbox server you operate or, only where policy allows, on an external provider.</p>
         </div>
         <figure class="diagram">
           <svg viewBox="0 0 960 360" role="img" aria-labelledby="dtitle">
-            <title id="dtitle">Apps call differently-server, which stores state in Postgres and lets the scheduler place sandboxes on your KVM node agents, or on external pools only if policy allows.</title>
+            <title id="dtitle">Apps call differently-server, which stores state in Postgres and lets the scheduler place sandboxes on your OpenSandbox servers, or on external pools only if policy allows.</title>
             <defs>
               <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah" /></marker>
             </defs>
@@ -175,8 +175,8 @@ const features = [
             <g class="node"><rect x="16" y="140" width="140" height="80" rx="12" /><text x="86" y="174">App · SDK</text><text x="86" y="196" class="sub">CLI · dashboard</text></g>
             <g class="node strong"><rect x="230" y="120" width="190" height="120" rx="12" /><text x="325" y="160">differently-server</text><text x="325" y="184" class="sub">API · auth · quotas</text><text x="325" y="204" class="sub">audit · scheduler leader</text></g>
             <g class="node"><rect x="260" y="270" width="130" height="56" rx="12" /><text x="325" y="304">Postgres</text></g>
-            <g class="node"><rect x="490" y="64" width="230" height="84" rx="12" /><text x="605" y="98">differently-agent</text><text x="605" y="122" class="sub">KVM node · Firecracker microVMs</text></g>
-            <g class="node"><rect x="490" y="176" width="230" height="84" rx="12" /><text x="605" y="210">differently-agent</text><text x="605" y="234" class="sub">KVM node · Firecracker microVMs</text></g>
+            <g class="node"><rect x="490" y="64" width="230" height="84" rx="12" /><text x="605" y="98">OpenSandbox</text><text x="605" y="122" class="sub">Docker · Kubernetes runtime</text></g>
+            <g class="node"><rect x="490" y="176" width="230" height="84" rx="12" /><text x="605" y="210">OpenSandbox</text><text x="605" y="234" class="sub">Fast Sandbox microVMs</text></g>
             <g class="node ext"><rect x="790" y="140" width="154" height="80" rx="12" /><text x="867" y="174">Daytona</text><text x="867" y="196" class="sub">Freestyle · remote</text></g>
 
             <path class="edge" d="M156 180H226" marker-end="url(#arr)" />
@@ -239,11 +239,11 @@ const features = [
         <div class="cols">
           <div>
             <h3>Built and tested</h3>
-            <p>Control plane, scheduler, policy engine, node agent, adapters, CLI, SDKs, Helm chart and docs, covered by fast unit and in-process integration tests.</p>
+            <p>Control plane, scheduler, policy engine, adapters, CLI, SDKs, Helm chart and docs, covered by fast unit and in-process integration tests. An end-to-end suite runs the real stack against an OpenSandbox server.</p>
           </div>
           <div>
             <h3>Not yet verified</h3>
-            <p>Firecracker on real KVM hosts, live Daytona and Freestyle accounts, Postgres failover at scale and the jailer. Each has a proof of concept and acceptance criteria.</p>
+            <p>OpenSandbox's Kubernetes and Fast Sandbox runtimes, real clusters, live Daytona and Freestyle accounts and Postgres failover at scale. Each has a proof of concept and acceptance criteria.</p>
           </div>
           <div>
             <h3>Read before you deploy</h3>

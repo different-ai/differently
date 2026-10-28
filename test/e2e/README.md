@@ -1,62 +1,73 @@
-# End-to-end tests on real Firecracker microVMs
+# End-to-end tests against a real OpenSandbox server
 
-This suite runs the real stack — Postgres, `differently-server` and a
-`differently-agent` driving Firecracker — on a Docker host that exposes
-`/dev/kvm`, and exercises it through the public API with the Go SDK. Nothing
-is faked: sandboxes are microVMs with their own kernel, disk and network.
+This suite runs the real stack in Docker:
+
+- Postgres;
+- `differently-server`, configured with `audit.failClosed` and a separate
+  metrics listener;
+- an OpenSandbox lifecycle server (release 1.2.0, Docker runtime) as its only
+  pool, with `trust: private`.
+
+The tests drive it through the public API with the Go SDK. Some also call
+OpenSandbox directly to plant drift and to check what the backend really
+did. Nothing is faked: every sandbox is a real OpenSandbox sandbox.
+
+The Docker runtime runs sandboxes as containers that share the host kernel.
+This suite therefore proves orchestration, not microVM isolation. That
+includes the API, quotas, placement, lifecycle, reconciliation, audit and
+the trust report.
 
 ## Requirements
 
-- A Docker host with `/dev/kvm` and `/dev/net/tun`:
-  - **macOS, Apple Silicon M3 or newer, macOS 15 or newer:** a Colima VM with
-    nested virtualization (keeps your default Colima profile untouched):
+- Any Docker host. On macOS, a separate Colima profile keeps your default
+  one untouched:
 
-    ```bash
-    colima start differently --vm-type vz --nested-virtualization --cpu 4 --memory 8 --disk 20
-    docker context use colima   # optional: keep your usual context as the default
-    export DOCKER_CONTEXT=colima-differently
-    ```
+  ```bash
+  colima start differently --cpu 4 --memory 8 --disk 20
+  export DOCKER_CONTEXT=colima-differently
+  ```
 
-  - **Linux:** a host or VM with KVM (bare metal, or a cloud instance with
-    nested virtualization). Run as a user that can use Docker.
-- Go 1.26+ and `curl` on the machine running the tests.
-- About 3 GiB of disk for images and the 1 GiB guest rootfs.
+- Go 1.26+ on the machine running the tests.
+- About 1 GiB of disk for images.
 
 ## Run
 
 ```bash
-make e2e-prepare   # images, guest kernel and rootfs (test/e2e/.artifacts/)
-make e2e-up        # docker compose up: Postgres, server (:18090), metrics (:19091), agent
+make e2e-prepare   # build differently-server:e2e, pull execd and the sandbox image
+make e2e-up        # Postgres, OpenSandbox (:18091), server (:18090), metrics (:19091)
 make e2e           # go test -tags e2e ./test/e2e/
 make e2e-down      # remove the stack and its volumes
 ```
 
-`e2e-prepare` downloads Firecracker's own CI guest kernel (6.1 series) from
-its public artifact bucket, as Firecracker's getting-started guide does; set
-`KERNEL_URL` to use another kernel. The rootfs is Debian bookworm with the
-guest agent, built by `deploy/images/build-rootfs.sh`.
+OpenSandbox starts sandboxes as sibling containers through the mounted
+Docker socket. Its configuration and test API key are in
+[`../opensandbox/config.toml`](../opensandbox/config.toml). Every credential
+in `compose.yaml` is a test value for this throwaway stack.
 
 ## What it checks
 
 | Test | Proves |
 |---|---|
-| `TestMicroVMBootsWithRequestedResources` | A sandbox boots as a Firecracker microVM with the requested vCPUs, memory and disk |
-| `TestExecSemantics` | Env (sandbox and per command), stdin, exit codes, separate stderr, timeouts, streamed output |
-| `TestFiles` | Binary file upload, download and listing through vsock |
-| `TestNetworkIsolation` | Internet egress and DNS work; cloud metadata, the node agent, the control plane and other sandboxes are unreachable |
-| `TestStopStartKeepsDisk` | Stop releases the VM and keeps its disk; start boots from it |
-| `TestPauseResume` | Pause freezes the VM with memory intact |
-| `TestSnapshotAndFork` | A fork boots from the parent's disk snapshot and is independent |
+| `TestSandboxRunsOnOpenSandboxWithLimits` | A sandbox placed on the pool runs in OpenSandbox, and its CPU and memory envelope reaches the runtime as cgroup limits |
+| `TestExecSemantics` | Env (sandbox and per command), exit codes, separate stderr, timeouts and streamed output; stdin is refused with `unsupported_operation` |
+| `TestFiles` | Binary file upload, download and listing |
+| `TestPauseResumeAndUnsupportedStop` | Pause and resume keep state; `stop` returns `unsupported_operation` because OpenSandbox has none |
+| `TestSnapshotAndFork` | A fork starts from the parent's snapshot and is independent of it |
+| `TestCapabilityMismatchIsPrecise` | A request needing stop/start is rejected up front (422) with the missing capability named |
 | `TestQuotaQueuesAndReleases` | A tenant at its limit queues; the queued sandbox starts when capacity frees |
-| `TestAgentRestartRecovers` | After an agent restart the agent keeps its identity, sandboxes are reported stopped and boot again from disk |
-| `TestDeleteCleansUpNode` | Deleting a sandbox ends its Firecracker process |
-| `TestAuditTrustAndMetrics` | Audit chain intact with fail-closed request records; trust report has no secrets; metrics only on their own port |
+| `TestDeleteCleansUpBackend` | Deleting a sandbox removes it from OpenSandbox |
+| `TestReconcilesDriftInTheBackend` | An orphan carrying this installation's metadata is deleted; a sandbox deleted behind Differently's back is failed and its quota released |
+| `TestAuditTrustAndMetrics` | Audit chain intact with fail-closed request records; the trust report shows the pool's isolation and no secrets; metrics only on their own port |
 
 ## Verified on
 
-| Date | Host | Firecracker | Guest kernel | Result |
-|---|---|---|---|---|
-| 2026-10-28 | Apple M4 Max, macOS 26.5, Colima 0.10.3 (`vz`, nested virtualization), arm64 | v1.17.0 | 6.1.188 (Firecracker CI) | 11/11 passed, twice; sandbox create-to-running 3.5–4.4 s |
+| Date | Host | OpenSandbox | Result |
+|---|---|---|---|
+| 2026-10-28 | Apple M4 Max, macOS 26.5, Colima 0.10.3 (`colima-differently`), arm64 | server 1.2.0, `execd` v1.1.0, Docker runtime | 10/10 passed, twice; sandboxes running in about 0.3–0.8 s |
 
-Not yet covered: x86_64 hosts, bare-metal or cloud KVM, multi-node pools,
-the jailer, and external providers.
+Not covered yet:
+
+- OpenSandbox's Kubernetes and Fast Sandbox (Firecracker microVM) runtimes;
+- x86_64 hosts;
+- a Helm install on a real cluster;
+- external providers.

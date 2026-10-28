@@ -1,5 +1,7 @@
-# EKS cluster for Differently: a system node group for the control plane and
-# a tainted KVM node group for the node agents.
+# EKS cluster for Differently: a system node group for the control plane and,
+# optionally, a tainted KVM node group for OpenSandbox's Fast Sandbox runtime
+# (Firecracker microVMs). Differently and OpenSandbox are installed with Helm
+# afterwards; this module creates neither.
 #
 # UNVALIDATED: written against terraform-aws-modules/eks v21 and
 # terraform-aws-modules/vpc v6 input names, but never run. Expect to adjust.
@@ -29,7 +31,8 @@ locals {
     var.kvm_mode == "metal" ? ["m7i.metal-24xl"] : ["m8i.4xlarge"]
   )
 
-  # Node label and taint the Helm chart's agent DaemonSet selects and tolerates.
+  # Node label and taint for the KVM group. Differently does not read them;
+  # configure OpenSandbox's Fast Sandbox components to select and tolerate them.
   kvm_label = { "differently.dev/kvm" = "true" }
   kvm_taint = {
     kvm = {
@@ -64,8 +67,8 @@ locals {
     labels = local.kvm_label
     taints = local.kvm_taint
 
-    # Hop limit 1 keeps pods, and microVMs routed through agent pods, away
-    # from the instance metadata service and the node's IAM credentials.
+    # Hop limit 1 keeps pods, and microVMs whose traffic leaves through them,
+    # away from the instance metadata service and the node's IAM credentials.
     metadata_options = {
       http_endpoint               = "enabled"
       http_tokens                 = "required"
@@ -84,6 +87,12 @@ locals {
       }
     }
   }, local.kvm_nested_settings)
+
+  # A filtered for expression (not a conditional) so both cases have one type.
+  kvm_node_groups = {
+    for k, v in { kvm = local.kvm_node_group } : k => v
+    if var.kvm_node_group_enabled
+  }
 }
 
 module "vpc" {
@@ -127,7 +136,7 @@ module "eks" {
   vpc_id     = local.vpc_id
   subnet_ids = local.subnet_ids
 
-  eks_managed_node_groups = {
+  eks_managed_node_groups = merge({
     system = {
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = var.system_instance_types
@@ -143,9 +152,7 @@ module "eks" {
         http_put_response_hop_limit = 2
       }
     }
-
-    kvm = local.kvm_node_group
-  }
+  }, local.kvm_node_groups)
 
   tags = var.tags
 }

@@ -1,22 +1,26 @@
-# A private OpenSandbox server as the only pool (trust must be declared).
-config:
-  pools:
-    - name: opensandbox
-      adapter: opensandbox
-      trust: private
-      region: dc1
-      maxConcurrency: 50
-      config:
-        apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
-        image: ubuntu:24.04
-        isolation: container
-      credentials:
-        env: DIFFERENTLY_OPENSANDBOX_API_KEY
-server:
-  extraEnv:
-    - name: DIFFERENTLY_OPENSANDBOX_API_KEY
-      valueFrom:
-        secretKeyRef: {name: opensandbox-api-key, key: api-key}
-# This install delegates every sandbox to OpenSandbox; no Firecracker nodes.
-agent:
-  enabled: false
+# A private OpenSandbox server running Fast Sandbox (Firecracker microVMs),
+# with its API key in an existing Secret. Fast Sandbox is not yet verified
+# with Differently; the declared isolation is reported, not enforced.
+opensandbox:
+  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+  trust: private
+  pool:
+    name: opensandbox-microvm
+    region: dc1
+    maxConcurrency: 50
+  isolation: microvm
+  image: ubuntu:24.04
+  # templateId: fsb-...   # a Fast Sandbox template instead of the image
+  features:
+    - exec
+    - exec.stream
+    - files
+    - lifecycle.pause-resume
+    - snapshots.disk
+    - fork
+    - ports.expose
+    # - snapshots.memory  # once your runtime is confirmed to capture memory
+  # kubectl create secret generic opensandbox-api-key -n <release namespace> \
+  #   --from-literal=api-key='<the OpenSandbox server api_key>'
+  existingSecret: opensandbox-api-key
+  existingSecretKey: api-key

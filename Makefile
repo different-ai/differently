@@ -3,7 +3,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.1.0-dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS := -s -w -X github.com/different-ai/differently/internal/version.Version=$(VERSION) -X github.com/different-ai/differently/internal/version.Commit=$(COMMIT)
-BINS    := differently-server differently-agent differently-guest differently
+BINS    := differently-server differently
 PG_PORT ?= 55432
 
 .PHONY: build build-linux test test-postgres fmt-check vet sdk-test helm-lint verify dev images clean
@@ -53,25 +53,25 @@ dev: build
 
 images:
 	docker build -f build/server.Dockerfile -t ghcr.io/different-ai/differently-server:$(VERSION) .
-	docker build -f build/agent.Dockerfile -t ghcr.io/different-ai/differently-agent:$(VERSION) .
 	docker build -f build/cli.Dockerfile -t ghcr.io/different-ai/differently-cli:$(VERSION) .
 
 clean:
 	rm -rf bin dist
 
-# --- End-to-end tests on a real Docker host with /dev/kvm -------------------
-# Example (Apple Silicon M3+):
-#   colima start differently --vm-type vz --nested-virtualization --cpu 4 --memory 8
-#   DOCKER_CONTEXT=colima-differently make e2e-prepare e2e-up e2e e2e-down
+# --- End-to-end tests: the real stack on any Docker host --------------------
+#   make e2e-prepare e2e-up e2e e2e-down
+# Set DOCKER_CONTEXT to choose the Docker host.
 E2E_COMPOSE := test/e2e/compose.yaml
 
 .PHONY: e2e-prepare e2e-up e2e e2e-down
 
 e2e-prepare:
-	test/e2e/prepare.sh
+	docker build -q -f build/server.Dockerfile -t differently-server:e2e . >/dev/null
+	docker pull -q opensandbox/execd:v1.1.0 >/dev/null
+	docker pull -q debian:bookworm-slim >/dev/null
 
 e2e-up:
-	docker compose -f $(E2E_COMPOSE) up -d --force-recreate
+	docker compose -f $(E2E_COMPOSE) up -d --force-recreate --wait
 
 e2e:
 	DIFFERENTLY_E2E_COMPOSE=$(CURDIR)/$(E2E_COMPOSE) go test -tags e2e -count=1 -v -timeout 20m ./test/e2e/

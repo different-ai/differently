@@ -81,6 +81,12 @@ variable "system_node_count" {
 
 # --- KVM node group ---------------------------------------------------------
 
+variable "kvm_node_group_enabled" {
+  description = "Create the tainted KVM node group for OpenSandbox's Fast Sandbox runtime (Firecracker microVMs). Not needed for OpenSandbox's Docker or Kubernetes runtimes."
+  type        = bool
+  default     = false
+}
+
 variable "kvm_mode" {
   description = <<-EOT
     How KVM nodes get /dev/kvm:
@@ -111,7 +117,7 @@ variable "kvm_node_count" {
 }
 
 variable "kvm_root_volume_gib" {
-  description = "Root EBS volume size for KVM nodes; holds guest images and per-sandbox disks under /var/lib/differently."
+  description = "Root EBS volume size for KVM nodes; holds the runtime's images and per-sandbox disks."
   type        = number
   default     = 500
 }

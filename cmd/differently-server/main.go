@@ -23,7 +23,6 @@ import (
 	"github.com/different-ai/differently/internal/auditlog"
 	"github.com/different-ai/differently/internal/auth"
 	"github.com/different-ai/differently/internal/config"
-	"github.com/different-ai/differently/internal/id"
 	"github.com/different-ai/differently/internal/pools"
 	"github.com/different-ai/differently/internal/scheduler"
 	"github.com/different-ai/differently/internal/server"
@@ -140,16 +139,9 @@ func serve(cfgPath string, dev bool, listen, dataDir string) error {
 	defer rec.Close()
 
 	wiring.Register()
-	agentToken := os.Getenv(cfg.Auth.AgentTokenEnv)
-	if agentToken == "" && cfg.Dev {
-		agentToken = "dev-agent-" + id.Secret(24)
-	}
-	pm := pools.NewManager(pools.Deps{
-		Store: st, AgentToken: agentToken, AgentTimeout: time.Duration(cfg.Scheduler.AgentTimeoutSeconds) * time.Second,
-		Dev: cfg.Dev, DataDir: cfg.DataDir, Logger: log,
-	})
+	pm := pools.NewManager(pools.Deps{Store: st, Dev: cfg.Dev, DataDir: cfg.DataDir, Logger: log})
 	sch := scheduler.New(st, pm, cfg, installation, rec, log)
-	srv := server.New(cfg, st, pm, sch, rec, log, installation, agentToken)
+	srv := server.New(cfg, st, pm, sch, rec, log, installation)
 	if err := srv.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("bootstrap: %w", err)
 	}
@@ -226,16 +218,11 @@ func preflight(cfgPath string) error {
 	token := os.Getenv(cfg.Auth.BootstrapTokenEnv)
 	_, _, valid := auth.ParseToken(token)
 	check(token == "" || valid, "bootstrap token %s is a valid dly_ token (or unset)", cfg.Auth.BootstrapTokenEnv)
-	hasFirecracker := false
 	for _, p := range cfg.Pools {
-		hasFirecracker = hasFirecracker || p.Adapter == "firecracker"
 		if p.Credentials.String() != "" {
 			_, err := p.Credentials.Resolve()
 			check(err == nil, "pool %s credential %s resolves", p.Name, p.Credentials.String())
 		}
-	}
-	if hasFirecracker {
-		check(os.Getenv(cfg.Auth.AgentTokenEnv) != "", "agent token %s is set for firecracker pools", cfg.Auth.AgentTokenEnv)
 	}
 	if cfg.Store.Driver == "postgres" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

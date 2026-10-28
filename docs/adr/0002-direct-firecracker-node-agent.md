@@ -1,6 +1,6 @@
 # ADR 0002: Drive Firecracker directly through a node agent instead of Kata on Kubernetes
 
-- Status: Accepted
+- Status: Superseded by [ADR 0020](0020-opensandbox-replaces-node-agent.md)
 - Date: 2026-10-28
 
 ## Context

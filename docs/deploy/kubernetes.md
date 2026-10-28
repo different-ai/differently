@@ -1,11 +1,16 @@
 # Kubernetes: install with Helm
 
-This guide takes an existing cluster to a first running sandbox. Cloud-specific
-node setup is in [aws.md](aws.md), [gcp.md](gcp.md) and [azure.md](azure.md),
-and self-managed distributions are in [bare-metal.md](bare-metal.md).
+This guide takes an existing cluster to a first running sandbox. Differently's
+chart deploys the control plane only; sandboxes run on an
+[OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) server that
+you install first ([ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md)).
+Cloud-specific notes are in [aws.md](aws.md), [gcp.md](gcp.md) and
+[azure.md](azure.md), and self-managed distributions are in
+[bare-metal.md](bare-metal.md).
 
-Status: **documented**. These steps have not been run on a real cluster.
-The chart passes `helm lint` and `helm template` locally.
+Status: **documented**. These steps have not been run on a real cluster or
+against a live OpenSandbox server. The chart (version 0.2.0) passes `helm lint`
+and `helm template` locally for the value sets in `deploy/helm/differently/ci/`.
 
 The examples use namespace `differently`, release `dly` and the chart from
 this repository (`deploy/helm/differently`). The resources are named
@@ -13,45 +18,56 @@ this repository (`deploy/helm/differently`). The resources are named
 
 ## 1. Check prerequisites
 
-Work through [prerequisites.md](prerequisites.md). You need at least one node
-where `/dev/kvm` and `/dev/net/tun` exist, cgroup v2 is mounted and the host
-kernel is 5.10, 6.1 or 6.18.
+Work through [prerequisites.md](prerequisites.md). You need a cluster for
+the control plane, PostgreSQL for anything beyond evaluation, and a place to
+run OpenSandbox. KVM nodes are needed only if you choose OpenSandbox's Fast
+Sandbox runtime.
 
-## 2. Label and taint the KVM nodes
+## 2. Install OpenSandbox and choose its runtime
 
-```sh
-kubectl label node <node> differently.dev/kvm=true
-kubectl taint node <node> differently.dev/kvm=true:NoSchedule
-```
+Install OpenSandbox with its own Helm chart or manifests, following its
+documentation. This chart does not do it for you. Decide:
 
-## 3. Stage the guest kernel and root filesystem
+- **Runtime.** Docker or Kubernetes for containers (they share the host
+  kernel), or Fast Sandbox for Firecracker microVMs on KVM nodes. Only the
+  Docker runtime has been run with Differently; the Kubernetes runtime and
+  Fast Sandbox are **unverified**
+  ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime),
+  [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter)).
+- **API key.** Set the server's `api_key`. Without one, OpenSandbox refuses to
+  start unless insecure mode is acknowledged; do not run it that way.
+- **Versions.** Pin the server and `execd` images. The adapter was checked
+  against server `release-1.2.0` with `execd` `v1.1.0`.
+- **Location.** The chart's default `apiURL` assumes a Service
+  `opensandbox-server` in namespace `opensandbox` on port 8090. Note the real
+  URL if yours differs.
+- **Sandbox egress.** Differently does not configure OpenSandbox's network
+  policy. Restrict sandbox egress in OpenSandbox or with NetworkPolicy in its
+  namespace, and block cloud metadata endpoints.
 
-Build them with [`deploy/images/`](../../deploy/images/README.md). Then do one
-of the following:
+## 3. Create the namespace
 
-- **Package them as an OCI image** and let the chart copy them onto every KVM
-  node. Set these at install time:
-
-  ```sh
-  deploy/images/package-oci.sh --tag registry.example.com/differently-guest-images:v1 \
-    --kernel out/vmlinux --rootfs out/default.ext4 --push
-  # values: agent.guestImages.enabled=true, image registry/repository/tag as pushed
-  ```
-
-- **Copy them to every KVM node yourself**, into
-  `/var/lib/differently/images/vmlinux` and
-  `/var/lib/differently/images/default.ext4`.
-
-## 4. Create the namespace
-
-The agent is privileged, so the namespace must allow privileged pods:
+Differently's pods do not need privilege:
 
 ```sh
 kubectl create namespace differently
-kubectl label namespace differently pod-security.kubernetes.io/enforce=privileged
 ```
 
-## 5. Create secrets
+## 4. Create secrets
+
+**OpenSandbox API key.** Store the server's `api_key` in a Secret. Either
+name it yourself and set `opensandbox.existingSecret` (this guide's
+examples), or create the Secret the chart reads by default when neither
+`existingSecret` nor `apiKey` is set, `<fullname>-opensandbox` with key
+`api-key`. The chart's NOTES print the exact command, and server
+pods wait until the Secret exists.
+
+```sh
+kubectl -n differently create secret generic opensandbox-api-key \
+  --from-literal=api-key='<the OpenSandbox server api_key>'
+# or, for the chart's default name with release dly:
+# kubectl -n differently create secret generic dly-differently-opensandbox --from-literal=api-key='<...>'
+```
 
 **Database (production).** Use managed PostgreSQL or a
 [CloudNativePG](https://cloudnative-pg.io/) cluster. Create a database and user
@@ -68,17 +84,15 @@ key holds a DSN, so you can point the chart at it directly:
 `postgresql.external.existingSecretKey=uri`. Check that the key name matches
 your CNPG version.
 
-**Tokens (recommended for GitOps, optional otherwise).** Without this, the
-chart generates both tokens once and keeps them across upgrades with
+**Bootstrap token (recommended for GitOps, optional otherwise).** Without
+this, the chart generates the token once and keeps it across upgrades with
 `lookup`. Tools that render with `helm template` (Argo CD, some Flux setups)
 cannot `lookup`, so they must use an existing Secret:
 
 ```sh
 SECRET=$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 40)
-AGENT=$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 48)
 kubectl -n differently create secret generic differently-tokens \
-  --from-literal=bootstrap-token="dly_bootop1_${SECRET}" \
-  --from-literal=agent-token="${AGENT}"
+  --from-literal=bootstrap-token="dly_bootop1_${SECRET}"
 ```
 
 **External providers (optional, off by default).** Skip this unless you want
@@ -88,13 +102,32 @@ Daytona or Freestyle overflow:
 kubectl -n differently create secret generic daytona-credentials --from-literal=api-key='dtn_...'
 ```
 
-## 6. Write values and install
+## 5. Write values and install
+
+The chart's `opensandbox:` block is enabled by default and renders the
+default pool, first in the pool list (`config.pools` defaults to empty):
+
+| Value | Default | Purpose |
+|---|---|---|
+| `opensandbox.enabled` | `true` | Register the OpenSandbox server as a pool |
+| `opensandbox.apiURL` | `http://opensandbox-server.opensandbox.svc:8090/v1` | Lifecycle API base URL, ending in `/v1` |
+| `opensandbox.trust` | `private` | `private` if you operate the server and its runtime, `external` if someone else does |
+| `opensandbox.pool.name` | `opensandbox` | Pool name; also `pool.region`, `pool.labels`, `pool.maxConcurrency`, `pool.costModel` |
+| `opensandbox.image` | empty (`ubuntu:24.04`) | Default image URI; a request's template overrides it |
+| `opensandbox.templateId` | empty | A Fast Sandbox template to create sandboxes from instead of an image |
+| `opensandbox.isolation` | `container` | What the runtime provides, reported in the trust report: `container` (Docker or Kubernetes runtime) or `microvm` (Fast Sandbox). Differently does not enforce it |
+| `opensandbox.features` | empty (adapter defaults) | Capabilities to advertise, as a list; add `snapshots.memory` only when the runtime captures memory |
+| `opensandbox.useServerProxy` | `true` | Reach exec and files through the OpenSandbox server's proxy, so only its port is needed |
+| `opensandbox.existingSecret` / `existingSecretKey` | empty / `api-key` | A Secret you created holding the server's API key |
+| `opensandbox.apiKey` | empty | Inline API key, stored by the chart in a Secret. Prefer `existingSecret` |
+| `opensandbox.env` | `DIFFERENTLY_OPENSANDBOX_API_KEY` | Environment variable the server reads the key from; the pool refers to it by name |
 
 Quick evaluation, with the in-memory store and one replica. State is lost
 when the server restarts:
 
 ```sh
-helm install dly deploy/helm/differently -n differently
+helm install dly deploy/helm/differently -n differently \
+  --set opensandbox.existingSecret=opensandbox-api-key
 ```
 
 Production-shaped install (`values-prod.yaml`):
@@ -104,6 +137,12 @@ config:
   store:
     driver: postgres
   # policy stays external: never unless you opt in (see "Hybrid" below)
+
+opensandbox:
+  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+  trust: private
+  isolation: container          # microvm only if OpenSandbox runs Fast Sandbox
+  existingSecret: opensandbox-api-key
 
 postgresql:
   external:
@@ -129,11 +168,6 @@ networkPolicy:
   server:
     egress:
       databaseCIDRs: ["10.20.0.0/24"]     # where PostgreSQL lives
-
-agent:
-  jailer:
-    enabled: true
-  priorityClassName: system-node-critical
 ```
 
 ```sh
@@ -148,9 +182,15 @@ What the install does:
   (`dly-differently-migrate`) runs `differently-server migrate`. It runs as a
   server init container instead when you use `postgresql.embedded`.
 - **Preflight.** Each server pod first runs `differently-server preflight`
-  (init container `preflight`) and refuses to start on configuration errors.
-- **Agents.** Each KVM node runs an agent pod. Its `doctor` init container
-  blocks the agent until KVM, tun, Firecracker, the kernel and images check out.
+  (init container `preflight`) and refuses to start on configuration errors,
+  including a pool credential reference that does not resolve.
+- **NetworkPolicy.** Server egress is limited to DNS, the database,
+  OpenSandbox and enabled providers. The OpenSandbox rule is
+  `networkPolicy.server.egress.opensandbox`: by default pods in namespace
+  `opensandbox` (`namespaceSelector`) on port 8090. Change `namespaceSelector`
+  or `podSelector` if OpenSandbox runs elsewhere in the cluster, or set
+  `cidrs` for a server outside it. With `opensandbox.useServerProxy: false`,
+  add the per-sandbox endpoints through `networkPolicy.server.egress.extra`.
 
 Hybrid (private first, Daytona overflow), as extra values:
 
@@ -169,9 +209,9 @@ Enabling the provider alone changes nothing about placement. Policy must also
 allow it, and so must the request's classification: `private-only` never
 leaves private pools, `internal` may overflow, and `public` is allowed.
 A global policy set through `PUT /v1/policies/global` replaces
-`config.policy` at runtime.
+`config.policy` at runtime. See [hybrid-overflow.md](../guides/hybrid-overflow.md).
 
-## 7. Create an organization, a project and a project key
+## 6. Create an organization, a project and a project key
 
 The bootstrap token is an operator key (`admin` scope). Use it to set up
 tenancy, then use narrower keys day to day.
@@ -198,7 +238,7 @@ echo "$PROJECT_ID"
 The token is shown only once, so store `PROJECT_KEY` in your secret manager.
 You can also open `$DIFFERENTLY_URL/dashboard/` and sign in with a key.
 
-## 8. Create the first sandbox
+## 7. Create the first sandbox
 
 With the CLI (`differently`, configured by `DIFFERENTLY_URL` and `DIFFERENTLY_API_KEY`):
 
@@ -223,18 +263,21 @@ curl -fsS "$DIFFERENTLY_URL/v1/sandboxes/$SBX/placement" -H "Authorization: Bear
 curl -fsS -X DELETE "$DIFFERENTLY_URL/v1/sandboxes/$SBX" -H "Authorization: Bearer $PROJECT_KEY"
 ```
 
-If the sandbox stays `queued`, the placement explanation says why. Usual
-causes:
+If the sandbox stays `queued` or fails, the placement explanation and
+`statusReason` say why. Usual causes:
 
-- no healthy agent;
-- no agent has enough free memory;
-- the template is missing on every agent;
+- the `opensandbox` pool is unhealthy: wrong `apiURL`, wrong API key, or the
+  NetworkPolicy blocks port 8090;
+- OpenSandbox cannot pull the image or start the sandbox (its own logs say
+  why);
+- the request asks for a capability the pool does not offer (for example
+  `lifecycle.stop-start`);
 - policy excludes every pool.
 
-## 9. Run the smoke test
+## 8. Run the smoke test
 
 The test Pod creates a sandbox, runs `echo ok` and deletes it. With the
-bootstrap key it needs the project ID from step 7. Alternatively, put a
+bootstrap key it needs the project ID from step 6. Alternatively, put a
 project-scoped key in a Secret and set `test.existingSecret`.
 
 ```sh
@@ -252,21 +295,31 @@ and the comments explain each one. Useful ones:
 | `config.*` | server defaults | Rendered into `/etc/differently/config.yaml`: profiles, classifications, pools, policy, quotas, scheduler, audit |
 | `config.store.driver` | `memory` | `postgres` for anything beyond evaluation |
 | `server.replicas` | `1` | Must stay 1 with `memory` |
-| `auth.existingSecret` | chart-managed | Tokens Secret (keys `bootstrap-token`, `agent-token`) |
+| `auth.existingSecret` | chart-managed | Bootstrap token Secret (key `bootstrap-token`) |
+| `opensandbox.*` | enabled | The default pool: see the table in step 5 |
+| `networkPolicy.server.egress.opensandbox` | namespace `opensandbox`, port 8090 | Where the server may connect to reach OpenSandbox |
 | `providers.daytona/freestyle.enabled` | `false` | Register an external pool (still gated by `config.policy`) |
-| `agent.updateStrategy` | `OnDelete` | Agent restarts stop that node's microVMs (see [day-2.md](day-2.md)) |
-| `agent.privileged` | `true` | `false` needs a device plugin for `/dev/kvm` and `/dev/net/tun` (**unverified**) |
-| `agent.reserveCPU` / `reserveMemoryMiB` | `1` / `2048` | Host headroom on KVM nodes |
-| `networkPolicy.server.egress.restricted` | `true` | Server egress limited to DNS, agents, database and enabled providers |
+| `networkPolicy.server.egress.restricted` | `true` | Server egress limited to DNS, the database, OpenSandbox and enabled providers |
 | `metrics.serviceMonitor.enabled` | `false` | Prometheus Operator scrape of `/metrics` |
 | `global.imageRegistry` | empty | Mirror registry for every image |
 
+Other pools (a second OpenSandbox server, a `remote` plugin) go under
+`config.pools`, with credentials referenced by environment variable as the
+comments in `values.yaml` describe; see
+[opensandbox-pools.md](../guides/opensandbox-pools.md) and the
+[adapter specification](../adapters/specification.md). Values from the
+node-agent releases (`agent.*`, `auth.agentToken*`,
+`config.scheduler.agentTimeoutSeconds`, `adapter: firecracker`) now fail the
+schema check.
+
 Exposure notes:
 
-- The ingress publishes the API, the dashboard and the agent heartbeat
-  endpoint (agent token plus per-agent secret) on one host. `/metrics` is on
-  `metrics.port` (default 9091), which the ingress never routes to; set
+- The ingress publishes the API and the dashboard on one host. `/metrics` is
+  on `metrics.port` (default 9091), which the ingress never routes to; set
   `metrics.port: 0` only if you want it back on the API port.
+- The OpenSandbox server does not need to be reachable from outside the
+  cluster. Clients never talk to it: exec, files and lifecycle go through
+  Differently.
 - The upstream ingress-nginx project has been retired. Prefer a maintained
   controller or Gateway API. An HTTPRoute pointing at
   `dly-differently-server:8080` works the same way.
@@ -276,20 +329,21 @@ Exposure notes:
 ```sh
 kubectl -n differently get pods -o wide
 #   dly-differently-server-*   Running, READY 1/1 (per replica)
-#   dly-differently-agent-*    Running on each differently.dev/kvm=true node
 kubectl -n differently logs deploy/dly-differently-server -c preflight
-kubectl -n differently logs ds/dly-differently-agent -c doctor
 curl -fsS "$DIFFERENTLY_URL/readyz"                                    # {"status":"ready"}
 curl -fsS "$DIFFERENTLY_URL/version"
-curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/admin/agents" \
-  | jq '.items[] | {id, pool, node, healthy, freeMemoryMiB}'           # one healthy agent per KVM node
+curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/admin/pools" \
+  | jq '.items[] | {name, adapter, trust, health: .health.status}'      # opensandbox: healthy
 curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/admin/trust-report" \
-  | jq '{telemetry, globalPolicy: .globalPolicy.external, pools: [.pools[] | {name, trust, approvedForExternalPlacement}]}'
+  | jq '{telemetry, globalPolicy: .globalPolicy.external,
+         pools: [.pools[] | {name, trust, isolation, endpoint, credentialRef, approvedForExternalPlacement}]}'
 helm test dly -n differently --logs                                    # PASS: sandbox sbx_... ran 'echo ok'
 ```
 
 The install worked when all of these hold:
 
-- the agents are healthy;
-- the trust report shows `external: never`, or your deliberate hybrid policy;
+- the `opensandbox` pool is healthy;
+- the trust report shows the OpenSandbox endpoint, the credential only as a
+  reference (`env:...`), the isolation you actually deployed, and
+  `external: never` or your deliberate hybrid policy;
 - the smoke test passes.

@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-10-28. Nothing here has been validated by a penetration test or on real KVM infrastructure. |
-| Companion | [Hardening checklist](hardening-checklist.md) · [Architecture](../architecture/README.md) · [ADR 0008](../adr/0008-secrets-by-reference-only.md) · [ADR 0009](../adr/0009-tamper-evident-audit-chain.md) · [ADR 0015](../adr/0015-defer-jailer-integration.md) |
+| Status | Describes the code as of 2026-10-28, after [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) removed Differently's own node agent. Nothing here has been validated by a penetration test. |
+| Companion | [Hardening checklist](hardening-checklist.md) · [Architecture](../architecture/README.md) · [ADR 0008](../adr/0008-secrets-by-reference-only.md) · [ADR 0009](../adr/0009-tamper-evident-audit-chain.md) · [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) · [OpenSandbox pools](../guides/opensandbox-pools.md) |
 
 This document separates three things that are easy to blur:
 
@@ -13,18 +13,33 @@ This document separates three things that are easy to blur:
 - **Not yet implemented**: gaps, including issues found while writing this
   document.
 
+The most important line: **Differently does not isolate sandboxes.**
+Isolation and network egress come from each pool's backend runtime: an
+OpenSandbox server with its Docker, Kubernetes or Fast Sandbox runtime, an
+external provider, or whatever a `remote` plugin fronts. Differently decides
+*where* work may run, controls *who* may touch it, and records *what*
+happened. The trust report states each pool's declared isolation; Differently
+does not check it.
+
+Verification level of the backends: OpenSandbox with the Docker runtime has
+run live through the adapter and through `differently-server`. The Kubernetes
+runtime and Fast Sandbox have not, so microVM isolation through Differently
+is unverified ([backlog E18](../backlog.md#e18-fast-sandbox-spike)). Daytona
+and Freestyle are tested only against fake servers.
+
 ## 1. Assets
 
 | Asset | Where it lives | Why it matters |
 |---|---|---|
-| Tenant code, data and processes inside sandboxes | Firecracker VMs on your nodes; provider sandboxes on external pools | The thing being isolated |
-| Sandbox environment values (`env`) | Postgres `sandboxes.doc` (plaintext JSON); node `vm.json` (mode 0600); devhost `meta.json`; provider-side for Daytona (create body) and Freestyle (`/etc/differently/env` inside the VM, mode 0600) | Often holds secrets |
+| Tenant code, data and processes inside sandboxes | In the backend: OpenSandbox sandboxes (containers or Fast Sandbox microVMs) on hosts you run; provider sandboxes on external pools | The thing being isolated, by the backend |
+| Sandbox environment values (`env`) | Postgres `sandboxes.doc` (plaintext JSON). Also sent to the backend at creation: OpenSandbox's create body (stored by OpenSandbox), Daytona's create body, Freestyle's `/etc/differently/env` inside the VM (mode 0600), devhost's `meta.json` | Often holds secrets |
 | API keys | Clients; Postgres holds `sha256(secret)` only | Full access within their scopes |
-| Bootstrap operator token, agent token, database DSN, provider API keys | Environment variables or mounted files on the server (and agents for the agent token) | Control of the installation and of provider accounts |
-| Placement policy, classifications, pool trust declarations | Config file, `policies` and `pools` tables | Decide whether data may leave private infrastructure |
+| Bootstrap operator token, database DSN, backend credentials (OpenSandbox API key, provider API keys, remote plugin tokens) | Environment variables or mounted files on the server | Control of the installation and of every backend it uses |
+| The OpenSandbox server's API key, in particular | The control plane's environment, and the OpenSandbox server's own configuration | OpenSandbox has one server-wide key and no tenant model: whoever holds it can create, exec into, read and delete every sandbox on that server without going through Differently |
+| Placement policy, classifications, pool trust and isolation declarations | Config file, `policies` and `pools` tables | Decide whether data may leave private infrastructure, and what the trust report claims |
 | Audit chain | Postgres `audit_events`; optional JSON-lines mirror | Accountability and evidence |
-| Snapshots | Node disk (`<state-dir>/snapshots/<id>/rootfs.ext4`); provider-side snapshots | Copies of tenant disks |
-| Guest kernel and rootfs images | Node `--images-dir` | Supply chain for every VM |
+| Snapshots | Backend-side: OpenSandbox snapshots, provider snapshots | Copies of tenant disks, and of memory where the runtime captures it |
+| Images and templates | Image URIs and template IDs in pool config and templates; pulled by the runtime from the registries you configure | Supply chain for every sandbox |
 
 ## 2. Actors
 
@@ -33,14 +48,14 @@ This document separates three things that are easy to blur:
 | Installation operator (`admin` scope) | Fully trusted for the installation | Everything, including pools, global policy, suspending tenants |
 | Organization admin (`org:admin`) | Trusted inside one organization | All tenant scopes in its organization, mint keys up to its own scopes |
 | Project or CI key | Trusted inside one project and its scopes | Sandboxes, exec, files as scoped |
-| Sandbox workload | **Untrusted.** Assume arbitrary and malicious code | Whatever the VM and its network rules allow |
-| KVM host administrator, Kubernetes cluster-admin | Trusted; Differently cannot protect workloads from them | Read guest memory and disks |
-| Cloud provider hosting your nodes | Trusted for the hardware it runs | Physical and hypervisor access |
+| Sandbox workload | **Untrusted.** Assume arbitrary and malicious code | Whatever the runtime's isolation and network configuration allow |
+| Backend operator: whoever runs the OpenSandbox server and its hosts (root on Docker hosts or KVM nodes, administrators of the cluster OpenSandbox uses) | Trusted; Differently cannot protect workloads from them | Read sandbox memory, disks and environment; act on sandboxes directly, outside Differently's audit log |
+| Holder of an OpenSandbox API key | Equivalent to the backend operator for that server | Create, exec into, read files of and delete any sandbox on that server. Differently sees such changes only as orphans or lost instances during reconciliation |
+| Cloud provider hosting your hosts | Trusted for the hardware it runs | Physical and hypervisor access |
 | External provider (trust `external` pool) | Trusted for workloads policy sends to it | Sees code, data and environment of those sandboxes |
 | Database administrator | Trusted | Read env values; rewrite the audit chain |
 | Community adapter (`remote` pool) | Trusted as declared by the operator's `trust` setting | Sees everything sent to its pool |
-| Network attacker | Untrusted | Observe or tamper with unencrypted links |
-| Holder of the agent token | Any node | Register a *new* agent ID; cannot take over another agent's ID or call other agents (each has its own secret, see §6) |
+| Network attacker | Untrusted | Observe or tamper with unencrypted links, including a plain-HTTP OpenSandbox URL |
 
 ## 3. Trust boundaries
 
@@ -54,28 +69,27 @@ flowchart TB
     PG[("PostgreSQL")]
     SEC["Secret store: env vars / files"]
   end
-  subgraph Z2["KVM node (host-admin-trusted)"]
-    AG["differently-agent (root)"]
-    FC["firecracker process (no jailer)"]
+  subgraph Z2["Backend runtime (backend-operator-trusted)"]
+    OS["OpenSandbox server"]
+    RT["runtime: Docker, Kubernetes or Fast Sandbox"]
   end
-  subgraph Z3["microVM (untrusted)"]
-    GU["differently-guest + workload"]
+  subgraph Z3["Sandbox (untrusted)"]
+    EX["execd + workload"]
   end
-  subgraph Z4["External provider (trusted by policy)"]
-    EXT["Daytona / Freestyle / plugin"]
+  subgraph Z4["External provider or plugin (trusted by policy)"]
+    EXT["Daytona / Freestyle / remote plugin"]
   end
   INET["Internet"]
 
   C -- "B1: HTTPS terminated by your ingress, server speaks HTTP" --> S
   S -- "B2: Postgres protocol (TLS per DSN)" --> PG
   SEC -- "B3: process environment / files" --> S
-  S -- "B4: HTTP + one shared bearer token" --> AG
-  AG -- "heartbeat, same token" --> S
-  AG --> FC
-  FC -- "B5: KVM / virtio devices" --> GU
-  AG -- "B6: vsock, plain HTTP" --> GU
-  GU -- "B7: tap + iptables (egress policy)" --> INET
-  S -- "B8: HTTPS + provider API key" --> EXT
+  S -- "B4: HTTP(S) + server-wide API key" --> OS
+  OS --> RT
+  RT -- "B5: container or microVM boundary" --> EX
+  OS -- "execd calls (proxied by default)" --> EX
+  EX -- "B6: runtime's network configuration" --> INET
+  S -- "B7: HTTPS + provider key / adapter protocol + token" --> EXT
 ```
 
 | Boundary | Enforced in code | Operator responsibility | Not yet implemented |
@@ -83,11 +97,10 @@ flowchart TB
 | B1 client → API | Token parsing and hashed verification; scopes; tenancy (404 across tenants); per-key rate limit; 4 MiB JSON bodies with unknown fields rejected; 100 MiB uploads; suspended orgs blocked for writes | TLS termination, ingress and WAF, exposure of `/metrics` | OIDC/SSO; IP allow-lists; global (cross-replica) rate limits |
 | B2 API → Postgres | Parameterized queries (pgx); transactions and row locks for quota | TLS in the DSN, network policy, encryption at rest, backups, least-privilege DB role | Application-level encryption of env values |
 | B3 secrets → server | References only; values never logged or stored | The secret store itself; file permissions | Native Vault / cloud secret manager clients |
-| B4 control plane ↔ agent | Constant-time bearer token check on both directions; agents accept only `/adapter/v1` and `/healthz` | Network isolation of the agent port (Helm `NetworkPolicy` allows only server pods) | mTLS, per-node identity, endpoint pinning (see §6) |
-| B5 VMM ↔ guest | Hardware virtualization (KVM); Firecracker's default seccomp filters; SMT disabled in machine config | Host kernel, microcode and Firecracker patching; KVM host hardening | Jailer (chroot, namespaces, cgroups, unprivileged UID) |
-| B6 agent ↔ guest | Separate vsock socket per VM; guest path resolution confined under its root; file reads from the guest capped at 100 MiB, streamed lines at 8 MiB | Guest image contents | The guest is untrusted, but synchronous exec results and directory listings from it are decoded without a size limit (issue 9 below) |
-| B7 guest → network | Per-VM tap and chain; no inbound connections; deny list for metadata, RFC 1918 and CGNAT; optional egress deny | Upstream firewalls, NAT egress IPs, DNS for guests, IPv6 policy, blocking public node IPs | Per-sandbox allow-lists; IPv6 filtering; DNS filtering |
-| B8 control plane → provider | Fail-closed placement; explicit `externalPools` approval; classification ceilings; provider TTL backstop; HTTPS | Provider account security, key scoping, data processing agreements | Provider-side network policy beyond Freestyle's firewall option |
+| B4 control plane → OpenSandbox | The API key is sent only to the configured server, in `OPEN-SANDBOX-API-KEY`; the API never returns it, the trust report shows only its reference, and in the live run it did not appear in the server log. Port endpoints that would need the key are refused (`ExposePort`). The adapter acts only on sandboxes whose metadata it wrote and re-checks the server's metadata filter | TLS: the chart's default `apiURL` is plain HTTP inside the cluster, so use an `https` URL or an encrypting mesh across untrusted networks. Restrict who can reach the server's port. Rotate the key on both sides | Scoped or per-tenant OpenSandbox credentials (OpenSandbox has one key per server) |
+| B5 runtime → sandbox | **Nothing in Differently.** The pool's declared `isolation` (`container` or `microvm`) is reported, not verified. With the server proxy (default), Differently relies on OpenSandbox not forwarding the API key into the sandbox; this has not been checked separately | Choose a runtime that matches the data: Docker and Kubernetes containers share the host kernel. Harden it in OpenSandbox (capabilities, `no_new_privileges`, PID limits, seccomp), patch hosts, and declare `isolation` truthfully | Fast Sandbox through Differently ([E18](../backlog.md#e18-fast-sandbox-spike)) |
+| B6 sandbox → network | **Nothing in Differently.** OpenSandbox pools do not advertise `network.egress-control` | Egress rules in OpenSandbox, NetworkPolicy in its namespace, host and VPC firewalls. Block cloud metadata endpoints, private ranges, the control plane and Postgres from sandboxes | Wiring OpenSandbox's network policy ([E19](../backlog.md#e19-opensandbox-network-policy-and-egress)) |
+| B7 control plane → provider or plugin | Fail-closed placement; explicit `externalPools` approval; classification ceilings; provider TTL backstop; HTTPS to providers. For `remote` pools, the operator's `trust` overrides the plugin's claim, and the plugin's handler checks its bearer token in constant time | Provider account security, key scoping, data processing agreements; TLS on plugin endpoints | Provider-side network policy beyond Freestyle's firewall option; adapter protocol version check (E0.25) |
 
 ## 4. Enforced in code today
 
@@ -120,27 +133,30 @@ flowchart TB
 - An external pool must be named in `externalPools`; registering a pool
   authorizes nothing.
 - `daytona` and `freestyle` pools are forced to `trust: external` regardless of
-  configuration.
+  configuration. `opensandbox` pools must declare `trust`; configuration
+  without it is rejected.
 - Every decision records each pool's verdict and reasons.
 
-**Isolation** (`internal/agent`, `internal/firecracker`, `internal/guest`)
+**Backend boundaries** (`internal/config`, `internal/adapters/*`, `internal/server/admin.go`)
 
-- One Firecracker microVM per sandbox; SMT disabled in the machine config.
-- Per-VM tap and /30; the VM cannot reach the agent's namespace (`INPUT DROP`),
-  cannot be reached by anything new (`FORWARD -o tap DROP` after
-  established/related), and egress passes through a per-VM chain that drops
-  the default deny list and then accepts (with NAT) or drops everything.
-- The guest channel is vsock, not the network.
-- Exec runs in its own process group; timeouts (default 10 min, maximum 2 h)
-  kill the whole group. The guest agent caps synchronous output at 10 MiB per
-  stream; the protocol and server cap files at 100 MiB.
+- Differently does not isolate sandboxes. The trust report lists, per pool,
+  the adapter, trust, declared isolation, endpoint and credential reference.
 - `devhost` (no isolation) and `fake` pools refuse to start outside dev mode,
   and the config validator rejects `devhost` without `dev: true`.
+- The OpenSandbox adapter tags each sandbox with its Differently and
+  installation IDs, and lists, adopts or deletes only sandboxes carrying them.
+  It refuses exec stdin and port endpoints that need request headers.
+- Exec timeouts are passed to the backend as requested. For OpenSandbox pools
+  Differently sets no default or maximum; the `devhost` runner defaults to
+  10 minutes with a 2-hour maximum.
+- The server caps uploads at 100 MiB per request; streamed exec output is
+  passed through without buffering.
 
 **Secrets and data handling**
 
-- Control-plane and provider secrets are referenced, never stored
-  ([ADR 0008](../adr/0008-secrets-by-reference-only.md)).
+- Control-plane and backend secrets are referenced, never stored
+  ([ADR 0008](../adr/0008-secrets-by-reference-only.md)). There is no agent
+  token any more.
 - The API returns `envKeys`, never env values.
 - Labels with the prefix `differently.dev/` are reserved for ownership
   tracking and cannot be set by tenants.
@@ -161,25 +177,34 @@ Differently cannot do these for you. The [hardening checklist](hardening-checkli
 turns them into steps.
 
 1. Terminate TLS in front of the server; it serves plain HTTP.
-2. Restrict network access to the agent port, Postgres and `/metrics`
-   (unauthenticated).
+2. Restrict network access to Postgres, `/metrics` (unauthenticated) and the
+   OpenSandbox server's port. That port accepts the server-wide API key, which
+   bypasses Differently's tenancy and audit.
 3. Protect Postgres: TLS, a dedicated role, encryption at rest, backups. It
    holds sandbox environment values in plaintext.
-4. Keep secrets in a real secret store and rotate the bootstrap, agent and
-   provider credentials.
-5. Harden and patch KVM hosts (kernel, microcode, Firecracker version), taint
-   them for agents only, and restrict who can administer them.
-6. Supply trustworthy guest kernels and rootfs images, including a DNS
-   configuration that works with the egress rules.
-7. Decide egress: the default allows the public internet. Block node public
-   IPs and IPv6 upstream if guests must not reach them.
-8. Declare `trust: external` for any `remote` pool that runs on third-party
+4. Keep secrets in a real secret store and rotate the bootstrap token and the
+   backend credentials. Rotating the OpenSandbox key means changing it on the
+   OpenSandbox server and in the Secret the control plane reads.
+5. Choose and harden the runtime. Docker and Kubernetes runtimes run
+   containers that share the host kernel; use Fast Sandbox (once verified) or
+   dedicated hosts for code you would not run beside other tenants. Patch
+   hosts, restrict who administers the OpenSandbox server and its hosts, and
+   declare each pool's `isolation` truthfully.
+6. Supply trustworthy images and templates from registries you control, and
+   pin their versions.
+7. Decide sandbox egress in the runtime: block cloud metadata endpoints,
+   private ranges, the control plane and the database unless needed.
+8. Declare `trust` truthfully for every `opensandbox` pool, and set
+   `trust: external` for any `remote` pool that runs on third-party
    infrastructure. The default for `remote` is `private`.
-9. Approve external pools deliberately, per classification, and review the
-   trust report.
-10. Export the audit mirror (`audit.file`) or periodic head hashes to
+9. Register each OpenSandbox server as exactly one pool.
+10. Approve external pools deliberately, per classification, and review the
+    trust report.
+11. Pin OpenSandbox server and `execd` versions and run the adapter's live
+    test on every upgrade ([backlog E21](../backlog.md#e21-opensandbox-version-pinning-and-upgrade-testing)).
+12. Export the audit mirror (`audit.file`) or periodic head hashes to
     write-once storage.
-11. Never run `--dev` or `devhost` pools in production.
+13. Never run `--dev` or `devhost` pools in production.
 
 ## 6. Not yet implemented, and known issues
 
@@ -187,51 +212,69 @@ turns them into steps.
 
 | Gap | Effect | Tracking |
 |---|---|---|
-| Firecracker jailer | A VMM escape gets the agent's privileges (root; privileged container in default Helm values) | [ADR 0015](../adr/0015-defer-jailer-integration.md), [backlog E4](../backlog.md#e4-firecracker-jailer) |
-| Agent channel is plain HTTP; registration uses one shared token | Per-agent secrets stop impersonation (issue 1), but traffic is unencrypted | [backlog E3](../backlog.md#e3-authenticated-agent-channel) |
-| Sandbox env values in plaintext | Database and node-disk readers see them; fork copies them | [backlog E13](../backlog.md#e13-sandbox-secrets-by-reference) |
-| Per-sandbox egress policy, IPv6 rules, DNS policy | Node-level allow-all-public or deny-all only | [backlog E12](../backlog.md#e12-per-sandbox-egress-allow-lists) |
-| Memory snapshot authentication and encryption | Not needed until memory snapshots ship; Firecracker treats snapshot files as trusted input | [ADR 0014](../adr/0014-defer-memory-snapshots-until-restore-proven.md) |
-| Webhooks, SSH gateway, preview URLs on Firecracker | Missing features, each with its own authentication design | Backlog E10, E7, E6 |
+| Isolation and egress belong to the runtime | Differently cannot prove or enforce what a pool declares; the trust report shows declarations | [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) |
+| microVM isolation through Differently is unverified | Only the Docker runtime has run through Differently; its containers share the host kernel | [backlog E18](../backlog.md#e18-fast-sandbox-spike), [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter) |
+| OpenSandbox's network policy is not wired up | No per-sandbox egress control through Differently on OpenSandbox pools | [backlog E19](../backlog.md#e19-opensandbox-network-policy-and-egress) |
+| One server-wide OpenSandbox API key | Anyone holding it controls every sandbox on that server, outside Differently's tenancy and audit | OpenSandbox's model; keep the key in the control plane only |
+| Sandbox env values in plaintext | Database readers and the backend see them; fork copies them | [backlog E13](../backlog.md#e13-sandbox-secrets-by-reference), informed by [E20](../backlog.md#e20-credential-vault-evaluation) |
+| Memory snapshot protection | Depends on the runtime; Differently reports the snapshot kind the pool declares | [backlog E18](../backlog.md#e18-fast-sandbox-spike) |
+| Webhooks, SSH gateway, PTY | Missing features, each with its own authentication design | Backlog E10, E7 |
 | OIDC/SSO, key lineage, maximum key lifetime | Keys are standalone; child keys outlive revoked parents; no TTL cap | [backlog E0](../backlog.md#e0-correctness-and-security-fixes-from-the-code-review) |
+| Remote plugin protocol has no tests | Its only tests were the removed node agent's | Backlog E0.34 |
 
 ### Issues found while documenting the code (2026-10-28)
 
 Defects found in review, each with a task in
 [backlog E0](../backlog.md#e0-correctness-and-security-fixes-from-the-code-review).
+Numbers are kept so earlier references stay valid.
 
 | # | Issue | Status |
 |---|---|---|
-| 1 | **Agent impersonation.** Every node shared one token, and the heartbeat accepted any agent ID and endpoint, so a compromised node could take over another node's ID and traffic. | **Fixed.** Each agent creates its own secret (`<state-dir>/agent-secret`), pinned when its ID first registers. Heartbeats for a known ID with another secret or pool get `409` and an `agent.register` failure event. The control plane calls each agent with that agent's secret, so the shared token can no longer drive another node's VMs. Remaining gap: a token holder can still register *new* IDs, and the channel is unencrypted until mTLS ([E3](../backlog.md#e3-authenticated-agent-channel)). |
+| 1 | Agent impersonation through the shared agent token. | **Obsolete (ADR 0020).** Node agents, their tokens and per-agent secrets were removed. |
 | 2 | Cross-tenant deletion of project policies. | **Fixed.** `DELETE /v1/policies/project:<id>` checks project ownership like `PUT`. |
 | 3 | Stopped sandboxes restarted without a quota check. | **Fixed.** `start` re-reserves CPU and memory atomically (`Store.ReserveCompute`). |
 | 4 | Audit was fail-open only. | **Option added.** `audit.failClosed: true` records each state-changing request before acting and answers `503` if that fails. Failures are counted in `differently_audit_append_failures_total` in both modes. Scheduler-side events stay fail-open. |
-| 5 | PID reuse: a reused PID could be treated as a live VM and receive `SIGKILL`. | **Fixed.** On Linux the agent signals a PID only if its command line names the VM's API socket. |
+| 5 | PID reuse on agent nodes. | **Obsolete (ADR 0020).** Differently no longer manages VM processes. |
 | 6 | Unauthenticated `/metrics` on the API port. | **Option added, on by default in Helm.** `metrics.listen` serves metrics on a separate port (chart default `9091`) that the ingress never routes to. |
 | 7 | Rate limiting runs after the key lookup, so unauthenticated floods still cost a database read per request, and limits are per replica. | Open (E0.8). |
 | 8 | A changed bootstrap token un-revoked the bootstrap key. | **Fixed.** A revoked bootstrap key stays revoked. |
-| 9 | Unbounded responses from the guest. | **Fixed for synchronous paths.** Exec results and listings are read through size limits; streamed exec is passed through without buffering. |
+| 9 | Unbounded responses from the guest agent. | **Obsolete (ADR 0020)** for the guest; see issue 10 for the same class of problem with OpenSandbox. |
+| 10 | The OpenSandbox adapter collects synchronous exec output without a size limit, and cuts file downloads at 100 MiB without reporting truncation. A sandbox can make a control-plane replica buffer arbitrary output. | Open (E0.35). |
+| 11 | OpenSandbox's own `timeout` is set from the TTL only at creation; extending the TTL through the API does not extend it, so OpenSandbox can delete the sandbox first. | Open (E0.20). |
+| 12 | A pool registered as `firecracker` through the admin API before the upgrade stays in the store with no adapter; its sandboxes cannot be reached and terminating them retries forever. | Open (E0.22). |
 
 ## 7. Residual risks
 
 Risks that remain even when everything above is done:
 
-- **Infrastructure operators see everything.** Root on KVM hosts, cluster
-  administrators and the cloud provider under your nodes can read guest memory
-  and disks. Differently does not offer confidential computing.
+- **Isolation is only as strong as the runtime.** The Docker and Kubernetes
+  runtimes run sandboxes as containers on a shared host kernel; a kernel
+  exploit crosses tenants. Fast Sandbox's microVMs are a stronger boundary
+  but have not been verified through Differently.
+- **Backend operators see everything.** Whoever operates an OpenSandbox
+  server and its hosts, a cloud provider, or an external provider can read
+  the workloads it runs, including code, data and environment variables.
+  Differently does not offer confidential computing.
+- **Backend credentials are powerful.** The control plane holds them as
+  environment variables or mounted files; anyone who can read its
+  environment can use them. An OpenSandbox key gives full control of its
+  server.
+- **Actions outside Differently** (the backend's own API or console,
+  kubectl, SSH to hosts) are not in its audit log.
+- **Egress is whatever the runtime allows.** Differently does not inspect or
+  restrict sandbox traffic.
 - **External providers see everything sent to them.** Classification and
   policy decide what goes there; once there, the provider's controls apply.
-- **Hypervisor and CPU side channels.** KVM and Firecracker are a strong
-  boundary but not perfect; co-tenant isolation depends on host patching and
-  CPU mitigations. Disabling SMT in the guest machine config does not disable
-  host SMT.
-- **Actions outside Differently** (kubectl, provider consoles, SSH to nodes)
-  are not in its audit log.
+- **Hypervisor and CPU side channels.** For microVM runtimes and providers,
+  co-tenant isolation depends on host patching and CPU mitigations.
 - **The audit chain can be rewritten** by anyone with database write access
   unless heads are anchored externally.
+- **Sandbox environment values are stored unencrypted** in the database.
 - **Usage costs are estimates** from configured cost models.
-- **Public preview URLs.** Freestyle port URLs are reachable by anyone who has
-  them; Daytona signed URLs are valid for one hour.
+- **Port URLs.** Freestyle port URLs are reachable by anyone who has them;
+  Daytona signed URLs are valid for one hour; an OpenSandbox direct endpoint
+  is reachable by anyone who can reach it on the network, with no
+  authentication from Differently.
 
 ## 8. How the trust report answers Scenario L
 
@@ -245,39 +288,44 @@ answers each part. Per-sandbox detail comes from
 |---|---|---|
 | Is anything phoning home? | `telemetry` | Always `none: Differently has no telemetry or phone-home code paths` |
 | What is the control plane? | `controlPlane` | Store driver, public URL, audit mirror path, dev flag |
-| Where can work go? | `pools[]` | Name, adapter, trust, enabled, draining, region, provider `endpoint` (Daytona, Freestyle, remote), `credentialRef` (reference only), health, `approvedForExternalPlacement` |
+| Where can work go? | `pools[]` | Name, adapter, trust, enabled, draining, region, declared `isolation` (from the adapter's `Info`), backend `endpoint` (OpenSandbox, Daytona, Freestyle, remote), `credentialRef` (reference only), health, `approvedForExternalPlacement` |
 | Under which rules? | `globalPolicy`, `scopedPolicies[]`, `classifications[]` | `approvedForExternalPlacement` is computed from the global policy; scoped policies can only narrow it, so it is an upper bound |
 | Where did work go? | `placementsByPool[]` | Sandboxes and accumulated run seconds per pool (the current running interval is not included) |
 | What left private infrastructure? | `recentExternalPlacements[]` | Up to 50, newest first: sandbox, organization, pool, classification, creator, time, placement reason |
 | Who changed the rules? | `recentAdminActions[]` | Last 50 `admin.*`, `pool.*`, `policy.*`, `org.*`, `key.create`, `key.revoke`, `key.rotate` events |
-| Which nodes serve private pools? | `agents[]` | ID, pool, node, endpoint, version, capacity, last heartbeat |
 | Has the log been edited? | `auditChain` | `audit.Verify` over the full chain: `ok`, `events`, `brokenAt`, `problem`, `headHash` |
-| What can't Differently prove? | `limitations[]` | Fixed list, quoted below |
+| What can't Differently prove? | `limitations[]` | Listed below |
 | Why did this sandbox land here? | `/v1/sandboxes/{id}/placement` | Stored decision: strategy, effective external mode, policies applied, every candidate with eligibility, capacity, estimated cost, rank and reasons; for a queued sandbox also the decision as it would be made now |
+
+The report no longer has an `agents[]` field. The `isolation` value is what
+the pool declares (for OpenSandbox, from `config.isolation`); compare it with
+the runtime you actually deployed.
 
 `TestHybridOverflowAndPrivateOnly` asserts that an overflowed sandbox appears
 in `recentExternalPlacements`, that `limitations` is non-empty and that the
 audit chain verifies.
 
-The `limitations` list returned today (`limitations` in `internal/server/admin.go`, adjusted to the configuration):
+The `limitations` list returned today (`limitations` in
+`internal/server/admin.go`), in summary:
 
-1. Host administrators (root on KVM nodes, Kubernetes cluster-admins) can read
-   guest memory and disks.
-2. Cloud providers hosting your nodes can access their hardware.
-3. External providers run the workload and can see its code, data and
-   environment variables.
+1. Differently does not isolate sandboxes; isolation and egress come from each
+   pool's backend runtime, and each pool's declared isolation should be
+   checked against the runtime actually deployed.
+2. Whoever operates a backend (an OpenSandbox server and its hosts, a cloud
+   provider, an external provider) can read the workloads it runs.
+3. Actions taken directly on a backend bypass Differently's audit log.
 4. The audit chain is tamper-evident, not tamper-proof; export events to
    write-once storage to anchor it.
-5. Actions taken directly on backends bypass Differently's audit log.
-6. Egress from Firecracker sandboxes is controlled only by node networking.
+5. Backend credentials are held by the control plane as environment variables
+   or files; anyone who can read its environment can use them.
+6. Sandbox environment variables are stored unencrypted in the control-plane
+   database.
 7. Exec commands are audited by program name unless `audit.recordCommands` is
    enabled.
 8. Usage costs are estimates, not reconciled invoices.
 
-The list also states the absent jailer, the unencrypted agent channel,
-plaintext environment values and agent secrets in the database, and the IPv4-only
-egress rules. It adds the fail-open audit entry unless `audit.failClosed` is
-set, and the unauthenticated `/metrics` entry unless `metrics.listen` is set.
+It adds the fail-open audit entry unless `audit.failClosed` is set, and the
+unauthenticated `/metrics` entry unless `metrics.listen` is set.
 
 Scaling note: the report reads every sandbox row and the whole audit chain on
 each call.

@@ -1,6 +1,6 @@
 # ADR 0011: Go for control plane and agents; TypeScript and Python SDKs
 
-- Status: Accepted
+- Status: Accepted. Amended by [ADR 0020](0020-opensandbox-replaces-node-agent.md): `differently-agent` and `differently-guest` were removed; the server and CLI remain Go
 - Date: 2026-10-28
 
 ## Context

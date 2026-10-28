@@ -3,14 +3,16 @@
 | | |
 |---|---|
 | Contract version | `adapter.ProtocolVersion = "1"` (`pkg/adapter/adapter.go`) |
-| Status | Describes the code as of 2026-10-28 |
+| Status | Describes the code as of 2026-10-28, after [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) removed the `firecracker` adapter and the node agent |
 | Decision record | [ADR 0007](../adr/0007-adapter-contract-optional-interfaces-http-protocol.md) |
 
 An **execution adapter** creates and manages sandbox instances on one backend.
 The control plane holds one adapter per [pool](../architecture/README.md#4-the-three-layers).
-Adapters run in-process (built in) or out of process behind the HTTP protocol
-in `pkg/adapter/adapterhttp`. The Differently node agent is itself an
-out-of-process adapter.
+Adapters run in-process (built in: `opensandbox`, `daytona`, `freestyle`,
+and the development-only `devhost` and `fake`) or out of process behind the
+HTTP protocol in `pkg/adapter/adapterhttp`, which `remote` pools use. The
+default private runtime is an OpenSandbox server behind the `opensandbox`
+adapter ([OpenSandbox pools](../guides/opensandbox-pools.md)).
 
 ## 1. Concepts
 
@@ -85,7 +87,7 @@ Feature names (`pkg/adapter/adapter.go`):
 | `fork` | Snapshot plus new sandbox from it | `Snapshotter` |
 | `ports.expose` | Reachable URL for a guest port | `PortExposer` |
 | `ssh`, `pty`, `gpu` | Reserved names; no adapter offers them, so requests for them are rejected with `unsupported_capability` | declaration only |
-| `network.egress-control` | The backend can restrict sandbox egress (node-level on Firecracker today) | declaration only |
+| `network.egress-control` | The backend can restrict sandbox egress (Freestyle's firewall today; not offered by OpenSandbox pools yet) | declaration only |
 | `arch.amd64`, `arch.arm64` | Guest architecture | declaration only |
 | `isolation.microvm`, `isolation.container`, `isolation.none` | Isolation class (`isolation.none` cannot be requested) | declaration only |
 
@@ -119,8 +121,12 @@ sequenceDiagram
 - For `remote` pools the HTTP client implements every optional interface, so
   the effective list is what the remote declares; the remote's own handler
   applies `EffectiveFeatures` before answering `/info`.
-- The Firecracker pool advertises the **intersection** of its live agents'
-  features and the union of their templates.
+- `EffectiveFeatures` only drops features backed by an optional interface
+  the adapter does not implement. Declaration-only features (the
+  `network.egress-control`, `ssh`, `pty`, `gpu`, `arch.*` and `isolation.*`
+  names) pass through as declared, so a pool that lists them in
+  `config.features` advertises them whether or not the backend provides
+  them.
 
 ## 5. Error codes
 
@@ -149,24 +155,39 @@ statuses and transport errors → `provider_unavailable`.
 The leader's reconciler (`internal/scheduler/scheduler.go` `Reconcile`) calls
 `List(installation)` on every pool with a built adapter and:
 
-1. deletes **orphans**: instances whose sandbox is unknown, terminal, or
-   recorded on a different pool and not queued;
+1. deletes **orphans**: instances whose sandbox is unknown or terminal, and
+   instances left behind on this pool by a sandbox now placed on another
+   pool (a different instance, and the sandbox neither queued nor
+   provisioning);
 2. **adopts** instances for sandboxes stuck in `provisioning` longer than the
    provision timeout (created before a crash), marking them `running`;
 3. **requeues** stale `provisioning` sandboxes with no instance;
 4. **fails** `running`, `paused` or `stopped` sandboxes whose `backendRef` is
-   not in the list ("backend instance disappeared").
+   not in the list ("backend instance disappeared");
+5. **follows state** for `running` and `paused` sandboxes: an instance the
+   backend reports `stopped` makes the sandbox `stopped`, and one in `error`
+   fails it.
+
+Steps 4 and 5 skip sandboxes changed in the last 30 seconds
+(`ReconcileGrace`), so the reconciler never races a lifecycle call in
+progress on another replica.
 
 A failed `List` skips the pool for that pass. Adapters must therefore never
-return a partial list; the Firecracker pool fails the whole list if any live
-agent fails to answer. The reconciler compares existence only, not state: an
-instance that is `stopped` on the backend while the store says `running` is
-not corrected.
+return a partial list; the OpenSandbox adapter pages through every result
+and fails the whole call if any page fails.
+
+Two pools may point at the same backend and installation (one OpenSandbox
+server registered twice, say). Each then lists the other's instances. It
+leaves alone any instance that is the current `backendRef` of a sandbox on
+the other pool, and deletes only leftovers.
 
 ## 7. HTTP protocol
 
 `adapterhttp.Handler(adapter, token)` serves any adapter; `adapterhttp.Client`
-consumes one. The node agent mounts the handler at `/adapter/`.
+consumes one, and the `remote` adapter kind wraps it. Since the node agent
+was removed, nothing in the repository tests this protocol end to end: its
+only tests drove the agent through it. A protocol and conformance suite is
+backlog E0.34.
 
 **Conventions**
 
@@ -222,31 +243,28 @@ and treats a stream without a final event as an error.
 
 **Client behaviour** (`adapterhttp.Client`): a transport error or a non-2xx
 response without an error envelope becomes `provider_unavailable`; `Delete`
-maps `not_found` to success; the HTTP client timeout is 5 minutes per request,
-which also bounds exec duration and stream length through this protocol (see
-known issues). The client does not yet verify the protocol header.
+maps `not_found` to success; the HTTP client timeout is 2 hours 15 minutes
+per request, bounded earlier by the caller's context, which also bounds exec
+duration and stream length through this protocol. The client does not yet
+verify the protocol header.
 
 ## 8. InfrastructureAdapter (design, not implemented)
 
 The three-layer model has a layer below execution backends: the
 infrastructure that hosts them. Today Differently does not manage it:
 
-- **Node agents self-register.** An agent started with `--pool NAME` and the
-  agent token heartbeats every 10 s to `/internal/v1/agents/heartbeat` with its
-  ID (the node name), endpoint, capacity, features and templates, plus its own
-  secret in the `Differently-Agent-Secret` header. The secret is pinned when
-  the ID first registers; the control plane then calls that agent's adapter
-  API with it, and refuses heartbeats for that ID with any other secret or
-  pool. The pool
-  must already exist with `adapter: firecracker`. An agent missing heartbeats
-  for `scheduler.agentTimeoutSeconds` (default 30 s) drops out of placement.
-  Agents stay in the store until an operator removes one with
-  `DELETE /v1/admin/agents/{id}`.
+- **Backends manage their own hosts.** An OpenSandbox server runs sandboxes
+  on its runtime's hosts (a Docker host, a Kubernetes cluster, or KVM nodes
+  with Fast Sandbox's per-node agent), and Differently sees one pool per
+  server. Providers manage theirs. Before
+  [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md), Differently's
+  own node agents registered themselves with heartbeats; that path was
+  removed with the agent.
 - **Existing VM pools** are covered by `remote` pools: a plugin that speaks the
   HTTP protocol in front of a fleet (libvirt hosts, Proxmox, a cloud account)
   allocates an instance per `Create`.
-- **Capacity is static.** Adding nodes is the operator's job (Karpenter, node
-  groups, bare-metal provisioning).
+- **Capacity is static.** Adding hosts is the operator's job (Karpenter, node
+  groups, bare-metal provisioning, OpenSandbox's own scaling).
 
 Proposed contract for a later phase, for scaling private capacity from queue
 pressure:
@@ -264,11 +282,11 @@ type InfrastructureAdapter interface {
 }
 ```
 
-Open design questions: a per-agent drain (today only whole pools drain);
-which signal drives scaling (count of `waiting` decisions whose reason is
-capacity, queue age); cost guards so scaling never exceeds a budget; how
-newly provisioned nodes prove their identity (ties into
-[backlog E3](../backlog.md#e3-authenticated-agent-channel)).
+Open design questions: whether this belongs in Differently at all, or only
+as a signal to the backend's own scaling (OpenSandbox, Karpenter); which
+signal drives scaling (count of `waiting` decisions whose reason is capacity,
+queue age); cost guards so scaling never exceeds a budget; per-host drain
+(today only whole pools drain).
 
 ## 9. Built-in adapters
 
@@ -277,32 +295,32 @@ written against the provider's published OpenAPI and tested with a fake HTTP
 server. The Verification row says where an adapter has also run against the
 real system.
 
-| | `firecracker` | `daytona` | `freestyle` | `opensandbox` | `devhost` | `fake` |
-|---|---|---|---|---|---|---|
-| Code | `internal/adapters/firecracker/pool.go` + `internal/agent` | `internal/adapters/daytona` | `internal/adapters/freestyle` | `internal/adapters/opensandbox` | `internal/adapters/devhost` | `internal/adapters/fake` |
-| Trust | private | external (forced) | external (forced) | **declared** (required; self-hostable) | private | as configured |
-| Isolation | Firecracker microVM (KVM) | Container (`class: container`, default) or VM (`class: linux-vm`) | Hardware-virtualized microVM (provider-managed) | OpenSandbox runtime, declared by `config.isolation` (container or microvm) | **None** (host directories) | None (simulated) |
-| Allowed | always (needs agent token) | always | always | always | dev mode only | dev mode only |
-| Ref | `<agent-id>:<sandbox-id>` | Daytona sandbox ID | Freestyle VM ID | OpenSandbox sandbox ID | sandbox ID | `fake_<ulid>` |
-| Idempotent `Create` | `Get(sandbox ID)` on each live agent, then the agent's own map keyed by sandbox ID | List by `differently.dev/sandbox-id` label first; `name` is the sandbox ID | Slug derived from the sandbox ID; `409` on create resolves to the existing VM | List by metadata `differently-sandbox-id` first | Directory per sandbox ID | Map by sandbox ID |
-| `List` | Union over live agents; fails if any agent fails | Label filter on installation, cursor paging; skips `destroyed`/`destroying` | Metadata filter `dly-installation:<id>`, offset paging | Metadata filter `differently-installation=<id>`, page paging; skips `Terminated` | Every directory with matching installation | In memory |
-| `Health` | At least one agent heartbeat within the agent timeout. The agent's own `/healthz` and `/adapter/v1/health` check the kernel and that a template exists, but the pool does not call them | `GET /sandbox?limit=1` | `GET /v5/vms?limit=1` | `GET /sandboxes?page=1&pageSize=1` with the API key | Root directory exists | Always healthy |
-| `Capacity` | Bounded: sums of live agents' last heartbeat; largest node by free memory | Unbounded | Unbounded | Unbounded | Unbounded | Bounded if `TotalCPU` set |
-| Limits | `maxCPU`/`maxMemoryMiB` of the largest node's allocatable capacity; templates = union of node images | 4 vCPU / 8 GiB / 10 GiB (provider default maximum); region = `target` | 32 vCPU / 64 GiB / 256 GiB (plan-dependent) | Server and runtime limits; templates = `config.templateId` if set | none | configurable |
-| Resources applied | vCPU and memory in Firecracker machine config; disk grown with `truncate` + `resize2fs` when `diskGiB` exceeds the image | **Not sent**: the sandbox gets the snapshot's size; quota and cost still use the requested size | Grown with `/resize` after boot (grow only; never shrinks below the snapshot's size) | `resourceLimits` strings (`cpu`, `memory` in Mi) | not applied | recorded |
-| Env | Stored in the node's `vm.json`; merged into every exec | Sent in the create body (stored by Daytona) | Written to `/etc/differently/env` (0600) in the VM and sourced by every exec | Sent in the create body; per-exec `envs` | Stored in `meta.json`; base env for every exec | ignored |
-| Provider TTL backstop | none | `ttlMinutes`; `autoStopInterval: 0` so Differently owns stop | `ttlSeconds` | `timeout` (minimum 60 s) | none | none |
-| `exec` | Through vsock to the guest: separate stdout/stderr, stdin, cwd, env; guest caps 10 MiB per stream, default timeout 10 min, max 2 h | Toolbox `process/execute`: **stdout and stderr combined** into `stdout`; **stdin unsupported** (`501`); timeout sent as 600 s if unset | `exec-await`: separate streams; stdin (base64); timeout capped at 300 s; exit code 124 when the provider reports a timeout | `execd` `POST /command`: line-based event stream; argument lists sent as a quoted command; **stdin unsupported**; non-zero exit from `CommandExecError` | Host process under the sandbox directory | Echo, or `ExecFunc` |
-| `exec.stream` | yes (NDJSON from the guest) | no (buffered fallback) | no (buffered fallback) | yes | yes | yes |
-| `files` | yes (guest) | yes (toolbox; upload via `upload-v2`) | yes (`fs/read`, `fs/write` mode 0600 with `fs/mkdir`; listings carry name and dir flag only) | yes (`execd`; upload metadata sent as a JSON file part) | yes | yes |
-| Stop / start | Ctrl-Alt-Del, wait 10 s, then `SIGKILL`; disk kept. Start re-checks node capacity and boots from the retained disk | `POST /sandbox/{id}/stop` / `start` | No stop API: runs `poweroff` in the guest and polls for `stopped`; start via `/start` | **none** (OpenSandbox has pause/resume and delete only) | State flag only | State flag |
-| Pause / resume | Firecracker `PATCH /vm` Paused/Resumed; memory stays resident | Only with `class: linux-vm`; resume uses `/start` | `/pause`, resume uses `/start` | `/pause`, `/resume`, polled until settled; `execd` pinged after resume | no | yes |
-| Snapshots | **Disk only**: pause if running, copy `rootfs.ext4`, resume. Ref `<agent-id>:snap_<ulid>`; restore lands on the same agent | `POST /sandbox/{id}/snapshot` (`includeMemory` for memory), async; ref is the snapshot name | Always memory and disk, reported as `kind: memory` even when `disk` is requested | `POST /sandboxes/{id}/snapshots`, polled until `Ready`; kind as the pool declares | `cp -a` of the directory | Copies files |
-| `fork` | yes (disk) | not advertised | yes (memory) | yes (via snapshot restore) | yes (disk) | yes |
-| `ports.expose` | no (no inbound path) | Signed preview URL, valid 1 h | TLS rule on `<port>-<slug>.<domain>` (default `style.dev`); **public**, anyone with the URL can connect | Direct endpoints only; endpoints that need request headers (the server key) are refused | no | Dummy URL |
-| `network.egress-control` | yes (node-level allow/deny plus deny list) | no | yes (firewall: deny-all unless `config.egress: public`) | no (OpenSandbox network policy not wired yet) | no | no |
-| Pool config keys | none (agents register) | `apiURL`, `target`, `snapshot`, `class` | `apiURL`, `snapshot`, `egress`, `domain` | `apiURL` (required), `image`, `templateId`, `isolation`, `features`, `useServerProxy`; `trust` required | `root` | none |
-| Verification | unit | spec | spec | Fake server, plus live against OpenSandbox 1.2.0 (Docker runtime, `execd` v1.1.0) | unit | n/a |
+| | `opensandbox` | `daytona` | `freestyle` | `devhost` | `fake` |
+|---|---|---|---|---|---|
+| Code | `internal/adapters/opensandbox` | `internal/adapters/daytona` | `internal/adapters/freestyle` | `internal/adapters/devhost` | `internal/adapters/fake` |
+| Trust | **declared** (required; self-hostable) | external (forced) | external (forced) | private | as configured |
+| Isolation | The OpenSandbox runtime's, declared by `config.isolation`: `container` (Docker or Kubernetes runtime) or `microvm` (Fast Sandbox). Reported, not checked | Container (`class: container`, default) or VM (`class: linux-vm`) | Hardware-virtualized microVM (provider-managed) | **None** (host directories) | None (simulated) |
+| Allowed | always; needs `config.apiURL` and an explicit `trust` | always | always | dev mode only | dev mode only |
+| Ref | OpenSandbox sandbox ID | Daytona sandbox ID | Freestyle VM ID | sandbox ID | `fake_<ulid>` |
+| Idempotent `Create` | List by metadata `differently-sandbox-id` first | List by `differently.dev/sandbox-id` label first; `name` is the sandbox ID | Slug derived from the sandbox ID; `409` on create resolves to the existing VM | Directory per sandbox ID | Map by sandbox ID |
+| `List` | Metadata filter `differently-installation=<id>`, page paging; the metadata is re-checked locally; skips `Terminated` | Label filter on installation, cursor paging; skips `destroyed`/`destroying` | Metadata filter `dly-installation:<id>`, offset paging | Every directory with matching installation | In memory |
+| `Health` | `GET /sandboxes?page=1&pageSize=1` with the API key | `GET /sandbox?limit=1` | `GET /v5/vms?limit=1` | Root directory exists | Always healthy |
+| `Capacity` | Unbounded (OpenSandbox reports none) | Unbounded | Unbounded | Unbounded | Bounded if `TotalCPU` set |
+| Limits | None reported; templates = `config.templateId` if set (then only that template is accepted by placement) | 4 vCPU / 8 GiB / 10 GiB (provider default maximum); region = `target` | 32 vCPU / 64 GiB / 256 GiB (plan-dependent) | none | configurable |
+| Resources applied | `resourceLimits` strings (`cpu`, `memory` in Mi). **`diskGiB` is not sent**; quota and cost still use the requested size | **Not sent**: the sandbox gets the snapshot's size; quota and cost still use the requested size | Grown with `/resize` after boot (grow only; never shrinks below the snapshot's size) | not applied | recorded |
+| Env | Sent in the create body (stored by OpenSandbox); per-exec `envs` | Sent in the create body (stored by Daytona) | Written to `/etc/differently/env` (0600) in the VM and sourced by every exec | Stored in `meta.json`; base env for every exec | ignored |
+| Provider TTL backstop | `timeout` (minimum 60 s), set at creation only | `ttlMinutes`; `autoStopInterval: 0` so Differently owns stop | `ttlSeconds` | none | none |
+| `exec` | `execd` `POST /command`: line-based event stream (a final fragment without a newline gains one); argument lists sent as a quoted command; **stdin unsupported**; non-zero exit from `CommandExecError`; timeout sent only if the request sets one; synchronous output is not capped | Toolbox `process/execute`: **stdout and stderr combined** into `stdout`; **stdin unsupported** (`501`); timeout sent as 600 s if unset | `exec-await`: separate streams; stdin (base64); timeout capped at 300 s; exit code 124 when the provider reports a timeout | Host process under the sandbox directory; default timeout 10 min, maximum 2 h | Echo, or `ExecFunc` |
+| `exec.stream` | yes | no (buffered fallback) | no (buffered fallback) | yes | yes |
+| `files` | yes (`execd`; upload metadata sent as a JSON file part; downloads cut at 100 MiB without an error) | yes (toolbox; upload via `upload-v2`) | yes (`fs/read`, `fs/write` mode 0600 with `fs/mkdir`; listings carry name and dir flag only) | yes | yes |
+| Stop / start | **none** (OpenSandbox has pause/resume and delete only) | `POST /sandbox/{id}/stop` / `start` | No stop API: runs `poweroff` in the guest and polls for `stopped`; start via `/start` | State flag only | State flag |
+| Pause / resume | `/pause`, `/resume`, polled until settled; `execd` pinged after resume | Only with `class: linux-vm`; resume uses `/start` | `/pause`, resume uses `/start` | no | yes |
+| Snapshots | `POST /sandboxes/{id}/snapshots`, polled until `Ready`. Reported as the kind requested (default `disk`); `memory` is refused unless the pool lists `snapshots.memory` in `features`. What is captured depends on the runtime | `POST /sandbox/{id}/snapshot` (`includeMemory` for memory), async; ref is the snapshot name | Always memory and disk, reported as `kind: memory` even when `disk` is requested | `cp -a` of the directory | Copies files |
+| `fork` | yes (via snapshot restore with `snapshotId`) | not advertised | yes (memory) | yes (disk) | yes |
+| `ports.expose` | Direct endpoints only; endpoints that need request headers (the server key) are refused | Signed preview URL, valid 1 h | TLS rule on `<port>-<slug>.<domain>` (default `style.dev`); **public**, anyone with the URL can connect | no | Dummy URL |
+| `network.egress-control` | no (OpenSandbox's network policy is not wired up yet) | no | yes (firewall: deny-all unless `config.egress: public`) | no | no |
+| Pool config keys | `apiURL` (required), `image`, `templateId`, `isolation`, `features`, `useServerProxy`; `trust` required | `apiURL`, `target`, `snapshot`, `class` | `apiURL`, `snapshot`, `egress`, `domain` | `root` | none |
+| Verification | Fake server (`opensandbox_test.go`), plus live (`TestLiveOpenSandbox`) against release 1.2.0 with the Docker runtime and `execd` v1.1.0: create, idempotent create, exec, files, list, pause and resume, snapshot, delete. Not checked live: Kubernetes runtime, Fast Sandbox, restore and fork, port endpoints | spec | spec | unit | n/a |
 
 The `remote` kind is a thin wrapper around `adapterhttp.Client`
 (`internal/wiring/wiring.go`); its semantics are those of the plugin behind it.
@@ -406,8 +424,9 @@ the HTTP route avoids both steps.
 
 ## 11. Adapter conformance checklist
 
-Until a shared conformance suite for adapters exists (backlog E0), check by
-hand:
+Until a shared conformance suite for adapters exists (backlog E0.34), check
+by hand. `internal/adapters/opensandbox/live_test.go` is an example of a live
+check against a real backend behind a build tag:
 
 - [ ] `Create` twice with the same ID returns the same ref, including when the
       first call's response is dropped.
@@ -431,14 +450,28 @@ hand:
 
 Tracked in [backlog E0](../backlog.md#e0-correctness-and-security-fixes-from-the-code-review).
 Fixed before the initial import: the short HTTP client timeouts that cut off
-long execs (now 2 h 15 min, bounded by the caller's context), `invalid_request`
-from `Create` being retried as an outage (it now fails the sandbox), and
-agent-crash `pending` VMs holding capacity (now recovered as stopped). Open:
+long execs (now 2 h 15 min, bounded by the caller's context) and
+`invalid_request` from `Create` being retried as an outage (it now fails the
+sandbox). The Firecracker pool's issues (idempotency across stale agents,
+`Delete` on a vanished agent) left with it. Open:
 
-- The client does not check `Differently-Adapter-Protocol` or `info.protocol`.
-- The Firecracker pool's idempotency check only asks live agents; if the
-  agent holding an earlier instance is temporarily stale, a second instance
-  can be created on another agent, and the reconciler does not detect two
-  instances for one sandbox on the same pool.
-- `Delete` on a Firecracker ref whose agent is gone returns
-  `provider_unavailable` forever, so the sandbox stays `terminating`.
+- The client does not check `Differently-Adapter-Protocol` or `info.protocol`
+  (E0.25), and no test covers the protocol (E0.34).
+- The reconciler does not detect two instances for one sandbox on the same
+  pool (E0.21). The OpenSandbox adapter's lookup-then-create is not atomic,
+  so two overlapping schedulers could in principle create two.
+- `opensandbox`: OpenSandbox's `timeout` is set from the TTL only at
+  creation, so extending a sandbox's TTL does not extend it (E0.20).
+- `opensandbox`: synchronous exec output is collected without a size limit,
+  and `ReadFile` stops at 100 MiB without an error (E0.35).
+- `opensandbox`: `diskGiB` is not sent to OpenSandbox.
+- `opensandbox`: with `templateId` set, the pool advertises only that
+  template, so placement rejects requests for any other template and the
+  adapter's per-request image fallback is never reached.
+- `opensandbox`: the adapter waits up to 3 minutes for readiness, longer than
+  the scheduler's default `provisionTimeoutSeconds` (120 s), so the
+  scheduler's limit applies.
+- A pool stored with an adapter kind this build no longer has (a `firecracker`
+  pool registered through the admin API before the upgrade) stays unhealthy
+  with no adapter; its sandboxes cannot be reached and terminating them
+  retries forever (E0.22).

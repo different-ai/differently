@@ -1,6 +1,5 @@
 import type { HttpClient } from "./http.js";
 import type {
-  Agent,
   AuditVerifyResult,
   CreateOrganizationParams,
   CreateOrganizationResult,
@@ -105,24 +104,11 @@ export class AdminPools {
   }
 }
 
-export class AdminAgents {
-  readonly #http: HttpClient;
-
-  constructor(http: HttpClient) {
-    this.#http = http;
-  }
-
-  async list(params: { pool?: string } = {}): Promise<Agent[]> {
-    return (await this.#http.json<Page<Agent>>({ method: "GET", path: "/v1/admin/agents", query: params })).items ?? [];
-  }
-}
-
 /** Operator-only endpoints. Every call needs a key with the `admin` scope. */
 export class Admin {
   readonly organizations: AdminOrganizations;
   readonly projects: AdminProjects;
   readonly pools: AdminPools;
-  readonly agents: AdminAgents;
   readonly #http: HttpClient;
 
   constructor(http: HttpClient) {
@@ -130,7 +116,6 @@ export class Admin {
     this.organizations = new AdminOrganizations(http);
     this.projects = new AdminProjects(http);
     this.pools = new AdminPools(http);
-    this.agents = new AdminAgents(http);
   }
 
   /** Where workloads can go, where they went, and what Differently cannot prove. */

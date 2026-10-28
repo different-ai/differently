@@ -1,6 +1,6 @@
-# Hybrid: private Firecracker pool first, Daytona as an approved overflow pool
-# for the "internal" and "public" classifications only. "private-only"
-# sandboxes still never leave the Firecracker pool.
+# Hybrid: the private OpenSandbox pool first, Daytona as an approved overflow
+# pool for the "internal" and "public" classifications only. "private-only"
+# sandboxes still never leave the OpenSandbox pool.
 config:
   store:
     driver: postgres
@@ -14,6 +14,15 @@ postgresql:
     enabled: true
     persistence:
       size: 4Gi
+
+opensandbox:
+  trust: private
+  pool:
+    name: opensandbox
+    region: us
+    maxConcurrency: 50
+  # kubectl create secret generic opensandbox-api-key --from-literal=api-key=...
+  existingSecret: opensandbox-api-key
 
 providers:
   daytona:

@@ -3,8 +3,9 @@
 Question: can [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox)
 serve as Differently's sandbox/VM foundation, with Differently focused on
 orchestration across providers (adapters, policy-gated placement, quotas,
-audit, trust report)? This records what was read and what was run. It is an
-input to [ADR 0019](../adr/0019-opensandbox-backend-first.md), not a decision.
+audit, trust report)? This records what was read and what was run. It was an
+input to [ADR 0019](../adr/0019-opensandbox-backend-first.md); the decision is
+[ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md).
 
 Legend: **Observed** = run on our Colima setup today; **Read** = from the
 published specs or source at release 1.2.0; **Unverified** = neither.
@@ -92,8 +93,8 @@ versions per pool and run the live test on every upgrade.
 
 ## Fast Sandbox (Read, not attempted)
 
-Fast Sandbox runs Firecracker microVMs through a per-node runtime agent, as
-Differently's own node agent does, and adds memory-preserving pause and
+Fast Sandbox runs Firecracker microVMs through a per-node runtime agent (the
+job Differently's own node agent did before ADR 0020), and adds memory-preserving pause and
 resume, templates, and OCI-published snapshots. Its documented host
 requirements: Linux ≥ 5.10, `/dev/kvm`, `/dev/net/tun`, cgroup v2, an XFS
 filesystem with reflink for images, and an enlarged `/dev/shm`. Our Colima
@@ -109,24 +110,26 @@ under Fast Sandbox.
   contract like Daytona and Freestyle. The difference is that operators
   declare its trust, because it can be self-hosted.
 - **As the foundation** (replacing Differently's own Firecracker node agent):
-  plausible, because OpenSandbox already solves per-node microVM management
-  with more lifecycle features. The deciding evidence is still missing:
+  decided in [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md),
+  ahead of the evidence below. OpenSandbox already solves per-node sandbox
+  management with more lifecycle features. The evidence still owed:
   - Fast Sandbox on our supported KVM targets;
   - memory snapshot restore;
   - per-sandbox egress;
   - multi-node operation;
   - its operational footprint, including which services its features need.
 
-  [ADR 0019](../adr/0019-opensandbox-backend-first.md) sets these as the
-  criteria.
+  [ADR 0019](../adr/0019-opensandbox-backend-first.md) set these as the
+  criteria; they are now follow-up verification, not a gate.
 
 ## Next spike steps
 
-1. Run Fast Sandbox on the Colima VM with an XFS volume; repeat the e2e
-   scenarios (boot, isolation, pause/resume, snapshot, restart) against it
-   through the adapter.
-2. Measure boot time and density against Differently's agent on the same
-   host.
+1. Run Fast Sandbox on the Colima VM with an XFS volume, and run the e2e
+   suite (`test/e2e`, which already passes on the Docker runtime) against
+   it.
+2. Measure boot time and density on the same host; the removed node agent's
+   figures (3.5–4.4 s create-to-running on arm64 under nested
+   virtualization) are a reference point.
 3. Check Kubernetes runtime behaviour and multi-node scheduling.
 4. Review the Credential Vault and network-policy APIs as possible
    replacements for Differently's planned per-sandbox egress and secrets

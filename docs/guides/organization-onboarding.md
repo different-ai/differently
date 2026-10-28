@@ -13,7 +13,7 @@ through onboarding a team end to end:
 | | One installation per organization | Shared installation, many tenant orgs |
 |---|---|---|
 | Who it suits | A company deploying into its own cloud or data center; a vendor shipping into each customer's environment | A platform team serving many internal business units, or a provider hosting tenants |
-| Trust boundary | Strongest: separate database, credentials, nodes and operators | Shared control plane and operators; tenants isolated by API scoping, quotas and per-VM isolation |
+| Trust boundary | Strongest: separate database, credentials, sandbox runtime and operators | Shared control plane, runtime and operators; tenants isolated by API scoping and quotas, and from each other's sandboxes only by the runtime's isolation (containers share a host kernel; Fast Sandbox microVMs are unverified) |
 | Who operates it | That organization's infrastructure team | One central operator team |
 | Data and residency | Entirely inside that organization's boundary | Per-tenant policies (pools, regions, classifications) enforce it |
 | Cost | One Postgres + control plane per org | Amortized |
@@ -31,15 +31,19 @@ coordination with OpenWork or anyone else.
 Repeat for each organization; every step happens in *their* environment.
 
 1. **Pick the target** — see the [support matrix](../deploy/README.md):
-   existing Kubernetes with KVM nodes, AWS, GCP, Azure, bare metal or
-   air-gapped.
+   existing Kubernetes, AWS, GCP, Azure, bare metal or air-gapped.
 2. **Mirror artifacts** if the environment is restricted: container images,
-   the Helm chart, and guest images ([air-gapped.md](../deploy/air-gapped.md)).
-3. **Prepare KVM nodes** and label them `differently.dev/kvm=true`
-   ([prerequisites.md](../deploy/prerequisites.md)).
+   the Helm chart, and OpenSandbox's images and sandbox images
+   ([air-gapped.md](../deploy/air-gapped.md)).
+3. **Install OpenSandbox** with its own tooling and choose its runtime:
+   containers (Docker or Kubernetes), or Fast Sandbox microVMs, which need
+   KVM nodes ([prerequisites.md](../deploy/prerequisites.md)). Only the Docker
+   runtime has been run with Differently so far. Put its API key in a
+   Kubernetes Secret.
 4. **Provide Postgres** (managed service or CloudNativePG) and put its DSN in a
    Kubernetes Secret.
-5. **Write `values.yaml`**: pools, profiles, classifications and a global
+5. **Write `values.yaml`**: the `opensandbox` block (its `apiURL`, `trust`,
+   `isolation` and API key Secret), profiles, classifications and a global
    policy. Start fail-closed (`policy.external: never`, no external pools).
 6. **Install** with Helm, run `differently-server preflight` (the chart's
    migration/preflight hooks do this), and `helm test` for the smoke test.
@@ -163,6 +167,6 @@ differently admin trust-report                    # operator: external endpoints
 - **Suspend** a tenant (blocks new work; optionally terminates everything):
   `differently admin org suspend $ORG --reason "incident 42" --terminate`
 - **Revoke** keys: `differently key revoke <key-id>`
-- **Drain** a pool before maintenance: `differently admin pool drain fc-eu`
+- **Drain** a pool before maintenance: `differently admin pool drain opensandbox`
 - Every one of these actions lands in the audit chain
   (`differently admin verify-audit`).

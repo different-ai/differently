@@ -10,7 +10,8 @@ often, so re-check before relying on a cell.
 
 | Mark | Meaning |
 |---|---|
-| ✅ | Implemented and covered by automated tests (unit or in-process integration). Not yet exercised on real KVM hardware. |
+| ✅ | Implemented and covered by automated tests (unit or in-process integration). |
+| ✅ e2e | Also passes the [end-to-end suite](../test/e2e/README.md) against a real OpenSandbox server (Docker runtime). |
 | 🧪 | Implemented against published documentation; verified only with fake servers, not live accounts or hardware. |
 | 🟡 | Partially implemented; the gap is stated. |
 | 📋 | Planned; tracked in [backlog.md](backlog.md). |
@@ -37,12 +38,13 @@ and where workloads may go.
 | Multi-tenant orgs/projects with quotas | ✅ | Orgs, seats, wallets | Orgs, tiers | Account plans | Teams | UNVERIFIED |
 | Provider credentials never stored in the DB | ✅ env/file references only | n/a | n/a | n/a | n/a | n/a |
 
-Honest positioning: being open source, self-hosted and Firecracker-on-Kubernetes
-is **not** unique (OpenSandbox's Fast Sandbox backend and Tencent CubeSandbox
-take the same node-agent approach). The rows that are unoccupied are the policy,
-classification, placement-explanation and trust-report rows. OpenSandbox is
-also a Differently backend: an `opensandbox` pool puts its runtimes under
-Differently's policies ([ADR 0019](adr/0019-opensandbox-backend-first.md)).
+Honest positioning: a self-hosted, open-source sandbox runtime is **not**
+unique (OpenSandbox, Tencent CubeSandbox and E2B's runtime exist), so
+Differently no longer ships one. OpenSandbox is its default private runtime
+([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)). The rows nobody
+else fills are the policy, classification, placement-explanation and
+trust-report rows: that is what Differently adds on top of the runtimes it
+places work on.
 
 ## 2. Developer API: Differently vs Boat, endpoint by endpoint
 
@@ -63,7 +65,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 | Delete | `DELETE` with confirm header, async | `DELETE /v1/sandboxes/{id}` (202, idempotent) | ✅ | No confirm header; SDK/CLI are explicit. |
 | TTL / auto-stop | `ttlSeconds` (default 1 h, max 30 d) | `ttlSeconds` (operator default, max via quota) | ✅ | Expiry terminates; idle-based stop 📋. |
 | Sizes | 4 fixed types | Operator-defined profiles + explicit `resources` | ✅ | |
-| Recover (power-cycle) | `POST /recover` | — | 📋 | Stop/start covers most cases. |
+| Recover (power-cycle) | `POST /recover` | — | 📋 | Stop/start or pause/resume, where the backend has them. |
 | Share with org members | `POST /share` | Project-scoped keys | — | Different tenancy model. |
 | Per-sandbox usage | `GET /usage` | `GET /v1/usage?groupBy=…` | 🟡 | Aggregated by pool/project/org/trust, estimates only. |
 
@@ -71,10 +73,10 @@ Boat is the developer-experience reference. Boat paths are relative to
 
 | Capability | Boat | Differently | Status | Notes |
 |---|---|---|---|---|
-| Synchronous exec | `POST /commands` (≤600 s) | `POST /v1/sandboxes/{id}/exec` | ✅ | Shell string or argv; default timeout 10 min, max 2 h on Firecracker nodes. |
-| Streamed output | NDJSON | Server-sent events (`stdout`, `stderr`, `exit`, `error`) | ✅ | |
-| Per-command env | No | `env` on exec | ✅ | |
-| stdin | No | `stdin` on exec | ✅ (Firecracker, Freestyle) | Daytona returns `unsupported_operation`. |
+| Synchronous exec | `POST /commands` (≤600 s) | `POST /v1/sandboxes/{id}/exec` | ✅ e2e | Shell string or argv (OpenSandbox receives argv as a quoted shell command); `timeoutSeconds` is enforced by the backend. |
+| Streamed output | NDJSON | Server-sent events (`stdout`, `stderr`, `exit`, `error`) | ✅ e2e | |
+| Per-command env | No | `env` on exec | ✅ e2e | |
+| stdin | No | `stdin` on exec | 🟡 | Freestyle only (🧪); OpenSandbox and Daytona return `unsupported_operation`. |
 | Detached processes, attach by offset, kill | Yes | — | 📋 | Backlog: process sessions. |
 | Command history | Yes | Audit log records each exec (program name by default) | 🟡 | Output is not retained by design. |
 | PTY / interactive shell | SSH only | — | 📋 | SSH gateway / PTY over WebSocket in backlog. |
@@ -84,32 +86,32 @@ Boat is the developer-experience reference. Boat paths are relative to
 
 | Capability | Boat | Differently | Status |
 |---|---|---|---|
-| Read / write a file | `GET/PUT /files` (JSON, utf8/base64) | `GET/PUT /v1/sandboxes/{id}/files/content` (raw bytes, ≤100 MiB) | ✅ |
-| List a directory | `GET /files/list` | `GET /v1/sandboxes/{id}/files` | ✅ |
+| Read / write a file | `GET/PUT /files` (JSON, utf8/base64) | `GET/PUT /v1/sandboxes/{id}/files/content` (raw bytes, ≤100 MiB) | ✅ e2e |
+| List a directory | `GET /files/list` | `GET /v1/sandboxes/{id}/files` | ✅ e2e |
 | Delete, move, chmod, mkdir | Yes | — (use exec) | 📋 |
 | Search / grep / replace | Yes | — (use exec) | 📋 |
 | Signed upload/download URLs for large files | Yes | — | 📋 |
-| Path restriction | `/home/user`, `/tmp` only | Whole guest filesystem | ✅ (by design) |
+| Path restriction | `/home/user`, `/tmp` only | Whole sandbox filesystem | ✅ (by design) |
 
 ### 2.4 Access and networking
 
 | Capability | Boat | Differently | Status | Notes |
 |---|---|---|---|---|
-| HTTPS port URLs | `POST /host` (token or public) | `POST /v1/sandboxes/{id}/ports` | 🟡 | Works on Daytona (signed URL) and Freestyle (public `*.style.dev` host). Firecracker pools need an ingress gateway 📋. |
+| HTTPS port URLs | `POST /host` (token or public) | `POST /v1/sandboxes/{id}/ports` | 🟡 | Works on Daytona (signed URL) and Freestyle (public `*.style.dev` host). OpenSandbox only when its endpoints need no server key (not yet checked live). |
 | SSH | `POST /sshkey` | — | 📋 | SSH gateway in backlog. |
 | Desktop / browser stream | `POST /desktop` | — | 📋 (Phase 4) | |
-| Egress policy | No API | Node-level: internet allow/deny; metadata and private ranges always blocked | 🟡 | Per-sandbox egress allow-lists 📋. |
-| Sandbox-to-node and sandbox-to-sandbox isolation | Platform-managed | Per-VM tap + iptables: no access to the node or other VMs | ✅ (rules unit-tested; real-host validation pending) | |
+| Egress policy | No API | Left to the backend runtime | 🟡 | Freestyle firewall only; wiring OpenSandbox's network policy and per-sandbox allow-lists 📋. |
+| Sandbox-to-node and sandbox-to-sandbox isolation | Platform-managed | Provided by the backend runtime; each pool declares its isolation and the trust report shows it | — | Differently does not enforce isolation itself ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)). |
 
 ### 2.5 Lifecycle, persistence and snapshots
 
 | Capability | Boat | Differently | Status | Notes |
 |---|---|---|---|---|
-| Stop keeping disk / start | Stop then resume on a new machine | `POST …/stop`, `POST …/start` | ✅ | Firecracker restarts from the retained rootfs on the same node. |
-| Pause / resume (memory kept) | No | `POST …/pause`, `POST …/resume` | ✅ | Firecracker, Freestyle, Daytona VM class. |
-| Disk snapshot | Automatic every minute | `POST …/snapshots {kind: disk}` | ✅ | Crash-consistent: the VM is paused during the copy. |
-| Memory snapshot | No | `kind: memory` | 🟡 | Freestyle (always memory+disk), Daytona VM class. Firecracker nodes do not advertise it until restore is proven ([proof-of-concepts.md](proof-of-concepts.md)). |
-| Fork | Disk copy | `POST …/fork` | ✅ | Same pool (and node) as the source: snapshots are not portable. |
+| Stop keeping disk / start | Stop then resume on a new machine | `POST …/stop`, `POST …/start` | 🟡 | Daytona and Freestyle (🧪). OpenSandbox has no stop: it returns `unsupported_operation`; use pause/resume. |
+| Pause / resume (memory kept) | No | `POST …/pause`, `POST …/resume` | ✅ e2e | OpenSandbox; Freestyle and Daytona VM class 🧪. |
+| Disk snapshot | Automatic every minute | `POST …/snapshots {kind: disk}` | ✅ e2e | Consistency depends on the backend runtime; not yet characterized for OpenSandbox. |
+| Memory snapshot | No | `kind: memory` | 🟡 | Freestyle (always memory+disk), Daytona VM class; OpenSandbox opt-in per pool when its runtime captures memory (Fast Sandbox, unverified). |
+| Fork | Disk copy | `POST …/fork` | ✅ e2e | Same pool as the source: snapshots are not portable. |
 | Saved / named snapshots, restore by name | Yes | `fromSnapshot` on create; `GET /v1/snapshots` | ✅ | |
 | Point-in-time restore | No | No | — | |
 | Volumes / persistent disks independent of a sandbox | No | — | 📋 | |
@@ -121,7 +123,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 |---|---|---|---|
 | Scoped API keys | Yes | `POST /v1/api-keys`; scopes, project-bound, expiry; no-escalation rule | ✅ |
 | Organizations / projects | Orgs, seats | Operator-managed orgs, tenant-managed projects | ✅ |
-| Quotas (active, queued, CPU, memory, disk, TTL, snapshots) | Plan limits | Per org and project, enforced atomically | ✅ |
+| Quotas (active, queued, CPU, memory, disk, TTL, snapshots) | Plan limits | Per org and project, enforced atomically | ✅ e2e |
 | Fair queueing across tenants | n/a | Round-robin by least active CPU | ✅ |
 | Suspend a tenant | n/a | `POST /v1/admin/organizations/{id}/suspend` (optionally terminate) | ✅ |
 | Drain a pool | n/a | `POST /v1/admin/pools/{name}/drain` | ✅ |
@@ -140,26 +142,35 @@ What each Differently adapter advertises today (from the adapters' code). A
 request that needs a capability is only placed on pools that advertise it; an
 operation a backend lacks returns `unsupported_operation` (501).
 
-| Capability | `firecracker` (node agent) | `opensandbox` | `daytona` | `freestyle` | `devhost` (dev only) |
+| Capability | `opensandbox` (default private runtime) | `daytona` | `freestyle` | `remote` (plugin) | `devhost` (dev only) |
 |---|---|---|---|---|---|
-| Trust | private | **declared by the operator** (self-hostable) | external | external | private |
-| Isolation | Firecracker microVM (KVM) | OpenSandbox runtime: containers (Docker, Kubernetes) or Firecracker (Fast Sandbox); pool declares it | Container, or VM with `class: linux-vm` | Hardware-virtualized microVM | **None** |
-| `exec` | ✅ | ✅ live (Docker runtime); no stdin | 🧪 combined stdout/stderr, no stdin | 🧪 separate streams, ≤5 min inline | ✅ |
-| `exec.stream` | ✅ | ✅ live | — (falls back to buffered) | — (falls back to buffered) | ✅ |
-| `files` | ✅ | ✅ live | 🧪 | 🧪 | ✅ |
-| `lifecycle.stop-start` / `persistence.disk` | ✅ | — (OpenSandbox has no stop) | 🧪 | 🧪 (stop = in-guest poweroff) | ✅ |
-| `lifecycle.pause-resume` | ✅ | ✅ live | 🧪 VM class only | 🧪 | — |
-| `snapshots.disk` / `fork` | ✅ | ✅ live (snapshot); fork 🧪 | 🧪 | 🧪 | ✅ |
-| `snapshots.memory` | — (pending POC) | 🧪 opt-in per pool (Fast Sandbox) | 🧪 VM class only | 🧪 always memory+disk | — |
-| `ports.expose` | — (gateway 📋) | 🧪 direct endpoints only (never ones needing the server key) | 🧪 signed preview URL | 🧪 public TLS host | — |
-| `network.egress-control` | ✅ node-level | — (OpenSandbox network policy not wired yet) | — | 🧪 firewall (deny by default; `egress: public` to allow) | — |
-| Max size | Node allocatable | Server and runtime limits | 4 vCPU / 8 GiB / 10 GiB (provider default) | 32 vCPU / 64 GiB / 256 GiB (plan-dependent) | Host |
-| Idempotent create | Sandbox ID is the VM ID | Metadata lookup | Label lookup | Slug derived from sandbox ID | Directory per sandbox ID |
-| Provider-side TTL backstop | n/a | `timeout` (≥ 60 s) | `ttlMinutes` | `ttlSeconds` | n/a |
+| Trust | **declared by the operator**: `private` when you run it | external | external | declared | private |
+| Isolation | The OpenSandbox runtime's: containers (Docker, Kubernetes; shared host kernel) or Firecracker microVMs (Fast Sandbox); the pool declares which | Container, or VM with `class: linux-vm` | Hardware-virtualized microVM | Declared by the plugin | **None** |
+| `exec` | ✅ e2e; no stdin | 🧪 combined stdout/stderr, no stdin | 🧪 separate streams, ≤5 min inline | As advertised | ✅ |
+| `exec.stream` | ✅ e2e | — (falls back to buffered) | — (falls back to buffered) | As advertised | ✅ |
+| `files` | ✅ e2e | 🧪 | 🧪 | As advertised | ✅ |
+| `lifecycle.stop-start` / `persistence.disk` | — (OpenSandbox has no stop) | 🧪 | 🧪 (stop = in-guest poweroff) | As advertised | ✅ |
+| `lifecycle.pause-resume` | ✅ e2e | 🧪 VM class only | 🧪 | As advertised | — |
+| `snapshots.disk` / `fork` | ✅ e2e | 🧪 | 🧪 | As advertised | ✅ |
+| `snapshots.memory` | 🧪 opt-in per pool (Fast Sandbox) | 🧪 VM class only | 🧪 always memory+disk | As advertised | — |
+| `ports.expose` | 🧪 direct endpoints only (never ones needing the server key) | 🧪 signed preview URL | 🧪 public TLS host | As advertised | — |
+| `network.egress-control` | — (OpenSandbox network policy not wired yet) | — | 🧪 firewall (deny by default; `egress: public` to allow) | As advertised | — |
+| Max size | Server and runtime limits | 4 vCPU / 8 GiB / 10 GiB (provider default) | 32 vCPU / 64 GiB / 256 GiB (plan-dependent) | Plugin limits | Host |
+| Idempotent create | Metadata lookup | Label lookup | Slug derived from sandbox ID | Required by the contract (sandbox ID is the key) | Directory per sandbox ID |
+| Provider-side TTL backstop | `timeout` (≥ 60 s) | `ttlMinutes` | `ttlSeconds` | `ttlSeconds` is passed; plugin's choice | n/a |
 
-"Live" for `opensandbox` means checked against a real OpenSandbox 1.2.0
-server with the Docker runtime ([spike](research/opensandbox-spike.md)).
-Kubernetes and Fast Sandbox runtimes are not verified yet.
+"e2e" for `opensandbox` means the [end-to-end suite](../test/e2e/README.md)
+and the [live adapter check](../test/opensandbox/README.md) pass against a
+real OpenSandbox 1.2.0 server with the Docker runtime. Its Kubernetes and Fast
+Sandbox runtimes are not verified yet, so microVM isolation through
+Differently is unverified.
+
+The reconciler works through each adapter's `List` and the sandbox-ID label,
+so it applies to every backend: orphans in the backend are deleted and
+sandboxes that disappeared are failed with their quota released. The e2e
+suite checks this against OpenSandbox. The reconciler's own tests use the
+fake backend, and the Daytona, Freestyle and devhost `List` implementations
+are unit-tested against fakes of their APIs.
 
 Known unverified provider details (default exec timeouts, pause semantics,
 rate limits) are listed in [proof-of-concepts.md](proof-of-concepts.md) for
@@ -187,8 +198,8 @@ portable core only, and document every semantic difference. Mapping sketch:
 |---|---|---|
 | `POST /sandboxes` (`type`, `ttlSeconds`, `labels`, `env`) | `POST /v1/sandboxes` (`profile`, `ttlSeconds`, `labels`, `env`) | Boat `type` → profile name; Differently may queue behind quota. |
 | `GET /sandboxes/{id}` `state` | `status` | Boat `archived` ≈ `stopped`; Differently has `paused` and `queued`. |
-| `POST /sandboxes/{id}/stop` / `resume` | `…/stop` / `…/start` | Boat resumes on a new machine and IP; Differently restarts on the same node. |
-| `POST /sandboxes/{id}/fork` | `…/fork` | Both disk-based on Firecracker; memory-based on Freestyle. |
+| `POST /sandboxes/{id}/stop` / `resume` | `…/stop` / `…/start`, or `…/pause` / `…/resume` | Boat resumes on a new machine and IP; on Differently it depends on the backend (OpenSandbox has pause/resume only). |
+| `POST /sandboxes/{id}/fork` | `…/fork` | Disk-based on OpenSandbox; memory-based on Freestyle. |
 | `POST /sandboxes/{id}/commands` (`stream`) | `…/exec` (`?stream=1`) | NDJSON vs SSE framing; Boat has detached processes. |
 | `GET/PUT /sandboxes/{id}/files` | `…/files/content` | JSON with encoding vs raw bytes; path restrictions differ. |
 | `POST /sandboxes/{id}/host` | `…/ports` | Availability depends on the backend. |
@@ -196,14 +207,16 @@ portable core only, and document every semantic difference. Mapping sketch:
 
 ## 5. Biggest gaps, in priority order
 
-1. Real-infrastructure validation of the Firecracker path (EKS nested
-   virtualization or `.metal`, bare-metal k3s/RKE2) and live-account
-   verification of the Daytona and Freestyle adapters.
-2. Firecracker `jailer` integration and mTLS between server and agents.
-3. Ingress gateway for port URLs and an SSH gateway on Firecracker pools.
+1. Run OpenSandbox's Kubernetes and Fast Sandbox runtimes under
+   Differently on real infrastructure, so microVM isolation through
+   Differently is verified. Verify the Daytona and Freestyle adapters
+   against live accounts.
+2. Wire OpenSandbox's network policy into placement, then per-sandbox egress
+   allow-lists.
+3. Port URLs on OpenSandbox pools and an SSH gateway.
 4. Detached processes and PTY sessions.
 5. Webhooks and OpenTelemetry traces.
-6. Memory snapshots with restore on Firecracker.
-7. Per-sandbox egress allow-lists.
+6. Memory snapshots with restore through OpenSandbox (Fast Sandbox).
+7. mTLS between the control plane and its backends.
 
 Each has an epic with acceptance criteria in [backlog.md](backlog.md).

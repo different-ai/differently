@@ -55,10 +55,6 @@ app.kubernetes.io/component: {{ .component }}
 {{- printf "%s-server" (include "differently.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "differently.agentName" -}}
-{{- printf "%s-agent" (include "differently.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
 {{- define "differently.configName" -}}
 {{- printf "%s-config" (include "differently.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -177,6 +173,42 @@ api-key
 {{- end -}}
 {{- end -}}
 
+{{/*
+Secret and key holding the OpenSandbox API key: existingSecret when set,
+otherwise <fullname>-opensandbox (created by the chart from apiKey, or by the
+operator before installing).
+*/}}
+{{- define "differently.opensandboxSecretName" -}}
+{{- if .Values.opensandbox.existingSecret -}}
+{{- .Values.opensandbox.existingSecret -}}
+{{- else -}}
+{{- printf "%s-opensandbox" (include "differently.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "differently.opensandboxSecretKey" -}}
+{{- if .Values.opensandbox.existingSecret -}}
+{{- .Values.opensandbox.existingSecretKey -}}
+{{- else -}}
+api-key
+{{- end -}}
+{{- end -}}
+
+{{/* The OpenSandbox pool declared by .Values.opensandbox, as a dict. */}}
+{{- define "differently.opensandboxPool" -}}
+{{- $o := .Values.opensandbox -}}
+{{- $c := dict "apiURL" $o.apiURL "isolation" $o.isolation "useServerProxy" (toString $o.useServerProxy) -}}
+{{- with $o.image }}{{ $_ := set $c "image" . }}{{ end -}}
+{{- with $o.templateId }}{{ $_ := set $c "templateId" . }}{{ end -}}
+{{- with $o.features }}{{ $_ := set $c "features" (join "," .) }}{{ end -}}
+{{- $pool := dict "name" $o.pool.name "adapter" "opensandbox" "trust" $o.trust "config" $c "credentials" (dict "env" $o.env) -}}
+{{- if $o.pool.region }}{{ $_ := set $pool "region" $o.pool.region }}{{ end -}}
+{{- if $o.pool.labels }}{{ $_ := set $pool "labels" $o.pool.labels }}{{ end -}}
+{{- if $o.pool.maxConcurrency }}{{ $_ := set $pool "maxConcurrency" $o.pool.maxConcurrency }}{{ end -}}
+{{- if $o.pool.costModel }}{{ $_ := set $pool "costModel" $o.pool.costModel }}{{ end -}}
+{{- toJson $pool -}}
+{{- end -}}
+
 {{/* publicURL: explicit value, else the first ingress host. */}}
 {{- define "differently.publicURL" -}}
 {{- if .Values.config.publicURL -}}
@@ -188,7 +220,8 @@ api-key
 
 {{/*
 The server configuration file. User keys from .Values.config plus the
-chart-managed keys (listen, dataDir, store.driver) and provider pools.
+chart-managed keys (listen, dataDir, store.driver), the OpenSandbox pool
+(first) and provider pools (last).
 */}}
 {{- define "differently.config" -}}
 {{- $cfg := deepCopy (.Values.config | default dict) -}}
@@ -207,6 +240,9 @@ chart-managed keys (listen, dataDir, store.driver) and provider pools.
 {{- $_ := unset $cfg "publicURL" -}}
 {{- end -}}
 {{- $pools := list -}}
+{{- if .Values.opensandbox.enabled -}}
+{{- $pools = append $pools (include "differently.opensandboxPool" . | fromJson) -}}
+{{- end -}}
 {{- range ($cfg.pools | default list) -}}
 {{- $pools = append $pools . -}}
 {{- end -}}
@@ -233,17 +269,19 @@ chart-managed keys (listen, dataDir, store.driver) and provider pools.
     secretKeyRef:
       name: {{ include "differently.tokensSecretName" . }}
       key: {{ .Values.auth.bootstrapTokenKey }}
-- name: DIFFERENTLY_AGENT_TOKEN
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "differently.tokensSecretName" . }}
-      key: {{ .Values.auth.agentTokenKey }}
 {{- if include "differently.usesPostgres" . }}
 - name: DIFFERENTLY_DATABASE_URL
   valueFrom:
     secretKeyRef:
       name: {{ include "differently.databaseSecretName" . }}
       key: {{ include "differently.databaseSecretKey" . }}
+{{- end }}
+{{- if .Values.opensandbox.enabled }}
+- name: {{ .Values.opensandbox.env }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "differently.opensandboxSecretName" . }}
+      key: {{ include "differently.opensandboxSecretKey" . }}
 {{- end }}
 {{- range $p := (include "differently.enabledProviders" . | fromJsonArray) }}
 - name: {{ $p.env }}
@@ -285,8 +323,26 @@ Validation. Fails the render with an actionable message. The server's
 {{- if and (eq (include "differently.migrationMode" .) "hook") $pg.embedded.enabled -}}
 {{- fail "migrations.mode=hook cannot reach postgresql.embedded (it does not exist yet when pre-install hooks run); use migrations.mode=auto or initContainer." -}}
 {{- end -}}
-{{- if and .Values.auth.existingSecret (or .Values.auth.bootstrapToken .Values.auth.agentToken) -}}
-{{- fail "auth.existingSecret is set, so auth.bootstrapToken and auth.agentToken would be ignored; remove them." -}}
+{{- if and .Values.auth.existingSecret .Values.auth.bootstrapToken -}}
+{{- fail "auth.existingSecret is set, so auth.bootstrapToken would be ignored; remove it." -}}
+{{- end -}}
+{{- $o := .Values.opensandbox -}}
+{{- if $o.enabled -}}
+{{- if not $o.apiURL -}}
+{{- fail "opensandbox.enabled=true needs opensandbox.apiURL, the OpenSandbox lifecycle API ending in /v1 (e.g. http://opensandbox-server.opensandbox.svc:8090/v1). Install OpenSandbox separately, or set opensandbox.enabled=false." -}}
+{{- end -}}
+{{- if not (regexMatch "^https?://" $o.apiURL) -}}
+{{- fail (printf "opensandbox.apiURL=%q must be an http:// or https:// URL." $o.apiURL) -}}
+{{- end -}}
+{{- if not (has $o.trust (list "private" "external")) -}}
+{{- fail (printf "opensandbox.trust=%q must be private (you operate the OpenSandbox server) or external (someone else does)." (toString $o.trust)) -}}
+{{- end -}}
+{{- if not (has $o.isolation (list "container" "microvm")) -}}
+{{- fail (printf "opensandbox.isolation=%q must be container (Docker or Kubernetes runtime) or microvm (Fast Sandbox)." (toString $o.isolation)) -}}
+{{- end -}}
+{{- if and $o.existingSecret $o.apiKey -}}
+{{- fail "Set only one of opensandbox.existingSecret and opensandbox.apiKey." -}}
+{{- end -}}
 {{- end -}}
 {{- if and .Values.auth.bootstrapToken (not (regexMatch "^dly_[0-9a-z]+_[0-9a-z]{24,}$" .Values.auth.bootstrapToken)) -}}
 {{- fail "auth.bootstrapToken must look like dly_<id>_<secret> with a secret of at least 24 characters from [0-9a-z]." -}}
@@ -295,7 +351,7 @@ Validation. Fails the render with an actionable message. The server's
 {{- $names := dict -}}
 {{- range $cfg.pools -}}
 {{- if hasKey $names .name -}}
-{{- fail (printf "Duplicate pool %q (check config.pools and providers.*.pool.name)." .name) -}}
+{{- fail (printf "Duplicate pool %q (check config.pools, opensandbox.pool.name and providers.*.pool.name)." .name) -}}
 {{- end -}}
 {{- $_ := set $names .name .adapter -}}
 {{- if and (has .adapter (list "daytona" "freestyle")) (not .credentials) -}}
@@ -304,15 +360,18 @@ Validation. Fails the render with an actionable message. The server's
 {{- if eq .adapter "devhost" -}}
 {{- fail (printf "Pool %q: the devhost adapter has no isolation and is not supported by this chart." .name) -}}
 {{- end -}}
+{{- if eq .adapter "opensandbox" -}}
+{{- if not (has (.trust | default "") (list "private" "external")) -}}
+{{- fail (printf "Pool %q uses the opensandbox adapter: set trust to private (you operate the server) or external (someone else does)." .name) -}}
+{{- end -}}
+{{- if not (.config | default dict).apiURL -}}
+{{- fail (printf "Pool %q uses the opensandbox adapter and needs config.apiURL." .name) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- range (($cfg.policy | default dict).externalPools | default list) -}}
 {{- if not (hasKey $names .) -}}
 {{- fail (printf "config.policy.externalPools names unknown pool %q." .) -}}
-{{- end -}}
-{{- end -}}
-{{- if .Values.agent.enabled -}}
-{{- if ne (get $names .Values.agent.pool | default "") "firecracker" -}}
-{{- fail (printf "agent.pool=%q must name a pool in config.pools with adapter: firecracker (or set agent.enabled=false)." .Values.agent.pool) -}}
 {{- end -}}
 {{- end -}}
 {{- range $p := (include "differently.enabledProviders" . | fromJsonArray) -}}

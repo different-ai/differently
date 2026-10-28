@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/different-ai/differently/internal/guest"
 	"github.com/different-ai/differently/internal/id"
+	"github.com/different-ai/differently/internal/localexec"
 	"github.com/different-ai/differently/pkg/adapter"
 	"github.com/different-ai/differently/pkg/api"
 )
@@ -127,7 +127,7 @@ func (a *Adapter) Delete(_ context.Context, ref string) error {
 	return os.RemoveAll(a.dir(ref))
 }
 
-func (a *Adapter) runner(ref string) (*guest.Runner, error) {
+func (a *Adapter) runner(ref string) (*localexec.Runner, error) {
 	m, err := a.load(ref)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (a *Adapter) runner(ref string) (*guest.Runner, error) {
 	if m.State != adapter.StateRunning {
 		return nil, api.Errorf(api.CodeInvalidState, "sandbox is %s", m.State)
 	}
-	return &guest.Runner{Root: a.fsDir(ref), BaseEnv: m.Env}, nil
+	return &localexec.Runner{Root: a.fsDir(ref), BaseEnv: m.Env}, nil
 }
 
 func (a *Adapter) Exec(ctx context.Context, ref string, req api.ExecRequest) (api.ExecResult, error) {

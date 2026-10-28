@@ -104,12 +104,6 @@ jobs:
           context: .
           file: build/server.Dockerfile
           push: false
-      - name: build agent image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: build/agent.Dockerfile
-          push: false
       - name: build cli image
         uses: docker/build-push-action@v6
         with:

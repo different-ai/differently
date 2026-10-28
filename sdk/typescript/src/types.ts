@@ -467,24 +467,6 @@ export interface UsageParams {
   orgId?: string;
 }
 
-export interface Agent {
-  id: string;
-  pool: string;
-  node: string;
-  endpoint: string;
-  version: string;
-  arch: string;
-  totalCPU: number;
-  freeCPU: number;
-  totalMemoryMiB: number;
-  freeMemoryMiB: number;
-  sandboxes: number;
-  capabilities: string[] | null;
-  templates?: string[];
-  lastSeen: string;
-  healthy: boolean;
-}
-
 export interface TrustPool {
   name: string;
   adapter: string;
@@ -492,6 +474,8 @@ export interface TrustPool {
   enabled: boolean;
   draining: boolean;
   region?: string;
+  /** The backend runtime's isolation as its adapter reports it. */
+  isolation?: string;
   endpoint?: string;
   credentialRef?: string;
   approvedForExternalPlacement: boolean;
@@ -520,7 +504,6 @@ export interface TrustReport {
   classifications: Classification[] | null;
   placementsByPool: UsageLine[] | null;
   recentExternalPlacements: TrustPlacement[] | null;
-  agents: Agent[] | null;
   recentAdminActions: AuditEvent[] | null;
   auditChain: AuditVerifyResult;
   limitations: string[];

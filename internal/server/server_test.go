@@ -78,7 +78,7 @@ func newHarnessWith(t *testing.T, policy api.PlacementPolicy, tweak func(*config
 	inst, _ := st.Installation(ctx)
 	h.sched = scheduler.New(st, pm, cfg, inst, rec, log)
 	h.sched.ReconcileGrace = 0 // tests drive the reconciler directly
-	srv := server.New(cfg, st, pm, h.sched, rec, log, inst, "agent-token")
+	srv := server.New(cfg, st, pm, h.sched, rec, log, inst)
 	if err := srv.Bootstrap(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -409,7 +409,7 @@ func TestFailureRecoveryAndReconcile(t *testing.T) {
 		t.Fatalf("retry did not converge to exactly one instance: %+v (%d)", got, h.fc.Count())
 	}
 	// A backend instance that stops behind the control plane's back (for
-	// example its node agent restarted) makes the sandbox stopped.
+	// example its runtime restarted) makes the sandbox stopped.
 	running0, _ := h.store.GetSandbox(context.Background(), sb.ID)
 	_ = h.fc.Stop(context.Background(), running0.BackendRef)
 	h.sched.Reconcile(context.Background())
@@ -431,6 +431,31 @@ func TestFailureRecoveryAndReconcile(t *testing.T) {
 	u, _ := h.store.Usage(context.Background(), orgID, "")
 	if u.ActiveSandboxes != 0 || u.CPU != 0 {
 		t.Fatalf("quota leaked: %+v", u)
+	}
+}
+
+// Two pools can front the same backend. Each pool's reconcile sees the
+// other's instances and must not delete them; an instance left behind by an
+// earlier placement is still an orphan.
+func TestReconcileLeavesSharedBackendInstancesAlone(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	_, _, token := h.tenant("a", api.Quota{})
+	ctx := context.Background()
+	twin := api.Pool{Name: "fc-twin", Adapter: "fake", Trust: api.TrustPrivate, Enabled: true, Region: "dc1", Source: "config"}
+	_ = h.store.UpsertPool(ctx, twin)
+	h.sched.Pools.Set(twin, h.fc)
+	h.sched.Pools.Refresh(ctx)
+	sb := h.create(token, api.CreateSandboxRequest{})
+	h.tick()
+	h.sched.Reconcile(ctx)
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning || h.fc.Count() != 1 {
+		t.Fatalf("the twin pool deleted a live instance: %+v (%d)", got, h.fc.Count())
+	}
+	inst, _ := h.store.Installation(ctx)
+	h.fc.Inject(sb.ID, inst) // a leftover from an earlier placement
+	h.sched.Reconcile(ctx)
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning || h.fc.Count() != 1 {
+		t.Fatalf("leftover not deleted, or the live instance went with it: %+v (%d)", got, h.fc.Count())
 	}
 }
 

@@ -10,8 +10,10 @@ import (
 func TestParseAppliesSafeDefaults(t *testing.T) {
 	c, err := Parse([]byte(`
 pools:
-  - name: fc
-    adapter: firecracker
+  - name: osb
+    adapter: opensandbox
+    trust: private
+    config: {apiURL: "http://opensandbox:8090/v1"}
   - name: burst
     adapter: daytona
     trust: private   # ignored: providers are always external
