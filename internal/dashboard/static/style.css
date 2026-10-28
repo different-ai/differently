@@ -1,0 +1,23 @@
+:root { --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --card: #fff; --accent: #0f766e; --bad: #b91c1c; --warn: #b45309; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0c0a09; --fg: #f5f5f4; --muted: #a8a29e; --line: #292524; --card: #1c1917; --accent: #2dd4bf; --bad: #f87171; --warn: #fbbf24; } }
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.tag { color: var(--muted); font-size: 12px; }
+nav { display: flex; flex-wrap: wrap; gap: 12px; margin-left: auto; }
+nav a { color: var(--fg); text-decoration: none; } nav a:hover { color: var(--accent); }
+main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 20px; } h2 { font-size: 16px; margin-top: 24px; }
+table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.scroll { overflow-x: auto; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.card .n { font-size: 24px; font-weight: 600; }
+.ok { color: var(--accent); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+code, pre { font: 12px ui-monospace, monospace; } pre { background: var(--card); border: 1px solid var(--line); padding: 8px; overflow-x: auto; white-space: pre-wrap; }
+input, button, select { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); }
+button { cursor: pointer; } button.link { border: 0; background: none; color: var(--muted); padding: 0; }
+form { display: flex; gap: 8px; flex-wrap: wrap; } #key { min-width: 280px; flex: 1; }
+.error { color: var(--bad); }

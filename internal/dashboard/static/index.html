@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Differently Console</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <strong>Differently</strong><span class="tag">your infrastructure, your rules, one API</span>
+  <nav id="nav" hidden>
+    <a href="#overview">Overview</a><a href="#sandboxes">Sandboxes</a><a href="#usage">Usage</a><a href="#audit">Audit</a>
+    <a href="#pools" class="admin">Pools</a><a href="#tenants" class="admin">Tenants</a><a href="#trust" class="admin">Trust report</a>
+    <button id="logout" class="link">Sign out</button>
+  </nav>
+</header>
+<main>
+  <section id="login" hidden>
+    <h1>Sign in</h1>
+    <p>Paste an API key. It stays in this browser tab (session storage) and is sent only to this server.</p>
+    <form id="login-form"><input id="key" type="password" placeholder="dly_..." autocomplete="off" required><button>Sign in</button></form>
+    <p class="error" id="login-error"></p>
+  </section>
+  <section id="view"></section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
