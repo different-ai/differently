@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/pkg/adapter"
@@ -120,6 +121,11 @@ func newFake(t *testing.T) *fakeOpenSandbox {
 		case "resume":
 			setState(b, "Resuming")
 			w.WriteHeader(202)
+		case "renew-expiration":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			b["expiresAt"] = body["expiresAt"]
+			jsonOut(w, 200, map[string]any{"expiresAt": body["expiresAt"]})
 		case "snapshots":
 			sid := "snap-" + r.PathValue("id")
 			f.snaps[sid] = "Creating"
@@ -168,6 +174,15 @@ func newFake(t *testing.T) *fakeOpenSandbox {
 		w.Header().Set("Content-Type", "text/event-stream")
 		send := func(v any) { b, _ := json.Marshal(v); fmt.Fprintf(w, "data: %s\n\n", b) }
 		send(map[string]any{"type": "init", "text": "cmd-1"})
+		if cmd, _ := body["command"].(string); strings.Contains(cmd, "exact") {
+			// execd release-1.2.0: terminators kept, a final fragment has none.
+			for _, l := range []string{"a\n", "\n", "c"} {
+				send(map[string]any{"type": "stdout", "text": l})
+			}
+			send(map[string]any{"type": "stderr", "text": "no newline"})
+			send(map[string]any{"type": "execution_complete", "execution_time": 1})
+			return
+		}
 		if cmd, _ := body["command"].(string); strings.Contains(cmd, "two lines") {
 			// execd 1.1: one event per line, terminators stripped, bare JSON lines.
 			for _, l := range []string{"a", "b"} {
@@ -268,6 +283,10 @@ func TestOpenSandboxLifecycleExecFiles(t *testing.T) {
 	if again, err := a.Create(ctx, req); err != nil || again.Ref != inst.Ref || f.creates != 1 {
 		t.Fatalf("create not idempotent: %+v %v (%d creates)", again, err, f.creates)
 	}
+	deadline := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := a.SetExpiry(ctx, inst.Ref, deadline); err != nil || f.boxes[inst.Ref]["expiresAt"] != "2030-01-02T03:04:05Z" {
+		t.Fatalf("renew-expiration: %v %v", f.boxes[inst.Ref]["expiresAt"], err)
+	}
 
 	res, err := a.Exec(ctx, inst.Ref, api.ExecRequest{Command: "echo hello", Env: map[string]string{"B": "2"}, Cwd: "/work", TimeoutSeconds: 5})
 	if err != nil || res.ExitCode != 0 || res.Stdout != "hello\n" || res.Stderr != "warn\n" {
@@ -278,6 +297,10 @@ func TestOpenSandboxLifecycleExecFiles(t *testing.T) {
 	}
 	if res, err := a.Exec(ctx, inst.Ref, api.ExecRequest{Command: "printf 'two lines'"}); err != nil || res.Stdout != "a\nb\n" {
 		t.Fatalf("line endings from execd 1.1 not restored: %q %v", res.Stdout, err)
+	}
+	exact := New(func() Options { o := a.opts; o.LineEndingsKept = true; return o }())
+	if res, err := exact.Exec(ctx, inst.Ref, api.ExecRequest{Command: "printf exact"}); err != nil || res.Stdout != "a\n\nc" || res.Stderr != "no newline" {
+		t.Fatalf("lineEndings: kept must pass output through exactly: %+v %v", res, err)
 	}
 	if res, err := a.Exec(ctx, inst.Ref, api.ExecRequest{Command: "false; exit 3"}); err != nil || res.ExitCode != 3 {
 		t.Fatalf("non-zero exit: %+v %v", res, err)
@@ -363,6 +386,9 @@ func TestOpenSandboxCredentialsAndConfig(t *testing.T) {
 	}
 	if _, err := FromConfig(map[string]string{}, api.TrustPrivate, ""); err == nil {
 		t.Fatal("apiURL must be required")
+	}
+	if _, err := FromConfig(map[string]string{"apiURL": "http://x/v1", "lineEndings": "lf"}, api.TrustPrivate, ""); err == nil {
+		t.Fatal("unknown lineEndings accepted")
 	}
 	if _, err := FromConfig(map[string]string{"apiURL": "http://x/v1", "isolation": "vm"}, api.TrustPrivate, ""); err == nil {
 		t.Fatal("unknown isolation accepted")

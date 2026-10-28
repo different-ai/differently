@@ -30,7 +30,11 @@ func TestLiveOpenSandbox(t *testing.T) {
 	if image == "" {
 		image = "debian:bookworm-slim"
 	}
-	o, err := FromConfig(map[string]string{"apiURL": url, "image": image, "isolation": "container"}, api.TrustPrivate, key)
+	lineEndings := os.Getenv("OPENSANDBOX_LINE_ENDINGS")
+	if lineEndings == "" {
+		lineEndings = "kept" // test/opensandbox/config.toml runs execd release-1.2.0
+	}
+	o, err := FromConfig(map[string]string{"apiURL": url, "image": image, "isolation": "container", "lineEndings": lineEndings}, api.TrustPrivate, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,8 +59,14 @@ func TestLiveOpenSandbox(t *testing.T) {
 	if err != nil || !strings.Contains(res.Stdout, "hello world from Linux") || !strings.Contains(res.Stderr, "oops") || res.ExitCode != 0 {
 		t.Fatalf("exec %+v %v", res, err)
 	}
+	if err := a.SetExpiry(ctx, inst.Ref, time.Now().Add(2*time.Hour)); err != nil {
+		t.Fatalf("renew-expiration: %v", err)
+	}
 	if res, err := a.Exec(ctx, inst.Ref, api.ExecRequest{Command: `printf 'a\nb\n'`}); err != nil || res.Stdout != "a\nb\n" {
 		t.Fatalf("multi-line output %q %v", res.Stdout, err)
+	}
+	if res, err := a.Exec(ctx, inst.Ref, api.ExecRequest{Command: `printf 'a\n\nno newline'`}); lineEndings == "kept" && (err != nil || res.Stdout != "a\n\nno newline") {
+		t.Fatalf("output is not exact with lineEndings: kept: %q %v", res.Stdout, err)
 	}
 	if res, err := a.Exec(ctx, inst.Ref, api.ExecRequest{Command: "exit 3"}); err != nil || res.ExitCode != 3 {
 		t.Fatalf("exit code: %+v %v", res, err)

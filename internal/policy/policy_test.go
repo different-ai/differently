@@ -145,3 +145,24 @@ func TestDecisionExplainsEveryPool(t *testing.T) {
 		}
 	}
 }
+
+// One template name routes to every pool that has its own image for it, and
+// to no other pool; each pool's adapter is checked against its own image.
+func TestTemplateImagesLimitAndRoute(t *testing.T) {
+	tpl := api.Template{Name: "workbot", Images: map[string]string{"daytona": "workbot-daytona-v3"}}
+	osb := pool("osb", api.TrustPrivate, 8, vmFeatures, 0.05)
+	in := input(internal, overflow, osb, pool("daytona", api.TrustExternal, 0, extFeatures, 0.01))
+	in.Sandbox.Template, in.Template = "workbot", &tpl
+	res := Decide(in)
+	if res.Decision.Pool != "daytona" {
+		t.Fatalf("only the pool with an image should run the template, got %+v", res.Decision)
+	}
+	// A pool advertising a fixed template list is checked against the mapped image, not the name.
+	osb.Capabilities.Templates = []string{"workbot-osb"}
+	tpl.Images["osb"] = "workbot-osb"
+	in = input(internal, overflow, osb, pool("daytona", api.TrustExternal, 0, extFeatures, 0.01))
+	in.Sandbox.Template, in.Template = "workbot", &tpl
+	if res := Decide(in); res.Decision.Pool != "osb" {
+		t.Fatalf("private pool with a mapped image should win, got %+v", res.Decision)
+	}
+}

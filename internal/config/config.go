@@ -357,6 +357,24 @@ func (c Config) Validate() error {
 			bad("pool %s: remote adapter needs config.endpoint", p.Name)
 		}
 	}
+	templates := map[string]bool{}
+	for _, t := range c.Templates {
+		switch {
+		case t.Name == "":
+			bad("every template needs a name")
+		case templates[t.Name]:
+			bad("duplicate template %s", t.Name)
+		}
+		templates[t.Name] = true
+		for pool, image := range t.Images {
+			if image == "" {
+				bad("template %s: images.%s is empty", t.Name, pool)
+			}
+			if len(t.Pools) > 0 && !slices.Contains(t.Pools, pool) {
+				bad("template %s: images names pool %s, which its pools list leaves out", t.Name, pool)
+			}
+		}
+	}
 	if c.Metrics.Listen != "" && c.Metrics.Listen == c.Listen {
 		bad("metrics.listen must differ from listen")
 	}
@@ -376,6 +394,26 @@ func (c Config) Classification(name string) (api.Classification, bool) {
 		}
 	}
 	return api.Classification{}, false
+}
+
+// Template returns a configured template by name.
+func (c Config) Template(name string) (api.Template, bool) {
+	for _, t := range c.Templates {
+		if t.Name == name {
+			return t, true
+		}
+	}
+	return api.Template{}, false
+}
+
+// BackendTemplate is what the backend of pool should boot for template name:
+// the pool's mapped image for a configured template, otherwise the name as
+// given.
+func (c Config) BackendTemplate(name, pool string) string {
+	if t, ok := c.Template(name); ok && name != "" {
+		return t.ImageFor(pool)
+	}
+	return name
 }
 
 // Profile returns a profile by name.

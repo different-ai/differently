@@ -58,7 +58,7 @@ paths:
         an eligible pool. Returns 422 immediately when no permitted pool could ever satisfy
         it (`no_eligible_pool`, `unsupported_capability`). Requires `sandboxes:write`.
       parameters:
-        - { name: Idempotency-Key, in: header, schema: { type: string }, description: Replaying the same key within a project returns the original sandbox (200). }
+        - { name: Idempotency-Key, in: header, schema: { type: string }, description: "Replaying the same key within a project returns the live sandbox it created (200). Once that sandbox is terminated or failed, the key creates a new one." }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateSandboxRequest" } } } }
       responses:
         "202": { description: Queued, content: { application/json: { schema: { $ref: "#/components/schemas/Sandbox" } } } }

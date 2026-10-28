@@ -94,7 +94,8 @@
                 "required": ["apiURL"],
                 "properties": {
                   "isolation": {"enum": ["", "container", "microvm"]},
-                  "useServerProxy": {"enum": ["true", "false"]}
+                  "useServerProxy": {"enum": ["true", "false"]},
+                  "lineEndings": {"enum": ["kept", "stripped"]}
                 }
               }
             }
@@ -167,6 +168,7 @@
         "isolation": {"type": "string", "enum": ["container", "microvm"]},
         "features": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9.-]*$"}},
         "useServerProxy": {"type": "boolean"},
+        "lineEndings": {"type": "string", "enum": ["", "kept", "stripped"]},
         "existingSecret": {"type": "string"},
         "existingSecretKey": {"type": "string", "minLength": 1},
         "apiKey": {"type": "string"},
@@ -252,7 +254,8 @@
             "properties": {
               "name": {"type": "string", "minLength": 1},
               "description": {"type": "string"},
-              "pools": {"type": "array", "items": {"type": "string"}}
+              "pools": {"type": "array", "items": {"type": "string"}},
+              "images": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}}
             }
           }
         },

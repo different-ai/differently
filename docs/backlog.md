@@ -14,10 +14,11 @@
 flowchart LR
   E18["E18 Fast Sandbox spike<br/>(next)"] --> E19["E19 OpenSandbox egress"]
   E18 --> E21["E21 OpenSandbox version pinning"]
+  E22["E22 OpenWork sandbox contract"] --> E14["E14 process sessions"]
   E0["E0 review fixes"] --> E2["E2 live provider accounts"]
   E20["E20 Credential Vault evaluation"] --> E13["E13 secrets by reference"]
   E5["E5 Postgres CI / scale"] --> E10["E10 webhooks"]
-  E14["E14 process sessions"] --> E7["E7 SSH / PTY"]
+  E14 --> E7["E7 SSH / PTY"]
   E11["E11 tracing"]
   E15["E15 Go SDK"]
   E8["E8 Kueue batch lane"]
@@ -137,8 +138,8 @@ every OpenSandbox upgrade, and no CI job runs it today.
 
 - **E21.1 Pin.** State the OpenSandbox server and `execd` versions each
   Differently release supports (today server `release-1.2.0` with `execd`
-  v1.1.0, the versions in `test/opensandbox/`), in the OpenSandbox guide and
-  the release notes.
+  `release-1.2.0`, the versions in `test/opensandbox/`), in the OpenSandbox
+  guide and the release notes.
 - **E21.2 CI.** A job that starts `test/opensandbox/compose.yaml` and runs
   `go test -tags live ./internal/adapters/opensandbox/` and the end-to-end
   suite (`make e2e-prepare e2e-up e2e`) against the pinned images.
@@ -152,6 +153,28 @@ every OpenSandbox upgrade, and no CI job runs it today.
   server in `internal/adapters/opensandbox/opensandbox_test.go`.
 
 ---
+
+## E22. Serve OpenWork's sandbox contract fully
+
+**Priority** P1. **Depends on** nothing. **Why** OpenWork's
+[`@openwork/sandbox`](https://github.com/different-ai/openwork/tree/dev/packages/sandbox)
+contract is the most complete statement of what a sandbox client needs, and
+its Differently provider bridges the gaps below on the client side today
+([guides/openwork.md](guides/openwork.md)).
+
+- **E22.1 Idle lifecycle.** `idleTtlSeconds` (delete after N unused) and an
+  idle auto-pause, so clients do not extend TTLs themselves. *Acceptance:*
+  activity (exec, files, resume) resets the clock; e2e on OpenSandbox.
+- **E22.2 File stat and mode.** A stat endpoint and `mode` on upload, in
+  place of a directory listing and a `chmod`. *Acceptance:* every adapter
+  with `files`; fake-server tests.
+- **E22.3 Endpoint expiry.** `expiresAt` on port URLs (Daytona's are signed
+  and expire), so clients learn the endpoint's lifetime.
+- **E22.4 Cloud workers.** Detached processes ([E14](#e14-process-sessions))
+  and persistent volumes, which OpenWork's Cloud workers need before they can
+  leave Daytona.
+- **E22.5 Live conformance.** Run OpenWork's provider conformance cases
+  against a real Differently installation in CI, next to the e2e suite.
 
 ## E0. Correctness and security fixes from the code review
 
@@ -254,10 +277,11 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   clients both allow up to 2 h 15 min, and the request context bounds each
   call.
 - **E0.20 Provider TTL backstops follow TTL changes** (P1). `PATCH ttlSeconds`
-  updates Daytona (`POST /sandbox/{id}/ttl/{minutes}`), Freestyle
-  (`PATCH /v5/vms/{id}`, noting that its TTL counts from creation) and
-  OpenSandbox (whose `timeout` is set once at create; the adapter has no
-  renewal call), or the API refuses extensions beyond the backstop.
+  updates Daytona (`POST /sandbox/{id}/ttl/{minutes}`) and Freestyle
+  (`PATCH /v5/vms/{id}`, noting that its TTL counts from creation), or the
+  API refuses extensions beyond the backstop. ✅ for OpenSandbox: the
+  optional `adapter.Expirer` moves its expiry (`renew-expiration`) to five
+  minutes after Differently's.
   *Acceptance:* fake-server tests for each adapter.
 - **E0.21 Detect duplicate instances per sandbox** (P1). The reconciler deletes
   any instance whose sandbox's `backendRef` differs, even on the same pool.

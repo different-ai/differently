@@ -195,6 +195,11 @@ opensandbox:
   # connects to each sandbox's endpoint directly; allow that with
   # networkPolicy.server.egress.extra.
   useServerProxy: true
+  # kept passes command output through byte for byte and needs the server to
+  # run execd release-1.2.0 or later (its execd_image setting). stripped (the
+  # adapter default when empty) suits execd 1.1, which drops line endings; a
+  # newline is restored after each line.
+  lineEndings: ""
   # Secret holding the OpenSandbox server's API key. When empty, the server
   # reads key api-key of the Secret <fullname>-opensandbox: the chart creates
   # it from apiKey, or you create it before installing (see NOTES).

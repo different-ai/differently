@@ -22,7 +22,7 @@
 // JSON in practice, SSE "data:" framing also accepted); stdin is not
 // supported.
 // Checked live against the release 1.2.0 server with the Docker runtime and
-// execd v1.1.0 (see test/opensandbox).
+// execd release-1.2.0 (lineEndings: kept) and v1.1.0 (see test/opensandbox).
 package opensandbox
 
 import (
@@ -68,7 +68,7 @@ var DefaultFeatures = []string{
 // Options configures the adapter. Pool config keys: apiURL (required, the
 // lifecycle base URL ending in /v1), image (default image URI), templateId,
 // isolation (microvm|container), features (comma list), useServerProxy
-// (true|false, default true).
+// (true|false, default true), lineEndings (kept|stripped, default stripped).
 type Options struct {
 	APIURL         string
 	APIKey         string
@@ -78,7 +78,11 @@ type Options struct {
 	Isolation      string
 	Features       []string
 	UseServerProxy bool
-	ReadyTimeout   time.Duration
+	// LineEndingsKept passes exec output through byte for byte. execd
+	// release-1.2.0 and later keep each line's terminator; execd 1.1 strips
+	// it, so without this the adapter restores a newline after every line.
+	LineEndingsKept bool
+	ReadyTimeout    time.Duration
 }
 
 // FromConfig maps pool config to options.
@@ -87,6 +91,10 @@ func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
 		APIURL: strings.TrimRight(cfg["apiURL"], "/"), APIKey: apiKey, Trust: trust,
 		Image: cfg["image"], TemplateID: cfg["templateId"], Isolation: cfg["isolation"],
 		UseServerProxy: cfg["useServerProxy"] != "false", Features: slices.Clone(DefaultFeatures),
+		LineEndingsKept: cfg["lineEndings"] == "kept",
+	}
+	if le := cfg["lineEndings"]; le != "" && le != "kept" && le != "stripped" {
+		return o, fmt.Errorf("opensandbox config.lineEndings must be kept (execd release-1.2.0 or later) or stripped (execd 1.1), not %q", le)
 	}
 	if o.APIURL == "" {
 		return o, errors.New("opensandbox pools need config.apiURL (the lifecycle API, e.g. http://opensandbox:8090/v1)")
@@ -484,11 +492,12 @@ func (a *Adapter) run(ctx context.Context, ref string, req api.ExecRequest, emit
 		}
 		switch ev.Type {
 		case "stdout", "stderr":
-			// Events are line-based. execd 1.2 keeps each line's terminator;
-			// execd 1.1 (still the default image) strips it, so restore one.
-			// A final fragment without a newline therefore gains one.
+			// Events are line-based. execd release-1.2.0 keeps each line's
+			// terminator, so the output is exact. execd 1.1 strips it; with
+			// lineEndings: stripped a newline is restored after each line, and
+			// a final fragment without one gains one.
 			text := ev.Text
-			if !strings.HasSuffix(text, "\n") && !strings.HasSuffix(text, "\r") {
+			if !a.opts.LineEndingsKept && !strings.HasSuffix(text, "\n") && !strings.HasSuffix(text, "\r") {
 				text += "\n"
 			}
 			if err := emit(api.ExecEvent{Stream: ev.Type, Data: text}); err != nil {
@@ -614,6 +623,11 @@ func (a *Adapter) ListFiles(ctx context.Context, ref, path string) ([]api.FileIn
 			IsDir: it.Type == "directory" || it.Type == "dir", Mode: strconv.Itoa(it.Mode), ModTime: mt})
 	}
 	return out, nil
+}
+
+// SetExpiry moves OpenSandbox's own expiry (set from the TTL at create).
+func (a *Adapter) SetExpiry(ctx context.Context, ref string, at time.Time) error {
+	return a.call(ctx, http.MethodPost, "/sandboxes/"+url.PathEscape(ref)+"/renew-expiration", map[string]string{"expiresAt": at.UTC().Format(time.RFC3339)}, nil)
 }
 
 func (a *Adapter) Pause(ctx context.Context, ref string) error {

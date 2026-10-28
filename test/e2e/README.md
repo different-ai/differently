@@ -64,6 +64,7 @@ in `compose.yaml` is a test value for this throwaway stack.
 | Date | Host | OpenSandbox | Result |
 |---|---|---|---|
 | 2026-10-28 | Apple M4 Max, macOS 26.5, Colima 0.10.3 (`colima-differently`), arm64 | server 1.2.0, `execd` v1.1.0, Docker runtime | 10/10 passed, twice; sandboxes running in about 0.3–0.8 s |
+| 2026-10-28 | same | server 1.2.0, `execd` release-1.2.0, `lineEndings: kept` | 10/10 passed, including byte-exact output |
 
 Not covered yet:
 

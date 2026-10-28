@@ -5,7 +5,10 @@
 // through pools and capabilities, never named in application code.
 package api
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // SandboxStatus is the lifecycle state of a sandbox.
 type SandboxStatus string
@@ -379,9 +382,35 @@ type Profile struct {
 
 // Template is a bootable image known to one or more pools.
 type Template struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Pools       []string `json:"pools,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Pools restricts the template to these pools; empty means any pool.
+	Pools []string `json:"pools,omitempty"`
+	// Images maps a pool name to that backend's own image (an OpenSandbox
+	// image or template, a Daytona or Freestyle snapshot), so one template
+	// name can be placed on any pool listed here. When set, only those pools
+	// can run the template.
+	Images map[string]string `json:"images,omitempty"`
+}
+
+// Offers reports whether pool can run the template, with the reason if not.
+func (t Template) Offers(pool string) (bool, string) {
+	if len(t.Pools) > 0 && !slices.Contains(t.Pools, pool) {
+		return false, "template " + t.Name + " is not offered on this pool"
+	}
+	if len(t.Images) > 0 && t.Images[pool] == "" {
+		return false, "template " + t.Name + " has no image for this pool"
+	}
+	return true, ""
+}
+
+// ImageFor returns what the backend of pool should boot for this template:
+// the pool's own image when one is mapped, otherwise the template name.
+func (t Template) ImageFor(pool string) string {
+	if img := t.Images[pool]; img != "" {
+		return img
+	}
+	return t.Name
 }
 
 // AuditEvent is one entry of the tamper-evident audit chain.

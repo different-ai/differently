@@ -16,4 +16,6 @@ containers on the same host, so this checks the API contract, not
 isolation.
 
 Verified 2026-10-28 on Colima (`colima-differently`, arm64) with server
-1.2.0 and `execd` v1.1.0: passes; sandbox creation 0.5–0.9 s.
+1.2.0 and `execd` v1.1.0: passes; sandbox creation 0.5–0.9 s. Re-verified
+2026-10-28 with `execd` release-1.2.0 and `lineEndings: kept`: byte-exact
+output and `renew-expiration`.

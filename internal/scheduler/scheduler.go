@@ -149,6 +149,9 @@ func (s *Scheduler) PlacementInput(ctx context.Context, rec store.SandboxRecord,
 			in.PinnedPool = snap.Pool
 		}
 	}
+	if t, ok := s.Config.Template(rec.Template); ok && rec.Template != "" {
+		in.Template = &t
+	}
 	return in
 }
 
@@ -330,7 +333,7 @@ func (s *Scheduler) provision(ctx context.Context, rec store.SandboxRecord) {
 	}
 	start := s.Now()
 	inst, err := a.Create(ctx, adapter.CreateRequest{
-		ID: rec.ID, Installation: s.Installation, Template: rec.Template, Resources: rec.Resources,
+		ID: rec.ID, Installation: s.Installation, Template: s.Config.BackendTemplate(rec.Template, rec.Pool), Resources: rec.Resources,
 		Env: rec.Env, Labels: labels, TTLSeconds: rec.TTLSeconds, FromSnapshot: rec.SnapshotBackendRef,
 	})
 	if err != nil {

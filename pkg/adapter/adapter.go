@@ -17,6 +17,7 @@ package adapter
 import (
 	"context"
 	"slices"
+	"time"
 
 	"github.com/different-ai/differently/pkg/api"
 )
@@ -207,6 +208,13 @@ type FileSystem interface {
 type Lifecycle interface {
 	Stop(ctx context.Context, ref string) error
 	Start(ctx context.Context, ref string) error
+}
+
+// Expirer moves the backend's own deletion deadline (its TTL backstop) when a
+// sandbox's TTL changes, so the backend never deletes a sandbox before
+// Differently would.
+type Expirer interface {
+	SetExpiry(ctx context.Context, ref string, at time.Time) error
 }
 
 // Pauser freezes an instance in memory and resumes it.

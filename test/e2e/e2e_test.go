@@ -215,6 +215,10 @@ func TestExecSemantics(t *testing.T) {
 	if res := sh(t, c, sb.ID, `printf 'a\nb\n'`); res.Stdout != "a\nb\n" {
 		t.Fatalf("multi-line output %q", res.Stdout)
 	}
+	// lineEndings: kept with execd release-1.2.0: output is byte-exact.
+	if res := sh(t, c, sb.ID, `printf 'a\n\nno newline'; printf 'err' >&2`); res.Stdout != "a\n\nno newline" || res.Stderr != "err" {
+		t.Fatalf("output is not exact: %q %q", res.Stdout, res.Stderr)
+	}
 	if res, err := c.Exec(ctx, sb.ID, api.ExecRequest{Args: []string{"sh", "-c", "pwd"}, Cwd: "/tmp"}); err != nil || strings.TrimSpace(res.Stdout) != "/tmp" {
 		t.Fatalf("argv + cwd %+v %v", res, err)
 	}
