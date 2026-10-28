@@ -120,3 +120,21 @@ footer a { color: var(--muted); }
   .hero { padding-top: 56px; }
   section:not(.hero) { padding: 64px 0; }
 }
+
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.split > div { padding: 28px; }
+.split > div + div { border-left: 1px solid var(--line); background: var(--surface); }
+@media (max-width: 660px) { .split > div + div { border-left: 0; border-top: 1px solid var(--line); } }
+.split h3 { margin-bottom: 20px; }
+.split dl { margin: 0; display: grid; gap: 14px; }
+.split dt { font-weight: 600; font-size: 0.9375rem; }
+.split dd { margin: 2px 0 0; color: var(--muted); font-size: 0.9375rem; }
+.compare-title { margin: 56px 0 16px; }
+.compare { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
+.compare table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; min-width: 560px; }
+.compare th, .compare td { text-align: left; padding: 14px 18px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.compare tbody tr:last-child > * { border-bottom: 0; }
+.compare thead th { font-size: 0.8125rem; font-weight: 500; color: var(--muted); }
+.compare tbody th { font-weight: 600; width: 28%; }
+.compare td { color: var(--muted); }
+.compare td:last-child { color: var(--ink); }

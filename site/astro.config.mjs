@@ -34,7 +34,9 @@ export default defineConfig({
       sidebar: [
         { label: 'Start here', items: [
           { label: 'Overview', link: '/docs/' },
+          { label: 'Features', link: '/docs/features/' },
           { label: 'Quickstart', link: '/docs/guides/quickstart/' },
+          { label: 'OpenSandbox pools', link: '/docs/guides/opensandbox-pools/' },
           { label: 'Organization onboarding', link: '/docs/guides/organization-onboarding/' },
           { label: 'Hybrid overflow', link: '/docs/guides/hybrid-overflow/' },
         ] },
@@ -62,6 +64,7 @@ export default defineConfig({
           { label: 'Roadmap', link: '/docs/roadmap/' },
           { label: 'Backlog', link: '/docs/backlog/' },
           { label: 'Proofs of concept', link: '/docs/proof-of-concepts/' },
+          { label: 'OpenSandbox spike', link: '/docs/research/opensandbox-spike/' },
           { label: 'Acceptance scenarios', link: '/docs/acceptance-scenarios/' },
         ] },
         { label: 'Decision records', items: [{ autogenerate: { directory: 'docs/adr' } }] },
