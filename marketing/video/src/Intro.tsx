@@ -36,7 +36,8 @@ export const Intro: React.FC = () => (
     {Object.entries(SCENES).map(([id, [start, len]]) => {
       const Scene = SCENE_COMPONENTS[id];
       return (
-        <Sequence key={id} from={beat(start)} durationInFrames={beat(len)} name={id}>
+        // End at the next boundary's rounded frame so scenes never leave a one-frame gap.
+        <Sequence key={id} from={beat(start)} durationInFrames={beat(start + len) - beat(start)} name={id}>
           <Scene />
         </Sequence>
       );

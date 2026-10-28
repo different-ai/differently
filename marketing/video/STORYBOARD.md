@@ -1,8 +1,8 @@
 # Intro video: storyboard
 
-About 61 s at 60 fps. The 16:9 cut is 1920×1080 and the 1:1 cut is 1080×1080, re-laid out rather than letterboxed. There is no voiceover: the on-screen type tells the story, because X autoplays muted.
+About 45 s at 60 fps. The 16:9 cut is 1920×1080 and the 1:1 cut is 1080×1080, re-laid out rather than letterboxed. There is no voiceover: the on-screen type tells the story, because X autoplays muted.
 
-Every cut lands on an 80 BPM grid, where one beat is 45 frames: holds are long enough to read, while spring motions stay quick. Scene start beats live in `src/scenes.json`, and both the picture and the score read them.
+Every cut lands on a 110 BPM grid, where one beat is about 33 frames. Scene start beats live in `src/scenes.json`, and both the picture and the score read them.
 
 | Beats | Card (on screen) | Picture |
 |---|---|---|
@@ -20,7 +20,7 @@ Every cut lands on an 80 BPM grid, where one beat is 45 frames: holds are long e
 | 58–68 | "External providers?" / "Fail closed." / "Open only if policy allows." | A gate with `external: "never"`. A request bounces with `422 no_eligible_pool`. The config flips to `external: "overflow"`, the lock opens and a burst flows to the external pool. |
 | 68–70 | — | Hand-off: the server box's light fill grows to cover the screen while its mark glides to the center. |
 | 70–74 | "Come build it with us." | The same mark lifts above the line. Pills: pre-release (filled), Apache-2.0, self-hosted, TS · Python · Go. Small print: "not production-ready yet". |
-| 74–82 | "Your infrastructure. Your rules. One API." | The mark settles into the end-card lockup and the wordmark rises beside it. Then the tagline, the repo URL and the site URL. The last ~3 s are still. |
+| 74–83 | "Your infrastructure. Your rules. One API." | The mark settles into the end-card lockup and the wordmark rises beside it. Then the tagline, the repo URL and the site URL. The last ~3 s are still. |
 
 ## Claims we checked
 

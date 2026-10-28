@@ -1,4 +1,4 @@
-"""Music bed + sound effects for the intro, locked to the same 80 BPM grid as the cuts.
+"""Music bed + sound effects for the intro, locked to the same 110 BPM grid as the cuts.
 
 Reads ../src/scenes.json for scene start beats, writes ../public/audio/soundtrack.wav
 (stereo, 48 kHz, peak-safe; loudness is normalised afterwards with ffmpeg loudnorm).
@@ -17,9 +17,14 @@ from synth import (SR, adsr, bandpass, convolve_reverb, exp_env, highpass, lowpa
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCENES = json.load(open(os.path.join(HERE, '..', 'src', 'scenes.json')))
-BPM = 80
+BPM = 110
 B = 60 / BPM  # seconds per beat
-FPB = 3600 // BPM  # video frames per beat at 60 fps
+FPB = 3600 / BPM  # video frames per beat at 60 fps (not a whole number)
+
+
+def frames(beats):
+    """Same rounding as beat() in src/time.ts (JavaScript Math.round)."""
+    return int(np.floor(beats * FPB + 0.5))
 TOTAL = max(s + l for s, l in SCENES.values()) * B
 N = int(TOTAL * SR)
 
@@ -257,9 +262,9 @@ for i in range(nbar):
         if tt >= groove_end:
             break
         place(music, pan(bass(ch[0] - 12 + (12 if k % 4 == 3 else 0), B / 2 * 0.9, 600 if full else 380), 0), tt, 0.8 if full else 0.5)
-    for k in range(16):  # arp sparkle on 16ths
+    for k in range(16):  # arp sparkle on 8ths
         tt = t0 + k * B / 4
-        if not full or tt >= groove_end:
+        if not full or tt >= groove_end or k % 2:
             continue
         m = ch[1:][k // 2 % 3] + 24
         place(music, pan(mallet(m, 0.3, 0.5), np.sin(k) * 0.6), tt, 0.35)
@@ -295,7 +300,7 @@ CROWD = json.load(open(os.path.join(HERE, '..', 'src', 'crowd.json')))
 n_cards = CROWD['cards']['wide']
 for i in range(n_cards):
     rank = (i * CROWD['rankStride']) % n_cards
-    arrive = round(CROWD['firstBeat'] * FPB) + round(round(CROWD['spanBeats'] * FPB) * (rank / n_cards) ** CROWD['power'])
+    arrive = frames(CROWD['firstBeat']) + int(np.floor(frames(CROWD['spanBeats']) * (rank / n_cards) ** CROWD['power'] + 0.5))
     dropper = rank < CROWD['droppers']
     land = (arrive + (11 if dropper else 6)) / 60
     note = A_MIN_PENTA[min(len(A_MIN_PENTA) - 1, rank * len(A_MIN_PENTA) // n_cards)] + (0 if dropper else 12)

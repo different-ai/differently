@@ -1,5 +1,5 @@
-// Every cut sits on an 80 BPM grid: one beat is 45 frames at 60 fps.
-export const BPM = 80;
+// Every cut sits on a 110 BPM grid (one beat is ~32.7 frames at 60 fps); beat() rounds to whole frames.
+export const BPM = 110;
 export const FPS = 60;
 export const BEAT = (FPS * 60) / BPM;
 export const beat = (n: number) => Math.round(n * BEAT);

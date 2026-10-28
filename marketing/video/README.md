@@ -1,6 +1,6 @@
 # Intro video
 
-A 61-second launch video for Differently, built with [Remotion](https://www.remotion.dev/) and a soundtrack synthesised from code. The beat-by-beat plan and the claims we checked are in [STORYBOARD.md](STORYBOARD.md).
+A 45-second launch video for Differently, built with [Remotion](https://www.remotion.dev/) and a soundtrack synthesised from code. The beat-by-beat plan and the claims we checked are in [STORYBOARD.md](STORYBOARD.md).
 
 ## Build
 
@@ -16,7 +16,7 @@ npm run studio                       # live preview
 
 ## How it fits together
 
-- `src/scenes.json`: start beat and length of each scene on an 80 BPM grid. The picture and the score both read it, so cuts and hits stay in sync.
+- `src/scenes.json`: start beat and length of each scene on a 110 BPM grid. The picture and the score both read it, so cuts and hits stay in sync.
 - `src/scenes/*`: one component per act. Each one lays itself out for 16:9 or 1:1 from `useVideoConfig()`.
 - `src/crowd.json`: timing of the opening swarm, shared with the score for the same reason.
 - `src/kinetic.tsx`: masked word-by-word headlines. They fit to width and cut on the beat.
