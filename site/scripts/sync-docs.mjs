@@ -140,7 +140,7 @@ function apiPage(spec) {
     const t = Array.isArray(s.type) ? s.type.join(' \\| ') : s.type || 'object';
     return `\`${t}${s.format ? ` (${s.format})` : ''}\``;
   };
-  const cell = (s = '') => String(s).replace(/\n+/g, ' ').replace(/\|/g, '\\|').trim();
+  const cell = (s = '') => String(s).replace(/\n+/g, ' ').replace(/[\\|]/g, '\\$&').trim();
   const resolveParam = (p) => (p.$ref ? spec.components.parameters[ref(p.$ref)] : p);
   const lines = [
     '---',
