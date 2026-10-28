@@ -10,6 +10,7 @@ two-minute local quickstart.
 | [Quickstart](guides/quickstart.md) | Laptop dev mode, first sandbox, SDK snippets |
 | [Organization onboarding](guides/organization-onboarding.md) | One installation per organization vs shared; orgs, projects, quotas, scoped keys, policies |
 | [Hybrid overflow](guides/hybrid-overflow.md) | Authorizing Daytona or Freestyle as policy-gated external capacity |
+| [OpenSandbox pools](guides/opensandbox-pools.md) | Placing sandboxes on an OpenSandbox server you (or someone else) run |
 | [API reference](../api/openapi.yaml) | OpenAPI 3.1 contract (also served at `/openapi.yaml`) |
 | SDKs | [TypeScript](../sdk/typescript/README.md), [Python](../sdk/python/README.md), [Go](../pkg/client/client.go) |
 
@@ -31,6 +32,7 @@ two-minute local quickstart.
 |---|---|
 | [Feature parity](feature-parity.md) | Differently vs Boat, Daytona, Freestyle, E2B, OpenSandbox; backend capability matrix |
 | [Competitive landscape](competitive-landscape.md) | Ownership models and where Differently fits |
+| [OpenSandbox spike](research/opensandbox-spike.md) | What OpenSandbox offers as a backend or foundation, observed and read |
 | [Architecture RFC](architecture/README.md) | Layers, components, request lifecycle, state machine, HA |
 | [Decision records](adr/) | Why each major choice was made and what was rejected |
 | [Security and trust model](security/trust-model.md) | Threats, boundaries, enforced controls, residual risks |

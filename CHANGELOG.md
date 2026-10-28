@@ -36,6 +36,14 @@ All notable changes are recorded here. The format follows
 - `metrics.listen` serves `/metrics` on its own port; the Helm chart does this
   by default (port 9091), keeping metrics off the ingress.
 
+### Added (OpenSandbox)
+
+- `opensandbox` adapter: OpenSandbox servers as pools with operator-declared
+  trust, covering create, exec and streamed exec, files, pause/resume,
+  snapshots and port endpoints. Checked live against OpenSandbox 1.2.0 with
+  the Docker runtime ([spike](docs/research/opensandbox-spike.md),
+  [ADR 0019](docs/adr/0019-opensandbox-backend-first.md)).
+
 ### Fixed (found by the end-to-end suite)
 
 - `start` refused every request after the first one: the lifecycle handler

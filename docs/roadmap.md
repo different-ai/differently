@@ -79,6 +79,8 @@ an operator-visible record of what left private infrastructure.
 | Trust report | ✅ | `GET /v1/admin/trust-report`; limitations list incomplete (E0) |
 | Daytona adapter | 🧪 | `internal/adapters/daytona`; resources not sent; live verification pending |
 | Freestyle adapter | 🧪 | `internal/adapters/freestyle` |
+| OpenSandbox adapter | ✅ live (Docker runtime) | `internal/adapters/opensandbox`; checked against a real OpenSandbox 1.2.0 server ([spike](research/opensandbox-spike.md)); Kubernetes and Fast Sandbox runtimes unverified |
+| OpenSandbox as the default runtime | 📋 | Decision after the Fast Sandbox spike ([ADR 0019](adr/0019-opensandbox-backend-first.md)) |
 | HTTP plugin protocol and `remote` pools | ✅ unit | `pkg/adapter/adapterhttp`; no protocol-version check yet |
 | Usage and cost estimates | ✅ | `GET /v1/usage`; estimates only, no invoice reconciliation |
 | **Live-account verification** | 📋 | [POC 7](proof-of-concepts.md#poc-7-external-provider-live-account-verification), [E2](backlog.md#e2-external-adapters-on-live-accounts) |

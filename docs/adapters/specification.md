@@ -274,34 +274,35 @@ newly provisioned nodes prove their identity (ties into
 
 Verification level: **unit** = tested in-process with fakes; **spec** =
 written against the provider's published OpenAPI and tested with a fake HTTP
-server; none has run on real infrastructure or live accounts.
+server. The Verification row says where an adapter has also run against the
+real system.
 
-| | `firecracker` | `daytona` | `freestyle` | `devhost` | `fake` |
-|---|---|---|---|---|---|
-| Code | `internal/adapters/firecracker/pool.go` + `internal/agent` | `internal/adapters/daytona` | `internal/adapters/freestyle` | `internal/adapters/devhost` | `internal/adapters/fake` |
-| Trust | private | external (forced) | external (forced) | private | as configured |
-| Isolation | Firecracker microVM (KVM) | Container (`class: container`, default) or VM (`class: linux-vm`) | Hardware-virtualized microVM (provider-managed) | **None** (host directories) | None (simulated) |
-| Allowed | always (needs agent token) | always | always | dev mode only | dev mode only |
-| Ref | `<agent-id>:<sandbox-id>` | Daytona sandbox ID | Freestyle VM ID | sandbox ID | `fake_<ulid>` |
-| Idempotent `Create` | `Get(sandbox ID)` on each live agent, then the agent's own map keyed by sandbox ID | List by `differently.dev/sandbox-id` label first; `name` is the sandbox ID | Slug derived from the sandbox ID; `409` on create resolves to the existing VM | Directory per sandbox ID | Map by sandbox ID |
-| `List` | Union over live agents; fails if any agent fails | Label filter on installation, cursor paging; skips `destroyed`/`destroying` | Metadata filter `dly-installation:<id>`, offset paging | Every directory with matching installation | In memory |
-| `Health` | At least one agent heartbeat within the agent timeout. The agent's own `/healthz` and `/adapter/v1/health` check the kernel and that a template exists, but the pool does not call them | `GET /sandbox?limit=1` | `GET /v5/vms?limit=1` | Root directory exists | Always healthy |
-| `Capacity` | Bounded: sums of live agents' last heartbeat; largest node by free memory | Unbounded | Unbounded | Unbounded | Bounded if `TotalCPU` set |
-| Limits | `maxCPU`/`maxMemoryMiB` of the largest node's allocatable capacity; templates = union of node images | 4 vCPU / 8 GiB / 10 GiB (provider default maximum); region = `target` | 32 vCPU / 64 GiB / 256 GiB (plan-dependent) | none | configurable |
-| Resources applied | vCPU and memory in Firecracker machine config; disk grown with `truncate` + `resize2fs` when `diskGiB` exceeds the image | **Not sent**: the sandbox gets the snapshot's size; quota and cost still use the requested size | Grown with `/resize` after boot (grow only; never shrinks below the snapshot's size) | not applied | recorded |
-| Env | Stored in the node's `vm.json`; merged into every exec | Sent in the create body (stored by Daytona) | Written to `/etc/differently/env` (0600) in the VM and sourced by every exec | Stored in `meta.json`; base env for every exec | ignored |
-| Provider TTL backstop | none | `ttlMinutes`; `autoStopInterval: 0` so Differently owns stop | `ttlSeconds` | none | none |
-| `exec` | Through vsock to the guest: separate stdout/stderr, stdin, cwd, env; guest caps 10 MiB per stream, default timeout 10 min, max 2 h | Toolbox `process/execute`: **stdout and stderr combined** into `stdout`; **stdin unsupported** (`501`); timeout sent as 600 s if unset | `exec-await`: separate streams; stdin (base64); timeout capped at 300 s; exit code 124 when the provider reports a timeout | Host process under the sandbox directory | Echo, or `ExecFunc` |
-| `exec.stream` | yes (NDJSON from the guest) | no (buffered fallback) | no (buffered fallback) | yes | yes |
-| `files` | yes (guest) | yes (toolbox; upload via `upload-v2`) | yes (`fs/read`, `fs/write` mode 0600 with `fs/mkdir`; listings carry name and dir flag only) | yes | yes |
-| Stop / start | Ctrl-Alt-Del, wait 10 s, then `SIGKILL`; disk kept. Start re-checks node capacity and boots from the retained disk | `POST /sandbox/{id}/stop` / `start` | No stop API: runs `poweroff` in the guest and polls for `stopped`; start via `/start` | State flag only | State flag |
-| Pause / resume | Firecracker `PATCH /vm` Paused/Resumed; memory stays resident | Only with `class: linux-vm`; resume uses `/start` | `/pause`, resume uses `/start` | no | yes |
-| Snapshots | **Disk only**: pause if running, copy `rootfs.ext4`, resume. Ref `<agent-id>:snap_<ulid>`; restore lands on the same agent | `POST /sandbox/{id}/snapshot` (`includeMemory` for memory), async; ref is the snapshot name | Always memory and disk, reported as `kind: memory` even when `disk` is requested | `cp -a` of the directory | Copies files |
-| `fork` | yes (disk) | not advertised | yes (memory) | yes (disk) | yes |
-| `ports.expose` | no (no inbound path) | Signed preview URL, valid 1 h | TLS rule on `<port>-<slug>.<domain>` (default `style.dev`); **public**, anyone with the URL can connect | no | Dummy URL |
-| `network.egress-control` | yes (node-level allow/deny plus deny list) | no | yes (firewall: deny-all unless `config.egress: public`) | no | no |
-| Pool config keys | none (agents register) | `apiURL`, `target`, `snapshot`, `class` | `apiURL`, `snapshot`, `egress`, `domain` | `root` | none |
-| Verification | unit | spec | spec | unit | n/a |
+| | `firecracker` | `daytona` | `freestyle` | `opensandbox` | `devhost` | `fake` |
+|---|---|---|---|---|---|---|
+| Code | `internal/adapters/firecracker/pool.go` + `internal/agent` | `internal/adapters/daytona` | `internal/adapters/freestyle` | `internal/adapters/opensandbox` | `internal/adapters/devhost` | `internal/adapters/fake` |
+| Trust | private | external (forced) | external (forced) | **declared** (required; self-hostable) | private | as configured |
+| Isolation | Firecracker microVM (KVM) | Container (`class: container`, default) or VM (`class: linux-vm`) | Hardware-virtualized microVM (provider-managed) | OpenSandbox runtime, declared by `config.isolation` (container or microvm) | **None** (host directories) | None (simulated) |
+| Allowed | always (needs agent token) | always | always | always | dev mode only | dev mode only |
+| Ref | `<agent-id>:<sandbox-id>` | Daytona sandbox ID | Freestyle VM ID | OpenSandbox sandbox ID | sandbox ID | `fake_<ulid>` |
+| Idempotent `Create` | `Get(sandbox ID)` on each live agent, then the agent's own map keyed by sandbox ID | List by `differently.dev/sandbox-id` label first; `name` is the sandbox ID | Slug derived from the sandbox ID; `409` on create resolves to the existing VM | List by metadata `differently-sandbox-id` first | Directory per sandbox ID | Map by sandbox ID |
+| `List` | Union over live agents; fails if any agent fails | Label filter on installation, cursor paging; skips `destroyed`/`destroying` | Metadata filter `dly-installation:<id>`, offset paging | Metadata filter `differently-installation=<id>`, page paging; skips `Terminated` | Every directory with matching installation | In memory |
+| `Health` | At least one agent heartbeat within the agent timeout. The agent's own `/healthz` and `/adapter/v1/health` check the kernel and that a template exists, but the pool does not call them | `GET /sandbox?limit=1` | `GET /v5/vms?limit=1` | `GET /sandboxes?page=1&pageSize=1` with the API key | Root directory exists | Always healthy |
+| `Capacity` | Bounded: sums of live agents' last heartbeat; largest node by free memory | Unbounded | Unbounded | Unbounded | Unbounded | Bounded if `TotalCPU` set |
+| Limits | `maxCPU`/`maxMemoryMiB` of the largest node's allocatable capacity; templates = union of node images | 4 vCPU / 8 GiB / 10 GiB (provider default maximum); region = `target` | 32 vCPU / 64 GiB / 256 GiB (plan-dependent) | Server and runtime limits; templates = `config.templateId` if set | none | configurable |
+| Resources applied | vCPU and memory in Firecracker machine config; disk grown with `truncate` + `resize2fs` when `diskGiB` exceeds the image | **Not sent**: the sandbox gets the snapshot's size; quota and cost still use the requested size | Grown with `/resize` after boot (grow only; never shrinks below the snapshot's size) | `resourceLimits` strings (`cpu`, `memory` in Mi) | not applied | recorded |
+| Env | Stored in the node's `vm.json`; merged into every exec | Sent in the create body (stored by Daytona) | Written to `/etc/differently/env` (0600) in the VM and sourced by every exec | Sent in the create body; per-exec `envs` | Stored in `meta.json`; base env for every exec | ignored |
+| Provider TTL backstop | none | `ttlMinutes`; `autoStopInterval: 0` so Differently owns stop | `ttlSeconds` | `timeout` (minimum 60 s) | none | none |
+| `exec` | Through vsock to the guest: separate stdout/stderr, stdin, cwd, env; guest caps 10 MiB per stream, default timeout 10 min, max 2 h | Toolbox `process/execute`: **stdout and stderr combined** into `stdout`; **stdin unsupported** (`501`); timeout sent as 600 s if unset | `exec-await`: separate streams; stdin (base64); timeout capped at 300 s; exit code 124 when the provider reports a timeout | `execd` `POST /command`: line-based event stream; argument lists sent as a quoted command; **stdin unsupported**; non-zero exit from `CommandExecError` | Host process under the sandbox directory | Echo, or `ExecFunc` |
+| `exec.stream` | yes (NDJSON from the guest) | no (buffered fallback) | no (buffered fallback) | yes | yes | yes |
+| `files` | yes (guest) | yes (toolbox; upload via `upload-v2`) | yes (`fs/read`, `fs/write` mode 0600 with `fs/mkdir`; listings carry name and dir flag only) | yes (`execd`; upload metadata sent as a JSON file part) | yes | yes |
+| Stop / start | Ctrl-Alt-Del, wait 10 s, then `SIGKILL`; disk kept. Start re-checks node capacity and boots from the retained disk | `POST /sandbox/{id}/stop` / `start` | No stop API: runs `poweroff` in the guest and polls for `stopped`; start via `/start` | **none** (OpenSandbox has pause/resume and delete only) | State flag only | State flag |
+| Pause / resume | Firecracker `PATCH /vm` Paused/Resumed; memory stays resident | Only with `class: linux-vm`; resume uses `/start` | `/pause`, resume uses `/start` | `/pause`, `/resume`, polled until settled; `execd` pinged after resume | no | yes |
+| Snapshots | **Disk only**: pause if running, copy `rootfs.ext4`, resume. Ref `<agent-id>:snap_<ulid>`; restore lands on the same agent | `POST /sandbox/{id}/snapshot` (`includeMemory` for memory), async; ref is the snapshot name | Always memory and disk, reported as `kind: memory` even when `disk` is requested | `POST /sandboxes/{id}/snapshots`, polled until `Ready`; kind as the pool declares | `cp -a` of the directory | Copies files |
+| `fork` | yes (disk) | not advertised | yes (memory) | yes (via snapshot restore) | yes (disk) | yes |
+| `ports.expose` | no (no inbound path) | Signed preview URL, valid 1 h | TLS rule on `<port>-<slug>.<domain>` (default `style.dev`); **public**, anyone with the URL can connect | Direct endpoints only; endpoints that need request headers (the server key) are refused | no | Dummy URL |
+| `network.egress-control` | yes (node-level allow/deny plus deny list) | no | yes (firewall: deny-all unless `config.egress: public`) | no (OpenSandbox network policy not wired yet) | no | no |
+| Pool config keys | none (agents register) | `apiURL`, `target`, `snapshot`, `class` | `apiURL`, `snapshot`, `egress`, `domain` | `apiURL` (required), `image`, `templateId`, `isolation`, `features`, `useServerProxy`; `trust` required | `root` | none |
+| Verification | unit | spec | spec | Fake server, plus live against OpenSandbox 1.2.0 (Docker runtime, `execd` v1.1.0) | unit | n/a |
 
 The `remote` kind is a thin wrapper around `adapterhttp.Client`
 (`internal/wiring/wiring.go`); its semantics are those of the plugin behind it.

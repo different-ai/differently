@@ -60,6 +60,13 @@ vendor running or managing the control plane.
   transparency. It is behind on detached processes, SSH, port URLs on its own
   pools, webhooks and file-management helpers. See
   [feature-parity.md](feature-parity.md).
+- **OpenSandbox is now also a backend.** The `opensandbox` adapter places
+  Differently sandboxes on an OpenSandbox server, so Differently can
+  orchestrate OpenSandbox alongside its own Firecracker nodes, Daytona and
+  Freestyle. Whether OpenSandbox (with Fast Sandbox) should replace
+  Differently's own node agent as the default runtime is open until the
+  Fast Sandbox spike ([ADR 0019](adr/0019-opensandbox-backend-first.md),
+  [spike](research/opensandbox-spike.md)).
 - **OpenSandbox and CubeSandbox are the closest open-source peers.** Worth
   tracking closely and borrowing from: OpenSandbox's host checks (kernel ≥5.10,
   `/dev/kvm`, `/dev/net/tun`, cgroup v2, reflink filesystems) are a good
