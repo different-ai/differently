@@ -153,8 +153,9 @@ run, is the gap Differently targets.
 make verify   # gofmt, go vet, unit + integration tests with -race, SDK tests, helm lint
 ```
 
-All work merges into **`pre-release`** (the default branch). `main` only moves
-when a release is cut from `pre-release`. See [CONTRIBUTING.md](CONTRIBUTING.md)
+All work merges into **`pre-release`**; open PRs with
+`gh pr create --base pre-release`. `main` is the default branch and holds
+released code only: it moves when a release is cut from `pre-release`. See [CONTRIBUTING.md](CONTRIBUTING.md)
 for the branch model, DCO sign-off and release process, [AGENTS.md](AGENTS.md)
 for coding-agent guidance, and [SECURITY.md](SECURITY.md) to report a
 vulnerability.

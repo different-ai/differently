@@ -6,8 +6,12 @@ for humans).
 ## Where to work
 
 - Branch from `origin/pre-release` as `<type>/<outcome>` and open the PR
-  against **`pre-release`**. Never push to `main`; releases reach `main` only
+  against **`pre-release`**: `gh pr create --base pre-release`. The
+  repository's default branch is `main`, so the base must be explicit.
+- Never push to or open feature PRs against `main`; releases reach `main` only
   through a release PR (see CONTRIBUTING.md).
+- When CI is green you may merge your own PR into `pre-release`
+  (`gh pr merge --squash`), or queue it with `--auto`.
 - One focused outcome per PR, Conventional Commit title, `git commit -s`.
 
 ## Before you push

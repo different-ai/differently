@@ -23,13 +23,18 @@ gitGraph
 
 | Branch | Purpose | Who merges | Protection |
 |---|---|---|---|
-| `pre-release` (default) | Integration line. Every change lands here first, behind green CI. | Any contributor or coding agent with write access, once CI passes | No force pushes or deletion; PRs with passing CI required |
-| `main` | Released code only. Moves when a release is cut. | Maintainers, via a release PR from `pre-release` (or a `hotfix/*` branch) | No direct pushes, force pushes or deletion; PRs only from `pre-release` or `hotfix/*` |
+| `pre-release` | Integration line. Every change lands here first. Keep it green. | Any contributor or coding agent with write access, once CI passes | Lightweight: no organization rules, so iteration and back-merges stay fast |
+| `main` (default) | Released code only. Moves when a release is cut. | Maintainers, via a release PR from `pre-release` (or a `hotfix/*` branch) | Organization ruleset: PRs only, linear history, signed commits, code scanning and code quality; CI also rejects PRs from any branch other than `pre-release` or `hotfix/*` |
 | `<type>/<outcome>` | One focused change, e.g. `feat/ssh-gateway`, `fix/agent-heartbeat`, `docs/aws-guide` | Author | — |
 | `hotfix/<outcome>` | Urgent fix for a released version, branched from `main`, merged to `main` and back into `pre-release` | Maintainers | — |
 
-Why: `main` stays a clean record of releases, while `pre-release` lets people
-and agents iterate and merge quickly without each change being a release.
+Why: `main` stays a clean record of releases behind the organization's merge
+gates, while `pre-release` lets people and agents iterate and merge quickly
+without each change having to clear those gates.
+
+Because `main` is the default branch, `gh pr create` and the GitHub UI propose
+`main` as the base. **Always target `pre-release`** (`--base pre-release`);
+the "main accepts releases only" CI check fails a feature PR aimed at `main`.
 
 ### Day to day
 
@@ -52,11 +57,18 @@ gh pr create --base pre-release
 1. Release candidates are tagged on `pre-release`: `vX.Y.Z-rc.N`. The release
    workflow publishes them as GitHub pre-releases with binaries, images, SBOMs
    and signatures.
-2. When an RC is accepted, open a PR from `pre-release` to `main` titled
-   `release: vX.Y.Z`, update `CHANGELOG.md`, merge with a merge commit, and tag
-   `vX.Y.Z` on `main`.
-3. Hotfixes branch from `main` as `hotfix/<outcome>`, release as `vX.Y.Z+1`,
-   and are merged back into `pre-release`.
+2. When an RC is accepted, update `CHANGELOG.md` on `pre-release`, open a PR
+   from `pre-release` to `main` titled `release: vX.Y.Z`, wait for the
+   required checks (CI, code scanning, code quality) and **squash-merge** it:
+   `main` requires linear history and signed commits, and GitHub signs the
+   squash commit. Tag `vX.Y.Z` on the resulting `main` commit.
+3. The `sync-pre-release` workflow then merges `main` back into
+   `pre-release` automatically, so the squash commit does not make the next
+   release PR conflict. If it reports a conflict, resolve it with a
+   `chore/sync-main` PR into `pre-release`.
+4. Hotfixes branch from `main` as `hotfix/<outcome>`, are squash-merged into
+   `main`, released as `vX.Y.Z+1`, and reach `pre-release` through the same
+   back-merge.
 
 ## Developer Certificate of Origin
 

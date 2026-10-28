@@ -1,4 +1,4 @@
-<!-- Target `pre-release`. `main` only accepts release PRs from pre-release or hotfix/*. -->
+<!-- Target `pre-release` (the default branch is `main`, so change the base if needed). `main` only accepts release PRs from pre-release or hotfix/*. -->
 
 ## What is this about?
 

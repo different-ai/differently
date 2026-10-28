@@ -1,0 +1,38 @@
+name: sync-pre-release
+
+# Releases are squash-merged into main (linear history is required there).
+# Merging main back into pre-release afterwards records that the squash
+# commit is already included, so the next release PR stays conflict-free.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-pre-release
+
+jobs:
+  back-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pre-release
+          fetch-depth: 0
+      - name: merge main into pre-release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "pre-release already contains main"; exit 0
+          fi
+          if ! git merge --no-ff origin/main -m "chore: merge main back into pre-release"; then
+            git merge --abort
+            echo "::error::main does not merge cleanly into pre-release; resolve it with a chore/sync-main PR into pre-release"
+            exit 1
+          fi
+          git push origin HEAD:pre-release

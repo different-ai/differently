@@ -22,14 +22,21 @@ without dragging unfinished work along.
   testing (including the real-infrastructure suites in
   [proof-of-concepts.md](../proof-of-concepts.md) once they exist) runs against
   the tag.
-- When a candidate is accepted, `pre-release` is merged into **`main`** and the
-  release is tagged from `main` as `vX.Y.Z`. Only release tags are published as
+- When a candidate is accepted, a release PR from `pre-release` is
+  **squash-merged** into **`main`** (the default branch, which the
+  organization ruleset protects with linear history, signed commits, code
+  scanning and code quality), and the release is tagged from `main` as
+  `vX.Y.Z`. The `sync-pre-release` workflow merges `main` back into
+  `pre-release` so later release PRs do not conflict with the squash commit. Only release tags are published as
   stable artifacts (images, Helm chart, SDK packages).
 - Fixes found during candidate testing go to `pre-release` and produce the next
   `-rc.N`. Urgent fixes to a released version use a `hotfix/<short-outcome>`
   branch from `main`, merge into `main` by pull request, and are merged back
   into `pre-release`.
-- `main` accepts pull requests only from `pre-release` or `hotfix/*`.
+- `main` accepts pull requests only from `pre-release` or `hotfix/*`. Because
+  `main` stays the default branch, contributors and agents pass
+  `--base pre-release` explicitly; `pre-release` deliberately carries none of
+  `main`'s merge gates so iteration stays fast.
 
 ## Consequences
 
