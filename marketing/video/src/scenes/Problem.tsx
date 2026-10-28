@@ -1,7 +1,8 @@
 import React from 'react';
-import {AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, Easing, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Card, Poster} from '../kinetic';
 import {inter, mono, tokens} from '../theme';
+import CROWD from '../crowd.json';
 import {beat} from '../time';
 import {clamp, SNAP, useSpring} from '../ui';
 
@@ -9,7 +10,8 @@ const t = tokens.light;
 const SMOOTH = Easing.bezier(0.65, 0, 0.35, 1);
 const OUT = Easing.bezier(0.16, 1, 0.3, 1);
 
-// Generic, made-up vendors: no real company names or logos.
+// Generic, made-up vendors: no real company names or logos. The first 18 end up in
+// the grid; the rest only exist to crowd the opening and get flung off-screen.
 // `sales` marks the ones whose "self-host" answer turns out to be a sales call.
 const VENDORS = [
   {name: 'sandbox.co', call: 'sbx.run()', sales: false},
@@ -30,7 +32,40 @@ const VENDORS = [
   {name: 'hutch', call: 'hutch.run()', sales: false},
   {name: 'silo', call: 'silo.fill()', sales: false},
   {name: 'bunkr', call: 'bunkr.dig()', sales: false},
+  {name: 'boxly', call: 'boxly.go()', sales: false},
+  {name: 'sandbin', call: 'bin.exec()', sales: false},
+  {name: 'vmbox.io', call: 'vmb.up()', sales: false},
+  {name: 'runly', call: 'runly.run()', sales: false},
+  {name: 'cagecloud', call: 'cage.new()', sales: false},
+  {name: 'podly', call: 'podly.spin()', sales: false},
+  {name: 'enclavr', call: 'enc.open()', sales: false},
+  {name: 'fencd', call: 'fence.up()', sales: false},
+  {name: 'walld', call: 'wall.build()', sales: false},
+  {name: 'shellbx', call: 'sbx2.sh()', sales: false},
+  {name: 'spawnr', call: 'spawnr.go()', sales: false},
+  {name: 'instabx', call: 'insta.box()', sales: false},
+  {name: 'quikvm', call: 'qvm.boot()', sales: false},
+  {name: 'cellbox', call: 'cb.cell()', sales: false},
+  {name: 'sandpitt', call: 'pit.dig()', sales: false},
+  {name: 'hatchr', call: 'hatch.open()', sales: false},
+  {name: 'vesl', call: 'vesl.sail()', sales: false},
+  {name: 'capsl', call: 'capsl.seal()', sales: false},
+  {name: 'pocketvm', call: 'pkt.vm()', sales: false},
+  {name: 'cratr', call: 'cratr.pack()', sales: false},
+  {name: 'boxfarm', call: 'farm.grow()', sales: false},
+  {name: 'yetanother', call: 'ya.sandbox()', sales: false},
 ];
+
+/** Small seeded PRNG (mulberry32) so the pile lands the same way on every render. */
+const rand = (seed: number) => {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let q = Math.imul(a ^ (a >>> 15), 1 | a);
+    q = (q + Math.imul(q ^ (q >>> 7), 61 | q)) ^ q;
+    return ((q ^ (q >>> 14)) >>> 0) / 4294967296;
+  };
+};
 
 export const Padlock: React.FC<{size: number; color: string; open?: number; style?: React.CSSProperties}> = ({size, color, open = 0, style}) => (
   <svg width={size} height={size} viewBox="0 0 24 24" style={{overflow: 'visible', ...style}}>
@@ -69,10 +104,38 @@ const Tag: React.FC<{text: string; filled?: boolean; pop: number; size: number}>
   </div>
 );
 
+type Pose = {x: number; y: number; rot: number; scale: number};
+
+/**
+ * Where card i lands in the opening pile. Early arrivals ring the headline;
+ * the last ~40% pile straight onto it, bigger, until it's buried.
+ */
+const pilePose = (i: number, late: number, W: number, H: number, sq: boolean): Pose => {
+  const R = rand(1000 + i * 7919);
+  const hx = W * (sq ? 0.43 : 0.37);
+  const hy = H * (sq ? 0.19 : 0.17);
+  let x = W / 2;
+  let y = H / 2;
+  if (late >= 0.6) {
+    x = W / 2 + (R() - 0.5) * 2 * hx;
+    y = H / 2 + (R() - 0.5) * 2.6 * hy;
+  } else {
+    for (let k = 0; k < 40; k++) {
+      x = W * (0.06 + 0.88 * R());
+      y = H * (0.08 + 0.84 * R());
+      const onHeadline = Math.abs(x - W / 2) < hx && Math.abs(y - H / 2) < hy;
+      if (!onHeadline || late >= 0.45) break;
+    }
+  }
+  const rot = (R() - 0.5) * 26;
+  const scale = late < 0.6 ? 0.85 + R() * 0.3 : 1.05 + R() * 0.45;
+  return {x, y, rot, scale};
+};
+
 /** Everyone ships a walled sandbox cloud, each with its own SDK, and self-hosting means a sales call. */
 export const Crowd: React.FC = () => {
   const frame = useCurrentFrame();
-  const {width, height} = useVideoConfig();
+  const {width, height, fps} = useVideoConfig();
   const sq = width === height;
   const cols = sq ? 4 : 6;
   const rows = 3;
@@ -83,47 +146,91 @@ export const Crowd: React.FC = () => {
   const bh = ch - 74;
   const top = sq ? 400 : 352;
   const left = width / 2 - (cols * cw) / 2;
-  const first = sq ? 5 : 8; // the boxes on screen at frame 0 make the poster
-  const poster = new Set(sq ? [5, 2, 8] : [8, 1, 10, 15]);
-  const order = VENDORS.slice(0, n);
-  const appear = (i: number) => {
-    if (poster.has(i)) return -30;
-    const rank = (i * 7) % n; // scattered fill order reads as "more and more"
-    return 10 + Math.round(beat(3.4) * Math.pow(rank / n, 0.7));
-  };
-  const pos = (i: number) => ({x: left + cw * ((i % cols) + 0.5), y: top + ch * (Math.floor(i / cols) + 0.5)});
+  const N = sq ? CROWD.cards.square : CROWD.cards.wide;
+  const cards = VENDORS.slice(0, n).concat(VENDORS.slice(18, 18 + N - n));
+  const rank = (i: number) => (i * CROWD.rankStride) % N;
+  const arrive = (i: number) => beat(CROWD.firstBeat) + Math.round(beat(CROWD.spanBeats) * Math.pow(rank(i) / N, CROWD.power));
+  const grid = (i: number) => ({x: left + cw * ((i % cols) + 0.5), y: top + ch * (Math.floor(i / cols) + 0.5)});
+  const snapAt = beat(CROWD.snapBeat);
 
-  // Punch-ins: "Their cloud." frames one card, "Their SDK." another, then back out.
-  const focusA = pos(first);
-  const focusB = pos(sq ? 2 : 3);
-  const zA = interpolate(frame, [beat(4), beat(4) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(6), beat(6) + 10], [0, 1], {...clamp, easing: OUT}));
+  // Each landing kicks the camera a little; the impacts add up as the pile grows.
+  let impact = 0;
+  for (let i = 0; i < N; i++) {
+    const d = frame - (arrive(i) + 7);
+    if (d >= 0 && frame < snapAt) impact += Math.exp(-d / 5);
+  }
+  const shakeX = Math.sin(frame * 2.7) * Math.min(impact, 3) * 2.4;
+  const shakeY = Math.cos(frame * 3.1) * Math.min(impact, 3) * 1.6;
+  const push = 1 + 0.07 * interpolate(frame, [0, snapAt], [0, 1], {...clamp, easing: Easing.bezier(0.5, 0, 0.75, 0)});
+  const unpush = interpolate(frame, [snapAt, snapAt + 16], [0, 1], {...clamp, easing: OUT});
+
+  // "Their SDK." punches into one grid card, then back out.
+  const focusB = grid(sq ? 2 : 3);
   const zB = interpolate(frame, [beat(6), beat(6) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(8), beat(8) + 12], [0, 1], {...clamp, easing: OUT}));
-  const zoom = 1 + 0.55 * (zA + zB) + interpolate(frame, [0, beat(14)], [0, 0.04]);
-  const fx = focusA.x * zA + focusB.x * zB + (width / 2) * (1 - zA - zB);
-  const fy = focusA.y * zA + focusB.y * zB + (top + (rows * ch) / 2) * (1 - zA - zB);
-  // Punched-in cards land a little below centre so the headline never covers them.
-  const tx = width / 2 - fx;
-  const ty = top + (rows * ch) / 2 + 60 * (zA + zB) - fy;
+  const zoom = (push + (1 - push) * unpush) * (1 + 0.55 * zB) + interpolate(frame, [snapAt, beat(14)], [0, 0.04], clamp);
+  const cx = width / 2;
+  const cy = top + (rows * ch) / 2;
+  const fx = focusB.x * zB + cx * (1 - zB);
+  const fy = focusB.y * zB + (frame < snapAt ? height / 2 : cy) * (1 - zB);
+  const tx = (frame < snapAt ? 0 : width / 2 - fx) + shakeX;
+  const ty = (frame < snapAt ? 0 : cy + 60 * zB - fy) + shakeY;
 
-  const hosted = (i: number) => useSpring(beat(4) + 4 + ((i * 5) % n), SNAP);
-  const lock = (i: number) => useSpring(beat(8) + ((i % cols) + Math.floor(i / cols)) * 3, SNAP);
-  const sales = (i: number) => useSpring(beat(12) + ((i * 3) % 7) * 4, {damping: 9, stiffness: 220, mass: 0.6});
+  // Plain spring() rather than hooks: cards enter and leave the render, so hook counts would vary.
+  const sp = (delay: number, config = SNAP) => spring({frame: frame - delay, fps, config});
+  const hosted = (i: number) => sp(snapAt + 12 + ((i * 5) % n));
+  const lock = (i: number) => sp(beat(8) + ((i % cols) + Math.floor(i / cols)) * 3);
+  const sales = (i: number) => sp(beat(12) + ((i * 3) % 7) * 4, {damping: 9, stiffness: 220, mass: 0.6});
   const sdkFlash = (i: number) => interpolate(frame, [beat(6) + (i % n) * 1.2, beat(6) + (i % n) * 1.2 + 6], [0, 1], clamp) * (frame < beat(8) ? 1 : 0);
 
   const leave = interpolate(frame, [beat(13.5), beat(14)], [0, 1], {...clamp, easing: Easing.bezier(0.7, 0, 0.84, 0)});
   const textW = width - (sq ? 120 : 260);
+  const order = cards.map((_, i) => i).sort((a, b) => rank(a) - rank(b)); // later arrivals on top
 
   return (
-    <AbsoluteFill style={{background: t.bg}}>
+    <AbsoluteFill style={{background: t.bg, overflow: 'hidden'}}>
       <AbsoluteFill style={{transform: `translate(${tx}px, ${ty}px) scale(${zoom})`, transformOrigin: `${fx}px ${fy}px`}}>
-        {order.map((v, i) => {
-          const {x, y} = pos(i);
-          const pop = useSpring(appear(i), SNAP);
+        {frame < snapAt ? (
+          <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center'}}>
+            <Poster text={"Everyone's building\na sandbox company."} to={snapAt + 1} width={width - (sq ? 100 : 220)} max={sq ? 112 : 150} tone="light" />
+          </AbsoluteFill>
+        ) : null}
+        {order.map((i) => {
+          const v = cards[i];
+          const inGrid = i < n;
+          const late = rank(i) / N;
+          const pile = pilePose(i, late, width, height, sq);
+          const fly = spring({frame: frame - arrive(i), fps, config: {damping: 15, stiffness: 190, mass: 0.7}});
+          if (fly <= 0.001) return null;
+          // Fly in from the nearest edge, spinning slightly, and land on the pile.
+          const dx = pile.x - width / 2 || 1;
+          const dy = pile.y - height / 2 || 1;
+          const dl = Math.hypot(dx, dy);
+          const far = Math.max(width, height) * 0.8;
+          let x = pile.x + (dx / dl) * far * (1 - fly);
+          let y = pile.y + (dy / dl) * far * (1 - fly);
+          let rot = pile.rot * (1 + (1 - fly) * 2.5);
+          let scale = pile.scale;
+          let opacity = 1;
+          // On the "Their cloud." beat the grid cards snap into place; the rest are flung away.
+          const snap = spring({frame: frame - snapAt - (inGrid ? ((i % cols) + Math.floor(i / cols)) * 1.2 : 0), fps, config: {damping: 17, stiffness: 170, mass: 0.8}});
+          if (inGrid) {
+            const g = grid(i);
+            x = x + (g.x - x) * snap;
+            y = y + (g.y - y) * snap;
+            rot = rot * (1 - snap);
+            scale = scale + (1 - scale) * snap;
+          } else {
+            x += (dx / dl) * far * 1.2 * snap;
+            y += (dy / dl) * far * 1.2 * snap;
+            rot += snap * 40 * Math.sign(pile.rot || 1);
+            opacity = 1 - snap;
+            if (opacity <= 0.01) return null;
+          }
           const drop = leave * (300 + ((i * 97) % 400));
-          const L = lock(i);
-          const S = v.sales ? sales(i) : 0;
-          const H = hosted(i);
-          const flash = sdkFlash(i);
+          const L = inGrid ? lock(i) : 0;
+          const S = inGrid && v.sales ? sales(i) : 0;
+          const H = inGrid ? hosted(i) : 0;
+          const flash = inGrid ? sdkFlash(i) : 0;
           return (
             <div
               key={v.name}
@@ -133,11 +240,12 @@ export const Crowd: React.FC = () => {
                 top: y - bh / 2 + drop,
                 width: bw,
                 height: bh,
-                transform: `scale(${pop}) rotate(${leave * ((i % 5) - 2) * 6}deg)`,
-                opacity: Math.min(1, pop * 2) * (1 - leave),
+                transform: `rotate(${rot + leave * ((i % 5) - 2) * 6}deg) scale(${scale})`,
+                opacity: opacity * (1 - leave),
                 borderRadius: 16,
                 border: `${2 + 3 * L}px solid ${t.ink}`,
                 background: t.bg,
+                boxShadow: frame < snapAt + 20 ? '0 10px 30px rgba(10,10,10,0.10)' : 'none',
                 boxSizing: 'border-box',
                 display: 'flex',
                 flexDirection: 'column',
@@ -159,16 +267,19 @@ export const Crowd: React.FC = () => {
               >
                 {v.call}
               </div>
-              <Padlock size={24} color={t.ink} style={{position: 'absolute', top: -14, right: -10, transform: `scale(${L})`}} />
-              {S > 0.01 ? <Tag text="contact sales" filled pop={S} size={sq ? 18 : 20} /> : <Tag text="hosted only" pop={H} size={sq ? 18 : 20} />}
+              {inGrid ? (
+                <>
+                  <Padlock size={24} color={t.ink} style={{position: 'absolute', top: -14, right: -10, transform: `scale(${L})`}} />
+                  {S > 0.01 ? <Tag text="contact sales" filled pop={S} size={sq ? 18 : 20} /> : <Tag text="hosted only" pop={H} size={sq ? 18 : 20} />}
+                </>
+              ) : null}
             </div>
           );
         })}
       </AbsoluteFill>
       <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 90 : 70}}>
         <div style={{background: t.bg, borderRadius: 24, padding: '0 24px'}}>
-          <Poster text={"Everyone's building\na sandbox company."} to={beat(4)} width={textW} max={sq ? 104 : 124} tone="light" />
-          <Card text="Their cloud." from={beat(4)} to={beat(6)} width={textW} max={sq ? 150 : 200} tone="light" />
+          <Card text="Their cloud." from={snapAt} to={beat(6)} width={textW} max={sq ? 150 : 200} tone="light" />
           <Card text="Their SDK." from={beat(6)} to={beat(8)} width={textW} max={sq ? 150 : 200} tone="light" />
           <Card text="Their *rules*." from={beat(8)} to={beat(10)} width={textW} max={sq ? 150 : 200} tone="light" />
           <Card text="Self-hosting?" from={beat(10)} to={beat(12)} width={textW} max={sq ? 150 : 200} tone="light" />

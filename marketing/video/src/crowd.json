@@ -1,0 +1,8 @@
+{
+  "cards": {"wide": 40, "square": 30},
+  "firstBeat": 0.35,
+  "spanBeats": 3.25,
+  "power": 0.62,
+  "rankStride": 17,
+  "snapBeat": 4
+}

@@ -280,17 +280,28 @@ place(music, pan(mallet(91, 1.6, 0.5), 0), end_hit + B * 3, 0.3)
 
 # ---------------------------------------------------------------- sound effects on picture cues
 
-# Crowd: every box pops in on a pentatonic note.
-n_boxes = 18
-for i in range(n_boxes):
-    rank = (i * 7) % n_boxes
-    tt = (10 + round(B * 60 * 3.4 * (rank / n_boxes) ** 0.7 * 1)) / 60
-    if i in (8, 1, 10, 15):
-        continue  # on screen at frame 0
-    place(fx, pan(pop(A_MIN_PENTA[(i * 5) % len(A_MIN_PENTA)] + 12), ((i % 6) - 2.5) / 3), tt, 0.5)
+# Crowd: every card lands with a pop, rising in pitch and piling up faster; the big late
+# ones add a soft thud. Same arrival formula as src/scenes/Problem.tsx (src/crowd.json).
+CROWD = json.load(open(os.path.join(HERE, '..', 'src', 'crowd.json')))
+n_cards = CROWD['cards']['wide']
+for i in range(n_cards):
+    rank = (i * CROWD['rankStride']) % n_cards
+    arrive = round(CROWD['firstBeat'] * 30) + round(round(CROWD['spanBeats'] * 30) * (rank / n_cards) ** CROWD['power'])
+    land = (arrive + 6) / 60
+    note = A_MIN_PENTA[min(len(A_MIN_PENTA) - 1, rank * len(A_MIN_PENTA) // n_cards)] + 12
+    place(fx, pan(pop(note), ((i * 7) % 11 - 5) / 6), land, 0.35 + 0.3 * rank / n_cards)
+    if rank / n_cards >= 0.6:
+        n = int(0.18 * SR)
+        tt = np.arange(n) / SR
+        thud = np.sin(2 * np.pi * (60 + 70 * np.exp(-tt * 30)) * tt) * exp_env(n, 0.001, 0.05)
+        place(fx, pan(thud, 0), land, 0.35)
+# The snap: a whoosh and a quick run of clicks as the grid locks in.
+snap = at('crowd', CROWD['snapBeat'])
+place(fx, pan(whoosh(0.45, up=False), 0), snap - 0.08, 0.7)
+for k in range(18):
+    place(fx, pan(lock_click(), ((k % 6) - 2.5) / 3), snap + 0.05 + k * 1.2 / 60 * 1.6, 0.18)
 for b in [4, 6, 8, 10, 12]:
     place(fx, pan(tick(), 0), at('crowd', b), 1.2)
-place(fx, pan(whoosh(0.35), 0), at('crowd', 4) - 0.1, 0.5)
 place(fx, pan(whoosh(0.35), 0), at('crowd', 6) - 0.1, 0.5)
 for i in range(18):  # padlocks ripple
     place(fx, pan(lock_click(), ((i % 6) - 2.5) / 3), at('crowd', 8) + ((i % 6) + i // 6) * 3 / 60, 0.25)

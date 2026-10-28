@@ -6,8 +6,8 @@ Every cut lands on a 120 BPM grid, where one beat is 30 frames. Scene start beat
 
 | Beats | Card (on screen) | Picture |
 |---|---|---|
-| 0–4 | "Everyone's building a sandbox company." | Frame 0 doubles as the poster: the headline plus a few vendor cards. The rest pop in faster and faster, each on a pentatonic pop. |
-| 4–8 | "Their cloud." / "Their SDK." | Punch-ins on single cards: every card is "hosted only", and every SDK call is different. |
+| 0–4 | "Everyone's building a sandbox company." | Frame 0 is the poster: the headline alone, dead-center. Made-up vendor cards fly in from every edge, faster and faster (40 in under two seconds). Early ones ring the headline and later, bigger ones pile right on top of it until it's buried. Each landing nudges the camera, and the pops climb in pitch. |
+| 4–8 | "Their cloud." / "Their SDK." | On the downbeat the chaos snaps into a walled grid and the spare cards get flung off-screen. Every card is "hosted only". "Their SDK." punches into one card while every SDK call lights up, each one different. |
 | 8–10 | "Their rules." | Padlocks ripple across the grid as the borders thicken. |
 | 10–14 | "Self-hosting?" / "Contact sales." | Some cards flip to a black "contact sales" tag, then the grid falls away. |
 | 14–18 | "I just want sandboxes on my own servers." | You, your servers and your cluster. |
