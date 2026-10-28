@@ -287,23 +287,6 @@ func (a *Adapter) waitFor(ctx context.Context, ref, want string) (sandbox, error
 	return s, err
 }
 
-// createdAnyway recovers from a gateway timeout on create. OpenSandbox's
-// Kubernetes runtime answers 504 once its pod-ready wait (60 s) runs out, for
-// example while a new image is still being pulled, but keeps creating the
-// sandbox; failing here would exclude the pool for this sandbox. Find it by
-// its metadata instead and let Create keep waiting.
-func (a *Adapter) createdAnyway(ctx context.Context, id string, cause error) (sandbox, error) {
-	var e *api.Error
-	if !errors.As(cause, &e) || e.Details["providerStatus"] != strconv.Itoa(http.StatusGatewayTimeout) {
-		return sandbox{}, cause
-	}
-	found, err := a.find(ctx, metaSandbox, id)
-	if err != nil || len(found) == 0 {
-		return sandbox{}, cause
-	}
-	return found[0], nil
-}
-
 // Create implements adapter.ExecutionAdapter. It is idempotent on req.ID:
 // a sandbox carrying the same Differently ID in its metadata is reused.
 func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapter.Instance, error) {
@@ -339,9 +322,7 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 			body["timeout"] = max(req.TTLSeconds, 60) // provider-side backstop; minimum 60 s
 		}
 		if err := a.call(ctx, http.MethodPost, "/sandboxes", body, &s); err != nil {
-			if s, err = a.createdAnyway(ctx, req.ID, err); err != nil {
-				return adapter.Instance{}, err
-			}
+			return adapter.Instance{}, err
 		}
 	}
 	if s, err = a.waitFor(ctx, s.ID, "Running"); err != nil {

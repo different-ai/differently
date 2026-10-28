@@ -26,14 +26,10 @@ type fakeOpenSandbox struct {
 	mu      sync.Mutex
 	srv     *httptest.Server
 	creates int
-	// timeoutCreates answers the next N creates with 504 after creating the
-	// sandbox, or without creating it when dropTimedOut is set.
-	timeoutCreates int
-	dropTimedOut   bool
-	boxes          map[string]map[string]any
-	files          map[string][]byte
-	lastCmd        map[string]any
-	snaps          map[string]string
+	boxes   map[string]map[string]any
+	files   map[string][]byte
+	lastCmd map[string]any
+	snaps   map[string]string
 }
 
 const apiKey = "osb-key-1234567890"
@@ -79,15 +75,6 @@ func newFake(t *testing.T) *fakeOpenSandbox {
 		b := map[string]any{"id": id, "metadata": body["metadata"], "request": body}
 		setState(b, "Pending")
 		f.boxes[id] = b
-		if f.timeoutCreates > 0 {
-			// Kubernetes runtime: the pod-ready wait ran out, but the sandbox keeps coming up.
-			f.timeoutCreates--
-			if f.dropTimedOut {
-				delete(f.boxes, id)
-			}
-			jsonOut(w, 504, map[string]string{"code": "TIMEOUT", "message": "pod not ready in time"})
-			return
-		}
 		jsonOut(w, 202, b)
 	}))
 	mux.HandleFunc("GET /v1/sandboxes", lifecycle(func(w http.ResponseWriter, r *http.Request) {
@@ -420,23 +407,5 @@ func TestOpenSandboxCredentialsAndConfig(t *testing.T) {
 	cfg, err := config.Parse([]byte("pools:\n  - {name: osb, adapter: opensandbox, trust: private, config: {apiURL: 'http://osb:8090/v1'}}\n"))
 	if err != nil || cfg.Pools[0].Trust != api.TrustPrivate {
 		t.Fatalf("explicit trust: %v", err)
-	}
-}
-
-// On the Kubernetes runtime OpenSandbox answers 504 when its pod-ready wait
-// runs out (a slow first image pull) but keeps creating the sandbox: Create
-// adopts it instead of failing, so the scheduler does not exclude the pool.
-func TestCreateAdoptsSandboxAfterGatewayTimeout(t *testing.T) {
-	f := newFake(t)
-	f.timeoutCreates = 1
-	a := newAdapter(t, f, nil)
-	inst, err := a.Create(context.Background(), adapter.CreateRequest{ID: "sbx_slow", Installation: "inst_1", Resources: api.Resources{CPU: 1, MemoryMiB: 512}})
-	if err != nil || inst.State != adapter.StateRunning || inst.SandboxID != "sbx_slow" || f.creates != 1 {
-		t.Fatalf("after a 504: %+v %v (%d creates)", inst, err, f.creates)
-	}
-	// A 504 with nothing created behind it still fails.
-	f.timeoutCreates, f.dropTimedOut = 1, true
-	if _, err := a.Create(context.Background(), adapter.CreateRequest{ID: "sbx_lost", Installation: "inst_1", Resources: api.Resources{CPU: 1, MemoryMiB: 512}}); !api.IsCode(err, api.CodeProviderUnavailable) {
-		t.Fatalf("a 504 with no sandbox behind it should fail as unavailable, got %v", err)
 	}
 }
