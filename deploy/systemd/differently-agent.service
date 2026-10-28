@@ -1,0 +1,63 @@
+# Differently node agent on a plain Linux KVM host (outside Kubernetes).
+#
+# Install with deploy/systemd/install.sh, or copy to
+# /etc/systemd/system/differently-agent.service and create
+# /etc/differently/agent.env (mode 0600) from agent.env.example.
+#
+# Stopping or restarting this unit stops the microVMs it started (they live
+# in the unit's cgroup). Drain the pool first; see docs/deploy/day-2.md.
+
+[Unit]
+Description=Differently node agent (Firecracker microVMs)
+Documentation=https://github.com/different-ai/differently/tree/main/docs/deploy
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/dev/kvm
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/differently/agent.env
+# Refuse to start until KVM, tun, Firecracker, the kernel and images check out.
+ExecStartPre=/usr/local/bin/differently-agent doctor \
+  --state-dir=/var/lib/differently/agent \
+  --images-dir=/var/lib/differently/images \
+  --kernel=${DIFFERENTLY_KERNEL} \
+  --firecracker=${DIFFERENTLY_FIRECRACKER} \
+  $DIFFERENTLY_DOCTOR_EXTRA_ARGS
+ExecStart=/usr/local/bin/differently-agent \
+  --server=${DIFFERENTLY_SERVER_URL} \
+  --pool=${DIFFERENTLY_POOL} \
+  --listen=${DIFFERENTLY_LISTEN} \
+  --advertise-url=${DIFFERENTLY_ADVERTISE_URL} \
+  --node=${DIFFERENTLY_NODE_NAME} \
+  --state-dir=/var/lib/differently/agent \
+  --images-dir=/var/lib/differently/images \
+  --kernel=${DIFFERENTLY_KERNEL} \
+  --firecracker=${DIFFERENTLY_FIRECRACKER} \
+  --reserve-cpu=${DIFFERENTLY_RESERVE_CPU} \
+  --reserve-memory-mib=${DIFFERENTLY_RESERVE_MEMORY_MIB} \
+  $DIFFERENTLY_AGENT_EXTRA_ARGS
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+KillMode=control-group
+
+# The agent manages KVM, tap devices and (with the jailer) cgroups and
+# namespaces, so it runs as root. These settings narrow the rest of the host.
+# UNVERIFIED against the agent build; relax one at a time if `doctor` or
+# sandbox creation fails, and say which in an issue.
+Delegate=yes
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=0
+TasksMax=infinity
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=no
+StateDirectory=differently
+StateDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

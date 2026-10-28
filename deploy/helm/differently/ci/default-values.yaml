@@ -1,0 +1,2 @@
+# Chart defaults: in-memory store, one server replica, Firecracker pool only,
+# no external providers, policy.external=never. Intentionally empty.

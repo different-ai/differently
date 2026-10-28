@@ -1,0 +1,493 @@
+# Default values for the Differently chart.
+#
+# The defaults are fail-closed:
+#   - no external provider (Daytona, Freestyle) is registered;
+#   - the global placement policy is `external: never`;
+#   - agents run only on nodes labelled differently.dev/kvm=true;
+#   - agents accept connections only from control-plane pods (when your CNI
+#     enforces NetworkPolicy).
+#
+# The defaults are also evaluation-sized: one server replica with the
+# in-memory store. For production, set config.store.driver=postgres, point
+# postgresql.external at a managed PostgreSQL or a CloudNativePG cluster, and
+# raise server.replicas. See docs/deploy/kubernetes.md.
+
+global:
+  # Replaces the registry of every image, for a private mirror
+  # (e.g. registry.internal.example.com). See docs/deploy/air-gapped.md.
+  imageRegistry: ""
+  # Pull secrets added to every pod, e.g. [{name: regcred}].
+  imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+# Cluster DNS domain, used to build in-cluster URLs.
+clusterDomain: cluster.local
+# Extra labels added to every resource.
+commonLabels: {}
+
+# ---------------------------------------------------------------------------
+# Server configuration file
+# ---------------------------------------------------------------------------
+# Rendered verbatim (plus the chart-managed keys below) into a ConfigMap and
+# mounted at /etc/differently/config.yaml. The server parses it strictly:
+# unknown keys are errors, and values.schema.json mirrors that schema so
+# typos fail at `helm install` time.
+#
+# Chart-managed keys you cannot set here: listen (from server.containerPort),
+# dataDir (/var/lib/differently, an emptyDir), dev (always false), auth (env
+# variable names), store.dsnEnv (DIFFERENTLY_DATABASE_URL).
+#
+# Secrets never belong in this block. Pools reference credentials by
+# environment variable (credentials: {env: NAME}); the chart wires the
+# providers.* credentials for you.
+config:
+  # External URL of the API and dashboard. Derived from the first ingress host
+  # when empty and ingress is enabled.
+  publicURL: ""
+
+  store:
+    # memory   - state is lost on restart; requires server.replicas=1.
+    #            Evaluation only.
+    # postgres - requires postgresql.embedded.enabled (evaluation only) or
+    #            postgresql.external (production).
+    driver: memory
+
+  defaults:
+    # Quotas applied to new organizations and projects. 0 means unlimited.
+    orgQuota: {}
+    projectQuota: {}
+    # Classification and profile applied when a request names none.
+    classification: internal
+    profile: small
+    ttlSeconds: 3600
+
+  # Data sensitivity levels. `external` is the most permissive external
+  # placement mode a class allows: never | overflow | allowed. The global
+  # policy below must also allow it before anything leaves private pools.
+  classifications:
+    - name: private-only
+      description: Must never leave private pools.
+      external: never
+    - name: internal
+      description: May overflow to approved external pools.
+      external: overflow
+    - name: public
+      description: No residency restriction beyond policy.
+      external: allowed
+
+  # Named resource presets.
+  profiles:
+    - name: small
+      resources: {cpu: 1, memoryMiB: 1024, diskGiB: 5}
+    - name: medium
+      resources: {cpu: 2, memoryMiB: 4096, diskGiB: 10}
+    - name: large
+      resources: {cpu: 4, memoryMiB: 8192, diskGiB: 20}
+
+  # Bootable images known to pools. Optional; Firecracker agents report the
+  # templates they hold.
+  templates: []
+
+  # Execution pools. The Firecracker pool is served by the agent DaemonSet
+  # below: agent.pool must name a pool here with adapter: firecracker.
+  # External providers are added from providers.* when enabled; you can also
+  # declare them here with credentials: {env: NAME}. Pool `config` values must
+  # be strings.
+  pools:
+    - name: firecracker
+      adapter: firecracker
+      region: ""
+      labels: {}
+      maxConcurrency: 0
+
+  # Global placement policy (scope: global).
+  # external: never | overflow | allowed. Fail-closed default: never.
+  # externalPools: the only external pools placement may use.
+  # strategy: private-first | cost | spread.
+  # Note: a global policy stored through the API (PUT /v1/policies/global)
+  # replaces this block at runtime. Check GET /v1/policies after changes.
+  policy:
+    external: never
+    externalPools: []
+    strategy: private-first
+
+  # Dispatch and reconcile loop tuning. Zero values use server defaults.
+  scheduler: {}
+  # Per-API-key token bucket (per server replica). Zero uses server defaults.
+  rateLimit: {}
+  audit:
+    # Mirror audit events to a JSON-lines file. Must be under
+    # /var/lib/differently (the only writable path), which is an emptyDir, so
+    # ship it with a sidecar or prefer exporting from the API.
+    file: ""
+    # Store full exec command lines in audit events. Commands can contain
+    # secrets; the default records only the program name.
+    recordCommands: false
+  dashboard:
+    enabled: true
+
+# ---------------------------------------------------------------------------
+# Bootstrap and agent tokens
+# ---------------------------------------------------------------------------
+auth:
+  # Use an existing Secret instead of the chart-managed one. Required for
+  # GitOps tools that render with `helm template` (Argo CD, Flux with
+  # post-rendering), because they cannot `lookup` the generated tokens and
+  # would rotate them on every sync.
+  existingSecret: ""
+  bootstrapTokenKey: bootstrap-token
+  agentTokenKey: agent-token
+  # Leave empty to generate once at install. Generated values are kept across
+  # upgrades with `lookup`. The bootstrap token has the form
+  # dly_<id>_<secret> with a secret of at least 24 characters from [0-9a-z].
+  # Rotating: keep the same <id> and change only <secret>, otherwise the old
+  # operator key stays valid and must be revoked through the API.
+  bootstrapToken: ""
+  # Shared secret between the control plane and node agents.
+  agentToken: ""
+  # Keep the chart-managed token Secret on `helm uninstall`, so a reinstall
+  # with the same release name and namespace reuses the same tokens (matching
+  # a database that outlived the release).
+  keepSecretOnUninstall: true
+
+# ---------------------------------------------------------------------------
+# External providers (policy-gated, disabled by default)
+# ---------------------------------------------------------------------------
+# Enabling a provider registers a trust=external pool and wires its
+# credential into the server as an environment variable. It does NOT make the
+# pool reachable: placement still requires config.policy.external to be
+# overflow or allowed AND the pool to be listed in
+# config.policy.externalPools, and the request's classification must allow it.
+providers:
+  daytona:
+    enabled: false
+    pool:
+      name: daytona
+      region: ""
+      labels: {}
+      maxConcurrency: 0
+      costModel: {}
+      # Adapter keys: apiURL, target, snapshot, class (container|linux-vm),
+      # autoStopMinutes. Values must be strings.
+      config:
+        apiURL: https://app.daytona.io/api
+    # Secret holding the API key (recommended). Created by you.
+    existingSecret: ""
+    existingSecretKey: api-key
+    # Inline API key; the chart stores it in a Secret. Prefer existingSecret.
+    apiKey: ""
+    # Environment variable the server reads the key from.
+    env: DIFFERENTLY_DAYTONA_API_KEY
+  freestyle:
+    enabled: false
+    pool:
+      name: freestyle
+      region: ""
+      labels: {}
+      maxConcurrency: 0
+      costModel: {}
+      # Adapter keys: apiURL, snapshot, egress (none|public), domain.
+      # Values must be strings.
+      config:
+        apiURL: https://api.freestyle.sh
+        egress: none
+    existingSecret: ""
+    existingSecretKey: api-key
+    apiKey: ""
+    env: DIFFERENTLY_FREESTYLE_API_KEY
+
+# ---------------------------------------------------------------------------
+# PostgreSQL
+# ---------------------------------------------------------------------------
+postgresql:
+  # EVALUATION ONLY. A single-replica PostgreSQL StatefulSet with no
+  # replication, backups, upgrades or tuning. For production use
+  # postgresql.external with a managed database or a CloudNativePG cluster.
+  embedded:
+    enabled: false
+    image:
+      registry: docker.io
+      repository: library/postgres
+      # Major-version tag; pin a patch release (or a digest) for repeatability.
+      tag: "17"
+      digest: ""
+      pullPolicy: IfNotPresent
+    database: differently
+    username: differently
+    # Leave empty to generate once (kept across upgrades with `lookup`).
+    password: ""
+    keepSecretOnUninstall: true
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: ""
+      accessModes: [ReadWriteOnce]
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {memory: 1Gi}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+
+  # Production database. Provide the DSN through an existing Secret
+  # (recommended) or inline (the chart stores it in a Secret).
+  # DSN example: postgres://differently:PASSWORD@db.example.internal:5432/differently?sslmode=verify-full
+  external:
+    existingSecret: ""
+    existingSecretKey: database-url
+    url: ""
+
+# Schema migrations (`differently-server migrate`, idempotent). Only used
+# when config.store.driver=postgres.
+migrations:
+  enabled: true
+  # auto          - hook for postgresql.external, initContainer for
+  #                 postgresql.embedded (the embedded database does not exist
+  #                 yet when pre-install hooks run).
+  # hook          - a pre-install/pre-upgrade Job.
+  # initContainer - run before every server pod starts.
+  mode: auto
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  resources: {}
+
+# ---------------------------------------------------------------------------
+# Control plane (differently-server)
+# ---------------------------------------------------------------------------
+server:
+  image:
+    registry: ghcr.io
+    repository: different-ai/differently-server
+    # Defaults to the chart appVersion.
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  # Must be 1 with config.store.driver=memory.
+  replicas: 1
+  containerPort: 8080
+  # Run `differently-server preflight` as an init container so configuration
+  # and environment errors appear in `kubectl logs -c preflight`.
+  preflight:
+    enabled: true
+  extraArgs: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 512Mi}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile: {type: RuntimeDefault}
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: {drop: [ALL]}
+  startupProbe:
+    httpGet: {path: /healthz, port: http}
+    periodSeconds: 2
+    failureThreshold: 60
+  livenessProbe:
+    httpGet: {path: /healthz, port: http}
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet: {path: /readyz, port: http}
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  pdb:
+    enabled: true
+    # Set one of maxUnavailable or minAvailable.
+    maxUnavailable: 1
+    minAvailable: ""
+  # Spread replicas across zones and nodes (ScheduleAnyway) unless
+  # topologySpreadConstraints is set.
+  defaultTopologySpread: true
+  topologySpreadConstraints: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  priorityClassName: ""
+  podAnnotations: {}
+  podLabels: {}
+  terminationGracePeriodSeconds: 30
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # The API, dashboard, agent heartbeat (/internal/v1/agents/heartbeat, agent
+  # token required) and /metrics (unauthenticated) share one port. Block
+  # /metrics at your ingress controller if it must not be public.
+  hosts: []
+  #  - differently.example.com
+  path: /
+  pathType: Prefix
+  tls:
+    enabled: false
+    # Defaults to <fullname>-tls.
+    secretName: ""
+    certManager:
+      # Adds cert-manager.io/cluster-issuer (or cert-manager.io/issuer).
+      clusterIssuer: ""
+      issuer: ""
+
+# ---------------------------------------------------------------------------
+# Node agent (differently-agent) DaemonSet
+# ---------------------------------------------------------------------------
+agent:
+  enabled: true
+  image:
+    registry: ghcr.io
+    repository: different-ai/differently-agent
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  # Firecracker pool the agents register under (must exist in config.pools).
+  pool: firecracker
+  # Control-plane URL. Defaults to the in-cluster server Service.
+  serverURL: ""
+  port: 9090
+  # URL the control plane uses to reach each agent. Defaults to
+  # http://$(POD_IP):<port> (IPv4). Set explicitly for IPv6 pods.
+  advertiseURL: ""
+  reserveCPU: 1
+  reserveMemoryMiB: 2048
+  # Host directory holding agent state and guest images; mounted at
+  # /var/lib/differently in the pod.
+  hostDataPath: /var/lib/differently
+  kernelPath: /var/lib/differently/images/vmlinux
+  firecrackerPath: /usr/local/bin/firecracker
+  jailer:
+    enabled: false
+    path: /usr/local/bin/jailer
+  # Init container that runs `differently-agent doctor` and blocks the agent
+  # until KVM, tun, Firecracker, the kernel and images check out.
+  doctor:
+    enabled: true
+  # Optional init container that copies guest images (vmlinux, *.ext4) from an
+  # OCI image into <hostDataPath>/images. Build one with
+  # deploy/images/package-oci.sh. Otherwise stage images on each node.
+  guestImages:
+    enabled: false
+    image:
+      registry: ghcr.io
+      repository: different-ai/differently-guest-images
+      tag: ""
+      digest: ""
+      pullPolicy: IfNotPresent
+    # Directory inside that image containing the files to copy.
+    sourceDir: /images
+  # Privileged is the supported mode. With privileged=false the agent gets
+  # only the capabilities below and a device plugin must grant /dev/kvm and
+  # /dev/net/tun (plain hostPath device mounts do not pass the device cgroup).
+  # The unprivileged mode is UNVERIFIED.
+  privileged: true
+  unprivileged:
+    capabilities: [NET_ADMIN]
+    # Extended resources from your device plugin, e.g.
+    # {"devices.kubevirt.io/kvm": 1, "devices.kubevirt.io/tun": 1}.
+    deviceResources: {}
+  # A privileged container can remount its root filesystem, so read-only root
+  # is not a boundary here; it stays writable for Firecracker/jailer paths.
+  readOnlyRootFilesystem: false
+  # Host networking changes how VMs reach the network and bypasses
+  # NetworkPolicy on most CNIs. Leave false unless you know you need it.
+  hostNetwork: false
+  # Merged with the required selector differently.dev/kvm=true.
+  nodeSelector: {}
+  # Tolerate the taint that keeps ordinary pods off KVM nodes.
+  tolerations:
+    - key: differently.dev/kvm
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  affinity: {}
+  priorityClassName: ""
+  # OnDelete: an agent restart stops the microVMs on that node, so agents are
+  # replaced only when you delete the pod (see docs/deploy/day-2.md).
+  # Use {type: RollingUpdate, rollingUpdate: {maxUnavailable: 1}} to roll
+  # automatically.
+  updateStrategy:
+    type: OnDelete
+  # No memory limit by default: microVM memory may be charged to this pod's
+  # cgroup. Keep KVM nodes tainted and size reserveMemoryMiB instead.
+  resources:
+    requests: {cpu: 250m, memory: 256Mi}
+  extraArgs: []
+  extraEnv: []
+  podAnnotations: {}
+  podLabels: {}
+  terminationGracePeriodSeconds: 60
+
+serviceAccount:
+  create: true
+  # Defaults to the fullname.
+  name: ""
+  annotations: {}
+  # No component calls the Kubernetes API.
+  automountServiceAccountToken: false
+
+networkPolicy:
+  # Has an effect only with a CNI that enforces NetworkPolicy.
+  enabled: true
+  server:
+    # Peers allowed to reach the API port (NetworkPolicyPeer list). Empty
+    # allows any source. Agent pods are always added when this is set.
+    ingressFrom: []
+    egress:
+      # Restrict server egress to DNS, agents, the database, enabled
+      # providers and the rules below.
+      restricted: true
+      # External PostgreSQL destinations; empty allows any address on
+      # databasePort.
+      databaseCIDRs: []
+      databasePort: 5432
+      # Destinations for TCP 443 when any provider is enabled. Provider IPs
+      # are not stable, so this is usually 0.0.0.0/0 or your egress proxy.
+      providerCIDRs: ["0.0.0.0/0"]
+      # Where agents run outside pods: node CIDRs with agent.hostNetwork=true,
+      # or plain Linux hosts running the systemd agent (docs/deploy/bare-metal.md).
+      agentCIDRs: []
+      # Additional raw NetworkPolicyEgressRule entries.
+      extra: []
+  agent:
+    # Additional raw NetworkPolicyIngressRule entries (e.g. a metrics scraper).
+    extraIngress: []
+
+metrics:
+  serviceMonitor:
+    # Requires the Prometheus Operator CRDs.
+    enabled: false
+    labels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+
+# `helm test` smoke test: creates a sandbox, runs `echo ok`, deletes it.
+test:
+  enabled: true
+  # CLI image; must contain /bin/sh and the `differently` binary.
+  image:
+    registry: ghcr.io
+    repository: different-ai/differently-cli
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  profile: small
+  # The bootstrap key is an operator key, which must name a project. Set
+  # projectId, or use a project-scoped key from existingSecret.
+  projectId: ""
+  existingSecret: ""
+  existingSecretKey: api-key
+  activeDeadlineSeconds: 300

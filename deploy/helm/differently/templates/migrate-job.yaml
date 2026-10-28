@@ -1,0 +1,104 @@
+{{- if eq (include "differently.migrationMode" .) "hook" }}
+{{- $hookName := printf "%s-migrate" (include "differently.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $inlineDSN := and (not .Values.postgresql.external.existingSecret) .Values.postgresql.external.url }}
+# Pre-install hooks run before the release's own ConfigMap and Secrets exist,
+# so the Job gets hook-scoped copies that are deleted once it succeeds.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $hookName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "migrate") | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+data:
+  config.yaml: |
+    {{- include "differently.config" . | nindent 4 }}
+{{- if $inlineDSN }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $hookName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "migrate") | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+type: Opaque
+data:
+  database-url: {{ .Values.postgresql.external.url | b64enc | quote }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $hookName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "migrate") | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    # A failed Job is kept for `kubectl logs job/{{ $hookName }}` until the next attempt.
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "differently.componentLabels" (dict "ctx" . "component" "migrate") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      # The chart's ServiceAccount does not exist yet during pre-install.
+      automountServiceAccountToken: false
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.server.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "differently.image" (dict "image" .Values.server.image "ctx" .) }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          args: ["migrate", "--config", "/etc/differently/config.yaml"]
+          env:
+            - name: DIFFERENTLY_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  {{- if $inlineDSN }}
+                  name: {{ $hookName }}
+                  key: database-url
+                  {{- else }}
+                  name: {{ .Values.postgresql.external.existingSecret }}
+                  key: {{ .Values.postgresql.external.existingSecretKey }}
+                  {{- end }}
+          securityContext:
+            {{- toYaml .Values.server.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml (.Values.migrations.resources | default .Values.server.resources) | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/differently, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $hookName }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,56 @@
+# Production-shaped install: external PostgreSQL from an existing Secret,
+# three server replicas, TLS ingress through cert-manager, ServiceMonitor.
+config:
+  store:
+    driver: postgres
+  audit:
+    recordCommands: false
+
+postgresql:
+  external:
+    # kubectl create secret generic differently-database \
+    #   --from-literal=database-url='postgres://differently:...@db.internal:5432/differently?sslmode=verify-full'
+    existingSecret: differently-database
+    existingSecretKey: database-url
+
+auth:
+  # kubectl create secret generic differently-tokens \
+  #   --from-literal=bootstrap-token=dly_<id>_<secret> --from-literal=agent-token=<random>
+  existingSecret: differently-tokens
+
+server:
+  replicas: 3
+  resources:
+    requests: {cpu: 250m, memory: 256Mi}
+    limits: {memory: 1Gi}
+  priorityClassName: ""
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - differently.example.com
+  tls:
+    enabled: true
+    certManager:
+      clusterIssuer: letsencrypt-prod
+
+networkPolicy:
+  server:
+    egress:
+      databaseCIDRs: ["10.20.0.0/24"]
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: prometheus
+
+agent:
+  jailer:
+    enabled: true
+  priorityClassName: system-node-critical
+
+test:
+  existingSecret: differently-smoke-key
+  existingSecretKey: api-key

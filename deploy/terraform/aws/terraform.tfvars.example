@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars and edit.
+region       = "us-east-1"
+cluster_name = "differently"
+
+# metal (recommended, Firecracker's tested platform) or nested (UNVERIFIED on EKS).
+kvm_mode           = "metal"
+kvm_instance_types = ["m7i.metal-24xl"]
+kvm_node_count     = { min = 1, desired = 1, max = 3 }
+
+# Narrow who can reach the public EKS API.
+endpoint_public_access_cidrs = ["203.0.113.0/24"]
+
+tags = {
+  owner = "platform"
+}

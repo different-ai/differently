@@ -1,0 +1,22 @@
+apiVersion: v2
+name: differently
+description: >-
+  Self-hosted sandbox orchestration. Runs the Differently control plane and a
+  node agent DaemonSet that starts Firecracker microVMs on KVM-capable nodes.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/different-ai/differently
+sources:
+  - https://github.com/different-ai/differently
+keywords:
+  - sandbox
+  - firecracker
+  - microvm
+  - kvm
+  - self-hosted
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/prerelease: "true"

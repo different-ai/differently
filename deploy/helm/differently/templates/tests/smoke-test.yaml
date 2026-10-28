@@ -1,0 +1,85 @@
+{{- if .Values.test.enabled }}
+{{- $usesBootstrap := not .Values.test.existingSecret }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ printf "%s-smoke-test" (include "differently.fullname" .) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    # Kept after the run so `kubectl logs` works; replaced on the next run.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: {{ .Values.test.activeDeadlineSeconds }}
+  automountServiceAccountToken: false
+  {{- with .Values.global.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile: {type: RuntimeDefault}
+  containers:
+    - name: smoke
+      image: {{ include "differently.image" (dict "image" .Values.test.image "ctx" .) }}
+      imagePullPolicy: {{ .Values.test.image.pullPolicy }}
+      command: ["/bin/sh", "-ec"]
+      args:
+        - |
+          echo "Differently smoke test against $DIFFERENTLY_URL (profile $SMOKE_PROFILE)"
+          set -- sandbox create --profile "$SMOKE_PROFILE" --wait
+          if [ -n "${SMOKE_PROJECT_ID:-}" ]; then
+            set -- "$@" --project "$SMOKE_PROJECT_ID"
+          elif [ "$SMOKE_OPERATOR_KEY" = "true" ]; then
+            echo "The bootstrap token is an operator key, and operator keys must name a project." >&2
+            echo "Create an organization and project (docs/deploy/kubernetes.md, step 7), then:" >&2
+            echo "  helm upgrade <release> <chart> --reuse-values --set test.projectId=prj_..." >&2
+            exit 1
+          fi
+          out=$(differently "$@")
+          printf '%s\n' "$out"
+          id=$(printf '%s\n' "$out" | grep -o 'sbx_[0-9a-z]*' | head -n 1)
+          if [ -z "$id" ]; then
+            echo "No sandbox ID (sbx_...) in the create output." >&2
+            exit 1
+          fi
+          trap 'differently sandbox delete "$id" >/dev/null 2>&1 || echo "warning: could not delete $id" >&2' EXIT
+          res=$(differently sandbox exec "$id" -- echo ok)
+          printf '%s\n' "$res"
+          printf '%s\n' "$res" | grep -qx 'ok'
+          echo "PASS: sandbox $id ran 'echo ok'"
+      env:
+        - name: DIFFERENTLY_URL
+          value: {{ include "differently.internalServerURL" . | quote }}
+        - name: DIFFERENTLY_API_KEY
+          valueFrom:
+            secretKeyRef:
+              {{- if $usesBootstrap }}
+              name: {{ include "differently.tokensSecretName" . }}
+              key: {{ .Values.auth.bootstrapTokenKey }}
+              {{- else }}
+              name: {{ .Values.test.existingSecret }}
+              key: {{ .Values.test.existingSecretKey }}
+              {{- end }}
+        - {name: SMOKE_PROFILE, value: {{ .Values.test.profile | quote }}}
+        - {name: SMOKE_PROJECT_ID, value: {{ .Values.test.projectId | quote }}}
+        - {name: SMOKE_OPERATOR_KEY, value: {{ $usesBootstrap | quote }}}
+        - {name: HOME, value: /tmp}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: [ALL]}
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits: {memory: 128Mi}
+      volumeMounts:
+        - {name: tmp, mountPath: /tmp}
+  volumes:
+    - name: tmp
+      emptyDir: {}
+{{- end }}

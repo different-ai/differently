@@ -1,0 +1,142 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $egress := $np.server.egress }}
+{{- $providers := include "differently.enabledProviders" . | fromJsonArray }}
+{{- if .Values.agent.enabled }}
+# Agents accept connections only from control-plane pods. Agent egress
+# (heartbeats and sandbox traffic routed through the pod) is not restricted
+# here; control sandbox egress with node networking (see the trust report).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "differently.agentName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "agent") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "agent") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "server") | nindent 14 }}
+      ports:
+        - port: {{ .Values.agent.port }}
+          protocol: TCP
+    {{- with $np.agent.extraIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "differently.serverName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "server") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "server") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    {{- if $egress.restricted }}
+    - Egress
+    {{- end }}
+  ingress:
+    - ports:
+        - port: {{ .Values.server.containerPort }}
+          protocol: TCP
+      {{- if $np.server.ingressFrom }}
+      from:
+        {{- toYaml $np.server.ingressFrom | nindent 8 }}
+        {{- if .Values.agent.enabled }}
+        - podSelector:
+            matchLabels:
+              {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "agent") | nindent 14 }}
+        {{- end }}
+      {{- end }}
+  {{- if $egress.restricted }}
+  egress:
+    # DNS
+    - ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    {{- if or .Values.agent.enabled $egress.agentCIDRs }}
+    # Node agents (pods, plus hosts outside the cluster or on host networking)
+    - to:
+        {{- if .Values.agent.enabled }}
+        - podSelector:
+            matchLabels:
+              {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "agent") | nindent 14 }}
+        {{- end }}
+        {{- range $egress.agentCIDRs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        - port: {{ .Values.agent.port }}
+          protocol: TCP
+    {{- end }}
+    {{- if .Values.postgresql.embedded.enabled }}
+    # Embedded PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "postgresql") | nindent 14 }}
+      ports:
+        - {port: 5432, protocol: TCP}
+    {{- else if include "differently.usesPostgres" . }}
+    # External PostgreSQL
+    - ports:
+        - port: {{ $egress.databasePort }}
+          protocol: TCP
+      {{- with $egress.databaseCIDRs }}
+      to:
+        {{- range . }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- if $providers }}
+    # External providers ({{ range $i, $p := $providers }}{{ if $i }}, {{ end }}{{ $p.kind }}{{ end }})
+    - ports:
+        - {port: 443, protocol: TCP}
+      to:
+        {{- range $egress.providerCIDRs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+    {{- end }}
+    {{- with $egress.extra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+{{- if .Values.postgresql.embedded.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "differently.postgresqlName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "postgresql") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "server") | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "migrate") | nindent 14 }}
+      ports:
+        - {port: 5432, protocol: TCP}
+{{- end }}
+{{- end }}
