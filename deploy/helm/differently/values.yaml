@@ -164,8 +164,10 @@ auth:
 # and give its API key to this chart.
 opensandbox:
   enabled: true
-  # Lifecycle API base URL, ending in /v1.
-  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+  # Lifecycle API base URL, ending in /v1. The default is where
+  # OpenSandbox's own Helm chart puts its server (namespace
+  # opensandbox-system, port 80).
+  apiURL: http://opensandbox-server.opensandbox-system.svc/v1
   # Who operates the OpenSandbox server: private if you run it and its
   # runtime, external if someone else does. An external pool receives work
   # only when config.policy allows it and lists it in externalPools.
@@ -187,8 +189,12 @@ opensandbox:
   # microvm (Fast Sandbox). Differently does not enforce it.
   isolation: container
   # Capabilities to advertise. Empty uses the adapter defaults: exec,
-  # exec.stream, files, lifecycle.pause-resume, snapshots.disk, fork,
-  # ports.expose. Add snapshots.memory when the runtime captures memory.
+  # exec.stream, files, lifecycle.pause-resume, snapshots.disk, fork. On the
+  # Kubernetes runtime, pause and snapshots need OpenSandbox's snapshot
+  # registry (controller.snapshot.registry); without one, list only exec,
+  # exec.stream and files. Add ports.expose only if tenants can reach the
+  # runtime's direct endpoints, and snapshots.memory when the runtime
+  # captures memory.
   features: []
   # Reach execd (exec and files) through the OpenSandbox server's proxy, so
   # the control plane needs only the server's port. With false, the server
@@ -440,14 +446,15 @@ networkPolicy:
         # it ({} merges with the default); with both null only cidrs apply.
         namespaceSelector:
           matchLabels:
-            kubernetes.io/metadata.name: opensandbox
+            kubernetes.io/metadata.name: opensandbox-system
         podSelector: {}
         # Servers outside the cluster (or reached through a load balancer).
         cidrs: []
         # The server pod's port (the Service's targetPort, which NetworkPolicy
         # sees after Service translation). With no selectors and no cidrs,
-        # any destination is allowed on this port.
-        port: 8090
+        # any destination is allowed on this port. OpenSandbox's own chart
+        # serves on port 80.
+        port: 80
       # Additional raw NetworkPolicyEgressRule entries.
       extra: []
 

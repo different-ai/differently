@@ -107,7 +107,7 @@ postgresql:
   external:
     existingSecret: differently-database
 opensandbox:
-  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+  apiURL: http://opensandbox-server.opensandbox-system.svc/v1
   trust: private
   isolation: container                 # microvm with Fast Sandbox
   existingSecret: opensandbox-api-key

@@ -98,7 +98,7 @@ OpenSandbox server, and is marked as such.
 - [ ] Enable the chart's `NetworkPolicy` and make sure your CNI enforces it.
 - [ ] Restrict server egress (`networkPolicy.server.egress.restricted`) to
       DNS, Postgres, OpenSandbox (`networkPolicy.server.egress.opensandbox`,
-      port 8090 by default) and the CIDRs of approved providers. With
+      port 80 by default) and the CIDRs of approved providers. With
       `opensandbox.useServerProxy: false` the server also needs each
       sandbox's endpoint (`networkPolicy.server.egress.extra`); keep the
       default proxy unless you have measured a need.

@@ -368,8 +368,8 @@ func (s *Scheduler) provision(ctx context.Context, rec store.SandboxRecord) {
 }
 
 // retry requeues after a provisioning failure or fails the sandbox once
-// attempts are exhausted. Transient capacity errors do not count against
-// pool health.
+// attempts are exhausted. Transient capacity errors and failures of this one
+// sandbox do not count against pool health.
 func (s *Scheduler) retry(ctx context.Context, rec store.SandboxRecord, cause error) {
 	capacity := api.IsCode(cause, adapter.CodeInsufficientCapacity)
 	if api.IsCode(cause, api.CodeInvalidRequest) {
@@ -378,7 +378,7 @@ func (s *Scheduler) retry(ctx context.Context, rec store.SandboxRecord, cause er
 		s.fail(ctx, rec.ID, "backend rejected the sandbox: "+cause.Error(), nil)
 		return
 	}
-	if !capacity {
+	if !capacity && !api.IsCode(cause, adapter.CodeSandboxFailed) {
 		s.Pools.MarkUnhealthy(rec.Pool, cause)
 		s.Log.Warn("provisioning failed", "sandbox", rec.ID, "pool", rec.Pool, "attempt", rec.Attempts, "err", cause)
 	}

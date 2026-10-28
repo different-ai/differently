@@ -330,7 +330,7 @@ Validation. Fails the render with an actionable message. The server's
 {{- $o := .Values.opensandbox -}}
 {{- if $o.enabled -}}
 {{- if not $o.apiURL -}}
-{{- fail "opensandbox.enabled=true needs opensandbox.apiURL, the OpenSandbox lifecycle API ending in /v1 (e.g. http://opensandbox-server.opensandbox.svc:8090/v1). Install OpenSandbox separately, or set opensandbox.enabled=false." -}}
+{{- fail "opensandbox.enabled=true needs opensandbox.apiURL, the OpenSandbox lifecycle API ending in /v1 (e.g. http://opensandbox-server.opensandbox-system.svc/v1). Install OpenSandbox separately, or set opensandbox.enabled=false." -}}
 {{- end -}}
 {{- if not (regexMatch "^https?://" $o.apiURL) -}}
 {{- fail (printf "opensandbox.apiURL=%q must be an http:// or https:// URL." $o.apiURL) -}}

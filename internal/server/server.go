@@ -30,6 +30,7 @@ import (
 	"github.com/different-ai/differently/internal/scheduler"
 	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/internal/version"
+	"github.com/different-ai/differently/pkg/adapter"
 	"github.com/different-ai/differently/pkg/api"
 )
 
@@ -332,7 +333,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	e := api.AsError(err)
-	if e.Code == "insufficient_capacity" {
+	if e.Code == adapter.CodeInsufficientCapacity || e.Code == adapter.CodeSandboxFailed {
 		e = &api.Error{Code: api.CodeProviderUnavailable, Message: e.Message, Details: e.Details}
 	}
 	out := *e

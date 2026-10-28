@@ -50,8 +50,10 @@ type Adapter struct {
 	instances map[string]*instance // by ref
 	byID      map[string]string    // sandbox ID -> ref
 	snapshots map[string]map[string][]byte
-	// FailCreates makes the next N Create calls fail as unavailable.
+	// FailCreates makes the next N Create calls fail, with FailWith or, when
+	// that is nil, as unavailable.
 	FailCreates int
+	FailWith    error
 	creates     int
 }
 
@@ -160,6 +162,9 @@ func (a *Adapter) Create(_ context.Context, req adapter.CreateRequest) (adapter.
 	}
 	if a.FailCreates > 0 {
 		a.FailCreates--
+		if a.FailWith != nil {
+			return adapter.Instance{}, a.FailWith
+		}
 		return adapter.Instance{}, adapter.Unavailable(fmt.Errorf("injected create failure"))
 	}
 	if a.opts.TotalCPU > 0 {

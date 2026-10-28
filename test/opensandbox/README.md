@@ -2,14 +2,41 @@
 
 `compose.yaml` runs OpenSandbox's lifecycle server (release 1.2.0) with the
 Docker runtime on any Docker host. `TestLiveOpenSandbox` then drives the
-`opensandbox` adapter against it: create, idempotency, exec, files, listing,
-pause/resume, snapshot and delete.
+`opensandbox` adapter against it through the scenario in
+`internal/adapters/opensandbox/recording_test.go`: create and idempotency,
+listing, exec (exact output, argv, timeouts, streaming), files, pause and
+resume, snapshot and fork, port endpoints, expiry, delete, and an image that
+cannot be pulled. Each step checks the outcome expected for the runtime.
 
 ```bash
 docker compose -f test/opensandbox/compose.yaml up -d
 OPENSANDBOX_URL=http://localhost:8090/v1 go test -tags live -v -run TestLiveOpenSandbox ./internal/adapters/opensandbox/
 docker compose -f test/opensandbox/compose.yaml down
 ```
+
+For a server with the Kubernetes runtime, set
+`OPENSANDBOX_RUNTIME=kubernetes` and its `OPENSANDBOX_API_KEY`.
+
+## Recordings, replayed without a server
+
+Set `OPENSANDBOX_RECORD=<name>` and the run is saved to
+`internal/adapters/opensandbox/testdata/recordings/<name>.json`: every
+request path and every response body, with the API key and the server's
+address removed. `TestReplayRecordings` serves those responses back from a
+local listener and runs the same scenario on every `go test`, so the adapter
+is checked against what real runtimes send, including how they fail, with no
+server or cloud. Record again after an OpenSandbox upgrade:
+
+```bash
+OPENSANDBOX_URL=http://localhost:8090/v1 OPENSANDBOX_RECORD=docker-1.2.0 \
+  OPENSANDBOX_HOST="Docker in Colima on Apple Silicon" \
+  go test -tags live -count=1 -run TestLiveOpenSandbox ./internal/adapters/opensandbox/
+```
+
+| Recording | Runtime | Recorded on |
+|---|---|---|
+| `docker-1.2.0` | Docker, `execd` release-1.2.0 | Colima 0.10.3, arm64, 2026-10-28 |
+| `kubernetes-1.2.0` | Kubernetes (BatchSandbox), `execd` release-1.2.0, no snapshot registry | k3s v1.36.5 on Azure, x86_64, 2026-10-28 |
 
 The API key in `config.toml` is a test value. Sandboxes are Docker
 containers on the same host, so this checks the API contract, not

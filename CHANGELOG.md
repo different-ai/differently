@@ -59,6 +59,27 @@ All notable changes are recorded here. The format follows
 - An `Idempotency-Key` names a live sandbox: once that sandbox is terminated
   or failed, the same key creates a new one (Postgres migration `0003`).
 
+### Fixed (found against real OpenSandbox runtimes)
+
+- A sandbox whose image cannot be pulled no longer marks its pool unhealthy
+  for every other tenant (which could move their work to another pool or
+  external provider). The Docker runtime's failed pull fails the sandbox
+  after one attempt; the Kubernetes runtime's pod-ready timeout is retried
+  as this sandbox's failure, not a provider outage.
+- Pause on a runtime that accepts it but never starts it (the Kubernetes
+  runtime without a snapshot registry) returns `unsupported_operation` after
+  30 s instead of `provider_unavailable` after 3 minutes; snapshots without a
+  registry say so instead of reporting an outage.
+- A sandbox being deleted on the Kubernetes runtime is treated as gone
+  instead of as pending.
+- The Helm chart's default `opensandbox.apiURL` and NetworkPolicy now match
+  OpenSandbox's own chart (namespace `opensandbox-system`, port 80).
+
+### Changed (OpenSandbox pools)
+
+- `ports.expose` is no longer advertised by default: OpenSandbox's direct
+  endpoints are runtime-internal addresses.
+
 ### Security
 
 - `audit.failClosed` refuses state-changing requests that cannot be audited;
@@ -78,8 +99,13 @@ All notable changes are recorded here. The format follows
 
 ### Verified
 
+- OpenSandbox's Kubernetes runtime on single-node k3s (Azure, x86_64),
+  installed with OpenSandbox's charts and Differently's Helm chart: the
+  end-to-end suite passes 11/11. Real runs of both runtimes are recorded
+  and replayed in `go test` (`internal/adapters/opensandbox/testdata`).
 - End-to-end suite against OpenSandbox 1.2.0 (Docker runtime) on arm64
-  Colima: 10/10, twice. Not yet verified:
-  - OpenSandbox's Kubernetes and Fast Sandbox runtimes;
-  - x86_64 hosts and real clusters;
+  Colima: 11/11. Not yet verified:
+  - OpenSandbox's Fast Sandbox runtime, and pause and snapshots on the
+    Kubernetes runtime (they need a snapshot registry);
+  - multi-node clusters;
   - live Daytona and Freestyle accounts.

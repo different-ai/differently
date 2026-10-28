@@ -60,9 +60,13 @@ const (
 )
 
 // DefaultFeatures are advertised unless the pool overrides config.features.
+// ports.expose is opt-in: the direct endpoints OpenSandbox returns are
+// addresses only its runtime host can use (host.docker.internal:<port> on
+// Docker, the pod IP on Kubernetes), so a pool lists it only when tenants
+// can reach those addresses.
 var DefaultFeatures = []string{
 	adapter.FeatureExec, adapter.FeatureExecStream, adapter.FeatureFiles,
-	adapter.FeaturePauseResume, adapter.FeatureSnapshotDisk, adapter.FeatureFork, adapter.FeaturePorts,
+	adapter.FeaturePauseResume, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
 }
 
 // Options configures the adapter. Pool config keys: apiURL (required, the
@@ -83,6 +87,10 @@ type Options struct {
 	// it, so without this the adapter restores a newline after every line.
 	LineEndingsKept bool
 	ReadyTimeout    time.Duration
+	// PauseStartTimeout bounds how long a pause may show no progress. Some
+	// runtimes accept a pause they cannot perform (the Kubernetes runtime
+	// without a snapshot registry) and leave the sandbox running.
+	PauseStartTimeout time.Duration
 }
 
 // FromConfig maps pool config to options.
@@ -141,6 +149,9 @@ func New(o Options) *Adapter {
 	if o.ReadyTimeout == 0 {
 		o.ReadyTimeout = 3 * time.Minute
 	}
+	if o.PauseStartTimeout == 0 {
+		o.PauseStartTimeout = 30 * time.Second
+	}
 	c := httpx.New("opensandbox", o.APIURL, "")
 	return &Adapter{opts: o, c: c, execd: map[string]endpoint{}}
 }
@@ -179,9 +190,10 @@ func (a *Adapter) call(ctx context.Context, method, path string, in, out any) er
 }
 
 type status struct {
-	State   string `json:"state"`
-	Reason  string `json:"reason"`
-	Message string `json:"message"`
+	State            string `json:"state"`
+	Reason           string `json:"reason"`
+	Message          string `json:"message"`
+	LastTransitionAt string `json:"lastTransitionAt"`
 }
 
 type sandbox struct {
@@ -227,7 +239,9 @@ func state(s sandbox) string {
 	return adapter.StatePending
 }
 
-func gone(s sandbox) bool { return s.Status.State == "Terminated" }
+// gone reports a sandbox that has ended or is being deleted. The Kubernetes
+// runtime keeps a deleted sandbox for a few seconds as Stopping/DELETING.
+func gone(s sandbox) bool { return s.Status.State == "Terminated" || s.Status.Reason == "DELETING" }
 
 func inst(s sandbox) adapter.Instance {
 	return adapter.Instance{Ref: s.ID, SandboxID: s.Metadata[metaSandbox], State: state(s), Message: strings.TrimSpace(s.Status.Reason + " " + s.Status.Message)}
@@ -280,7 +294,7 @@ func (a *Adapter) waitFor(ctx context.Context, ref, want string) (sandbox, error
 			return false, err
 		}
 		if s.Status.State == "Failed" {
-			return false, adapter.Unavailable(fmt.Errorf("opensandbox sandbox %s failed: %s %s", ref, s.Status.Reason, s.Status.Message))
+			return false, adapter.SandboxFailed(fmt.Errorf("opensandbox sandbox %s failed: %s %s", ref, s.Status.Reason, s.Status.Message))
 		}
 		return s.Status.State == want, nil
 	})
@@ -322,7 +336,7 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 			body["timeout"] = max(req.TTLSeconds, 60) // provider-side backstop; minimum 60 s
 		}
 		if err := a.call(ctx, http.MethodPost, "/sandboxes", body, &s); err != nil {
-			return adapter.Instance{}, err
+			return adapter.Instance{}, createError(err)
 		}
 	}
 	if s, err = a.waitFor(ctx, s.ID, "Running"); err != nil {
@@ -332,6 +346,27 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 		return adapter.Instance{}, err
 	}
 	return inst(s), nil
+}
+
+// createError reclassifies create failures that concern this one sandbox
+// rather than the server. An image that cannot be pulled is the request's
+// fault (the Docker runtime says so at once). A pod that did not become ready
+// in time is worth retrying, since a first pull can be slow, but on the
+// Kubernetes runtime it is also how a missing image shows up. Neither means
+// the server is unhealthy.
+func createError(err error) error {
+	var e *api.Error
+	if !errors.As(err, &e) {
+		return err
+	}
+	code := e.Details["providerCode"]
+	switch {
+	case strings.HasSuffix(code, "IMAGE_PULL_FAILED"):
+		return &api.Error{Code: api.CodeInvalidRequest, Message: e.Message, Details: e.Details}
+	case strings.HasSuffix(code, "POD_READY_TIMEOUT"):
+		return &api.Error{Code: adapter.CodeSandboxFailed, Message: e.Message + "; the image may still be pulling, or may not exist", Details: e.Details}
+	}
+	return err
 }
 
 // waitExecd pings execd until the sandbox's agent answers.
@@ -630,12 +665,33 @@ func (a *Adapter) SetExpiry(ctx context.Context, ref string, at time.Time) error
 	return a.call(ctx, http.MethodPost, "/sandboxes/"+url.PathEscape(ref)+"/renew-expiration", map[string]string{"expiresAt": at.UTC().Format(time.RFC3339)}, nil)
 }
 
+// Pause asks OpenSandbox to pause and waits for it. A pause the runtime
+// accepts but never starts (the sandbox stays Running with no new
+// transition) is reported as unsupported after PauseStartTimeout, rather than
+// as an outage after ReadyTimeout.
 func (a *Adapter) Pause(ctx context.Context, ref string) error {
+	before, err := a.get(ctx, ref)
+	if err != nil {
+		return err
+	}
 	if err := a.call(ctx, http.MethodPost, "/sandboxes/"+url.PathEscape(ref)+"/pause", nil, nil); err != nil {
 		return err
 	}
-	_, err := a.waitFor(ctx, ref, "Paused")
-	return err
+	stalled := time.Now().Add(a.opts.PauseStartTimeout)
+	return httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
+		s, err := a.get(ctx, ref)
+		switch {
+		case err != nil:
+			return false, err
+		case s.Status.State == "Paused":
+			return true, nil
+		case s.Status.State == "Failed":
+			return false, adapter.SandboxFailed(fmt.Errorf("opensandbox sandbox %s failed while pausing: %s %s", ref, s.Status.Reason, s.Status.Message))
+		case s.Status.State == "Running" && s.Status.LastTransitionAt == before.Status.LastTransitionAt && time.Now().After(stalled):
+			return false, api.Errorf(api.CodeUnsupportedOperation, "OpenSandbox accepted the pause, but sandbox %s did not start pausing within %s; its runtime may not support pause (the Kubernetes runtime needs a snapshot registry)", ref, a.opts.PauseStartTimeout).With("operation", adapter.FeaturePauseResume)
+		}
+		return false, nil
+	})
 }
 
 func (a *Adapter) Resume(ctx context.Context, ref string) error {
@@ -666,7 +722,10 @@ func (a *Adapter) Snapshot(ctx context.Context, ref, kind string) (adapter.Snaps
 		case "Ready":
 			return true, nil
 		case "Failed":
-			return false, adapter.Unavailable(fmt.Errorf("opensandbox snapshot failed: %s %s", snap.Status.Reason, snap.Status.Message))
+			if snap.Status.Reason == "RegistryNotConfigured" {
+				return false, api.Errorf(api.CodeUnsupportedOperation, "this OpenSandbox deployment cannot take snapshots: %s", snap.Status.Message).With("operation", adapter.FeatureSnapshotDisk)
+			}
+			return false, adapter.SandboxFailed(fmt.Errorf("opensandbox snapshot failed: %s %s", snap.Status.Reason, snap.Status.Message))
 		}
 		return false, a.call(ctx, http.MethodGet, "/snapshots/"+url.PathEscape(snap.ID), nil, &snap)
 	})

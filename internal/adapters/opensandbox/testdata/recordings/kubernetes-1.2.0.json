@@ -1,0 +1,610 @@
+{
+  "recorded": "2026-10-28",
+  "server": "opensandbox/server:release-1.2.0",
+  "execd": "opensandbox/execd:release-1.2.0",
+  "runtime": "kubernetes",
+  "host": "k3s v1.36.5 on an Azure Standard_D8s_v6 (x86_64)",
+  "config": {
+    "image": "debian:bookworm-slim",
+    "isolation": "container",
+    "lineEndings": "kept"
+  },
+  "exchanges": [
+    {
+      "step": "health",
+      "method": "GET",
+      "path": "/v1/sandboxes?page=1\u0026pageSize=1",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[],\"pagination\":{\"page\":1,\"pageSize\":1,\"totalItems\":0,\"totalPages\":0,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "create",
+      "method": "GET",
+      "path": "/v1/sandboxes?metadata=differently-sandbox-id%3Dsbx_rec_main\u0026page=1\u0026pageSize=100",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[],\"pagination\":{\"page\":1,\"pageSize\":100,\"totalItems\":0,\"totalPages\":0,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "create",
+      "method": "POST",
+      "path": "/v1/sandboxes",
+      "request": "{\"entrypoint\":[\"tail\",\"-f\",\"/dev/null\"],\"env\":{\"GREETING\":\"hello\"},\"image\":{\"uri\":\"debian:bookworm-slim\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"resourceLimits\":{\"cpu\":\"1\",\"memory\":\"512Mi\"},\"timeout\":900}",
+      "status": 202,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17.841195Z\",\"entrypoint\":[\"tail\",\"-f\",\"/dev/null\"]}"
+    },
+    {
+      "step": "create",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "create",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/endpoints/44772?use_server_proxy=true",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"endpoint\":\"{{host}}/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/proxy/44772\"}"
+    },
+    {
+      "step": "create",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/proxy/44772/ping",
+      "status": 200
+    },
+    {
+      "step": "create-again",
+      "method": "GET",
+      "path": "/v1/sandboxes?metadata=differently-sandbox-id%3Dsbx_rec_main\u0026page=1\u0026pageSize=100",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}],\"pagination\":{\"page\":1,\"pageSize\":100,\"totalItems\":1,\"totalPages\":1,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "create-again",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "create-again",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/proxy/44772/ping",
+      "status": 200
+    },
+    {
+      "step": "get-list",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "get-list",
+      "method": "GET",
+      "path": "/v1/sandboxes?metadata=differently-installation%3Dinst_rec\u0026page=1\u0026pageSize=100",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}],\"pagination\":{\"page\":1,\"pageSize\":100,\"totalItems\":1,\"totalPages\":1,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "exec",
+      "method": "POST",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/proxy/44772/command",
+      "request": "{\"command\":\"echo \\\"$GREETING $WHO\\\"; printf 'a\\\\nb'; printf err \\u003e\\u00262; exit 7\",\"envs\":{\"WHO\":\"world\"}}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"32fb0a4368d04e5fa782a1268ab1d8ce\",\"timestamp\":1793230221261}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793230221261}\n\n{\"type\":\"stdout\",\"text\":\"hello world\\n\",\"timestamp\":1793230221262}\n\n{\"type\":\"stdout\",\"text\":\"a\\n\",\"timestamp\":1793230221262}\n\n{\"type\":\"stdout\",\"text\":\"b\",\"timestamp\":1793230221262}\n\n{\"type\":\"stderr\",\"text\":\"err\",\"timestamp\":1793230221262}\n\n{\"type\":\"error\",\"timestamp\":1793230221262,\"error\":{\"ename\":\"CommandExecError\",\"evalue\":\"7\",\"traceback\":[\"exit status 7\"],\"exit_code\":7}}\n\n"
+    },
+    {
+      "step": "exec-argv",
+      "method": "POST",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/proxy/44772/command",
+      "request": "{\"command\":\"sh -c 'pwd; echo \\\"$1\\\"' sh 'it'\\\\''s quoted'\",\"cwd\":\"/tmp\"}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"d8937b1002854312bf22b0bbd3f8060f\",\"timestamp\":1793230221716}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793230221716}\n\n{\"type\":\"stdout\",\"text\":\"/tmp\\n\",\"timestamp\":1793230221717}\n\n{\"type\":\"stdout\",\"text\":\"it's quoted\\n\",\"timestamp\":1793230221717}\n\n{\"type\":\"execution_complete\",\"exit_code\":0,\"execution_time\":2,\"timestamp\":1793230221717}\n\n"
+    },
+    {
+      "step": "exec-timeout",
+      "method": "POST",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/proxy/44772/command",
+      "request": "{\"command\":\"sleep 30\",\"timeout\":1000}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"e555b95fd296409796bf92bfe6689be9\",\"timestamp\":1793230221998}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793230221999}\n\n{\"type\":\"error\",\"timestamp\":1793230222999,\"error\":{\"ename\":\"CommandExecError\",\"evalue\":\"-1\",\"traceback\":[\"signal: killed\"],\"exit_code\":-1}}\n\n"
+    },
+    {
+      "step": "exec-stream",
+      "method": "POST",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/proxy/44772/command",
+      "request": "{\"command\":\"for i in 1 2 3; do echo line$i; done; echo e \\u003e\\u00262; exit 3\"}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"5b82f7dd32e7439a9be6a53e2e1144ca\",\"timestamp\":1793230223289}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793230223290}\n\n{\"type\":\"stderr\",\"text\":\"e\\n\",\"timestamp\":1793230223291}\n\n{\"type\":\"stdout\",\"text\":\"line1\\n\",\"timestamp\":1793230223291}\n\n{\"type\":\"stdout\",\"text\":\"line2\\n\",\"timestamp\":1793230223291}\n\n{\"type\":\"stdout\",\"text\":\"line3\\n\",\"timestamp\":1793230223291}\n\n{\"type\":\"error\",\"timestamp\":1793230223291,\"error\":{\"ename\":\"CommandExecError\",\"evalue\":\"3\",\"traceback\":[\"exit status 3\"],\"exit_code\":3}}\n\n"
+    },
+    {
+      "step": "files",
+      "method": "POST",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/proxy/44772/files/upload",
+      "status": 200
+    },
+    {
+      "step": "files",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/proxy/44772/files/download?path=%2Ftmp%2Frec.bin",
+      "status": 200,
+      "contentType": "application/octet-stream",
+      "bodyBase64": "AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vk="
+    },
+    {
+      "step": "files",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/proxy/44772/directories/list?depth=1\u0026path=%2Ftmp",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "[{\"path\":\"/tmp/opensandbox-execd\",\"type\":\"directory\",\"size\":4096,\"modified_at\":\"2026-10-28T23:30:23.291240011Z\",\"created_at\":\"2026-10-28T23:30:23.291240011Z\",\"owner\":\"root\",\"group\":\"root\",\"mode\":700},{\"path\":\"/tmp/rec.bin\",\"type\":\"file\",\"size\":8192,\"modified_at\":\"2026-10-28T23:30:23.804144048Z\",\"created_at\":\"2026-10-28T23:30:23.811143746Z\",\"owner\":\"root\",\"group\":\"root\",\"mode\":644}]"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "POST",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/pause",
+      "status": 202
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "pause",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-28T23:30:17Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:45:17.841195Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "snapshot",
+      "method": "POST",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/snapshots",
+      "request": "{\"name\":\"differently-f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\"}",
+      "status": 202,
+      "contentType": "application/json",
+      "body": "{\"id\":\"8d3ed6e6-247e-4c72-a1fe-be85d7a53890\",\"sandboxId\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"name\":\"differently-f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"status\":{\"state\":\"Creating\",\"reason\":\"snapshot_accepted\",\"message\":\"Snapshot creation accepted.\",\"lastTransitionAt\":\"2026-10-28T23:30:55.221746Z\"},\"createdAt\":\"2026-10-28T23:30:55.221746Z\"}"
+    },
+    {
+      "step": "snapshot",
+      "method": "GET",
+      "path": "/v1/snapshots/8d3ed6e6-247e-4c72-a1fe-be85d7a53890",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"8d3ed6e6-247e-4c72-a1fe-be85d7a53890\",\"sandboxId\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"name\":\"differently-f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"status\":{\"state\":\"Failed\",\"reason\":\"RegistryNotConfigured\",\"message\":\"snapshot-registry not configured in controller manager\",\"lastTransitionAt\":\"2026-10-28T23:30:55.256290Z\"},\"createdAt\":\"2026-10-28T23:30:55.221746Z\"}"
+    },
+    {
+      "step": "port",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/endpoints/8080?use_server_proxy=false",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"endpoint\":\"10.42.0.33:8080\"}"
+    },
+    {
+      "step": "expiry",
+      "method": "POST",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2/renew-expiration",
+      "request": "{\"expiresAt\":\"2026-10-28T23:50:56Z\"}",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"expiresAt\":\"2026-10-28T23:50:56Z\"}"
+    },
+    {
+      "step": "delete",
+      "method": "DELETE",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 204
+    },
+    {
+      "step": "after-delete",
+      "method": "GET",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"f9941a55-4be3-4d35-8c54-e4d8bc41a0d2\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Stopping\",\"reason\":\"DELETING\",\"message\":\"Sandbox is being deleted\",\"lastTransitionAt\":\"2026-10-28T23:30:56Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-28T23:50:56Z\",\"createdAt\":\"2026-10-28T23:30:17Z\"}"
+    },
+    {
+      "step": "after-delete",
+      "method": "DELETE",
+      "path": "/v1/sandboxes/f9941a55-4be3-4d35-8c54-e4d8bc41a0d2",
+      "status": 204
+    },
+    {
+      "step": "bad-image",
+      "method": "GET",
+      "path": "/v1/sandboxes?metadata=differently-sandbox-id%3Dsbx_rec_badimage\u0026page=1\u0026pageSize=100",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[],\"pagination\":{\"page\":1,\"pageSize\":100,\"totalItems\":0,\"totalPages\":0,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "bad-image",
+      "method": "POST",
+      "path": "/v1/sandboxes",
+      "request": "{\"entrypoint\":[\"tail\",\"-f\",\"/dev/null\"],\"env\":null,\"image\":{\"uri\":\"docker.io/library/ubuntu:no-such-tag-differently\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_badimage\",\"name\":\"sbx_rec_badimage\"},\"resourceLimits\":{\"cpu\":\"1\",\"memory\":\"256Mi\"},\"timeout\":300}",
+      "status": 504,
+      "contentType": "application/json",
+      "body": "{\"code\":\"KUBERNETES::POD_READY_TIMEOUT\",\"message\":\"Timeout waiting for sandbox ff661028-9277-4e3b-af34-259f2c75b03e to be Running with IP. Elapsed: 60.0s, Last state: Pending\"}"
+    }
+  ]
+}

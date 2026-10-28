@@ -62,7 +62,7 @@ pools:
     costModel: { cpuHour: 0.010, memoryGiBHour: 0.002 }
     credentials: { env: DIFFERENTLY_OPENSANDBOX_API_KEY }
     config:
-      apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+      apiURL: http://opensandbox-server.opensandbox-system.svc/v1
       isolation: container
   - name: daytona-burst
     adapter: daytona          # always trust: external

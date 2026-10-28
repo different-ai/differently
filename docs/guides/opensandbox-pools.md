@@ -10,12 +10,16 @@ queueing, policy-gated placement, audit and the trust report on top.
 Background: [spike](../research/opensandbox-spike.md),
 [ADR 0019](../adr/0019-opensandbox-backend-first.md).
 
-> Status: checked live against OpenSandbox release 1.2.0 with the Docker
-> runtime and `execd` release-1.2.0 and v1.1.0 (arm64, Colima), through the adapter's live test
-> and through `differently-server`. The Kubernetes runtime and Fast Sandbox
-> are not verified yet
-> ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime),
-> [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter)).
+> Status: checked live against OpenSandbox release 1.2.0 with `execd`
+> release-1.2.0, through the adapter's live test and the end-to-end suite:
+> the Docker runtime (arm64, Colima) and the Kubernetes runtime (single-node
+> k3s on Azure, x86_64, installed from OpenSandbox's and Differently's Helm
+> charts). Both runs are recorded and replayed in every `go test`
+> ([test/opensandbox](../../test/opensandbox/README.md)). Fast Sandbox is not
+> verified yet
+> ([POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter));
+> for the Kubernetes runtime's open items see
+> [POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime).
 
 ## Install OpenSandbox
 
@@ -35,7 +39,7 @@ default pool:
 ```yaml
 opensandbox:
   enabled: true
-  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1   # the lifecycle API, ending in /v1
+  apiURL: http://opensandbox-server.opensandbox-system.svc/v1   # the lifecycle API, ending in /v1
   trust: private              # private if you run the server, external if someone else does
   pool:
     name: opensandbox
@@ -58,7 +62,8 @@ release `dly`, `dly-differently-opensandbox`), which you create before
 installing; the chart's NOTES print the command, and
 server pods wait until the Secret exists. The chart's NetworkPolicy allows
 server egress to OpenSandbox through `networkPolicy.server.egress.opensandbox`
-(namespace `opensandbox`, port 8090 by default). Complete examples:
+(namespace `opensandbox-system`, port 80 by default, matching OpenSandbox's
+own chart). Complete examples:
 `deploy/helm/differently/ci/opensandbox-values.yaml` (Fast Sandbox declared,
 existing Secret) and `ci/hybrid-daytona-values.yaml` (OpenSandbox with
 Daytona overflow).
@@ -76,11 +81,11 @@ pools:
     region: dc1
     maxConcurrency: 50
     config:
-      apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+      apiURL: http://opensandbox-server.opensandbox-system.svc/v1
       image: ubuntu:24.04     # default image URI (a sandbox template overrides it)
       isolation: container    # container (Docker/Kubernetes runtime) or microvm (Fast Sandbox)
       # templateId: fsb-...   # Fast Sandbox template instead of an image
-      # features: exec,exec.stream,files,lifecycle.pause-resume,snapshots.disk,fork,ports.expose
+      # features: exec,exec.stream,files   # Kubernetes runtime without a snapshot registry
       # useServerProxy: "true"
     credentials:
       env: DIFFERENTLY_OPENSANDBOX_API_KEY   # the server's api_key, by reference
@@ -115,15 +120,16 @@ other's live sandboxes alone, but it adds no isolation.
 | Exec, streamed exec, env, cwd, timeouts, exit codes | yes. With `execd` release-1.2.0 or later and `lineEndings: kept`, output is byte-exact. With `execd` 1.1 (`lineEndings: stripped`, the default) a newline is restored after each line, so a final fragment without one gains one |
 | Exec stdin | **no**: `unsupported_operation`. OpenSandbox's command API takes no stdin |
 | Files (upload, download, list) | yes |
-| Pause / resume | yes |
+| Image that cannot be pulled | the sandbox fails or is retried with a reason naming the image, and the pool stays healthy for other tenants. The Docker runtime reports the failed pull at once (the sandbox fails after one attempt); the Kubernetes runtime only reports that the pod did not become ready within 60 s (`POD_READY_TIMEOUT`), which is also what a slow first pull looks like, so it is retried up to `scheduler.maxAttempts` |
+| Pause / resume | yes on the Docker runtime. On the Kubernetes runtime only with OpenSandbox's snapshot registry (`controller.snapshot.registry`): without one OpenSandbox accepts the pause and never starts it, which the adapter reports as `unsupported_operation` after 30 s. List only `exec`, `exec.stream` and `files` in `features` for such a pool |
 | Stop / start | **no**: OpenSandbox has pause/resume and delete only, so stop returns `unsupported_operation` and the pool never offers `lifecycle.stop-start` or `persistence.disk` |
-| Snapshots and fork | disk snapshots by default. Memory snapshots depend on the runtime: add `snapshots.memory` to `features` only when it captures memory (Fast Sandbox is documented to; unverified). Differently reports the kind the pool declares and cannot check it |
-| Port URLs | only when OpenSandbox serves the port directly, without request headers. Endpoints that need the server's API key are refused, because that key must never reach tenants. Not checked live |
+| Snapshots and fork | disk snapshots by default; on the Kubernetes runtime they need the snapshot registry too (otherwise `unsupported_operation`, from OpenSandbox's `RegistryNotConfigured`). Memory snapshots depend on the runtime: add `snapshots.memory` to `features` only when it captures memory (Fast Sandbox is documented to; unverified). Differently reports the kind the pool declares and cannot check it |
+| Port URLs | **off by default**. OpenSandbox's direct endpoints are addresses only the runtime host can use: `host.docker.internal:<port>` on the Docker runtime and the pod IP on the Kubernetes runtime (both recorded). Add `ports.expose` to `features` only if tenants can reach them. Endpoints that need the server's API key are always refused, because that key must never reach tenants |
 | Provider-side TTL backstop | yes: OpenSandbox's `timeout` is set from the sandbox's TTL at creation (minimum 60 s), and a TTL change moves it (`renew-expiration`) to five minutes after Differently's own expiry |
 | Capacity | not reported: OpenSandbox's API exposes none, so the pool is limited only by `maxConcurrency` and quotas |
 
 The adapter's default features are `exec`, `exec.stream`, `files`,
-`lifecycle.pause-resume`, `snapshots.disk`, `fork` and `ports.expose`, plus
+`lifecycle.pause-resume`, `snapshots.disk` and `fork`, plus
 `isolation.container` or `isolation.microvm` from `isolation`. Setting
 `features` replaces the list. A feature backed by an adapter method the
 OpenSandbox adapter lacks is dropped, so stop/start cannot be added this way;

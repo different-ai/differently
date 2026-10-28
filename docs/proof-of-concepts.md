@@ -285,14 +285,14 @@ sandbox networking, how the control plane reaches `execd` (through the
 server's proxy, the adapter's default, or directly), port endpoints and
 multi-node scheduling are unverified, as is the interaction with the Helm
 chart's NetworkPolicy, which lets the control plane reach OpenSandbox only on
-port 8090.
+the server's port.
 
 **Hypothesis.** With OpenSandbox installed from its own chart using the
 Kubernetes runtime, and Differently's chart rendering its `opensandbox` pool
-with the default `apiURL` (`http://opensandbox-server.opensandbox.svc:8090/v1`)
+with the default `apiURL` (`http://opensandbox-server.opensandbox-system.svc/v1`)
 and `isolation: container`, every advertised feature works through the
 server proxy, and control-plane egress stays limited to OpenSandbox's port
-8090.
+(80 with its chart).
 
 **Method.** On a local cluster (kind or k3s) and one managed cluster, each
 with a CNI that enforces NetworkPolicy (Calico or Cilium):
@@ -315,6 +315,37 @@ documented.
 
 **Unblocks.** Kubernetes guidance in [deploy/](deploy/README.md); Scenario A on
 a real cluster; [backlog E19](backlog.md#e19-opensandbox-network-policy-and-egress).
+
+**Result (2026-10-28, partial: steps 1, 2 and 4).** Single-node k3s
+v1.36.5 on an Azure `Standard_D8s_v6`, OpenSandbox 1.2.0 from its own charts
+(`base`, `controller`, `server`; images from Docker Hub), Differently from its
+chart with the embedded PostgreSQL:
+
+- **Works through the server proxy:** create (running in about 2 s with the
+  image cached), CPU and memory limits as cgroups, exec (exact output with
+  `lineEndings: kept`), streaming, files, quotas, drift reconciliation,
+  delete, audit and the trust report. `TestLiveOpenSandbox` and the
+  end-to-end suite pass (11/11), and the run is recorded in
+  `internal/adapters/opensandbox/testdata/recordings/kubernetes-1.2.0.json`.
+- **Needs a snapshot registry:** pause is accepted but never starts (the
+  sandbox stays `Running`), and snapshots fail with `RegistryNotConfigured`,
+  until the controller has `controller.snapshot.registry`. Without one, list
+  only `exec`, `exec.stream` and `files` in the pool's `features`; the
+  adapter reports a stalled pause or a registry-less snapshot as
+  `unsupported_operation`.
+- **Ports:** direct endpoints are pod IPs (`10.42.x.x:<port>`), so
+  `ports.expose` is no longer a default feature.
+- **Slow first pulls:** OpenSandbox waits 60 s for a pod to become ready and
+  then answers 504 `POD_READY_TIMEOUT`, which is also how a missing image
+  shows up. The adapter retries it without marking the pool unhealthy.
+- **Install notes:** OpenSandbox's `base` chart creates its own namespaces
+  (`opensandbox-system`, `opensandbox-dataplane`), so do not create them first;
+  its charts default to images in a registry in mainland China, so set
+  Docker Hub's `docker.io/opensandbox/*:release-1.2.0` instead.
+
+Not yet run: `useServerProxy: "false"` (step 3), several nodes and a drain
+(step 5), probes from inside a sandbox (step 6), and a CNI other than k3s's
+built-in NetworkPolicy controller.
 
 ## POC 13. OpenSandbox outage and recovery
 

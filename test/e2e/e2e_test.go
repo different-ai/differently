@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -103,6 +104,33 @@ func eventually(t *testing.T, timeout time.Duration, what string, ok func() bool
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+// advertises reports whether the pool advertises a capability. The suite
+// runs against any OpenSandbox runtime: where an operation is not offered
+// (pause on the Kubernetes runtime without a snapshot registry, say), it
+// checks that Differently refuses it precisely instead.
+func advertises(t *testing.T, feature string) bool {
+	t.Helper()
+	var caps api.List[struct {
+		Pool         string   `json:"pool"`
+		Capabilities []string `json:"capabilities"`
+	}]
+	if err := operator.Do(ctx(t), "GET", "/v1/capabilities", nil, &caps); err != nil || len(caps.Items) == 0 {
+		t.Fatalf("capabilities: %+v %v", caps, err)
+	}
+	return slices.Contains(caps.Items[0].Capabilities, feature)
+}
+
+// poolHealthy reports the private pool's health as placement sees it.
+func poolHealthy(t *testing.T) (bool, string) {
+	t.Helper()
+	var pools api.List[api.Pool]
+	if err := operator.Do(ctx(t), "GET", "/v1/admin/pools", nil, &pools); err != nil || len(pools.Items) == 0 || pools.Items[0].Health == nil {
+		t.Fatalf("pools: %+v %v", pools, err)
+	}
+	h := pools.Items[0].Health
+	return h.Status == "healthy", h.Message
 }
 
 // osb calls OpenSandbox directly, as an operator would behind Differently's back.
@@ -263,6 +291,20 @@ func TestFiles(t *testing.T) {
 func TestPauseResumeAndUnsupportedStop(t *testing.T) {
 	c := tenant(t, "pause", api.Quota{})
 	sb := create(t, c, api.CreateSandboxRequest{})
+	// OpenSandbox has no stop; Differently says so precisely.
+	if _, err := c.Action(ctx(t), sb.ID, "stop"); !api.IsCode(err, api.CodeUnsupportedOperation) {
+		t.Fatalf("stop should be unsupported_operation, got %v", err)
+	}
+	if !advertises(t, "lifecycle.pause-resume") {
+		if _, err := c.Action(ctx(t), sb.ID, "pause"); !api.IsCode(err, api.CodeUnsupportedOperation) {
+			t.Fatalf("pause on a pool without pause-resume: want unsupported_operation, got %v", err)
+		}
+		if got, _ := c.GetSandbox(ctx(t), sb.ID); got.Status != api.StatusRunning {
+			t.Fatalf("a refused pause changed the sandbox: %+v", got)
+		}
+		t.Log("pool does not advertise pause-resume: checked the refusal")
+		return
+	}
 	sh(t, c, sb.ID, "echo 42 > /dev/shm/in-memory")
 	if _, err := c.Action(ctx(t), sb.ID, "pause"); err != nil {
 		t.Fatal(err)
@@ -276,15 +318,18 @@ func TestPauseResumeAndUnsupportedStop(t *testing.T) {
 	if got := strings.TrimSpace(sh(t, c, sb.ID, "cat /dev/shm/in-memory").Stdout); got != "42" {
 		t.Fatalf("memory not kept across pause/resume: %q", got)
 	}
-	// OpenSandbox has no stop; Differently says so precisely.
-	if _, err := c.Action(ctx(t), sb.ID, "stop"); !api.IsCode(err, api.CodeUnsupportedOperation) {
-		t.Fatalf("stop should be unsupported_operation, got %v", err)
-	}
 }
 
 func TestSnapshotAndFork(t *testing.T) {
 	c := tenant(t, "fork", api.Quota{})
 	parent := create(t, c, api.CreateSandboxRequest{})
+	if !advertises(t, "snapshots.disk") {
+		if _, err := c.Fork(ctx(t), parent.ID); !api.IsCode(err, api.CodeUnsupportedOperation) && !api.IsCode(err, api.CodeUnsupportedCapability) {
+			t.Fatalf("fork on a pool without snapshots: want a precise refusal, got %v", err)
+		}
+		t.Log("pool does not advertise snapshots.disk: checked the refusal")
+		return
+	}
 	sh(t, c, parent.ID, "echo v1 > /root/state && sync")
 	child, err := c.Fork(ctx(t), parent.ID)
 	if err != nil {
@@ -304,6 +349,43 @@ func TestSnapshotAndFork(t *testing.T) {
 }
 
 // Scenario I against a real backend: the only pool cannot stop and start.
+// A sandbox whose image cannot be pulled fails or is retried with a reason
+// that names the image, and the pool stays healthy for everyone else
+// throughout: the backend itself is fine.
+func TestUnpullableImageKeepsPoolHealthy(t *testing.T) {
+	c := tenant(t, "badimage", api.Quota{})
+	sb, err := c.CreateSandbox(ctx(t), api.CreateSandboxRequest{Template: "docker.io/library/debian:no-such-tag-differently"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.DeleteSandbox(context.Background(), sb.ID) })
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		if ok, msg := poolHealthy(t); !ok {
+			t.Fatalf("one sandbox's unpullable image marked the pool unhealthy: %s", msg)
+		}
+		got, err := c.GetSandbox(ctx(t), sb.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		failedOnce := got.Status == api.StatusFailed || got.Status == api.StatusQueued && got.Attempts > 0
+		if failedOnce {
+			if !strings.Contains(got.StatusReason, "image") {
+				t.Fatalf("the reason should name the image: %q", got.StatusReason)
+			}
+			if strings.Contains(got.StatusReason, "provider_unavailable") {
+				t.Fatalf("an image problem is reported as a provider outage: %q", got.StatusReason)
+			}
+			t.Logf("%s after %d attempt(s): %s", got.Status, got.Attempts, got.StatusReason)
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the sandbox never failed: %+v", got)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 func TestCapabilityMismatchIsPrecise(t *testing.T) {
 	c := tenant(t, "caps", api.Quota{})
 	_, err := c.CreateSandbox(ctx(t), api.CreateSandboxRequest{Capabilities: []string{"lifecycle.stop-start"}}, false)

@@ -36,7 +36,7 @@ Pools are where sandboxes run:
   | differently-server (Deployment, N pods) |----->| PostgreSQL          |
   |   API, dashboard, scheduler, audit      |      | (external / CNPG)   |
   +-----------------------------------------+      +---------------------+
-        |  :8090 (OpenSandbox API key,             policy-gated, disabled by default
+        |  :80 (OpenSandbox API key,               policy-gated, disabled by default
         |   by reference)                          +------------------------------+
         v                                          | Daytona / Freestyle (HTTPS)  |
   +-----------------------------------------+      +------------------------------+
@@ -61,7 +61,7 @@ are OpenSandbox prerequisites for that runtime.
 - An `opensandbox` pool without an explicit `trust` is rejected at start-up,
   because Differently cannot tell who operates the server.
 - The chart's NetworkPolicy limits server egress to DNS, the database,
-  OpenSandbox (port 8090) and enabled providers.
+  OpenSandbox (port 80 by default) and enabled providers.
 - Secrets are never written into the server config. Pools reference
   credentials by environment variable or file, and the chart keeps the
   bootstrap token and the OpenSandbox API key in Secrets.

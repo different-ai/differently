@@ -58,7 +58,7 @@ kubectl create namespace differently
 kubectl -n differently create secret generic opensandbox-api-key \
   --from-literal=api-key='<the OpenSandbox server api_key>'
 helm install differently deploy/helm/differently -n differently \
-  --set opensandbox.apiURL=http://opensandbox-server.opensandbox.svc:8090/v1 \
+  --set opensandbox.apiURL=http://opensandbox-server.opensandbox-system.svc/v1 \
   --set opensandbox.existingSecret=opensandbox-api-key
 kubectl -n differently get secret differently-tokens -o jsonpath='{.data.bootstrap-token}' | base64 -d
 ```
