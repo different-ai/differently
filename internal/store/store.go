@@ -38,6 +38,12 @@ type KeyRecord struct {
 	Hash string `json:"hash"`
 }
 
+// SecretRecord is a stored provider credential, sealed by internal/secrets.
+type SecretRecord struct {
+	api.Secret
+	Sealed []byte `json:"sealed"`
+}
+
 // SnapshotRecord is a snapshot plus its backend reference.
 type SnapshotRecord struct {
 	api.Snapshot
@@ -127,6 +133,13 @@ type Store interface {
 	GetKey(ctx context.Context, id string) (KeyRecord, error)
 	ListKeys(ctx context.Context, orgID, projectID string) ([]KeyRecord, error)
 	UpdateKey(ctx context.Context, id string, fn func(*KeyRecord) error) (KeyRecord, error)
+
+	// PutSecret creates or replaces a sealed secret.
+	PutSecret(ctx context.Context, s SecretRecord) error
+	GetSecret(ctx context.Context, name string) (SecretRecord, error)
+	ListSecrets(ctx context.Context) ([]SecretRecord, error)
+	// DeleteSecret refuses while a pool's credential refers to the secret.
+	DeleteSecret(ctx context.Context, name string) error
 
 	UpsertPool(ctx context.Context, p api.Pool) error
 	GetPool(ctx context.Context, name string) (api.Pool, error)

@@ -279,11 +279,15 @@ export interface ApiKey {
   expiresAt?: string;
   lastUsedAt?: string;
   revoked: boolean;
+  /** The key a rotation issued in place of this one. */
+  replacedBy?: string;
 }
 
 /** A newly created key. `token` is shown only once. */
 export interface CreatedApiKey extends ApiKey {
   token: string;
+  /** On a rotation, the old key's new state. */
+  replaced?: ApiKey;
 }
 
 export interface CreateApiKeyParams {
@@ -347,8 +351,11 @@ export interface CreatePoolParams {
   maxConcurrency?: number;
   costModel?: CostModel;
   config?: Record<string, string>;
-  /** Name of a server environment variable or a mounted file holding the credential. */
-  credentials?: { env?: string; file?: string };
+  /**
+   * Where the credential lives: a server environment variable, a mounted file, or a
+   * credential stored in Differently with `admin.secrets.put` (`secret`).
+   */
+  credentials?: { env?: string; file?: string; secret?: string };
 }
 
 export interface UpdatePoolParams {
@@ -356,6 +363,29 @@ export interface UpdatePoolParams {
   maxConcurrency?: number;
   costModel?: CostModel;
   region?: string;
+  /** API-registered pools only: `env:NAME`, `file:/path` or `secret:name`. */
+  credentialRef?: string;
+}
+
+/** A provider credential stored in Differently. Its value is never returned. */
+export interface Secret {
+  name: string;
+  fingerprint: string;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+  updatedBy: string;
+  /** Pools whose credential is this secret. */
+  usedBy: string[];
+}
+
+/** The result of sending new sandboxes to a pool. */
+export interface UsePoolResult {
+  pool: Pool;
+  /** Pools drained by the switch; their running sandboxes stay. */
+  drained: string[];
+  /** The global policy, when the switch approved an external pool. */
+  policy?: PlacementPolicy;
 }
 
 /** A pool as tenants see it: no config or credentials. */

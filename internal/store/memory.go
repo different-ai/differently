@@ -21,6 +21,7 @@ type Memory struct {
 	projects     map[string]api.Project
 	keys         map[string]KeyRecord
 	pools        map[string]api.Pool
+	secrets      map[string]SecretRecord
 	policies     map[string]api.PlacementPolicy
 	sandboxes    map[string]SandboxRecord
 	snapshots    map[string]SnapshotRecord
@@ -34,6 +35,7 @@ func NewMemory() *Memory {
 		projects:  map[string]api.Project{},
 		keys:      map[string]KeyRecord{},
 		pools:     map[string]api.Pool{},
+		secrets:   map[string]SecretRecord{},
 		policies:  map[string]api.PlacementPolicy{},
 		sandboxes: map[string]SandboxRecord{},
 		snapshots: map[string]SnapshotRecord{},
@@ -217,6 +219,49 @@ func (m *Memory) UpdateKey(_ context.Context, id string, fn func(*KeyRecord) err
 	}
 	m.keys[id] = clone(k)
 	return k, nil
+}
+
+func (m *Memory) PutSecret(_ context.Context, s SecretRecord) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.secrets[s.Name] = clone(s)
+	return nil
+}
+
+func (m *Memory) GetSecret(_ context.Context, name string) (SecretRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.secrets[name]
+	if !ok {
+		return s, NotFound("secret", name)
+	}
+	return clone(s), nil
+}
+
+func (m *Memory) ListSecrets(context.Context) ([]SecretRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]SecretRecord, 0, len(m.secrets))
+	for _, s := range m.secrets {
+		out = append(out, clone(s))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (m *Memory) DeleteSecret(_ context.Context, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.pools {
+		if p.CredentialRef == "secret:"+name {
+			return api.Errorf(api.CodeConflict, "secret %s is used by pool %s", name, p.Name)
+		}
+	}
+	if _, ok := m.secrets[name]; !ok {
+		return NotFound("secret", name)
+	}
+	delete(m.secrets, name)
+	return nil
 }
 
 func (m *Memory) UpsertPool(_ context.Context, p api.Pool) error {

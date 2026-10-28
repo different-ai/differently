@@ -380,10 +380,11 @@ suite (`internal/store/storetest/storetest.go`).
 | `sandboxes` | `id` | `org_id`, `project_id`, `pool`, `status`, `idempotency_key`, `next_attempt_at`; partial index on queued rows by `next_attempt_at`; unique `(project_id, idempotency_key)` where the key is set |
 | `snapshots` | `id` | `org_id`, `project_id` |
 | `audit_events` | `seq` | `org_id`, `resource`, `action` |
+| `secrets` | `name` | `doc` holds a provider credential sealed with AES-256-GCM, its fingerprint and who changed it; never the value ([ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md)) |
 | `schema_migrations` | `version` | Applied migration files |
 
 `0001_init.sql` creates the schema; `0002_drop_agents.sql` drops the
-`agents` table that node agents used. Migrations are embedded in the binary
+`agents` table that node agents used; `0004_secrets.sql` adds `secrets`. Migrations are embedded in the binary
 and applied under a session advisory lock (`dly_mig`) by
 `differently-server serve` at start-up and by `differently-server migrate`
 (the Helm chart's migrate Job).
@@ -604,9 +605,11 @@ from each pool's runtime (OpenSandbox's Docker, Kubernetes or Fast Sandbox
 runtime, or the provider), and the trust report lists each pool's declared
 isolation without checking it. Containers from the Docker and Kubernetes
 runtimes share the host kernel; microVM isolation through Differently is
-unverified until the Fast Sandbox spike. Control-plane and backend secrets
-are referenced, not stored; backend credentials such as the OpenSandbox API
-key stay in the control plane. The audit log is a hash chain. Sandbox
+unverified until the Fast Sandbox spike. Control-plane secrets are
+referenced, not stored. Backend credentials are referenced too, or stored
+sealed under a key that never enters the database (ADR 0021). Either way,
+backend credentials such as the OpenSandbox API key stay in the control
+plane. The audit log is a hash chain. Sandbox
 environment values are stored in plaintext. Details, residual risks and known
 issues: [trust model](../security/trust-model.md).
 

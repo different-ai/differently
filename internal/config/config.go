@@ -25,6 +25,7 @@ type Config struct {
 	DataDir         string               `json:"dataDir,omitempty"`
 	Store           StoreConfig          `json:"store"`
 	Auth            AuthConfig           `json:"auth"`
+	Secrets         SecretsConfig        `json:"secrets"`
 	Defaults        Defaults             `json:"defaults"`
 	Classifications []api.Classification `json:"classifications"`
 	Profiles        []api.Profile        `json:"profiles"`
@@ -42,6 +43,14 @@ type Config struct {
 type StoreConfig struct {
 	Driver string `json:"driver"` // memory | postgres
 	DSNEnv string `json:"dsnEnv,omitempty"`
+}
+
+// SecretsConfig names where the key that seals stored provider credentials
+// comes from. Without a key, credentials can still be referenced as env: or
+// file:, but none can be stored in Differently.
+type SecretsConfig struct {
+	KeyEnv  string `json:"keyEnv"`
+	KeyFile string `json:"keyFile,omitempty"`
 }
 
 // AuthConfig names the environment variable holding the bootstrap secret.
@@ -64,6 +73,8 @@ type Defaults struct {
 type CredentialRef struct {
 	Env  string `json:"env,omitempty"`
 	File string `json:"file,omitempty"`
+	// Secret names a credential stored in Differently (PUT /v1/admin/secrets/{name}).
+	Secret string `json:"secret,omitempty"`
 }
 
 // String renders the reference for display.
@@ -73,20 +84,28 @@ func (c CredentialRef) String() string {
 		return "env:" + c.Env
 	case c.File != "":
 		return "file:" + c.File
+	case c.Secret != "":
+		return "secret:" + c.Secret
 	}
 	return ""
 }
 
-// ParseCredentialRef parses "env:NAME" or "file:/path".
+// ParseCredentialRef parses "env:NAME", "file:/path" or "secret:name".
 func ParseCredentialRef(s string) CredentialRef {
 	switch {
 	case strings.HasPrefix(s, "env:"):
 		return CredentialRef{Env: strings.TrimPrefix(s, "env:")}
 	case strings.HasPrefix(s, "file:"):
 		return CredentialRef{File: strings.TrimPrefix(s, "file:")}
+	case strings.HasPrefix(s, "secret:"):
+		return CredentialRef{Secret: strings.TrimPrefix(s, "secret:")}
 	}
 	return CredentialRef{}
 }
+
+// ErrStoredSecret reports a secret: reference, which only the server can
+// resolve (it needs the store and the secrets key).
+var ErrStoredSecret = errors.New("stored secrets resolve through the server")
 
 // Resolve reads the secret. A missing reference resolves to "".
 func (c CredentialRef) Resolve() (string, error) {
@@ -103,6 +122,8 @@ func (c CredentialRef) Resolve() (string, error) {
 			return "", err
 		}
 		return strings.TrimSpace(string(b)), nil
+	case c.Secret != "":
+		return "", ErrStoredSecret
 	}
 	return "", nil
 }
@@ -220,6 +241,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Auth.BootstrapTokenEnv == "" {
 		c.Auth.BootstrapTokenEnv = "DIFFERENTLY_BOOTSTRAP_TOKEN"
+	}
+	if c.Secrets.KeyEnv == "" && c.Secrets.KeyFile == "" {
+		c.Secrets.KeyEnv = "DIFFERENTLY_SECRETS_KEY"
 	}
 	if len(c.Classifications) == 0 {
 		c.Classifications = []api.Classification{

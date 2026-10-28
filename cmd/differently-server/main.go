@@ -5,6 +5,7 @@
 //	differently-server migrate                    apply database migrations
 //	differently-server preflight                  validate config and environment
 //	differently-server token                      print a new random API token
+//	differently-server secrets-key                print a new key for sealing stored credentials
 package main
 
 import (
@@ -13,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,6 +27,7 @@ import (
 	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/internal/pools"
 	"github.com/different-ai/differently/internal/scheduler"
+	"github.com/different-ai/differently/internal/secrets"
 	"github.com/different-ai/differently/internal/server"
 	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/internal/store/postgres"
@@ -56,10 +59,12 @@ func main() {
 	case "token":
 		_, token, _ := auth.NewToken()
 		fmt.Println(token)
+	case "secrets-key":
+		fmt.Println(secrets.NewKey())
 	case "version":
 		fmt.Println(version.Version, version.Commit)
 	default:
-		err = fmt.Errorf("unknown command %q (serve, migrate, preflight, token, version)", cmd)
+		err = fmt.Errorf("unknown command %q (serve, migrate, preflight, token, secrets-key, version)", cmd)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -139,9 +144,17 @@ func serve(cfgPath string, dev bool, listen, dataDir string) error {
 	defer rec.Close()
 
 	wiring.Register()
-	pm := pools.NewManager(pools.Deps{Store: st, Dev: cfg.Dev, DataDir: cfg.DataDir, Logger: log})
+	box, err := secrets.Load(cfg.Secrets.KeyEnv, cfg.Secrets.KeyFile)
+	if err != nil {
+		return err
+	}
+	if box == nil {
+		log.Info("no secrets key; provider credentials can be referenced (env:, file:) but not stored")
+	}
+	pm := pools.NewManager(pools.Deps{Store: st, Dev: cfg.Dev, DataDir: cfg.DataDir, Logger: log, Resolve: server.CredentialResolver(st, box)})
 	sch := scheduler.New(st, pm, cfg, installation, rec, log)
 	srv := server.New(cfg, st, pm, sch, rec, log, installation)
+	srv.Secrets = box
 	if err := srv.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("bootstrap: %w", err)
 	}
@@ -160,7 +173,7 @@ func serve(cfgPath string, dev bool, listen, dataDir string) error {
 	log.Info("differently-server started", "listen", cfg.Listen, "version", version.Version, "installation", installation, "store", cfg.Store.Driver, "dev", cfg.Dev)
 	if cfg.Dev {
 		log.Warn("DEV MODE: the devhost pool runs commands directly on this machine with no isolation",
-			"operatorTokenFile", filepath.Join(cfg.DataDir, "token"), "dashboard", "http://localhost"+cfg.Listen+"/dashboard/")
+			"operatorTokenFile", filepath.Join(cfg.DataDir, "token"), "dashboard", dashboardURL(cfg.Listen))
 	}
 	select {
 	case err := <-errc:
@@ -218,11 +231,19 @@ func preflight(cfgPath string) error {
 	token := os.Getenv(cfg.Auth.BootstrapTokenEnv)
 	_, _, valid := auth.ParseToken(token)
 	check(token == "" || valid, "bootstrap token %s is a valid dly_ token (or unset)", cfg.Auth.BootstrapTokenEnv)
+	box, err := secrets.Load(cfg.Secrets.KeyEnv, cfg.Secrets.KeyFile)
+	check(err == nil, "secrets key is valid base64 of %d bytes (or unset)", secrets.KeySize)
 	for _, p := range cfg.Pools {
-		if p.Credentials.String() != "" {
-			_, err := p.Credentials.Resolve()
-			check(err == nil, "pool %s credential %s resolves", p.Name, p.Credentials.String())
+		if p.Credentials.String() == "" {
+			continue
 		}
+		if p.Credentials.Secret != "" {
+			// The store is checked when the server starts; here only the key is needed.
+			check(box != nil, "pool %s credential %s has a secrets key to open it", p.Name, p.Credentials.String())
+			continue
+		}
+		_, err := p.Credentials.Resolve()
+		check(err == nil, "pool %s credential %s resolves", p.Name, p.Credentials.String())
 	}
 	if cfg.Store.Driver == "postgres" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -235,4 +256,17 @@ func preflight(cfgPath string) error {
 	}
 	check(cfg.Policy.External == "never" || len(cfg.Policy.ExternalPools) > 0, "external placement is off, or names approved externalPools")
 	return errors.Join(problems...)
+}
+
+// dashboardURL is where a local operator opens the console for a listen
+// address such as ":8080" or "127.0.0.1:18180".
+func dashboardURL(listen string) string {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return "http://" + listen + "/dashboard/"
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "localhost"
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/dashboard/"
 }

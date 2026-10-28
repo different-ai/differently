@@ -48,8 +48,9 @@ Repeat for each organization; every step happens in *their* environment.
 6. **Install** with Helm, run `differently-server preflight` (the chart's
    migration/preflight hooks do this), and `helm test` for the smoke test.
 7. **Hand over the bootstrap operator token** (stored in a Secret the chart
-   generates) to that organization's operators, and have them create named
-   operator keys and revoke or rotate the bootstrap token.
+   generates) to that organization's operators. Have them create named
+   operator keys and revoke or rotate the bootstrap token
+   ([the bootstrap operator token](keys-and-providers.md#the-bootstrap-operator-token)).
 8. **Onboard tenants** as in section 2.
 9. **Wire observability**: scrape `/metrics`, ship JSON logs, and mirror the
    audit log (`audit.file`) to write-once storage.

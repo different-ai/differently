@@ -422,3 +422,75 @@ func TestAuditTrustAndMetrics(t *testing.T) {
 		t.Fatal("metrics listener has no sandbox transitions for the OpenSandbox pool")
 	}
 }
+
+// A provider key stored in Differently drives a real backend; switching sends
+// new sandboxes there; rotating the stored key takes effect without a restart.
+// The second pool fronts the same OpenSandbox server, as an operator adding
+// a provider from the dashboard would.
+func TestStoredProviderKeyAndSwitching(t *testing.T) {
+	c := tenant(t, "providers", api.Quota{})
+	pool := func() api.Pool {
+		var p api.Pool
+		if err := operator.Do(ctx(t), "GET", "/v1/admin/pools/osb-stored", nil, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if _, err := operator.PutSecret(ctx(t), "osb-stored-key", osbKey); err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{"name": "osb-stored", "adapter": "opensandbox", "trust": "private", "credentials": map[string]string{"secret": "osb-stored-key"},
+		"config": map[string]string{"apiURL": "http://opensandbox-server:8090/v1", "image": "debian:bookworm-slim", "isolation": "container", "features": "exec,exec.stream,files"}}
+	if err := operator.Do(ctx(t), "POST", "/v1/admin/pools", body, nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = operator.UsePool(context.Background(), "opensandbox", false)
+		_ = operator.Do(context.Background(), "DELETE", "/v1/admin/pools/osb-stored", nil, nil)
+		_ = operator.Do(context.Background(), "DELETE", "/v1/admin/secrets/osb-stored-key", nil, nil)
+	})
+	eventually(t, 30*time.Second, "the new pool is healthy with its stored key", func() bool { return pool().Health.Status == "healthy" })
+
+	switched, err := operator.UsePool(ctx(t), "osb-stored", false)
+	if err != nil || len(switched.Drained) != 1 || switched.Drained[0] != "opensandbox" {
+		t.Fatalf("switch: %+v %v", switched, err)
+	}
+	sb := create(t, c, api.CreateSandboxRequest{})
+	if sb.Pool != "osb-stored" {
+		t.Fatalf("new sandbox placed on %q, want osb-stored", sb.Pool)
+	}
+	if res := sh(t, c, sb.ID, "echo via stored key"); strings.TrimSpace(res.Stdout) != "via stored key" {
+		t.Fatalf("exec %+v", res)
+	}
+
+	// Rotate the stored key: a wrong value takes the pool down, the right one brings it back.
+	if _, err := operator.PutSecret(ctx(t), "osb-stored-key", "osb-wrong-key"); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, 30*time.Second, "the pool notices the rotated (wrong) key", func() bool { return pool().Health.Status != "healthy" })
+	if _, err := operator.PutSecret(ctx(t), "osb-stored-key", osbKey); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, 30*time.Second, "the pool recovers with the right key", func() bool { return pool().Health.Status == "healthy" })
+	if res := sh(t, c, sb.ID, "echo still here"); strings.TrimSpace(res.Stdout) != "still here" {
+		t.Fatalf("exec after rotation %+v", res)
+	}
+
+	// Switch back: new sandboxes go to the original pool, the running one stays.
+	if _, err := operator.UsePool(ctx(t), "opensandbox", false); err != nil {
+		t.Fatal(err)
+	}
+	back := create(t, c, api.CreateSandboxRequest{})
+	if back.Pool != "opensandbox" {
+		t.Fatalf("after switching back, placed on %q", back.Pool)
+	}
+	for _, id := range []string{sb.ID, back.ID} {
+		if err := c.DeleteSandbox(ctx(t), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	eventually(t, 60*time.Second, "the sandboxes are gone", func() bool {
+		s, err := c.GetSandbox(ctx(t), sb.ID)
+		return err == nil && s.Status == api.StatusTerminated
+	})
+}

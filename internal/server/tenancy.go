@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +25,9 @@ func (s *Server) tenancyRoutes(authed func(string, handlerFunc)) {
 	authed("DELETE /v1/projects/{id}", s.deleteProject)
 	authed("GET /v1/api-keys", s.listKeys)
 	authed("POST /v1/api-keys", s.createKey)
+	authed("GET /v1/api-keys/{id}", s.getKey)
 	authed("DELETE /v1/api-keys/{id}", s.revokeKey)
+	authed("POST /v1/api-keys/{id}/rotate", s.rotateKey)
 	authed("GET /v1/quotas", s.quotas)
 	authed("GET /v1/usage", s.usage)
 	authed("GET /v1/audit-events", s.listAudit)
@@ -200,13 +203,96 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request, p auth.Princi
 	return nil
 }
 
-func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
+// managedKey loads a key the principal may manage: its own organization and,
+// for a project key, its own project. Anything else reads as missing.
+func (s *Server) managedKey(r *http.Request, p auth.Principal) (store.KeyRecord, error) {
 	if err := p.Require(auth.ScopeKeysWrite); err != nil {
-		return err
+		return store.KeyRecord{}, err
 	}
 	k, err := s.Store.GetKey(r.Context(), r.PathValue("id"))
 	if err != nil || (!p.Operator() && (k.OrgID != p.OrgID || (p.ProjectID != "" && k.ProjectID != p.ProjectID))) {
-		return api.Errorf(api.CodeNotFound, "api key %s not found", r.PathValue("id"))
+		return store.KeyRecord{}, api.Errorf(api.CodeNotFound, "api key %s not found", r.PathValue("id"))
+	}
+	return k, nil
+}
+
+func (s *Server) getKey(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
+	k, err := s.managedKey(r, p)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, k.APIKey)
+	return nil
+}
+
+// maxRotationGrace bounds how long a rotated key stays valid.
+const maxRotationGrace = 7 * 24 * time.Hour
+
+// rotateKey replaces a key with a new one holding the same name, scopes,
+// organization, project and lifetime, and returns the new token once. The old
+// key stays valid for the grace period so callers can switch without
+// downtime, or is revoked at once.
+func (s *Server) rotateKey(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
+	var req api.RotateAPIKeyRequest
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	grace := time.Duration(req.GraceSeconds) * time.Second
+	if grace < 0 || grace > maxRotationGrace {
+		return api.Errorf(api.CodeInvalidRequest, "graceSeconds must be between 0 and %d", int(maxRotationGrace.Seconds()))
+	}
+	old, err := s.managedKey(r, p)
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	switch {
+	case old.Revoked || (old.ExpiresAt != nil && !old.ExpiresAt.After(now)):
+		return api.Errorf(api.CodeInvalidState, "api key %s is revoked or expired; create a new key instead", old.ID)
+	case old.ReplacedBy != "":
+		// Rotating it again would leave two live replacements.
+		return api.Errorf(api.CodeInvalidState, "api key %s was already rotated; rotate its replacement %s instead", old.ID, old.ReplacedBy).With("replacedBy", old.ReplacedBy)
+	}
+	// The rotating key must be able to grant everything the old key holds.
+	orgID, projectID, err := auth.CheckGrant(p, api.CreateAPIKeyRequest{Name: old.Name, OrgID: old.OrgID, ProjectID: old.ProjectID, Scopes: old.Scopes})
+	if err != nil {
+		return err
+	}
+	keyID, token, secret := auth.NewToken()
+	k := store.KeyRecord{
+		APIKey: api.APIKey{ID: keyID, Name: old.Name, OrgID: orgID, ProjectID: projectID, Scopes: old.Scopes, CreatedBy: p.Actor(), CreatedAt: now},
+		Hash:   auth.Hash(secret),
+	}
+	if old.ExpiresAt != nil {
+		exp := now.Add(old.ExpiresAt.Sub(old.CreatedAt))
+		k.ExpiresAt = &exp
+	}
+	if err := s.Store.CreateKey(r.Context(), k); err != nil {
+		return err
+	}
+	replaced, err := s.Store.UpdateKey(r.Context(), old.ID, func(x *store.KeyRecord) error {
+		x.ReplacedBy = keyID
+		if grace == 0 {
+			x.Revoked = true
+			return nil
+		}
+		if exp := now.Add(grace); x.ExpiresAt == nil || exp.Before(*x.ExpiresAt) {
+			x.ExpiresAt = &exp
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	s.audit(r, p, "key.rotate", old.ID, old.OrgID, old.ProjectID, map[string]string{"replacement": keyID, "graceSeconds": strconv.Itoa(req.GraceSeconds)})
+	writeJSON(w, http.StatusCreated, api.CreateAPIKeyResponse{APIKey: k.APIKey, Token: token, Replaced: &replaced.APIKey})
+	return nil
+}
+
+func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
+	k, err := s.managedKey(r, p)
+	if err != nil {
+		return err
 	}
 	if _, err := s.Store.UpdateKey(r.Context(), k.ID, func(x *store.KeyRecord) error { x.Revoked = true; return nil }); err != nil {
 		return err

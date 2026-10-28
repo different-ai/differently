@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Describes the code as of 2026-10-28, after [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) removed Differently's own node agent. Nothing here has been validated by a penetration test. |
-| Companion | [Hardening checklist](hardening-checklist.md) · [Architecture](../architecture/README.md) · [ADR 0008](../adr/0008-secrets-by-reference-only.md) · [ADR 0009](../adr/0009-tamper-evident-audit-chain.md) · [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) · [OpenSandbox pools](../guides/opensandbox-pools.md) |
+| Companion | [Hardening checklist](hardening-checklist.md) · [Architecture](../architecture/README.md) · [ADR 0008](../adr/0008-secrets-by-reference-only.md) · [ADR 0009](../adr/0009-tamper-evident-audit-chain.md) · [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) · [ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md) · [OpenSandbox pools](../guides/opensandbox-pools.md) · [Keys and providers](../guides/keys-and-providers.md) |
 
 This document separates three things that are easy to blur:
 
@@ -34,7 +34,8 @@ and Freestyle are tested only against fake servers.
 | Tenant code, data and processes inside sandboxes | In the backend: OpenSandbox sandboxes (containers or Fast Sandbox microVMs) on hosts you run; provider sandboxes on external pools | The thing being isolated, by the backend |
 | Sandbox environment values (`env`) | Postgres `sandboxes.doc` (plaintext JSON). Also sent to the backend at creation: OpenSandbox's create body (stored by OpenSandbox), Daytona's create body, Freestyle's `/etc/differently/env` inside the VM (mode 0600), devhost's `meta.json` | Often holds secrets |
 | API keys | Clients; Postgres holds `sha256(secret)` only | Full access within their scopes |
-| Bootstrap operator token, database DSN, backend credentials (OpenSandbox API key, provider API keys, remote plugin tokens) | Environment variables or mounted files on the server | Control of the installation and of every backend it uses |
+| Bootstrap operator token, database DSN, backend credentials (OpenSandbox API key, provider API keys, remote plugin tokens) | Environment variables or mounted files on the server. Backend credentials can instead be stored in Postgres `secrets`, sealed (`secret:` references) | Control of the installation and of every backend it uses |
+| The secrets key (key-encryption key for stored backend credentials) | An environment variable or file on the server (Helm: Secret `<fullname>-secrets-key` or `secrets.existingSecret`), and the operator's backup. Never in the database | With a copy of the database, it opens every stored backend credential. Without it, they cannot be opened at all |
 | The OpenSandbox server's API key, in particular | The control plane's environment, and the OpenSandbox server's own configuration | OpenSandbox has one server-wide key and no tenant model: whoever holds it can create, exec into, read and delete every sandbox on that server without going through Differently |
 | Placement policy, classifications, pool trust and isolation declarations | Config file, `policies` and `pools` tables | Decide whether data may leave private infrastructure, and what the trust report claims |
 | Audit chain | Postgres `audit_events`; optional JSON-lines mirror | Accountability and evidence |
@@ -53,7 +54,8 @@ and Freestyle are tested only against fake servers.
 | Holder of an OpenSandbox API key | Equivalent to the backend operator for that server | Create, exec into, read files of and delete any sandbox on that server. Differently sees such changes only as orphans or lost instances during reconciliation |
 | Cloud provider hosting your hosts | Trusted for the hardware it runs | Physical and hypervisor access |
 | External provider (trust `external` pool) | Trusted for workloads policy sends to it | Sees code, data and environment of those sandboxes |
-| Database administrator | Trusted | Read env values; rewrite the audit chain |
+| Database administrator | Trusted | Read env values; rewrite the audit chain; see stored credentials' names and fingerprints, but not their values without the secrets key |
+| Holder of the secrets key and a database copy | Equivalent to the control plane for backends | Open every stored backend credential |
 | Community adapter (`remote` pool) | Trusted as declared by the operator's `trust` setting | Sees everything sent to its pool |
 | Network attacker | Untrusted | Observe or tamper with unencrypted links, including a plain-HTTP OpenSandbox URL |
 
@@ -95,8 +97,8 @@ flowchart TB
 | Boundary | Enforced in code | Operator responsibility | Not yet implemented |
 |---|---|---|---|
 | B1 client → API | Token parsing and hashed verification; scopes; tenancy (404 across tenants); per-key rate limit; 4 MiB JSON bodies with unknown fields rejected; 100 MiB uploads; suspended orgs blocked for writes | TLS termination, ingress and WAF, exposure of `/metrics` | OIDC/SSO; IP allow-lists; global (cross-replica) rate limits |
-| B2 API → Postgres | Parameterized queries (pgx); transactions and row locks for quota | TLS in the DSN, network policy, encryption at rest, backups, least-privilege DB role | Application-level encryption of env values |
-| B3 secrets → server | References only; values never logged or stored | The secret store itself; file permissions | Native Vault / cloud secret manager clients |
+| B2 API → Postgres | Parameterized queries (pgx); transactions and row locks for quota | TLS in the DSN, network policy, encryption at rest, backups (they include sealed backend credentials, so keep them apart from the secrets key), least-privilege DB role | Application-level encryption of env values |
+| B3 secrets → server | Values are never logged or returned. A pool's credential is a reference (`env:`, `file:`) or a stored value (`secret:`). Stored values are sealed with AES-256-GCM, with the secret's name bound in, under a key that never enters the database. Only `admin` keys can store, list or delete them, and listings show fingerprints only | The secret store itself; file permissions; the secrets key and its backup, kept apart from database backups | Native Vault / cloud secret manager clients behind `secret:`; rotating the secrets key ([backlog E23](../backlog.md#e23-provider-credential-follow-ups)) |
 | B4 control plane → OpenSandbox | The API key is sent only to the configured server, in `OPEN-SANDBOX-API-KEY`; the API never returns it, the trust report shows only its reference, and in the live run it did not appear in the server log. Port endpoints that would need the key are refused (`ExposePort`). The adapter acts only on sandboxes whose metadata it wrote and re-checks the server's metadata filter | TLS: the chart's default `apiURL` is plain HTTP inside the cluster, so use an `https` URL or an encrypting mesh across untrusted networks. Restrict who can reach the server's port. Rotate the key on both sides | Scoped or per-tenant OpenSandbox credentials (OpenSandbox has one key per server) |
 | B5 runtime → sandbox | **Nothing in Differently.** The pool's declared `isolation` (`container` or `microvm`) is reported, not verified. With the server proxy (default), Differently relies on OpenSandbox not forwarding the API key into the sandbox; this has not been checked separately | Choose a runtime that matches the data: Docker and Kubernetes containers share the host kernel. Harden it in OpenSandbox (capabilities, `no_new_privileges`, PID limits, seccomp), patch hosts, and declare `isolation` truthfully | Fast Sandbox through Differently ([E18](../backlog.md#e18-fast-sandbox-spike)) |
 | B6 sandbox → network | **Nothing in Differently.** OpenSandbox pools do not advertise `network.egress-control` | Egress rules in OpenSandbox, NetworkPolicy in its namespace, host and VPC firewalls. Block cloud metadata endpoints, private ranges, the control plane and Postgres from sandboxes | Wiring OpenSandbox's network policy ([E19](../backlog.md#e19-opensandbox-network-policy-and-egress)) |
@@ -109,6 +111,11 @@ flowchart TB
 - Tokens are `dly_<keyid>_<secret>` with a 40-character random secret; only
   `sha256(secret)` is stored and compared in constant time. Revoked and
   expired keys are refused.
+- Rotation (`POST /v1/api-keys/{id}/rotate`) issues a replacement with the
+  same name, scopes, organization, project and lifetime. The old key stays
+  valid for at most 7 days, or is revoked at once. The caller must be able
+  to grant every scope the key holds (the same `CheckGrant` rule as
+  creation), and the rotation is audited as `key.rotate`.
 - A key belongs to the operator (no organization), one organization, or one
   project. `CanAccess` confines organization keys to their organization and
   project keys to their project; resources in other tenants are reported as
@@ -154,9 +161,23 @@ flowchart TB
 
 **Secrets and data handling**
 
-- Control-plane and backend secrets are referenced, never stored
-  ([ADR 0008](../adr/0008-secrets-by-reference-only.md)). There is no agent
-  token any more.
+- Control-plane secrets (DSN, bootstrap token) are referenced, never
+  stored ([ADR 0008](../adr/0008-secrets-by-reference-only.md)). There is
+  no agent token any more.
+- Backend credentials are referenced (`env:`, `file:`) or stored sealed
+  (`secret:`, [ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md);
+  `internal/secrets`, `internal/server/secrets.go`):
+  - AES-256-GCM with a random nonce per value;
+  - the secret's name bound in as associated data;
+  - a 32-byte key read at start-up from `secrets.keyEnv` or
+    `secrets.keyFile`.
+
+  The API returns names, 12-hex-character fingerprints (a truncated
+  SHA-256) and the pools using each secret, never values. A secret in use
+  cannot be deleted. Without a key, nothing can be stored.
+- A changed credential value (a stored secret, or the file behind a
+  `file:` reference) is picked up within about 5 seconds on every replica,
+  without a restart (`internal/pools` `fingerprint`, `Recheck`).
 - The API returns `envKeys`, never env values.
 - Labels with the prefix `differently.dev/` are reserved for ownership
   tracking and cannot be set by tenants.
@@ -181,10 +202,15 @@ turns them into steps.
    OpenSandbox server's port. That port accepts the server-wide API key, which
    bypasses Differently's tenancy and audit.
 3. Protect Postgres: TLS, a dedicated role, encryption at rest, backups. It
-   holds sandbox environment values in plaintext.
-4. Keep secrets in a real secret store and rotate the bootstrap token and the
-   backend credentials. Rotating the OpenSandbox key means changing it on the
-   OpenSandbox server and in the Secret the control plane reads.
+   holds sandbox environment values in plaintext, and stored backend
+   credentials sealed under the secrets key.
+4. Keep secrets in a real secret store, and rotate the bootstrap token and
+   the backend credentials. Rotating the OpenSandbox key means changing it on
+   the OpenSandbox server and where the control plane reads it: the Secret,
+   or the stored value (`differently admin secret put`). If you store backend
+   credentials in Differently, back up the secrets key apart from database
+   backups, and use `secrets.existingSecret` with GitOps renderers that
+   cannot `lookup` ([keys and providers](../guides/keys-and-providers.md#back-up-the-secrets-key)).
 5. Choose and harden the runtime. Docker and Kubernetes runtimes run
    containers that share the host kernel; use Fast Sandbox (once verified) or
    dedicated hosts for code you would not run beside other tenants. Patch
@@ -221,6 +247,9 @@ turns them into steps.
 | Webhooks, SSH gateway, PTY | Missing features, each with its own authentication design | Backlog E10, E7 |
 | OIDC/SSO, key lineage, maximum key lifetime | Keys are standalone; child keys outlive revoked parents; no TTL cap | [backlog E0](../backlog.md#e0-correctness-and-security-fixes-from-the-code-review) |
 | Remote plugin protocol has no tests | Its only tests were the removed node agent's | Backlog E0.34 |
+| The secrets key cannot be rotated | Sealed values carry no key version and there is no re-encryption; changing the key means storing every value again | [backlog E23](../backlog.md#e23-provider-credential-follow-ups) |
+| No external vault behind `secret:` | Stored credentials live in Differently's database; vault-held values reach the server only as `file:` mounts | [backlog E23](../backlog.md#e23-provider-credential-follow-ups) |
+| One credential per pool for the whole installation | Every organization's sandboxes on a pool use the same provider account | [backlog E23](../backlog.md#e23-provider-credential-follow-ups) |
 
 ### Issues found while documenting the code (2026-10-28)
 
@@ -242,6 +271,8 @@ Numbers are kept so earlier references stay valid.
 | 10 | The OpenSandbox adapter collects synchronous exec output without a size limit, and cuts file downloads at 100 MiB without reporting truncation. A sandbox can make a control-plane replica buffer arbitrary output. | Open (E0.35). |
 | 11 | OpenSandbox's own `timeout` is set from the TTL only at creation; extending the TTL through the API does not extend it, so OpenSandbox can delete the sandbox first. | Open (E0.20). |
 | 12 | A pool registered as `firecracker` through the admin API before the upgrade stays in the store with no adapter; its sandboxes cannot be reached and terminating them retries forever. | Open (E0.22). |
+| 13 | Pool registry changes made through the API reach only the replica that handled the call. That covers adding a pool, `use`, drain, undrain and `PATCH`. Other replicas, including the scheduler leader, keep their old view until restart, so a switch or drain may not take effect where placement happens. Credential values are re-read on every replica. Found by reading `internal/pools`; not reproduced. | **Fixed.** Every replica re-reads the pool registry on each refresh (about 5 s). |
+| 14 | `secret.put` and `secret.delete` are not among the trust report's `recentAdminActions`. `pool.update` does not record a changed `credentialRef`. The trust report's `limitations` still describes backend credentials as environment variables or files only. | **Fixed.** |
 
 ## 7. Residual risks
 
@@ -256,9 +287,13 @@ Risks that remain even when everything above is done:
   the workloads it runs, including code, data and environment variables.
   Differently does not offer confidential computing.
 - **Backend credentials are powerful.** The control plane holds them as
-  environment variables or mounted files; anyone who can read its
-  environment can use them. An OpenSandbox key gives full control of its
-  server.
+  environment variables or mounted files, or opens stored ones with the
+  secrets key. Anyone who can read the server's environment or memory can
+  use every credential it can use: storing them in Differently does not
+  change that. Anyone with the secrets key and a database copy can open
+  every stored one. An OpenSandbox key gives full control of its server.
+- **Losing the secrets key loses every stored credential.** There is no
+  recovery except storing each value again.
 - **Actions outside Differently** (the backend's own API or console,
   kubectl, SSH to hosts) are not in its audit log.
 - **Egress is whatever the runtime allows.** Differently does not inspect or
@@ -292,7 +327,7 @@ answers each part. Per-sandbox detail comes from
 | Under which rules? | `globalPolicy`, `scopedPolicies[]`, `classifications[]` | `approvedForExternalPlacement` is computed from the global policy; scoped policies can only narrow it, so it is an upper bound |
 | Where did work go? | `placementsByPool[]` | Sandboxes and accumulated run seconds per pool (the current running interval is not included) |
 | What left private infrastructure? | `recentExternalPlacements[]` | Up to 50, newest first: sandbox, organization, pool, classification, creator, time, placement reason |
-| Who changed the rules? | `recentAdminActions[]` | Last 50 `admin.*`, `pool.*`, `policy.*`, `org.*`, `key.create`, `key.revoke`, `key.rotate` events |
+| Who changed the rules? | `recentAdminActions[]` | Last 50 `admin.*`, `pool.*`, `policy.*`, `org.*`, `key.create`, `key.revoke`, `key.rotate` events (not `secret.*`; query `GET /v1/audit-events?action=secret.put`) |
 | Has the log been edited? | `auditChain` | `audit.Verify` over the full chain: `ok`, `events`, `brokenAt`, `problem`, `headHash` |
 | What can't Differently prove? | `limitations[]` | Listed below |
 | Why did this sandbox land here? | `/v1/sandboxes/{id}/placement` | Stored decision: strategy, effective external mode, policies applied, every candidate with eligibility, capacity, estimated cost, rank and reasons; for a queued sandbox also the decision as it would be made now |
@@ -317,7 +352,8 @@ The `limitations` list returned today (`limitations` in
 4. The audit chain is tamper-evident, not tamper-proof; export events to
    write-once storage to anchor it.
 5. Backend credentials are held by the control plane as environment variables
-   or files; anyone who can read its environment can use them.
+   or files; anyone who can read its environment can use them. (The text has
+   not been updated for credentials stored in Differently, issue 14.)
 6. Sandbox environment variables are stored unencrypted in the control-plane
    database.
 7. Exec commands are audited by program name unless `audit.recordCommands` is

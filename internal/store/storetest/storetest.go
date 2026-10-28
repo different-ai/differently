@@ -20,6 +20,7 @@ func Run(t *testing.T, newStore func(t *testing.T) store.Store) {
 	t.Run("ConcurrentActivationRespectsQuota", func(t *testing.T) { concurrentActivation(t, newStore(t)) })
 	t.Run("PoolConcurrencyCap", func(t *testing.T) { poolCap(t, newStore(t)) })
 	t.Run("Idempotency", func(t *testing.T) { idempotency(t, newStore(t)) })
+	t.Run("Secrets", func(t *testing.T) { secrets(t, newStore(t)) })
 	t.Run("FairOrderAcrossOrgs", func(t *testing.T) { fairOrder(t, newStore(t)) })
 	t.Run("AuditChain", func(t *testing.T) { auditChain(t, newStore(t)) })
 	t.Run("ProjectDeleteGuard", func(t *testing.T) { projectGuard(t, newStore(t)) })
@@ -162,6 +163,44 @@ func idempotency(t *testing.T, s store.Store) {
 	second, existed, err := s.AdmitSandbox(ctx, b, store.Admission{})
 	if err != nil || !existed || second.ID != first.ID {
 		t.Fatalf("idempotent replay returned %s existed=%v err=%v", second.ID, existed, err)
+	}
+}
+
+func secrets(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	rec := store.SecretRecord{Secret: api.Secret{Name: "daytona", Fingerprint: "aaa", CreatedAt: now, UpdatedAt: now}, Sealed: []byte{0, 1, 2, 255}}
+	if err := s.PutSecret(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	rec.Fingerprint, rec.Sealed = "bbb", []byte{9}
+	if err := s.PutSecret(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetSecret(ctx, "daytona")
+	if err != nil || got.Fingerprint != "bbb" || string(got.Sealed) != string([]byte{9}) {
+		t.Fatalf("replaced secret %+v %v", got, err)
+	}
+	if list, err := s.ListSecrets(ctx); err != nil || len(list) != 1 {
+		t.Fatalf("list %v %v", list, err)
+	}
+	if err := s.UpsertPool(ctx, api.Pool{Name: "dt", Adapter: "daytona", CredentialRef: "secret:daytona"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteSecret(ctx, "daytona"); !api.IsCode(err, api.CodeConflict) {
+		t.Fatalf("a secret in use was deleted: %v", err)
+	}
+	if err := s.DeletePool(ctx, "dt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteSecret(ctx, "daytona"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetSecret(ctx, "daytona"); !api.IsCode(err, api.CodeNotFound) {
+		t.Fatalf("deleted secret still there: %v", err)
+	}
+	if err := s.DeleteSecret(ctx, "daytona"); !api.IsCode(err, api.CodeNotFound) {
+		t.Fatalf("deleting a missing secret: %v", err)
 	}
 }
 

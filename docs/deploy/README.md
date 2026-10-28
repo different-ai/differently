@@ -63,8 +63,11 @@ are OpenSandbox prerequisites for that runtime.
 - The chart's NetworkPolicy limits server egress to DNS, the database,
   OpenSandbox (port 8090) and enabled providers.
 - Secrets are never written into the server config. Pools reference
-  credentials by environment variable or file, and the chart keeps the
-  bootstrap token and the OpenSandbox API key in Secrets.
+  credentials by environment variable or file, or name a provider key that
+  operators stored in Differently, sealed under the chart's secrets key
+  ([ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md)). The
+  chart keeps the bootstrap token, the OpenSandbox API key and the secrets
+  key in Secrets.
 - Differently has no telemetry or phone-home code paths (see [air-gapped.md](air-gapped.md)).
 
 ## Guides

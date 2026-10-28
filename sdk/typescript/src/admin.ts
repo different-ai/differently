@@ -10,11 +10,13 @@ import type {
   Project,
   Quota,
   SandboxInfo,
+  Secret,
   SuspendOrganizationParams,
   SuspendOrganizationResult,
   TrustReport,
   UpdateOrganizationParams,
   UpdatePoolParams,
+  UsePoolResult,
 } from "./types.js";
 
 const enc = encodeURIComponent;
@@ -80,7 +82,7 @@ export class AdminPools {
     return this.#http.json<Pool>({ method: "GET", path: `/v1/admin/pools/${enc(name)}` });
   }
 
-  /** Registers a pool at runtime. Credentials are server-side references, never values. */
+  /** Registers a pool at runtime. Credentials are references (env, file, or a stored `secret`), never values. */
   create(params: CreatePoolParams): Promise<Pool> {
     return this.#http.json<Pool>({ method: "POST", path: "/v1/admin/pools", json: params });
   }
@@ -98,9 +100,40 @@ export class AdminPools {
     return this.#http.json<Pool>({ method: "POST", path: `/v1/admin/pools/${enc(name)}/undrain` });
   }
 
+  /**
+   * Sends new sandboxes to this pool and drains every other one; running sandboxes stay.
+   * An external pool must be approved by the global policy, or approved here.
+   */
+  use(name: string, params: { approveExternal?: boolean } = {}): Promise<UsePoolResult> {
+    return this.#http.json<UsePoolResult>({ method: "POST", path: `/v1/admin/pools/${enc(name)}/use`, json: params });
+  }
+
   /** Removes an API-registered pool. Pools from the config file cannot be deleted here. */
   async delete(name: string): Promise<void> {
     await this.#http.json<void>({ method: "DELETE", path: `/v1/admin/pools/${enc(name)}` });
+  }
+}
+
+/** Provider credentials stored in Differently, sealed with the server's secrets key. */
+export class AdminSecrets {
+  readonly #http: HttpClient;
+
+  constructor(http: HttpClient) {
+    this.#http = http;
+  }
+
+  async list(): Promise<Secret[]> {
+    return (await this.#http.json<Page<Secret>>({ method: "GET", path: "/v1/admin/secrets" })).items ?? [];
+  }
+
+  /** Stores or replaces a value. Pools using it switch to the new value without a restart. */
+  put(name: string, value: string): Promise<Secret> {
+    return this.#http.json<Secret>({ method: "PUT", path: `/v1/admin/secrets/${enc(name)}`, json: { value } });
+  }
+
+  /** Fails while a pool uses the secret. */
+  async delete(name: string): Promise<void> {
+    await this.#http.json<void>({ method: "DELETE", path: `/v1/admin/secrets/${enc(name)}` });
   }
 }
 
@@ -109,6 +142,7 @@ export class Admin {
   readonly organizations: AdminOrganizations;
   readonly projects: AdminProjects;
   readonly pools: AdminPools;
+  readonly secrets: AdminSecrets;
   readonly #http: HttpClient;
 
   constructor(http: HttpClient) {
@@ -116,6 +150,7 @@ export class Admin {
     this.organizations = new AdminOrganizations(http);
     this.projects = new AdminProjects(http);
     this.pools = new AdminPools(http);
+    this.secrets = new AdminSecrets(http);
   }
 
   /** Where workloads can go, where they went, and what Differently cannot prove. */

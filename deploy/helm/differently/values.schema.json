@@ -293,6 +293,16 @@
       }
     },
 
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "existingSecret": {"type": "string"},
+        "existingSecretKey": {"type": "string", "minLength": 1}
+      }
+    },
+
     "auth": {
       "type": "object",
       "additionalProperties": false,
@@ -477,6 +487,7 @@
                 "databaseCIDRs": {"type": "array", "items": {"type": "string"}},
                 "databasePort": {"type": "integer", "minimum": 1, "maximum": 65535},
                 "providerCIDRs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                "runtimeProviders": {"type": "boolean"},
                 "opensandbox": {
                   "type": "object",
                   "additionalProperties": false,

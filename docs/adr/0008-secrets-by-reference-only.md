@@ -1,6 +1,6 @@
 # ADR 0008: Control-plane and provider secrets by reference only
 
-- Status: Accepted. Sandbox environment values are a stated exception. Amended by [ADR 0020](0020-opensandbox-replaces-node-agent.md): the agent token and `auth.agentTokenEnv` no longer exist
+- Status: Accepted (amended by [ADR 0020](0020-opensandbox-replaces-node-agent.md) and [ADR 0021](0021-provider-credentials-stored-encrypted.md)). Sandbox environment values are a stated exception. ADR 0020: the agent token and `auth.agentTokenEnv` no longer exist. ADR 0021: pool credentials may also be stored in Differently, sealed under a key-encryption key that stays out of the database
 - Date: 2026-10-28
 
 ## Context
