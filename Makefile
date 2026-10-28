@@ -67,7 +67,7 @@ E2E_COMPOSE := test/e2e/compose.yaml
 
 e2e-prepare:
 	docker build -q -f build/server.Dockerfile -t differently-server:e2e . >/dev/null
-	docker pull -q opensandbox/execd:v1.1.0 >/dev/null
+	docker pull -q opensandbox/execd:release-1.2.0 >/dev/null
 	docker pull -q debian:bookworm-slim >/dev/null
 
 e2e-up:

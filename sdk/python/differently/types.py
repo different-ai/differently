@@ -330,6 +330,7 @@ class _TemplateRequired(TypedDict):
 class Template(_TemplateRequired, total=False):
     description: str
     pools: List[str]
+    images: Dict[str, str]  # each pool's own image, by pool name
 
 
 class _AuditEventRequired(TypedDict):

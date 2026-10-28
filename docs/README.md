@@ -10,6 +10,7 @@ two-minute local quickstart.
 | [Quickstart](guides/quickstart.md) | Laptop dev mode, first sandbox, SDK snippets |
 | [Organization onboarding](guides/organization-onboarding.md) | One installation per organization vs shared; orgs, projects, quotas, scoped keys, policies |
 | [Hybrid overflow](guides/hybrid-overflow.md) | Authorizing Daytona or Freestyle as policy-gated external capacity |
+| [OpenWork on Differently](guides/openwork.md) | OpenWork's sandbox contract mapped onto Differently; Workbot computers routed across OpenSandbox, Daytona and Freestyle |
 | [Keys and providers](guides/keys-and-providers.md) | Storing provider keys in Differently, switching providers for new sandboxes, rotating provider and API keys, the bootstrap token, backing up the secrets key |
 | [OpenSandbox pools](guides/opensandbox-pools.md) | The default private runtime: registering an OpenSandbox server you (or someone else) run |
 | [API reference](../api/openapi.yaml) | OpenAPI 3.1 contract (also served at `/openapi.yaml`) |

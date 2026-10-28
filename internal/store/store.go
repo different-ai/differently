@@ -153,7 +153,8 @@ type Store interface {
 
 	// AdmitSandbox atomically checks admission limits and inserts rec as
 	// queued. A repeated IdempotencyKey within a project returns the existing
-	// record and existed=true.
+	// live record and existed=true; a key whose sandbox has ended (terminated
+	// or failed) admits a new one.
 	AdmitSandbox(ctx context.Context, rec SandboxRecord, adm Admission) (out SandboxRecord, existed bool, err error)
 	GetSandbox(ctx context.Context, id string) (SandboxRecord, error)
 	ListSandboxes(ctx context.Context, f SandboxFilter) ([]SandboxRecord, error)

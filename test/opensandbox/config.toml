@@ -14,7 +14,7 @@ level = "INFO"
 
 [runtime]
 type = "docker"
-execd_image = "opensandbox/execd:v1.1.0"
+execd_image = "opensandbox/execd:release-1.2.0"
 
 [egress]
 image = "opensandbox/egress:v1.1.7"

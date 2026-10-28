@@ -400,7 +400,7 @@ func (s *Store) AdmitSandbox(ctx context.Context, rec store.SandboxRecord, adm s
 			return err
 		}
 		if rec.IdempotencyKey != "" {
-			prev, err := getDoc[store.SandboxRecord](ctx, tx, "sandbox", "", "SELECT doc FROM sandboxes WHERE project_id = $1 AND idempotency_key = $2", rec.ProjectID, rec.IdempotencyKey)
+			prev, err := getDoc[store.SandboxRecord](ctx, tx, "sandbox", "", "SELECT doc FROM sandboxes WHERE project_id = $1 AND idempotency_key = $2 AND status NOT IN ('terminated', 'failed')", rec.ProjectID, rec.IdempotencyKey)
 			if err == nil {
 				out, existed = prev, true
 				return nil

@@ -358,7 +358,7 @@ func (m *Memory) AdmitSandbox(_ context.Context, rec SandboxRecord, adm Admissio
 	defer m.mu.Unlock()
 	if rec.IdempotencyKey != "" {
 		for _, s := range m.sandboxes {
-			if s.ProjectID == rec.ProjectID && s.IdempotencyKey == rec.IdempotencyKey {
+			if s.ProjectID == rec.ProjectID && s.IdempotencyKey == rec.IdempotencyKey && !s.Status.Terminal() {
 				return clone(s), true, nil
 			}
 		}

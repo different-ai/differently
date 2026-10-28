@@ -40,11 +40,14 @@ pools:
   - {name: a, adapter: devhost}
   - {name: a, adapter: kata}
 policy: {externalPools: [ghost]}
+templates:
+  - {name: workbot, pools: [a], images: {b: snap-1}}
+  - {name: workbot}
 `))
 	if err == nil {
 		t.Fatal("expected errors")
 	}
-	for _, want := range []string{"store.driver", "only allowed with dev", "duplicate pool", "unknown adapter", "unknown pool ghost"} {
+	for _, want := range []string{"store.driver", "only allowed with dev", "duplicate pool", "unknown adapter", "unknown pool ghost", "duplicate template", "images names pool b"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %q in %v", want, err)
 		}

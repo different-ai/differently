@@ -437,6 +437,41 @@ func TestFailureRecoveryAndReconcile(t *testing.T) {
 	}
 }
 
+// A configured template reaches each backend as that pool's own image, and
+// is never placed on a pool without one.
+func TestTemplateImagesReachTheBackend(t *testing.T) {
+	h := newHarnessWith(t, api.PlacementPolicy{}, func(c *config.Config) {
+		c.Templates = []api.Template{{Name: "workbot", Images: map[string]string{"fc": "workbot-image-v3"}}}
+	}, nil)
+	_, _, token := h.tenant("a", api.Quota{})
+	sb := h.create(token, api.CreateSandboxRequest{Template: "workbot"})
+	h.tick()
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning || got.Pool != "fc" || h.fc.TemplateOf(sb.ID) != "workbot-image-v3" {
+		t.Fatalf("want fc booting workbot-image-v3, got %+v with %q", got, h.fc.TemplateOf(sb.ID))
+	}
+	// An unmapped template name still passes through unchanged.
+	plain := h.create(token, api.CreateSandboxRequest{Template: "ubuntu:24.04"})
+	h.tick()
+	if h.fc.TemplateOf(plain.ID) != "ubuntu:24.04" {
+		t.Fatalf("unconfigured template changed: %q", h.fc.TemplateOf(plain.ID))
+	}
+}
+
+// Extending a TTL moves the backend's own deadline too, just behind
+// Differently's, so the backend never deletes the sandbox first.
+func TestTTLChangeMovesBackendExpiry(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	_, _, token := h.tenant("a", api.Quota{})
+	sb := h.create(token, api.CreateSandboxRequest{TTLSeconds: 600})
+	h.tick()
+	var out api.Sandbox
+	h.must(200, "PATCH", "/v1/sandboxes/"+sb.ID, token, map[string]any{"ttlSeconds": 7200}, &out)
+	backend := h.fc.ExpiryOf(sb.ID)
+	if out.ExpiresAt == nil || !backend.Equal(out.ExpiresAt.Add(5*time.Minute)) {
+		t.Fatalf("backend expiry %v, sandbox expires %v", backend, out.ExpiresAt)
+	}
+}
+
 // Two pools can front the same backend. Each pool's reconcile sees the
 // other's instances and must not delete them; an instance left behind by an
 // earlier placement is still an orphan.

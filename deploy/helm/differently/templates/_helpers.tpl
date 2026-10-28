@@ -208,6 +208,7 @@ api-key
 {{- $c := dict "apiURL" $o.apiURL "isolation" $o.isolation "useServerProxy" (toString $o.useServerProxy) -}}
 {{- with $o.image }}{{ $_ := set $c "image" . }}{{ end -}}
 {{- with $o.templateId }}{{ $_ := set $c "templateId" . }}{{ end -}}
+{{- with $o.lineEndings }}{{ $_ := set $c "lineEndings" . }}{{ end -}}
 {{- with $o.features }}{{ $_ := set $c "features" (join "," .) }}{{ end -}}
 {{- $pool := dict "name" $o.pool.name "adapter" "opensandbox" "trust" $o.trust "config" $c "credentials" (dict "env" $o.env) -}}
 {{- if $o.pool.region }}{{ $_ := set $pool "region" $o.pool.region }}{{ end -}}

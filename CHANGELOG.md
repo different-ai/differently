@@ -30,6 +30,14 @@ All notable changes are recorded here. The format follows
   Terraform module.
 - End-to-end suite (`make e2e`): Postgres, the server and an OpenSandbox
   server in Docker, driven through the public API.
+- Templates can map one name to each pool's own image (`templates[].images`),
+  so a template routes to OpenSandbox, Daytona or Freestyle; placement only
+  considers pools the template lists.
+- `opensandbox` pools: `lineEndings: kept` gives byte-exact exec output with
+  `execd` release-1.2.0 or later, and a TTL change moves OpenSandbox's own
+  expiry (`renew-expiration`).
+- [OpenWork on Differently](docs/guides/openwork.md): OpenWork's sandbox
+  contract mapped onto this API.
 - Documentation: architecture RFC, ADRs, security model, adapter spec,
   placement policy, feature parity, deployment guides, roadmap and backlog.
 - Provider credentials stored in Differently
@@ -81,6 +89,9 @@ All notable changes are recorded here. The format follows
   `agent.*`). Postgres migration `0002` drops the `agents` table.
 - The trust report shows each pool's declared isolation and states that
   isolation and egress come from the backend runtime, not from Differently.
+
+- An `Idempotency-Key` names a live sandbox: once that sandbox is terminated
+  or failed, the same key creates a new one (Postgres migration `0003`).
 
 ### Security
 

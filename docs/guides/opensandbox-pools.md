@@ -11,7 +11,7 @@ Background: [spike](../research/opensandbox-spike.md),
 [ADR 0019](../adr/0019-opensandbox-backend-first.md).
 
 > Status: checked live against OpenSandbox release 1.2.0 with the Docker
-> runtime and `execd` v1.1.0 (arm64, Colima), through the adapter's live test
+> runtime and `execd` release-1.2.0 and v1.1.0 (arm64, Colima), through the adapter's live test
 > and through `differently-server`. The Kubernetes runtime and Fast Sandbox
 > are not verified yet
 > ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime),
@@ -114,14 +114,14 @@ other's live sandboxes alone, but it adds no isolation.
 | | OpenSandbox pool |
 |---|---|
 | Create, delete, list, idempotent create | yes (Differently's IDs are kept in OpenSandbox metadata) |
-| Exec, streamed exec, env, cwd, timeouts, exit codes | yes; output is line-based, and a final fragment without a newline gains one |
+| Exec, streamed exec, env, cwd, timeouts, exit codes | yes. With `execd` release-1.2.0 or later and `lineEndings: kept`, output is byte-exact. With `execd` 1.1 (`lineEndings: stripped`, the default) a newline is restored after each line, so a final fragment without one gains one |
 | Exec stdin | **no**: `unsupported_operation`. OpenSandbox's command API takes no stdin |
 | Files (upload, download, list) | yes |
 | Pause / resume | yes |
 | Stop / start | **no**: OpenSandbox has pause/resume and delete only, so stop returns `unsupported_operation` and the pool never offers `lifecycle.stop-start` or `persistence.disk` |
 | Snapshots and fork | disk snapshots by default. Memory snapshots depend on the runtime: add `snapshots.memory` to `features` only when it captures memory (Fast Sandbox is documented to; unverified). Differently reports the kind the pool declares and cannot check it |
 | Port URLs | only when OpenSandbox serves the port directly, without request headers. Endpoints that need the server's API key are refused, because that key must never reach tenants. Not checked live |
-| Provider-side TTL backstop | yes: OpenSandbox's `timeout` is set from the sandbox's TTL at creation (minimum 60 s). Extending the TTL later through the API does not extend it |
+| Provider-side TTL backstop | yes: OpenSandbox's `timeout` is set from the sandbox's TTL at creation (minimum 60 s), and a TTL change moves it (`renew-expiration`) to five minutes after Differently's own expiry |
 | Capacity | not reported: OpenSandbox's API exposes none, so the pool is limited only by `maxConcurrency` and quotas |
 
 The adapter's default features are `exec`, `exec.stream`, `files`,
@@ -156,7 +156,9 @@ them only if the runtime really provides them.
 
 OpenSandbox's published spec has run ahead of the images its server deploys:
 the spike found four differences between the 1.2 spec and `execd` v1.1.0,
-all handled by the adapter and covered by its fake server tests. Pin the
+all handled by the adapter and covered by its fake server tests. `execd`
+`release-1.2.0` keeps line endings; set `lineEndings: kept` with it for
+byte-exact output. Pin the
 server and `execd` versions per pool, and run the live test against a
 staging server on every OpenSandbox upgrade
 ([deploy/day-2.md](../deploy/day-2.md#opensandbox),

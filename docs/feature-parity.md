@@ -57,7 +57,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 | Capability | Boat | Differently | Status | Notes |
 |---|---|---|---|---|
 | Create | `POST /sandboxes` (202, poll) | `POST /v1/sandboxes` (202) | ✅ | Differently admits against quota first and rejects impossible requests up front with `no_eligible_pool` / `unsupported_capability` (422). |
-| Idempotent create | `Idempotency-Key` | `Idempotency-Key` | ✅ | Replay returns the original (200). SDKs send a key per call. |
+| Idempotent create | `Idempotency-Key` | `Idempotency-Key` | ✅ | Replay returns the live sandbox (200); once it has ended, the key creates a new one. SDKs send a key per call. |
 | Batch create (up to 1000 from a snapshot) | `count` + `from` | — | 📋 | Loop in the SDK today. |
 | Readiness | Poll `GET /sandboxes/{id}`; webhooks | `GET /v1/sandboxes/{id}/wait` long-poll; SDK `create()` waits by default | ✅ | Boat has no wait endpoint. |
 | Get / list with labels, cursor | Yes | `GET /v1/sandboxes`, `?label=k=v`, `cursor`, `status` | ✅ | |

@@ -434,6 +434,8 @@ export interface Template {
   name: string;
   description?: string;
   pools?: string[];
+  /** Each pool's own image for this template, by pool name. */
+  images?: Record<string, string>;
 }
 
 export interface AuditEvent {
