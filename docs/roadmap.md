@@ -61,7 +61,7 @@ node agent, with real isolation.
 | systemd unit for non-Kubernetes nodes | 🟡 | `deploy/systemd`; unverified |
 | **Any run on real KVM** | 📋 | [POC 1](proof-of-concepts.md#poc-1-firecracker-on-real-kvm), [E1](backlog.md#e1-firecracker-on-real-kvm) |
 | Jailer | 📋 | [ADR 0015](adr/0015-defer-jailer-integration.md), [E4](backlog.md#e4-firecracker-jailer) |
-| Authenticated agent channel | 📋 | Plain HTTP with one shared token today ([E3](backlog.md#e3-authenticated-agent-channel)) |
+| Authenticated agent channel | 🟡 | Per-agent secrets pinned at first registration stop impersonation; mTLS and encryption remain ([E3](backlog.md#e3-authenticated-agent-channel)) |
 | Inbound ports on Firecracker | 📋 | [E6](backlog.md#e6-preview-urls-for-firecracker-pools) |
 
 **Exit criteria (not met).** POC 1, 2 and 9 pass on at least one `.metal`

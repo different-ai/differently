@@ -39,6 +39,7 @@ func (s *Server) adminRoutes(authed func(string, handlerFunc)) {
 	admin("POST /v1/admin/pools/{name}/drain", s.drainPool(true))
 	admin("POST /v1/admin/pools/{name}/undrain", s.drainPool(false))
 	admin("GET /v1/admin/agents", s.listAgents)
+	admin("DELETE /v1/admin/agents/{id}", s.deleteAgent)
 	admin("POST /v1/admin/sandboxes/{id}/terminate", s.forceTerminate)
 	admin("GET /v1/admin/trust-report", s.trustReport)
 	admin("GET /v1/admin/audit/verify", s.verifyAudit)
@@ -326,11 +327,33 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request, _ auth.Princ
 	if err != nil {
 		return err
 	}
+	writeJSON(w, 200, api.List[api.Agent]{Items: s.publicAgents(list)})
+	return nil
+}
+
+// publicAgents strips secrets and computes health.
+func (s *Server) publicAgents(list []store.AgentRecord) []api.Agent {
 	cutoff := s.now().Add(-time.Duration(s.Config.Scheduler.AgentTimeoutSeconds) * time.Second)
-	for i := range list {
-		list[i].Healthy = list[i].LastSeen.After(cutoff)
+	out := make([]api.Agent, 0, len(list))
+	for _, a := range list {
+		a.Healthy = a.LastSeen.After(cutoff)
+		out = append(out, a.Agent)
 	}
-	writeJSON(w, 200, api.List[api.Agent]{Items: append([]api.Agent{}, list...)})
+	return out
+}
+
+// deleteAgent forgets an agent identity so a rebuilt node can register
+// again. Sandboxes on that node become unreachable until it does.
+func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
+	a, err := s.Store.GetAgent(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if err := s.Store.DeleteAgent(r.Context(), a.ID); err != nil {
+		return err
+	}
+	s.audit(r, p, "admin.agent_remove", a.ID, "", "", map[string]string{"pool": a.Pool, "endpoint": a.Endpoint})
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
@@ -408,21 +431,30 @@ type TrustPlacement struct {
 	Reason         string    `json:"reason"`
 }
 
-// Limitations are the residual risks Differently does not control.
-var Limitations = []string{
-	"Host administrators (root on KVM nodes, Kubernetes cluster-admins) can read guest memory and disks; Differently does not protect workloads from the infrastructure operator.",
-	"Cloud providers hosting your nodes can access their hardware; private pools are only as private as the infrastructure under them.",
-	"External providers (trust=external pools) run the workload and can see its code, data and environment variables.",
-	"The audit chain is tamper-evident, not tamper-proof: anyone with database write access can rewrite it. Export events (audit.file) to write-once storage to anchor it.",
-	"Actions taken directly on backends (kubectl, provider consoles, SSH to nodes) bypass Differently and are not in its audit log.",
-	"Egress from Firecracker sandboxes is controlled only by node networking you configure; Differently does not inspect traffic.",
-	"Exec commands are audited by program name unless audit.recordCommands is enabled; command arguments and outputs are not retained.",
-	"Usage costs are estimates from configured cost models, not reconciled provider invoices.",
-	"Firecracker microVMs do not run under the jailer yet; they rely on Firecracker's built-in seccomp filters and the agent's container isolation.",
-	"The control plane reaches node agents over plain HTTP authenticated by one shared agent token; a compromised node can impersonate other agents until mTLS lands.",
-	"Sandbox environment variables are stored unencrypted in the control-plane database; protect it with storage encryption and access controls.",
-	"Audit logging is fail-open: if an audit append fails the action still proceeds and the failure is only logged.",
-	"Sandbox egress rules cover IPv4 only.",
+// limitations are the residual risks Differently does not control, adjusted
+// for how this installation is configured.
+func limitations(cfg config.Config) []string {
+	out := []string{
+		"Host administrators (root on KVM nodes, Kubernetes cluster-admins) can read guest memory and disks; Differently does not protect workloads from the infrastructure operator.",
+		"Cloud providers hosting your nodes can access their hardware; private pools are only as private as the infrastructure under them.",
+		"External providers (trust=external pools) run the workload and can see its code, data and environment variables.",
+		"The audit chain is tamper-evident, not tamper-proof: anyone with database write access can rewrite it. Export events (audit.file) to write-once storage to anchor it.",
+		"Actions taken directly on backends (kubectl, provider consoles, SSH to nodes) bypass Differently and are not in its audit log.",
+		"Egress from Firecracker sandboxes is controlled only by node networking you configure; Differently does not inspect traffic.",
+		"Exec commands are audited by program name unless audit.recordCommands is enabled; command arguments and outputs are not retained.",
+		"Usage costs are estimates from configured cost models, not reconciled provider invoices.",
+		"Firecracker microVMs do not run under the jailer yet; they rely on Firecracker's built-in seccomp filters and the agent's container isolation.",
+		"Node agents are reached over plain HTTP. Each agent has its own secret, fixed at first registration, so one node cannot impersonate or command another; but anyone holding the shared registration token can register new agent IDs, and traffic is unencrypted until mTLS lands.",
+		"Sandbox environment variables and per-agent secrets are stored unencrypted in the control-plane database; protect it with storage encryption and access controls.",
+		"Sandbox egress rules cover IPv4 only.",
+	}
+	if !cfg.Audit.FailClosed {
+		out = append(out, "Audit logging is fail-open: if an audit append fails the action still proceeds and the failure is only logged and counted (set audit.failClosed to refuse changes instead).")
+	}
+	if cfg.Metrics.Listen == "" {
+		out = append(out, "/metrics is served without authentication on the API listener; set metrics.listen to move it to a separate port.")
+	}
+	return out
 }
 
 func (s *Server) trustReport(w http.ResponseWriter, r *http.Request, _ auth.Principal) error {
@@ -431,7 +463,7 @@ func (s *Server) trustReport(w http.ResponseWriter, r *http.Request, _ auth.Prin
 		GeneratedAt: s.now(), Installation: s.Installation, Version: version.Version,
 		Telemetry:       "none: Differently has no telemetry or phone-home code paths",
 		ControlPlane:    map[string]string{"store": s.Config.Store.Driver, "publicURL": s.Config.PublicURL, "auditMirror": s.Config.Audit.File, "dev": itoa64(map[bool]int64{true: 1}[s.Config.Dev])},
-		Classifications: s.Config.Classifications, Limitations: Limitations,
+		Classifications: s.Config.Classifications, Limitations: limitations(s.Config),
 	}
 	rep.GlobalPolicy = s.Config.Policy
 	policies, _ := s.Store.ListPolicies(ctx)
@@ -480,7 +512,8 @@ func (s *Server) trustReport(w http.ResponseWriter, r *http.Request, _ auth.Prin
 		rep.Placements = append(rep.Placements, *l)
 	}
 	slices.SortFunc(rep.Placements, func(a, b api.UsageLine) int { return strings.Compare(a.Key, b.Key) })
-	rep.Agents, _ = s.Store.ListAgents(ctx, "")
+	agents, _ := s.Store.ListAgents(ctx, "")
+	rep.Agents = s.publicAgents(agents)
 	events, _ := s.Store.ListAudit(ctx, store.AuditFilter{})
 	rep.AuditChain = audit.Verify(events)
 	for i := len(events) - 1; i >= 0 && len(rep.AdminActions) < 50; i-- {

@@ -40,7 +40,7 @@ This document separates three things that are easy to blur:
 | Database administrator | Trusted | Read env values; rewrite the audit chain |
 | Community adapter (`remote` pool) | Trusted as declared by the operator's `trust` setting | Sees everything sent to its pool |
 | Network attacker | Untrusted | Observe or tamper with unencrypted links |
-| Holder of the agent token | Should be "one node". **Today: any node, see §6** | Register agents, call any agent |
+| Holder of the agent token | Any node | Register a *new* agent ID; cannot take over another agent's ID or call other agents (each has its own secret, see §6) |
 
 ## 3. Trust boundaries
 
@@ -188,7 +188,7 @@ turns them into steps.
 | Gap | Effect | Tracking |
 |---|---|---|
 | Firecracker jailer | A VMM escape gets the agent's privileges (root; privileged container in default Helm values) | [ADR 0015](../adr/0015-defer-jailer-integration.md), [backlog E4](../backlog.md#e4-firecracker-jailer) |
-| Agent channel is plain HTTP with one shared token | See issue 1 below | [backlog E3](../backlog.md#e3-authenticated-agent-channel) |
+| Agent channel is plain HTTP; registration uses one shared token | Per-agent secrets stop impersonation (issue 1), but traffic is unencrypted | [backlog E3](../backlog.md#e3-authenticated-agent-channel) |
 | Sandbox env values in plaintext | Database and node-disk readers see them; fork copies them | [backlog E13](../backlog.md#e13-sandbox-secrets-by-reference) |
 | Per-sandbox egress policy, IPv6 rules, DNS policy | Node-level allow-all-public or deny-all only | [backlog E12](../backlog.md#e12-per-sandbox-egress-allow-lists) |
 | Memory snapshot authentication and encryption | Not needed until memory snapshots ship; Firecracker treats snapshot files as trusted input | [ADR 0014](../adr/0014-defer-memory-snapshots-until-restore-proven.md) |
@@ -197,46 +197,20 @@ turns them into steps.
 
 ### Issues found while documenting the code (2026-10-28)
 
-These were defects in the code, not design choices. Each has a task in
+Defects found in review, each with a task in
 [backlog E0](../backlog.md#e0-correctness-and-security-fixes-from-the-code-review).
-Items 2, 3, 8 and 9 were fixed before the initial import (marked **Fixed**);
-the others remain open.
 
-1. **Agent impersonation with the shared agent token.** Every node uses the
-   same `DIFFERENTLY_AGENT_TOKEN`, and the heartbeat endpoint accepts any agent
-   ID and endpoint from a token holder (`internal/server/tenancy.go`
-   `agentHeartbeat`). A compromised node can re-register another node's ID with
-   its own endpoint and receive that node's exec, file and create traffic,
-   including environment values. The change is audited as `agent.register`
-   but not prevented.
-2. **Fixed: cross-tenant deletion of project policies.** `DELETE /v1/policies/project:<id>`
-   checks only that an organization key with `policies:write` has no project
-   restriction (`policyScopeAllowed`); unlike `PUT`, it does not check that the
-   project belongs to the caller's organization. A tenant can delete another
-   tenant's project policy, which can widen that project's placement up to the
-   limits of its organization policy, the global policy and the classification.
-3. **Fixed: stopped sandboxes restarted without a quota check.** `start` now re-reserves CPU and memory atomically (`Store.ReserveCompute`). Stopping releases CPU
-   and memory from usage; `POST .../start` reserves them again without
-   `CheckActivation` (`internal/server/sandboxes.go` `lifecycle`). A tenant can
-   exceed its CPU and memory quota by stopping sandboxes, creating new ones and
-   starting the old ones. `maxActiveSandboxes` still bounds the total.
-4. **Audit is fail-open.** If appending an audit event fails, the error is
-   logged and the action proceeds (`internal/auditlog/auditlog.go`).
-5. **PID reuse on agent restart.** After an agent restart a VM is considered
-   alive if `kill(pid, 0)` succeeds. If Firecracker died and its PID was reused,
-   the VM stays "running" and a later delete sends `SIGKILL` to the unrelated
-   process (`internal/agent/agent.go` `recover`, `ExecLauncher`).
-6. **Unauthenticated `/metrics`** exposes route, pool and status labels.
-7. **Rate limiting runs after the key lookup**, so unauthenticated floods
-   still cost a database read per request, and limits are per replica.
-8. **Fixed: bootstrap key resurrection.** A revoked bootstrap key now stays revoked. Changing the bootstrap environment value
-   un-revokes the bootstrap key (`Bootstrap` sets `Revoked = false` when the
-   hash differs).
-9. **Fixed (synchronous paths): unbounded responses from the guest.** Exec results and listings are now read through size limits; streamed exec is passed through without buffering. The agent decodes the guest's
-   synchronous exec result and directory listings without a size limit
-   (`internal/guest/client.go` `Exec`, `ListFiles`); the 10 MiB output cap is
-   enforced by the guest itself, which is untrusted. A malicious guest can make
-   the agent allocate unbounded memory. Streamed exec has no total cap either.
+| # | Issue | Status |
+|---|---|---|
+| 1 | **Agent impersonation.** Every node shared one token, and the heartbeat accepted any agent ID and endpoint, so a compromised node could take over another node's ID and traffic. | **Fixed.** Each agent creates its own secret (`<state-dir>/agent-secret`), pinned when its ID first registers. Heartbeats for a known ID with another secret or pool get `409` and an `agent.register` failure event. The control plane calls each agent with that agent's secret, so the shared token can no longer drive another node's VMs. Remaining gap: a token holder can still register *new* IDs, and the channel is unencrypted until mTLS ([E3](../backlog.md#e3-authenticated-agent-channel)). |
+| 2 | Cross-tenant deletion of project policies. | **Fixed.** `DELETE /v1/policies/project:<id>` checks project ownership like `PUT`. |
+| 3 | Stopped sandboxes restarted without a quota check. | **Fixed.** `start` re-reserves CPU and memory atomically (`Store.ReserveCompute`). |
+| 4 | Audit was fail-open only. | **Option added.** `audit.failClosed: true` records each state-changing request before acting and answers `503` if that fails. Failures are counted in `differently_audit_append_failures_total` in both modes. Scheduler-side events stay fail-open. |
+| 5 | PID reuse: a reused PID could be treated as a live VM and receive `SIGKILL`. | **Fixed.** On Linux the agent signals a PID only if its command line names the VM's API socket. |
+| 6 | Unauthenticated `/metrics` on the API port. | **Option added, on by default in Helm.** `metrics.listen` serves metrics on a separate port (chart default `9091`) that the ingress never routes to. |
+| 7 | Rate limiting runs after the key lookup, so unauthenticated floods still cost a database read per request, and limits are per replica. | Open (E0.8). |
+| 8 | A changed bootstrap token un-revoked the bootstrap key. | **Fixed.** A revoked bootstrap key stays revoked. |
+| 9 | Unbounded responses from the guest. | **Fixed for synchronous paths.** Exec results and listings are read through size limits; streamed exec is passed through without buffering. |
 
 ## 7. Residual risks
 
@@ -285,7 +259,7 @@ answers each part. Per-sandbox detail comes from
 in `recentExternalPlacements`, that `limitations` is non-empty and that the
 audit chain verifies.
 
-The `limitations` list returned today (`server.Limitations`):
+The `limitations` list returned today (`limitations` in `internal/server/admin.go`, adjusted to the configuration):
 
 1. Host administrators (root on KVM nodes, Kubernetes cluster-admins) can read
    guest memory and disks.
@@ -300,9 +274,10 @@ The `limitations` list returned today (`server.Limitations`):
    enabled.
 8. Usage costs are estimates, not reconciled invoices.
 
-Not yet in that list, and should be (backlog E0): the absent jailer, the
-plaintext shared-token agent channel, plaintext sandbox environment values in
-the database, the fail-open audit path, and the absence of IPv6 egress rules.
+The list also states the absent jailer, the unencrypted agent channel,
+plaintext environment values and agent secrets in the database, and the IPv4-only
+egress rules. It adds the fail-open audit entry unless `audit.failClosed` is
+set, and the unauthenticated `/metrics` entry unless `metrics.listen` is set.
 
 Scaling note: the report reads every sandbox row and the whole audit chain on
 each call.

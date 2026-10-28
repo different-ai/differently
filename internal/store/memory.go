@@ -24,7 +24,7 @@ type Memory struct {
 	policies     map[string]api.PlacementPolicy
 	sandboxes    map[string]SandboxRecord
 	snapshots    map[string]SnapshotRecord
-	agents       map[string]api.Agent
+	agents       map[string]AgentRecord
 	audit        []api.AuditEvent
 }
 
@@ -38,7 +38,7 @@ func NewMemory() *Memory {
 		policies:  map[string]api.PlacementPolicy{},
 		sandboxes: map[string]SandboxRecord{},
 		snapshots: map[string]SnapshotRecord{},
-		agents:    map[string]api.Agent{},
+		agents:    map[string]AgentRecord{},
 	}
 }
 
@@ -549,17 +549,27 @@ func (m *Memory) ListAudit(_ context.Context, f AuditFilter) ([]api.AuditEvent, 
 	return out, nil
 }
 
-func (m *Memory) UpsertAgent(_ context.Context, a api.Agent) error {
+func (m *Memory) UpsertAgent(_ context.Context, a AgentRecord) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.agents[a.ID] = clone(a)
 	return nil
 }
 
-func (m *Memory) ListAgents(_ context.Context, pool string) ([]api.Agent, error) {
+func (m *Memory) GetAgent(_ context.Context, id string) (AgentRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var out []api.Agent
+	a, ok := m.agents[id]
+	if !ok {
+		return a, NotFound("agent", id)
+	}
+	return clone(a), nil
+}
+
+func (m *Memory) ListAgents(_ context.Context, pool string) ([]AgentRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []AgentRecord
 	for _, a := range m.agents {
 		if pool == "" || a.Pool == pool {
 			out = append(out, clone(a))
@@ -567,6 +577,13 @@ func (m *Memory) ListAgents(_ context.Context, pool string) ([]api.Agent, error)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
+}
+
+func (m *Memory) DeleteAgent(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.agents, id)
+	return nil
 }
 
 func (m *Memory) TryLeader(context.Context) (bool, error) { return true, nil }

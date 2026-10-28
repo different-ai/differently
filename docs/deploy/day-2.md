@@ -189,11 +189,20 @@ part:
 Prefer named operator keys for daily work, and keep the bootstrap token
 offline.
 
-**Agent token.** There is one shared token and no overlap window. Update the
+**Agent token.** The shared token only registers nodes; each agent is then
+bound to its own secret in `<state-dir>/agent-secret`, which survives agent
+restarts. To rotate the shared token there is no overlap window: update the
 Secret, restart the server and every agent together, and update
-`/etc/differently/agent.env` on systemd hosts. Heartbeats fail between the
-two restarts. Agent pods restart under `OnDelete` only when you delete them,
-which also ends their microVMs.
+`/etc/differently/agent.env` on systemd hosts. Heartbeats fail between the two
+restarts. Agent pods restart under `OnDelete` only when you delete them, which
+also ends their microVMs.
+
+**Rebuilt nodes.** A node whose state directory was wiped creates a new
+secret, and the control plane refuses it under the old agent ID (`409`,
+audited as an `agent.register` failure). After confirming the rebuild was
+yours, remove the old identity so the node can register again:
+`curl -X DELETE -H "Authorization: Bearer $OPERATOR_KEY" $URL/v1/admin/agents/<node-name>`.
+Sandboxes that were on the old node are reported lost by the reconciler.
 
 ## Node maintenance and drain
 

@@ -25,11 +25,11 @@ import (
 // than lost.
 const PartitionGrace = 10 * time.Minute
 
-// Pool aggregates node agents.
+// Pool aggregates node agents. Each agent is called with its own secret
+// (store.AgentRecord.Secret), never a token shared across nodes.
 type Pool struct {
 	Name    string
 	Store   store.Store
-	Token   string
 	Timeout time.Duration
 
 	mu      sync.Mutex
@@ -37,20 +37,20 @@ type Pool struct {
 }
 
 // New returns a pool backed by agents registered in st.
-func New(name string, st store.Store, token string, timeout time.Duration) *Pool {
+func New(name string, st store.Store, timeout time.Duration) *Pool {
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
-	return &Pool{Name: name, Store: st, Token: token, Timeout: timeout, clients: map[string]*adapterhttp.Client{}}
+	return &Pool{Name: name, Store: st, Timeout: timeout, clients: map[string]*adapterhttp.Client{}}
 }
 
-func (p *Pool) agents(ctx context.Context) ([]api.Agent, error) {
+func (p *Pool) agents(ctx context.Context) ([]store.AgentRecord, error) {
 	all, err := p.Store.ListAgents(ctx, p.Name)
 	if err != nil {
 		return nil, err
 	}
 	cutoff := time.Now().Add(-p.Timeout)
-	var out []api.Agent
+	var out []store.AgentRecord
 	for _, a := range all {
 		if a.LastSeen.After(cutoff) {
 			out = append(out, a)
@@ -59,12 +59,12 @@ func (p *Pool) agents(ctx context.Context) ([]api.Agent, error) {
 	return out, nil
 }
 
-func (p *Pool) client(a api.Agent) *adapterhttp.Client {
+func (p *Pool) client(a store.AgentRecord) *adapterhttp.Client {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	c, ok := p.clients[a.ID]
-	if !ok || c.BaseURL != strings.TrimRight(a.Endpoint, "/") {
-		c = adapterhttp.NewClient(a.Endpoint, p.Token)
+	if !ok || c.BaseURL != strings.TrimRight(a.Endpoint, "/") || c.Token != a.Secret {
+		c = adapterhttp.NewClient(a.Endpoint, a.Secret)
 		p.clients[a.ID] = c
 	}
 	return c
@@ -166,7 +166,7 @@ func (p *Pool) Create(ctx context.Context, req adapter.CreateRequest) (adapter.I
 		pinned, snap, _ = strings.Cut(req.FromSnapshot, ":")
 		req.FromSnapshot = snap
 	}
-	var fits []api.Agent
+	var fits []store.AgentRecord
 	for _, a := range agents {
 		if pinned != "" && a.ID != pinned {
 			continue

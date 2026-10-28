@@ -23,14 +23,16 @@ func TestPoolPlacesAndRoutesAcrossAgents(t *testing.T) {
 		"node-b": fake.New(fake.Options{TotalCPU: 8, TotalMemoryMiB: 16384}),
 	}
 	for name, a := range nodes {
-		srv := httptest.NewServer(adapterhttp.Handler(a, "tok"))
+		// Each node only accepts its own secret: the pool must use it.
+		secret := "secret-of-" + name + "-0123456789abcdefghjk"
+		srv := httptest.NewServer(adapterhttp.Handler(a, secret))
 		t.Cleanup(srv.Close)
 		c, _ := a.Capacity(ctx)
-		_ = st.UpsertAgent(ctx, api.Agent{ID: name, Pool: "fc", Endpoint: srv.URL, TotalCPU: c.TotalCPU, FreeCPU: c.FreeCPU,
-			TotalMemoryMiB: c.TotalMemoryMiB, FreeMemoryMiB: c.FreeMemoryMiB, Capabilities: fake.DefaultFeatures, LastSeen: time.Now()})
+		_ = st.UpsertAgent(ctx, store.AgentRecord{Secret: secret, Agent: api.Agent{ID: name, Pool: "fc", Endpoint: srv.URL, TotalCPU: c.TotalCPU, FreeCPU: c.FreeCPU,
+			TotalMemoryMiB: c.TotalMemoryMiB, FreeMemoryMiB: c.FreeMemoryMiB, Capabilities: fake.DefaultFeatures, LastSeen: time.Now()}})
 	}
-	_ = st.UpsertAgent(ctx, api.Agent{ID: "stale", Pool: "fc", Endpoint: "http://127.0.0.1:1", FreeCPU: 64, FreeMemoryMiB: 1 << 20, LastSeen: time.Now().Add(-time.Hour)})
-	p := New("fc", st, "tok", 30*time.Second)
+	_ = st.UpsertAgent(ctx, store.AgentRecord{Agent: api.Agent{ID: "stale", Pool: "fc", Endpoint: "http://127.0.0.1:1", FreeCPU: 64, FreeMemoryMiB: 1 << 20, LastSeen: time.Now().Add(-time.Hour)}})
+	p := New("fc", st, 30*time.Second)
 
 	if err := p.Health(ctx); err != nil {
 		t.Fatal(err)
@@ -68,7 +70,7 @@ func TestPoolPlacesAndRoutesAcrossAgents(t *testing.T) {
 		t.Fatalf("delete %v count %d", err, nodes["node-b"].Count())
 	}
 	// A node that only just went quiet may be partitioned: no partial lists.
-	_ = st.UpsertAgent(ctx, api.Agent{ID: "node-c", Pool: "fc", Endpoint: "http://127.0.0.1:1", LastSeen: time.Now().Add(-2 * time.Minute)})
+	_ = st.UpsertAgent(ctx, store.AgentRecord{Agent: api.Agent{ID: "node-c", Pool: "fc", Endpoint: "http://127.0.0.1:1", LastSeen: time.Now().Add(-2 * time.Minute)}})
 	if _, err := p.List(ctx, "i"); !api.IsCode(err, api.CodeProviderUnavailable) {
 		t.Fatalf("list during a possible partition must fail, got %v", err)
 	}

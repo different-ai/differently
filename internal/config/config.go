@@ -35,6 +35,7 @@ type Config struct {
 	Scheduler       SchedulerConfig      `json:"scheduler"`
 	RateLimit       RateLimitConfig      `json:"rateLimit"`
 	Audit           AuditConfig          `json:"audit"`
+	Metrics         MetricsConfig        `json:"metrics"`
 	Dashboard       DashboardConfig      `json:"dashboard"`
 }
 
@@ -153,6 +154,18 @@ type AuditConfig struct {
 	// RecordCommands stores exec command lines in audit events. Commands can
 	// contain secrets, so the default records only the program name.
 	RecordCommands bool `json:"recordCommands,omitempty"`
+	// FailClosed refuses mutating API requests (503) when the audit event
+	// recording them cannot be stored. The default logs and counts the
+	// failure and lets the request proceed.
+	FailClosed bool `json:"failClosed,omitempty"`
+}
+
+// MetricsConfig controls where Prometheus metrics are served.
+type MetricsConfig struct {
+	// Listen serves /metrics on its own address (for example ":9091") and
+	// removes it from the API listener, so it can stay off the ingress.
+	// Empty serves /metrics on the API listener without authentication.
+	Listen string `json:"listen,omitempty"`
 }
 
 // DashboardConfig toggles the built-in web dashboard.
@@ -342,6 +355,9 @@ func (c Config) Validate() error {
 		if p.Adapter == "remote" && p.Config["endpoint"] == "" {
 			bad("pool %s: remote adapter needs config.endpoint", p.Name)
 		}
+	}
+	if c.Metrics.Listen != "" && c.Metrics.Listen == c.Listen {
+		bad("metrics.listen must differ from listen")
 	}
 	for _, ep := range c.Policy.ExternalPools {
 		if !names[ep] {

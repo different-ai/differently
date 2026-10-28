@@ -233,10 +233,15 @@ infrastructure that hosts them. Today Differently does not manage it:
 
 - **Node agents self-register.** An agent started with `--pool NAME` and the
   agent token heartbeats every 10 s to `/internal/v1/agents/heartbeat` with its
-  ID (the node name), endpoint, capacity, features and templates. The pool
+  ID (the node name), endpoint, capacity, features and templates, plus its own
+  secret in the `Differently-Agent-Secret` header. The secret is pinned when
+  the ID first registers; the control plane then calls that agent's adapter
+  API with it, and refuses heartbeats for that ID with any other secret or
+  pool. The pool
   must already exist with `adapter: firecracker`. An agent missing heartbeats
   for `scheduler.agentTimeoutSeconds` (default 30 s) drops out of placement.
-  Agents are never deleted from the store.
+  Agents stay in the store until an operator removes one with
+  `DELETE /v1/admin/agents/{id}`.
 - **Existing VM pools** are covered by `remote` pools: a plugin that speaks the
   HTTP protocol in front of a fleet (libvirt hosts, Proxmox, a cloud account)
   allocates an instance per `Create`.

@@ -26,6 +26,7 @@ import (
 	"github.com/different-ai/differently/internal/agent"
 	"github.com/different-ai/differently/internal/version"
 	"github.com/different-ai/differently/pkg/adapter/adapterhttp"
+	"github.com/different-ai/differently/pkg/api"
 )
 
 type flags struct {
@@ -101,6 +102,12 @@ func serve(f flags) error {
 			log.Warn("could not enable IP forwarding; sandboxes will have no network", "err", err)
 		}
 	}
+	// The shared token only registers this node; the control plane must call
+	// this agent with its own secret, pinned at first registration.
+	secret, err := agent.LoadOrCreateSecret(f.stateDir)
+	if err != nil {
+		return fmt.Errorf("agent secret: %w", err)
+	}
 	m, err := agent.New(agent.Config{
 		Pool: f.pool, Node: f.node, StateDir: f.stateDir, ImagesDir: f.imagesDir, Kernel: f.kernel, Firecracker: f.firecracker,
 		ReserveCPU: f.reserveCPU, ReserveMemoryMiB: f.reserveMem, CPUOvercommit: f.overcommit, Egress: f.egress, DNS: splitList(f.dns), Log: log,
@@ -110,10 +117,10 @@ func serve(f flags) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go heartbeat(ctx, log, f, token, m)
+	go heartbeat(ctx, log, f, token, secret, m)
 
 	mux := http.NewServeMux()
-	mux.Handle("/adapter/", adapterhttp.Handler(m, token))
+	mux.Handle("/adapter/", adapterhttp.Handler(m, secret))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := m.Health(r.Context()); err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -137,7 +144,7 @@ func serve(f flags) error {
 	return nil
 }
 
-func heartbeat(ctx context.Context, log *slog.Logger, f flags, token string, m *agent.Manager) {
+func heartbeat(ctx context.Context, log *slog.Logger, f flags, token, secret string, m *agent.Manager) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	id := strings.NewReplacer(":", "-", "/", "-").Replace(f.node)
 	for {
@@ -146,11 +153,14 @@ func heartbeat(ctx context.Context, log *slog.Logger, f flags, token string, m *
 		body, _ := json.Marshal(st)
 		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(f.server, "/")+"/internal/v1/agents/heartbeat", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set(api.AgentSecretHeader, secret)
 		req.Header.Set("Content-Type", "application/json")
 		if resp, err := client.Do(req); err != nil {
 			log.Warn("heartbeat failed", "err", err)
 		} else {
-			if resp.StatusCode != 200 {
+			if resp.StatusCode == http.StatusConflict {
+				log.Error("control plane refused this node's identity; if the node was rebuilt, an operator must remove the old agent (DELETE /v1/admin/agents/" + id + ")")
+			} else if resp.StatusCode != 200 {
 				log.Warn("heartbeat rejected", "status", resp.StatusCode)
 			}
 			resp.Body.Close()

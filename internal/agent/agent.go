@@ -67,8 +67,10 @@ var DefaultDenyCIDRs = []string{"169.254.0.0/16", "10.0.0.0/8", "172.16.0.0/12",
 // binary; tests substitute an in-process fake.
 type Launcher interface {
 	Launch(vm *VM) (pid int, err error)
-	Kill(pid int) error
-	Alive(pid int) bool
+	// Kill and Alive act only on the VM's own Firecracker process: a PID
+	// that was reused by something else is treated as gone.
+	Kill(vm *VM) error
+	Alive(vm *VM) bool
 }
 
 // Runner executes host commands (ip, iptables, resize2fs).
@@ -169,12 +171,10 @@ func (m *Manager) recover() error {
 			// Interrupted mid-create: release its capacity; the disk is kept so
 			// a retried create can be adopted or the reconciler can clean up.
 			m.log.Warn("microVM was being created when the agent stopped; marking stopped", "vm", vm.ID)
-			if vm.PID > 0 {
-				_ = m.launcher.Kill(vm.PID)
-			}
+			_ = m.launcher.Kill(&vm)
 			vm.State, vm.PID = adapter.StateStopped, 0
 			_ = m.save(&vm)
-		case (vm.State == adapter.StateRunning || vm.State == adapter.StatePaused) && !m.launcher.Alive(vm.PID):
+		case (vm.State == adapter.StateRunning || vm.State == adapter.StatePaused) && !m.launcher.Alive(&vm):
 			m.log.Warn("microVM process is gone after restart; marking stopped", "vm", vm.ID)
 			vm.State, vm.PID = adapter.StateStopped, 0
 			_ = m.save(&vm)
@@ -504,9 +504,7 @@ func (m *Manager) Delete(_ context.Context, ref string) error {
 }
 
 func (m *Manager) destroy(vm *VM) {
-	if vm.PID > 0 {
-		_ = m.launcher.Kill(vm.PID)
-	}
+	_ = m.launcher.Kill(vm)
 	m.teardownNetwork(vm)
 	_ = os.RemoveAll(vm.Dir)
 }
@@ -579,10 +577,10 @@ func (m *Manager) Stop(ctx context.Context, ref string) error {
 	}
 	_ = firecracker.New(vm.APISocket()).CtrlAltDel(ctx)
 	deadline := time.Now().Add(10 * time.Second)
-	for m.launcher.Alive(vm.PID) && time.Now().Before(deadline) {
+	for m.launcher.Alive(vm) && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
-	_ = m.launcher.Kill(vm.PID)
+	_ = m.launcher.Kill(vm)
 	m.mu.Lock()
 	vm.State, vm.PID = adapter.StateStopped, 0
 	m.mu.Unlock()
@@ -759,21 +757,67 @@ func (l ExecLauncher) Launch(vm *VM) (int, error) {
 	return cmd.Process.Pid, nil
 }
 
-// Kill terminates a Firecracker process.
-func (ExecLauncher) Kill(pid int) error {
-	if pid <= 0 {
+// Kill terminates the VM's Firecracker process, if it is still that process.
+func (ExecLauncher) Kill(vm *VM) error {
+	if !owns(vm) {
 		return nil
 	}
-	err := syscall.Kill(pid, syscall.SIGKILL)
+	err := syscall.Kill(vm.PID, syscall.SIGKILL)
 	if errors.Is(err, syscall.ESRCH) {
 		return nil
 	}
 	return err
 }
 
-// Alive reports whether pid is running.
-func (ExecLauncher) Alive(pid int) bool {
-	return pid > 0 && syscall.Kill(pid, 0) == nil
+// Alive reports whether the VM's Firecracker process is running.
+func (ExecLauncher) Alive(vm *VM) bool { return owns(vm) }
+
+// owns reports whether vm.PID is still the Firecracker process started for
+// vm. On Linux the process's command line must name the VM's API socket, so
+// a PID reused after a crash or reboot is never signalled. Elsewhere (local
+// development only) it falls back to checking that the PID exists.
+func owns(vm *VM) bool {
+	if vm == nil || vm.PID <= 0 {
+		return false
+	}
+	if runtime.GOOS != "linux" {
+		return syscall.Kill(vm.PID, 0) == nil
+	}
+	cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", vm.PID))
+	if err != nil {
+		return false
+	}
+	for _, arg := range strings.Split(string(cmdline), "\x00") {
+		if arg == vm.APISocket() {
+			return true
+		}
+	}
+	return false
+}
+
+// LoadOrCreateSecret returns this node's agent secret, creating it on first
+// start. It lives in the state directory so it survives agent restarts; the
+// control plane pins it at first registration.
+func LoadOrCreateSecret(stateDir string) (string, error) {
+	path := filepath.Join(stateDir, "agent-secret")
+	if b, err := os.ReadFile(path); err == nil {
+		if s := strings.TrimSpace(string(b)); len(s) >= 32 {
+			return s, nil
+		}
+	}
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		return "", err
+	}
+	secret := id.Secret(48)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(secret + "\n"); err != nil {
+		return "", err
+	}
+	return secret, nil
 }
 
 // ExecRunner runs host commands.

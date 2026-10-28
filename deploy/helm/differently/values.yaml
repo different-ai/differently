@@ -124,6 +124,10 @@ config:
     # Store full exec command lines in audit events. Commands can contain
     # secrets; the default records only the program name.
     recordCommands: false
+    # Refuse state-changing API requests (503) when their audit event cannot
+    # be stored. The default proceeds and counts the failure in
+    # differently_audit_append_failures_total.
+    failClosed: false
   dashboard:
     enabled: true
 
@@ -327,9 +331,9 @@ ingress:
   enabled: false
   className: ""
   annotations: {}
-  # The API, dashboard, agent heartbeat (/internal/v1/agents/heartbeat, agent
-  # token required) and /metrics (unauthenticated) share one port. Block
-  # /metrics at your ingress controller if it must not be public.
+  # The API, dashboard and agent heartbeat (/internal/v1/agents/heartbeat,
+  # agent token and per-agent secret required) share one port. /metrics is
+  # served on metrics.port, which the ingress never routes to.
   hosts: []
   #  - differently.example.com
   path: /
@@ -446,6 +450,9 @@ networkPolicy:
     # Peers allowed to reach the API port (NetworkPolicyPeer list). Empty
     # allows any source. Agent pods are always added when this is set.
     ingressFrom: []
+    # Peers allowed to scrape metrics.port (NetworkPolicyPeer list). Empty
+    # allows any source inside the cluster; the port is never on the ingress.
+    metricsFrom: []
     egress:
       # Restrict server egress to DNS, agents, the database, enabled
       # providers and the rules below.
@@ -467,6 +474,9 @@ networkPolicy:
     extraIngress: []
 
 metrics:
+  # Serve Prometheus /metrics on its own port, off the API listener and the
+  # ingress. 0 serves it unauthenticated on the API port instead.
+  port: 9091
   serviceMonitor:
     # Requires the Prometheus Operator CRDs.
     enabled: false

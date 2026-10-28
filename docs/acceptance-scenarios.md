@@ -200,8 +200,8 @@ the snapshot's node, partition guard); `TestMicroVMLifecycleOverAdapterProtocol`
 auth); `TestConfigureAndStart` (Firecracker API calls).
 
 **Known gaps.** No InfrastructureAdapter that provisions or autoscales nodes;
-agents share one token until mTLS (backlog E3); the heartbeat endpoint has no
-direct server test yet.
+the agent channel is unencrypted until mTLS (backlog E3). Agent identity
+pinning is covered by `TestAgentIdentityIsPinned`.
 
 **Needs real-infrastructure validation.** Registering real KVM hosts (EKS
 metal or nested virtualization, bare-metal k3s/RKE2, systemd hosts) and a
@@ -229,7 +229,7 @@ capabilities view has no credentials, bad key is 401);
 or delete another tenant's project policy.
 
 **Needs real-infrastructure validation.** An external security review of the
-API, including the agent channel (shared token).
+API, including the agent channel (shared registration token, per-agent secrets, no encryption yet).
 
 ## I. Capability mismatch
 

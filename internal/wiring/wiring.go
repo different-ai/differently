@@ -23,7 +23,7 @@ func Register() {
 		if d.AgentToken == "" {
 			return nil, fmt.Errorf("firecracker pools need the agent token (auth.agentTokenEnv)")
 		}
-		return firecracker.New(p.Name, d.Store, d.AgentToken, d.AgentTimeout), nil
+		return firecracker.New(p.Name, d.Store, d.AgentTimeout), nil
 	})
 	pools.Register("remote", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
 		token, err := resolve(p, d)

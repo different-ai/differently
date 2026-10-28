@@ -44,6 +44,15 @@ type SnapshotRecord struct {
 	BackendRef string `json:"backendRef"`
 }
 
+// AgentRecord is a node agent plus the per-agent secret it established on
+// first registration. The control plane presents the secret when calling the
+// agent, and the agent must present it on every heartbeat, so one node
+// cannot impersonate or command another. Never returned by the API.
+type AgentRecord struct {
+	api.Agent
+	Secret string `json:"secret"`
+}
+
 // SandboxFilter selects sandboxes for listing.
 type SandboxFilter struct {
 	OrgID     string
@@ -168,8 +177,10 @@ type Store interface {
 	AppendAudit(ctx context.Context, ev api.AuditEvent) (api.AuditEvent, error)
 	ListAudit(ctx context.Context, f AuditFilter) ([]api.AuditEvent, error)
 
-	UpsertAgent(ctx context.Context, a api.Agent) error
-	ListAgents(ctx context.Context, pool string) ([]api.Agent, error)
+	UpsertAgent(ctx context.Context, a AgentRecord) error
+	GetAgent(ctx context.Context, id string) (AgentRecord, error)
+	ListAgents(ctx context.Context, pool string) ([]AgentRecord, error)
+	DeleteAgent(ctx context.Context, id string) error
 
 	// TryLeader reports whether this process holds scheduler leadership.
 	TryLeader(ctx context.Context) (bool, error)
