@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/signal"
@@ -145,14 +146,23 @@ func main() {
 		&cobra.Command{Use: "capabilities", Short: "List pools and their capabilities", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/capabilities", nil) }},
 	)
 	if err := root.Execute(); err != nil {
-		var e *api.Error
-		if errors.As(err, &e) {
-			fmt.Fprintf(os.Stderr, "error [%s]: %s\n", e.Code, e.Message)
-			for k, v := range e.Details {
-				fmt.Fprintf(os.Stderr, "  %s: %s\n", k, v)
-			}
-		}
+		reportError(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+// reportError prints a failed command's error. API errors show their code and
+// details; anything else (an unknown flag, a missing argument, an unreachable
+// server) is printed as is, so the CLI never exits without saying why.
+func reportError(w io.Writer, err error) {
+	var e *api.Error
+	if !errors.As(err, &e) {
+		fmt.Fprintf(w, "error: %v\n", err)
+		return
+	}
+	fmt.Fprintf(w, "error [%s]: %s\n", e.Code, e.Message)
+	for k, v := range e.Details {
+		fmt.Fprintf(w, "  %s: %s\n", k, v)
 	}
 }
 
