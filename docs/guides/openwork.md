@@ -81,9 +81,12 @@ OpenWork computers:
 - **Port URLs need OpenSandbox's ingress gateway** (`server.gateway.enabled`),
   so a desktop viewer needs it, or a Daytona or Freestyle pool.
 - **First image pull.** Pulling a new image can take longer than
-  OpenSandbox's 60-second pod-ready timeout; the create then fails with a 504
-  and Differently retries it. Pre-pull large images, such as Workbot's
-  computer image, on the nodes, or raise that timeout.
+  OpenSandbox's 60-second pod-ready timeout. OpenSandbox then answers the
+  create with a 504 but keeps creating the sandbox, and the adapter adopts it
+  and keeps waiting. The whole create still has to finish within the
+  scheduler's `provisionTimeoutSeconds` (120 s by default), so pre-pull large
+  images such as Workbot's computer image on the nodes, or raise that
+  setting.
 
 ## Templates: route one image name to every provider
 
