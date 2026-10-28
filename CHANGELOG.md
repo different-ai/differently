@@ -6,6 +6,14 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.1] — 2026-10-28
+
+First alpha, published as a GitHub pre-release for early testing. Not for
+production: OpenSandbox's Kubernetes and Fast Sandbox runtimes, real
+clusters and live Daytona/Freestyle accounts are not verified yet (see
+`docs/roadmap.md`). The end-to-end suite covers the real stack against an
+OpenSandbox server on its Docker runtime.
+
 ### Added
 
 - Control plane (`differently-server`):
@@ -137,3 +145,6 @@ All notable changes are recorded here. The format follows
   - stored provider credentials, switching providers and API key rotation
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
+
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.1...pre-release
+[0.1.0-alpha.1]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.1
