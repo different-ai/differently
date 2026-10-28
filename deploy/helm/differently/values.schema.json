@@ -62,7 +62,7 @@
       "required": ["name", "adapter"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
-        "adapter": {"type": "string", "enum": ["firecracker", "remote", "daytona", "freestyle", "fake"]},
+        "adapter": {"type": "string", "enum": ["firecracker", "remote", "daytona", "freestyle", "opensandbox", "fake"]},
         "trust": {"type": "string", "enum": ["private", "external"]},
         "region": {"type": "string"},
         "labels": {"$ref": "#/definitions/stringMap"},
@@ -84,6 +84,10 @@
         {
           "if": {"properties": {"adapter": {"const": "remote"}}},
           "then": {"required": ["config"], "properties": {"config": {"required": ["endpoint"]}}}
+        },
+        {
+          "if": {"properties": {"adapter": {"const": "opensandbox"}}},
+          "then": {"required": ["config", "trust"], "properties": {"config": {"required": ["apiURL"]}}}
         }
       ]
     },

@@ -1,0 +1,22 @@
+# A private OpenSandbox server as the only pool (trust must be declared).
+config:
+  pools:
+    - name: opensandbox
+      adapter: opensandbox
+      trust: private
+      region: dc1
+      maxConcurrency: 50
+      config:
+        apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+        image: ubuntu:24.04
+        isolation: container
+      credentials:
+        env: DIFFERENTLY_OPENSANDBOX_API_KEY
+server:
+  extraEnv:
+    - name: DIFFERENTLY_OPENSANDBOX_API_KEY
+      valueFrom:
+        secretKeyRef: {name: opensandbox-api-key, key: api-key}
+# This install delegates every sandbox to OpenSandbox; no Firecracker nodes.
+agent:
+  enabled: false

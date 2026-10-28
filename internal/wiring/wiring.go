@@ -10,6 +10,7 @@ import (
 	"github.com/different-ai/differently/internal/adapters/fake"
 	"github.com/different-ai/differently/internal/adapters/firecracker"
 	"github.com/different-ai/differently/internal/adapters/freestyle"
+	"github.com/different-ai/differently/internal/adapters/opensandbox"
 	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/internal/pools"
 	"github.com/different-ai/differently/pkg/adapter"
@@ -45,6 +46,17 @@ func Register() {
 			return nil, err
 		}
 		return freestyle.New(freestyle.FromConfig(p.Config, key)), nil
+	})
+	pools.Register("opensandbox", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		key, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := opensandbox.FromConfig(p.Config, p.Trust, key)
+		if err != nil {
+			return nil, err
+		}
+		return opensandbox.New(opts), nil
 	})
 	pools.Register("devhost", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
 		if !d.Dev {

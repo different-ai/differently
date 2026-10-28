@@ -40,7 +40,9 @@ and where workloads may go.
 Honest positioning: being open source, self-hosted and Firecracker-on-Kubernetes
 is **not** unique (OpenSandbox's Fast Sandbox backend and Tencent CubeSandbox
 take the same node-agent approach). The rows that are unoccupied are the policy,
-classification, placement-explanation and trust-report rows.
+classification, placement-explanation and trust-report rows. OpenSandbox is
+also a Differently backend: an `opensandbox` pool puts its runtimes under
+Differently's policies ([ADR 0019](adr/0019-opensandbox-backend-first.md)).
 
 ## 2. Developer API: Differently vs Boat, endpoint by endpoint
 
@@ -138,22 +140,26 @@ What each Differently adapter advertises today (from the adapters' code). A
 request that needs a capability is only placed on pools that advertise it; an
 operation a backend lacks returns `unsupported_operation` (501).
 
-| Capability | `firecracker` (node agent) | `daytona` | `freestyle` | `devhost` (dev only) |
-|---|---|---|---|---|
-| Trust | private | external | external | private |
-| Isolation | Firecracker microVM (KVM) | Container, or VM with `class: linux-vm` | Hardware-virtualized microVM | **None** |
-| `exec` | ✅ | 🧪 combined stdout/stderr, no stdin | 🧪 separate streams, ≤5 min inline | ✅ |
-| `exec.stream` | ✅ | — (falls back to buffered) | — (falls back to buffered) | ✅ |
-| `files` | ✅ | 🧪 | 🧪 | ✅ |
-| `lifecycle.stop-start` / `persistence.disk` | ✅ | 🧪 | 🧪 (stop = in-guest poweroff) | ✅ |
-| `lifecycle.pause-resume` | ✅ | 🧪 VM class only | 🧪 | — |
-| `snapshots.disk` / `fork` | ✅ | 🧪 | 🧪 | ✅ |
-| `snapshots.memory` | — (pending POC) | 🧪 VM class only | 🧪 always memory+disk | — |
-| `ports.expose` | — (gateway 📋) | 🧪 signed preview URL | 🧪 public TLS host | — |
-| `network.egress-control` | ✅ node-level | — | 🧪 firewall (deny by default; `egress: public` to allow) | — |
-| Max size | Node allocatable | 4 vCPU / 8 GiB / 10 GiB (provider default) | 32 vCPU / 64 GiB / 256 GiB (plan-dependent) | Host |
-| Idempotent create | Sandbox ID is the VM ID | Label lookup | Slug derived from sandbox ID | Directory per sandbox ID |
-| Provider-side TTL backstop | n/a | `ttlMinutes` | `ttlSeconds` | n/a |
+| Capability | `firecracker` (node agent) | `opensandbox` | `daytona` | `freestyle` | `devhost` (dev only) |
+|---|---|---|---|---|---|
+| Trust | private | **declared by the operator** (self-hostable) | external | external | private |
+| Isolation | Firecracker microVM (KVM) | OpenSandbox runtime: containers (Docker, Kubernetes) or Firecracker (Fast Sandbox); pool declares it | Container, or VM with `class: linux-vm` | Hardware-virtualized microVM | **None** |
+| `exec` | ✅ | ✅ live (Docker runtime); no stdin | 🧪 combined stdout/stderr, no stdin | 🧪 separate streams, ≤5 min inline | ✅ |
+| `exec.stream` | ✅ | ✅ live | — (falls back to buffered) | — (falls back to buffered) | ✅ |
+| `files` | ✅ | ✅ live | 🧪 | 🧪 | ✅ |
+| `lifecycle.stop-start` / `persistence.disk` | ✅ | — (OpenSandbox has no stop) | 🧪 | 🧪 (stop = in-guest poweroff) | ✅ |
+| `lifecycle.pause-resume` | ✅ | ✅ live | 🧪 VM class only | 🧪 | — |
+| `snapshots.disk` / `fork` | ✅ | ✅ live (snapshot); fork 🧪 | 🧪 | 🧪 | ✅ |
+| `snapshots.memory` | — (pending POC) | 🧪 opt-in per pool (Fast Sandbox) | 🧪 VM class only | 🧪 always memory+disk | — |
+| `ports.expose` | — (gateway 📋) | 🧪 direct endpoints only (never ones needing the server key) | 🧪 signed preview URL | 🧪 public TLS host | — |
+| `network.egress-control` | ✅ node-level | — (OpenSandbox network policy not wired yet) | — | 🧪 firewall (deny by default; `egress: public` to allow) | — |
+| Max size | Node allocatable | Server and runtime limits | 4 vCPU / 8 GiB / 10 GiB (provider default) | 32 vCPU / 64 GiB / 256 GiB (plan-dependent) | Host |
+| Idempotent create | Sandbox ID is the VM ID | Metadata lookup | Label lookup | Slug derived from sandbox ID | Directory per sandbox ID |
+| Provider-side TTL backstop | n/a | `timeout` (≥ 60 s) | `ttlMinutes` | `ttlSeconds` | n/a |
+
+"Live" for `opensandbox` means checked against a real OpenSandbox 1.2.0
+server with the Docker runtime ([spike](research/opensandbox-spike.md)).
+Kubernetes and Fast Sandbox runtimes are not verified yet.
 
 Known unverified provider details (default exec timeouts, pause semantics,
 rate limits) are listed in [proof-of-concepts.md](proof-of-concepts.md) for

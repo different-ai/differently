@@ -1,0 +1,33 @@
+# OpenSandbox lifecycle server (release 1.2.0) with the Docker runtime, for
+# checking the opensandbox adapter against a real server. Test-only key.
+[server]
+host = "0.0.0.0"
+port = 8090
+api_key = "osb-live-test-key-0123456789"
+
+[proxy]
+# The server reaches sandboxes through ports published on the Docker host.
+resolve_internal = false
+
+[log]
+level = "INFO"
+
+[runtime]
+type = "docker"
+execd_image = "opensandbox/execd:v1.1.0"
+
+[egress]
+image = "opensandbox/egress:v1.1.7"
+readiness_timeout_seconds = 30.0
+
+[docker]
+network_mode = "bridge"
+host_ip = "host.docker.internal"
+port_range_min = 40000
+port_range_max = 60000
+drop_capabilities = ["AUDIT_WRITE", "MKNOD", "NET_ADMIN", "NET_RAW", "SYS_ADMIN", "SYS_MODULE", "SYS_PTRACE", "SYS_TIME", "SYS_TTY_CONFIG"]
+no_new_privileges = true
+pids_limit = 4096
+
+[ingress]
+mode = "direct"

@@ -180,7 +180,11 @@ func (d DashboardConfig) On() bool { return d.Enabled == nil || *d.Enabled }
 var externalKinds = []string{"daytona", "freestyle"}
 
 // KnownAdapters lists adapter kinds the server can build.
-var KnownAdapters = []string{"firecracker", "devhost", "fake", "remote", "daytona", "freestyle"}
+var KnownAdapters = []string{"firecracker", "devhost", "fake", "remote", "daytona", "freestyle", "opensandbox"}
+
+// Adapter kinds whose trust boundary depends on who operates the backend, so
+// the operator must declare it.
+var declaredTrustKinds = []string{"opensandbox"}
 
 // Default returns a configuration with every default applied.
 func Default() Config {
@@ -260,7 +264,7 @@ func (c *Config) applyDefaults() {
 		if slices.Contains(externalKinds, p.Adapter) {
 			p.Trust = api.TrustExternal
 		}
-		if p.Trust == "" {
+		if p.Trust == "" && !slices.Contains(declaredTrustKinds, p.Adapter) {
 			p.Trust = api.TrustPrivate
 		}
 	}
@@ -346,8 +350,14 @@ func (c Config) Validate() error {
 		if !slices.Contains(KnownAdapters, p.Adapter) {
 			bad("pool %s: unknown adapter %q (known: %s)", p.Name, p.Adapter, strings.Join(KnownAdapters, ", "))
 		}
-		if p.Trust != api.TrustPrivate && p.Trust != api.TrustExternal {
+		switch {
+		case p.Trust == "" && slices.Contains(declaredTrustKinds, p.Adapter):
+			bad("pool %s: set trust explicitly for the %s adapter: private if you operate it, external if someone else does", p.Name, p.Adapter)
+		case p.Trust != api.TrustPrivate && p.Trust != api.TrustExternal:
 			bad("pool %s: trust must be private or external", p.Name)
+		}
+		if p.Adapter == "opensandbox" && p.Config["apiURL"] == "" {
+			bad("pool %s: the opensandbox adapter needs config.apiURL", p.Name)
 		}
 		if p.Adapter == "devhost" && !c.Dev {
 			bad("pool %s: the devhost adapter has no isolation and is only allowed with dev: true", p.Name)
