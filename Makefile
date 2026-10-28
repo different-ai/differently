@@ -58,3 +58,23 @@ images:
 
 clean:
 	rm -rf bin dist
+
+# --- End-to-end tests on a real Docker host with /dev/kvm -------------------
+# Example (Apple Silicon M3+):
+#   colima start differently --vm-type vz --nested-virtualization --cpu 4 --memory 8
+#   DOCKER_CONTEXT=colima-differently make e2e-prepare e2e-up e2e e2e-down
+E2E_COMPOSE := test/e2e/compose.yaml
+
+.PHONY: e2e-prepare e2e-up e2e e2e-down
+
+e2e-prepare:
+	test/e2e/prepare.sh
+
+e2e-up:
+	docker compose -f $(E2E_COMPOSE) up -d --force-recreate
+
+e2e:
+	DIFFERENTLY_E2E_COMPOSE=$(CURDIR)/$(E2E_COMPOSE) go test -tags e2e -count=1 -v -timeout 20m ./test/e2e/
+
+e2e-down:
+	docker compose -f $(E2E_COMPOSE) down -v

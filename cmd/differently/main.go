@@ -104,9 +104,17 @@ func sandboxRows(items []api.Sandbox) [][]string {
 }
 
 func showSandboxes(items ...api.Sandbox) error {
+	if flagOutput == "json" && len(items) == 1 {
+		return printJSON(items[0])
+	}
+	return showSandboxList(items)
+}
+
+// showSandboxList prints a list; JSON output is always an array.
+func showSandboxList(items []api.Sandbox) error {
 	if flagOutput == "json" {
-		if len(items) == 1 {
-			return printJSON(items[0])
+		if items == nil {
+			items = []api.Sandbox{}
 		}
 		return printJSON(items)
 	}
@@ -237,7 +245,7 @@ func sandboxCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return showSandboxes(out.Items...)
+		return showSandboxList(out.Items)
 	}}
 	list.Flags().String("status", "", "comma-separated statuses")
 

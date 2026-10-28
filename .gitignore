@@ -16,3 +16,6 @@ sdk/python/dist/
 deploy/terraform/**/.terraform/
 deploy/terraform/**/*.tfstate*
 deploy/images/out/
+
+# End-to-end test artifacts
+test/e2e/.artifacts/

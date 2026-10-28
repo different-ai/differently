@@ -109,7 +109,7 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   only after a configurable grace period, and never delete a returning agent's
   instances without re-checking their sandboxes. *Acceptance:* POC 8 success
   criteria; chaos test C4 passes.
-- **E0.13 Reconcile instance state** (P1). When `List` reports an instance as
+- ✅ **E0.13 Reconcile instance state** (P1). When `List` reports an instance as
   `stopped` or `error` while the sandbox is `running` or `paused`, move the
   sandbox to `stopped` (or `failed` with the backend message). *Acceptance:*
   killing a VM's Firecracker process moves its sandbox out of `running` within

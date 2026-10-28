@@ -1,0 +1,27 @@
+# Control-plane config for the e2e stack (test/e2e/compose.yaml).
+listen: ":8080"
+store:
+  driver: postgres
+pools:
+  - name: fc-local
+    adapter: firecracker
+    region: colima
+    maxConcurrency: 20
+    costModel: { cpuHour: 0.01, memoryGiBHour: 0.002 }
+profiles:
+  - name: small
+    resources: { cpu: 1, memoryMiB: 512, diskGiB: 2 }
+  - name: medium
+    resources: { cpu: 2, memoryMiB: 1024, diskGiB: 2 }
+defaults:
+  profile: small
+  ttlSeconds: 1800
+policy:
+  external: never
+scheduler:
+  reconcileIntervalSeconds: 5
+  provisionTimeoutSeconds: 120
+audit:
+  failClosed: true
+metrics:
+  listen: ":9091"

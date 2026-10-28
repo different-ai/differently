@@ -599,8 +599,9 @@ func (s *Server) lifecycle(action string) handlerFunc {
 		"pause":  {api.StatusRunning, api.StatusPaused, adapter.FeaturePauseResume},
 		"resume": {api.StatusPaused, api.StatusRunning, adapter.FeaturePauseResume},
 	}
-	st := steps[action]
+	base := steps[action]
 	return func(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
+		st := base // per request: start below adjusts it
 		if err := p.Require(auth.ScopeSandboxesWrite); err != nil {
 			return err
 		}
@@ -668,6 +669,9 @@ func (s *Server) lifecycle(action string) handlerFunc {
 			return err
 		}
 		out, err := s.Store.UpdateSandbox(r.Context(), rec.ID, func(x *store.SandboxRecord) error {
+			if x.Status == st.to && st.to == api.StatusStopped {
+				return nil // the reconciler saw the backend stop first
+			}
 			if x.Status != st.from {
 				return api.Errorf(api.CodeConflict, "sandbox changed to %s concurrently", x.Status)
 			}
