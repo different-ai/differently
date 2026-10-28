@@ -4,7 +4,7 @@ import {Card, Poster} from '../kinetic';
 import {inter, mono, tokens} from '../theme';
 import CROWD from '../crowd.json';
 import {beat} from '../time';
-import {clamp, SNAP, useSpring} from '../ui';
+import {clamp, HBlur, SNAP, useSpring} from '../ui';
 
 const t = tokens.light;
 const SMOOTH = Easing.bezier(0.65, 0, 0.35, 1);
@@ -183,12 +183,15 @@ export const Crowd: React.FC = () => {
   const sales = (i: number) => sp(beat(S + 8) + ((i * 3) % 7) * 4, {damping: 9, stiffness: 220, mass: 0.6});
   const sdkFlash = (i: number) => interpolate(frame, [beat(S + 2) + (i % n) * 1.2, beat(S + 2) + (i % n) * 1.2 + 6], [0, 1], clamp) * (frame < beat(S + 4) ? 1 : 0);
 
-  const leave = interpolate(frame, [beat(S + 9.5), beat(S + 10)], [0, 1], {...clamp, easing: Easing.bezier(0.7, 0, 0.84, 0)});
+  // Out on a whip pan: everything slides left with a horizontal motion blur; Mine whips in from the right.
+  const whip = interpolate(frame, [beat(S + 9.4), beat(S + 10)], [0, 1], {...clamp, easing: Easing.bezier(0.6, 0, 0.9, 0.4)});
   const textW = width - (sq ? 120 : 260);
   const order = cards.map((_, i) => i).sort((a, b) => rank(a) - rank(b)); // later arrivals on top
 
   return (
     <AbsoluteFill style={{background: t.bg, overflow: 'hidden'}}>
+      <HBlur id="whip-out" amount={whip * 90} />
+      <AbsoluteFill style={{transform: `translateX(${-whip * width * 1.15}px)`, filter: whip > 0.01 ? 'url(#whip-out)' : 'none'}}>
       <AbsoluteFill style={{transform: `translate(${tx}px, ${ty}px) scale(${zoom})`, transformOrigin: `${fx}px ${fy}px`}}>
         {frame < snapAt ? (
           <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center'}}>
@@ -228,7 +231,6 @@ export const Crowd: React.FC = () => {
             opacity = 1 - snap;
             if (opacity <= 0.01) return null;
           }
-          const drop = leave * (300 + ((i * 97) % 400));
           const L = inGrid ? lock(i) : 0;
           const S = inGrid && v.sales ? sales(i) : 0;
           const H = inGrid ? hosted(i) : 0;
@@ -239,11 +241,11 @@ export const Crowd: React.FC = () => {
               style={{
                 position: 'absolute',
                 left: x - bw / 2,
-                top: y - bh / 2 + drop,
+                top: y - bh / 2,
                 width: bw,
                 height: bh,
-                transform: `rotate(${rot + leave * ((i % 5) - 2) * 6}deg) scale(${scale})`,
-                opacity: opacity * (1 - leave),
+                transform: `rotate(${rot}deg) scale(${scale})`,
+                opacity,
                 borderRadius: 16,
                 border: `${2 + 3 * L}px solid ${t.ink}`,
                 background: t.bg,
@@ -285,8 +287,9 @@ export const Crowd: React.FC = () => {
           <Card text="Their SDK." from={beat(S + 2)} to={beat(S + 4)} width={textW} max={sq ? 150 : 200} tone="light" />
           <Card text="Their *rules*." from={beat(S + 4)} to={beat(S + 6)} width={textW} max={sq ? 150 : 200} tone="light" />
           <Card text="Self-hosting?" from={beat(S + 6)} to={beat(S + 8)} width={textW} max={sq ? 150 : 200} tone="light" />
-          <Card text="“Contact sales.”" from={beat(S + 8)} to={beat(S + 10)} width={textW} max={sq ? 150 : 200} tone="light" exit />
+          <Card text="“Contact sales.”" from={beat(S + 8)} to={beat(S + 10)} width={textW} max={sq ? 150 : 200} tone="light" />
         </div>
+      </AbsoluteFill>
       </AbsoluteFill>
     </AbsoluteFill>
   );
@@ -308,10 +311,17 @@ export const Mine: React.FC = () => {
   const youPop = useSpring(2, SNAP);
   const rackPop = useSpring(8, SNAP);
   const clusterPop = useSpring(14, SNAP);
-  const shake = interpolate(frame, [beat(9), beat(10.5), beat(11.6)], [0, 1, 1.4], clamp);
+  const shake = interpolate(frame, [beat(9), beat(9.8), beat(10.3)], [0, 1, 1.4], clamp);
   const sx = Math.sin(frame * 1.7) * 7 * shake;
   const sy = Math.cos(frame * 2.3) * 4 * shake;
-  const knot = interpolate(frame, [beat(9), beat(11.5)], [0, 1], {...clamp, easing: SMOOTH});
+  const knot = interpolate(frame, [beat(8.6), beat(10.2)], [0, 1], {...clamp, easing: SMOOTH});
+  // In on the whip from Crowd; out by sucking everything into the knot, then a black iris
+  // opens from that point into the reveal.
+  const whipIn = 1 - interpolate(frame, [0, beat(0.6)], [0, 1], {...clamp, easing: Easing.bezier(0.1, 0.6, 0.4, 1)});
+  const kx = width * 0.66;
+  const ky = height * 0.62;
+  const implode = interpolate(frame, [beat(10.1), beat(10.75)], [0, 1], {...clamp, easing: Easing.bezier(0.7, 0, 0.84, 0)});
+  const iris = interpolate(frame, [beat(10.45), beat(11) - 1], [0, 1], {...clamp, easing: Easing.bezier(0.5, 0, 0.75, 0)});
   const textW = width - (sq ? 120 : 260);
   const baseX = width * (sq ? 0.16 : 0.13);
   const baseY = height * (sq ? 0.5 : 0.5);
@@ -319,7 +329,10 @@ export const Mine: React.FC = () => {
   const gx = (x: number) => baseX + (x - baseX) * G;
   const gy = (y: number) => baseY + (y - baseY) * G;
   return (
-    <AbsoluteFill style={{background: t.bg}}>
+    <AbsoluteFill style={{background: t.bg, overflow: 'hidden'}}>
+      <HBlur id="whip-in" amount={whipIn * 90} />
+      <AbsoluteFill style={{transform: `translateX(${whipIn * width * 1.15}px)`, filter: whipIn > 0.01 ? 'url(#whip-in)' : 'none'}}>
+      <AbsoluteFill style={{transform: `scale(${1 - 0.97 * implode}) rotate(${implode * 30}deg)`, transformOrigin: `${kx}px ${ky}px`}}>
       <AbsoluteFill style={{transform: `translate(${sx}px, ${sy}px) scale(${1 + frame * 0.00008})`}}>
         <div style={{position: 'absolute', inset: 0, transform: `scale(${G})`, transformOrigin: `${baseX}px ${baseY}px`}}>
         {/* you */}
@@ -365,15 +378,18 @@ export const Mine: React.FC = () => {
         </div>
         <Glue sq={sq} knot={knot} anchors={[[gx(baseX + 300), gy(baseY + 40)], [gx(baseX + 210), gy(baseY + 245)]]} />
       </AbsoluteFill>
-      <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 90 : 70}}>
+      </AbsoluteFill>
+      <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 90 : 70, opacity: 1 - implode}}>
         <Card text={'I just want sandboxes\non *my* *own* servers.'} from={0} to={beat(4)} width={textW} max={sq ? 96 : 116} tone="light" />
         <Card text="Firecracker." from={beat(4)} to={beat(5)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
         <Card text="Kubernetes." from={beat(5)} to={beat(6)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
         <Card text="Postgres." from={beat(6)} to={beat(7)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
         <Card text="Glue." from={beat(7)} to={beat(8)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
         <Card text="More glue." from={beat(8)} to={beat(9)} width={textW} max={sq ? 150 : 190} tone="light" stagger={3} />
-        <Card text="So. Much. *Glue*." from={beat(9)} to={beat(11.5)} width={textW} max={sq ? 150 : 190} tone="light" stagger={beat(0.5)} />
+        <Card text="So. Much. *Glue*." from={beat(9)} to={beat(11)} width={textW} max={sq ? 150 : 190} tone="light" stagger={beat(0.4)} />
       </AbsoluteFill>
+      </AbsoluteFill>
+      {iris > 0 ? <div style={{position: 'absolute', left: kx - iris * width * 1.3, top: ky - iris * width * 1.3, width: iris * width * 2.6, height: iris * width * 2.6, borderRadius: '50%', background: tokens.dark.bg}} /> : null}
     </AbsoluteFill>
   );
 };

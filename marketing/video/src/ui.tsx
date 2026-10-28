@@ -13,8 +13,20 @@ export const useSpring = (delay: number, config = SNAP, durationInFrames?: numbe
   return spring({frame: frame - delay, fps, config, durationInFrames});
 };
 
-/** Where the mark sits on the cut from the diagram into the outro (both scenes use it). */
+/** Where the mark sits on the cut out of the diagram (the next scene starts from it). */
 export const handoff = (width: number, height: number) => ({x: width / 2, y: height / 2, size: width === height ? 150 : 170});
+
+/** The mark's "header" pose above the p50 and status lines; the outro starts from it. */
+export const lifted = (width: number, height: number) => ({x: width / 2, y: width === height ? 190 : 170, size: width === height ? 80 : 88});
+
+/** SVG filter for a horizontal motion blur (whip pans). Reference it as `url(#id)`. */
+export const HBlur: React.FC<{id: string; amount: number}> = ({id, amount}) => (
+  <svg width={0} height={0} style={{position: 'absolute'}}>
+    <filter id={id} x="-10%" y="0" width="120%" height="100%">
+      <feGaussianBlur stdDeviation={`${Math.max(0, amount)} 0`} />
+    </filter>
+  </svg>
+);
 
 /** The logo: two overlapping rounded squares. `split` 0 → apart, 1 → resting position. */
 export const Mark: React.FC<{size: number; color: string; split?: number; back?: number; front?: number}> = ({

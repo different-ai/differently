@@ -9,30 +9,30 @@ const d = tokens.dark;
 const OUT = Easing.bezier(0.16, 1, 0.3, 1);
 const IN_OUT = Easing.bezier(0.65, 0, 0.35, 1);
 
-/** "So we did it… differently." The two squares fly in and lock together on the downbeat. */
+/** "So we did it… differently." The two squares fly in and lock together on the downbeat, then the pitch. */
 export const Reveal: React.FC = () => {
   const frame = useCurrentFrame();
   const {width, height, fps} = useVideoConfig();
   const sq = width === height;
   const textW = width - (sq ? 120 : 260);
   // Squares travel in from opposite corners and land exactly on beat 4.
-  const fly = interpolate(frame, [beat(2.4), beat(4)], [0, 1], {...clamp, easing: Easing.bezier(0.5, 0, 0.75, 0)});
-  const settle = spring({frame: frame - beat(4), fps, config: {damping: 12, stiffness: 260, mass: 0.6}});
-  const split = frame < beat(4) ? 0.15 * fly : 0.15 + 0.85 * settle;
-  const word = interpolate(frame, [beat(4) + 4, beat(5.5)], [0, 1], {...clamp, easing: OUT});
+  const fly = interpolate(frame, [beat(1.6), beat(3)], [0, 1], {...clamp, easing: Easing.bezier(0.5, 0, 0.75, 0)});
+  const settle = spring({frame: frame - beat(3), fps, config: {damping: 12, stiffness: 260, mass: 0.6}});
+  const split = frame < beat(3) ? 0.15 * fly : 0.15 + 0.85 * settle;
+  const word = interpolate(frame, [beat(3) + 4, beat(4)], [0, 1], {...clamp, easing: OUT});
   // At beat 8 the lockup glides to the top to make room for the hero line.
-  const lift = interpolate(frame, [beat(7.6), beat(8.4)], [0, 1], {...clamp, easing: IN_OUT});
+  const lift = interpolate(frame, [beat(4.7), beat(5.3)], [0, 1], {...clamp, easing: IN_OUT});
   const markSize = (sq ? 130 : 150) * (1 - lift * 0.45);
   const wordSize = (sq ? 120 : 150) * (1 - lift * 0.45);
   const cy = height / 2 - lift * (height / 2 - (sq ? 230 : 230));
-  const enter = frame < beat(4) ? fly : 1;
-  const flash = interpolate(frame, [beat(4) - 1, beat(4), beat(4) + 8], [0, 0.14, 0], clamp);
+  const enter = frame < beat(3) ? fly : 1;
+  const flash = interpolate(frame, [beat(3) - 1, beat(3), beat(3) + 8], [0, 0.14, 0], clamp);
   return (
     <AbsoluteFill style={{background: d.bg}}>
       <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center'}}>
-        <Card text="So we did it…" from={0} to={beat(2.6)} width={textW} max={sq ? 140 : 170} tone="dark" exit />
+        <Card text="So we did it…" from={0} to={beat(1.8)} width={textW} max={sq ? 140 : 170} tone="dark" exit />
       </AbsoluteFill>
-      {frame >= beat(2.4) ? (
+      {frame >= beat(1.6) ? (
         <div
           style={{
             position: 'absolute',
@@ -56,8 +56,8 @@ export const Reveal: React.FC = () => {
       ) : null}
       <AbsoluteFill style={{background: d.ink, opacity: flash}} />
       <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', paddingTop: sq ? 220 : 160}}>
-        <Card text={'One open-source API'} from={beat(8.4)} to={beat(11)} width={textW} max={sq ? 110 : 140} tone="dark" />
-        <Card text={'for sandboxes\nand *microVMs*.'} from={beat(11)} to={beat(14)} width={textW} max={sq ? 110 : 140} tone="dark" stagger={5} />
+        <Card text="Not another sandbox." from={beat(5.3)} to={beat(7.6)} width={textW} max={sq ? 110 : 140} tone="dark" />
+        <Card text={'We *orchestrate* them.'} from={beat(7.6)} to={beat(10)} width={textW} max={sq ? 110 : 140} tone="dark" stagger={6} />
       </AbsoluteFill>
     </AbsoluteFill>
   );
@@ -111,36 +111,35 @@ const Line: React.FC<{text: string; size: number; hl: number; strike?: number}> 
   );
 };
 
-/** "Ask for a shape. And a policy. Never a backend." over the real SDK call. */
+/** "One API in. Never a backend." over the real SDK call. */
 export const Code: React.FC = () => {
   const frame = useCurrentFrame();
   const {width, height} = useVideoConfig();
   const sq = width === height;
   const lines = CODE.split('\n');
   const size = sq ? 23 : 31;
-  const chars = Math.floor(interpolate(frame, [2, beat(1.6)], [0, CODE.length], clamp));
+  const chars = Math.floor(interpolate(frame, [2, beat(1.1)], [0, CODE.length], clamp));
   let budget = chars;
   const typed = lines.map((l) => {
     const take = Math.max(0, Math.min(l.length, budget));
     budget -= l.length + 1;
     return l.slice(0, take);
   });
-  const hlShape = interpolate(frame, [beat(0.6), beat(0.6) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(2), beat(2) + 8], [0, 1], clamp));
-  const hlPolicy = interpolate(frame, [beat(2), beat(2) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(4), beat(4) + 8], [0, 1], clamp));
+  const hlShape = interpolate(frame, [beat(0.7), beat(0.7) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(2.5), beat(2.5) + 8], [0, 1], clamp));
+  const hlPolicy = interpolate(frame, [beat(1.3), beat(1.3) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(2.5), beat(2.5) + 8], [0, 1], clamp));
   // A vendor line tries to sneak in, gets struck through and removed.
-  const ghostType = Math.floor(interpolate(frame, [beat(4), beat(4.5)], [0, 26], clamp));
-  const ghostStrike = interpolate(frame, [beat(4.7), beat(4.9)], [0, 1], {...clamp, easing: OUT});
-  const ghostGone = interpolate(frame, [beat(5.3), beat(5.7)], [0, 1], {...clamp, easing: IN_OUT});
-  const shake = frame > beat(4.7) && frame < beat(5.2) ? Math.sin(frame * 2.2) * 6 : 0;
+  const ghostType = Math.floor(interpolate(frame, [beat(2.5), beat(2.9)], [0, 26], clamp));
+  const ghostStrike = interpolate(frame, [beat(3.05), beat(3.25)], [0, 1], {...clamp, easing: OUT});
+  const ghostGone = interpolate(frame, [beat(3.6), beat(4)], [0, 1], {...clamp, easing: IN_OUT});
+  const shake = frame > beat(3.05) && frame < beat(3.5) ? Math.sin(frame * 2.2) * 6 : 0;
   const ghost = '  backend: "sandbox.co",';
   const textW = width - (sq ? 120 : 260);
   const camera = 1 + frame * 0.0002;
   return (
     <AbsoluteFill style={{background: d.bg}}>
       <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 110 : 90}}>
-        <Card text="Ask for a shape." from={0} to={beat(2)} width={textW} max={sq ? 104 : 124} tone="dark" />
-        <Card text="And a policy." from={beat(2)} to={beat(4)} width={textW} max={sq ? 104 : 124} tone="dark" />
-        <Card text="Never a *backend*." from={beat(4)} to={beat(6)} width={textW} max={sq ? 104 : 124} tone="dark" />
+        <Card text="One API in." from={0} to={beat(2.5)} width={textW} max={sq ? 104 : 124} tone="dark" />
+        <Card text="Never a *backend*." from={beat(2.5)} to={beat(5)} width={textW} max={sq ? 104 : 124} tone="dark" />
       </AbsoluteFill>
       <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', paddingTop: sq ? 230 : 250, transform: `scale(${camera})`}}>
         <div

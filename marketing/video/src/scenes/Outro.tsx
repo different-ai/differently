@@ -4,7 +4,7 @@ import {AbsoluteFill, Easing, interpolate, spring, useCurrentFrame, useVideoConf
 import {Card, Kinetic} from '../kinetic';
 import {inter, mono, tokens} from '../theme';
 import {beat} from '../time';
-import {clamp, handoff, Mark, Pill, Wordmark} from '../ui';
+import {clamp, lifted, Mark, Pill, Wordmark} from '../ui';
 
 const t = tokens.light;
 const OUT = Easing.bezier(0.16, 1, 0.3, 1);
@@ -18,8 +18,8 @@ const PILLS = [
 ];
 
 /**
- * Honest status, then the end card. The mark arrives from the diagram's hand-off at the
- * centre, lifts above the status line, then settles into the lockup. The last ~3 s are still.
+ * Honest status, then the end card. The mark arrives in its lifted pose from the p50 scene,
+ * sits above the status line, then settles into the lockup. The last ~3 s are still.
  */
 export const Outro: React.FC = () => {
   const frame = useCurrentFrame();
@@ -39,29 +39,23 @@ export const Outro: React.FC = () => {
   const total = mSize + 64 + tagH + 64 + urlH;
   const top = (height - total) / 2;
   const end = {x: width / 2 - (mSize + gap + wordW) / 2 + mSize / 2, y: top + mSize / 2, size: mSize};
-  const start = handoff(width, height);
-  const lifted = {x: width / 2, y: sq ? 210 : 200, size: sq ? 80 : 88};
+  const start = lifted(width, height);
+  const toEnd = interpolate(frame, [beat(3.2), beat(3.9)], [0, 1], {...clamp, easing: IN_OUT});
+  const pose = (k: 'x' | 'y' | 'size') => start[k] + (end[k] - start[k]) * toEnd;
 
-  const toLift = interpolate(frame, [beat(0.3), beat(1.1)], [0, 1], {...clamp, easing: IN_OUT});
-  const toEnd = interpolate(frame, [beat(4.2), beat(5)], [0, 1], {...clamp, easing: IN_OUT});
-  const pose = (k: 'x' | 'y' | 'size') => {
-    const a = start[k] + (lifted[k] - start[k]) * toLift;
-    return a + (end[k] - a) * toEnd;
-  };
-
-  const status = frame < beat(4.4);
-  const word = interpolate(frame, [beat(4.7), beat(5.6)], [0, 1], {...clamp, easing: OUT});
-  const url = interpolate(frame, [beat(6.9), beat(7.5)], [0, 1], {...clamp, easing: OUT});
-  const statusOut = interpolate(frame, [beat(4), beat(4.4)], [1, 0], clamp);
+  const status = frame < beat(3.4);
+  const word = interpolate(frame, [beat(3.6), beat(4.4)], [0, 1], {...clamp, easing: OUT});
+  const url = interpolate(frame, [beat(5.3), beat(5.8)], [0, 1], {...clamp, easing: OUT});
+  const statusOut = interpolate(frame, [beat(3), beat(3.4)], [1, 0], clamp);
 
   return (
     <AbsoluteFill style={{background: t.bg}}>
       {status ? (
         <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', gap: sq ? 40 : 52, paddingTop: sq ? 150 : 130}}>
-          <Card text="Come build it with us." from={beat(0.9)} to={beat(4.4)} width={textW} max={sq ? 96 : 120} tone="light" exit />
+          <Card text="Come build it with us." from={beat(0.15)} to={beat(3.4)} width={textW} max={sq ? 96 : 120} tone="light" exit />
           <div style={{display: 'flex', gap: 18, flexWrap: 'wrap', justifyContent: 'center', maxWidth: sq ? 860 : 1400}}>
             {PILLS.map((p, i) => {
-              const pop = spring({frame: frame - beat(1.5 + i * 0.35), fps, config: {damping: 11, stiffness: 240, mass: 0.6}});
+              const pop = spring({frame: frame - beat(0.5 + i * 0.3), fps, config: {damping: 11, stiffness: 240, mass: 0.6}});
               return (
                 <Pill key={p.text} tone="light" filled={p.filled} pop={pop * statusOut} size={sq ? 32 : 38}>
                   {p.text}
@@ -69,7 +63,7 @@ export const Outro: React.FC = () => {
               );
             })}
           </div>
-          <div style={{fontFamily: mono, fontSize: sq ? 26 : 30, color: t.muted, opacity: interpolate(frame, [beat(2.8), beat(3.2)], [0, 1], clamp) * statusOut}}>
+          <div style={{fontFamily: mono, fontSize: sq ? 26 : 30, color: t.muted, opacity: interpolate(frame, [beat(1.6), beat(2)], [0, 1], clamp) * statusOut}}>
             not production-ready yet
           </div>
         </AbsoluteFill>
@@ -79,7 +73,7 @@ export const Outro: React.FC = () => {
             <Wordmark size={wSize} color={t.ink} reveal={word} />
           </div>
           <div style={{position: 'absolute', left: 0, right: 0, top: top + mSize + 64, display: 'flex', justifyContent: 'center'}}>
-            <Kinetic text={'Your infrastructure.\nYour rules.\nOne *API*.'} at={beat(5.2)} size={tagSize} tone="light" stagger={beat(0.5) / 2} lineHeight={1.12} />
+            <Kinetic text={'Your infrastructure.\nYour rules.\nOne *API*.'} at={beat(4)} size={tagSize} tone="light" stagger={beat(0.5) / 2} lineHeight={1.12} />
           </div>
           <div style={{position: 'absolute', left: 0, right: 0, top: top + mSize + 64 + tagH + 64, textAlign: 'center', opacity: url, transform: `translateY(${(1 - url) * 16}px)`}}>
             <div style={{fontFamily: mono, fontSize: urlSize, color: t.ink, fontWeight: 500}}>github.com/different-ai/differently</div>

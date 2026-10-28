@@ -11,46 +11,61 @@ const OUT = Easing.bezier(0.16, 1, 0.3, 1);
 const IN = Easing.bezier(0.7, 0, 0.84, 0);
 
 type XY = {x: number; y: number};
-type Layout = {
-  app: XY & {w: number; h: number};
-  server: XY & {w: number; h: number};
-  pg: XY;
-  nodes: (XY & {w: number; h: number; vms: number})[];
-  ext: XY & {w: number; h: number};
-  gate: XY;
-  chip: XY;
-  textW: number;
+type Box = XY & {w: number; h: number};
+type Curve = {a: XY; c1: XY; c2: XY; b: XY};
+type PoolSpec = Box & {title: string; sub: string; external: boolean; cap: number};
+
+/** Horizontal-first cubic between two points. */
+const hcurve = (a: XY, b: XY): Curve => ({a, c1: {x: (a.x + b.x) / 2, y: a.y}, c2: {x: (a.x + b.x) / 2, y: b.y}, b});
+/** Vertical-first cubic between two points. */
+const vcurve = (a: XY, b: XY): Curve => ({a, c1: {x: a.x, y: (a.y + b.y) / 2}, c2: {x: b.x, y: (a.y + b.y) / 2}, b});
+/** Drops straight down from a, then turns towards b (an elbow). */
+const elbow = (a: XY, b: XY): Curve => ({a, c1: {x: a.x, y: b.y}, c2: {x: (a.x + b.x) / 2, y: b.y}, b});
+const pathOf = (c: Curve) => `M ${c.a.x} ${c.a.y} C ${c.c1.x} ${c.c1.y}, ${c.c2.x} ${c.c2.y}, ${c.b.x} ${c.b.y}`;
+const along = (c: Curve, t: number): XY => {
+  const m = 1 - t;
+  return {
+    x: m * m * m * c.a.x + 3 * m * m * t * c.c1.x + 3 * m * t * t * c.c2.x + t * t * t * c.b.x,
+    y: m * m * m * c.a.y + 3 * m * m * t * c.c1.y + 3 * m * t * t * c.c2.y + t * t * t * c.b.y,
+  };
 };
 
-const layout = (sq: boolean): Layout =>
-  sq
-    ? {
-        app: {x: 175, y: 330, w: 260, h: 130},
-        server: {x: 600, y: 330, w: 440, h: 150},
-        pg: {x: 960, y: 330},
-        nodes: [
-          {x: 190, y: 640, w: 320, h: 170, vms: 3},
-          {x: 540, y: 640, w: 320, h: 170, vms: 3},
-        ],
-        ext: {x: 885, y: 900, w: 300, h: 120},
-        gate: {x: 860, y: 640},
-        chip: {x: 885, y: 1018},
-        textW: 960,
-      }
-    : {
-        app: {x: 230, y: 495, w: 300, h: 160},
-        server: {x: 770, y: 495, w: 500, h: 180},
-        pg: {x: 770, y: 718},
-        nodes: [
-          {x: 1480, y: 330, w: 480, h: 145, vms: 4},
-          {x: 1480, y: 495, w: 480, h: 145, vms: 4},
-          {x: 1480, y: 660, w: 480, h: 145, vms: 4},
-        ],
-        ext: {x: 1480, y: 925, w: 480, h: 130},
-        gate: {x: 1100, y: 925},
-        chip: {x: 1100, y: 1025},
-        textW: 1660,
-      };
+const layout = (sq: boolean) => {
+  const app: Box = sq ? {x: 175, y: 290, w: 260, h: 130} : {x: 220, y: 470, w: 290, h: 150};
+  const server: Box = sq ? {x: 600, y: 290, w: 440, h: 150} : {x: 700, y: 470, w: 470, h: 170};
+  const pg: XY = sq ? {x: 960, y: 290} : {x: 700, y: 690};
+  const pools: PoolSpec[] = sq
+    ? [
+        {x: 285, y: 505, w: 450, h: 150, title: 'your microVMs', sub: 'Firecracker · private', external: false, cap: 3},
+        {x: 795, y: 505, w: 450, h: 150, title: 'OpenSandbox', sub: 'self-hosted · private', external: false, cap: 3},
+        {x: 300, y: 880, w: 400, h: 110, title: 'Daytona', sub: 'external · opt-in', external: true, cap: 3},
+        {x: 780, y: 880, w: 400, h: 110, title: 'Freestyle', sub: 'external · opt-in', external: true, cap: 3},
+      ]
+    : [
+        {x: 1470, y: 290, w: 470, h: 150, title: 'your microVMs', sub: 'Firecracker · private', external: false, cap: 4},
+        {x: 1470, y: 460, w: 470, h: 150, title: 'OpenSandbox', sub: 'self-hosted · private', external: false, cap: 4},
+        {x: 1500, y: 710, w: 410, h: 112, title: 'Daytona', sub: 'external · opt-in', external: true, cap: 3},
+        {x: 1500, y: 855, w: 410, h: 112, title: 'Freestyle', sub: 'external · opt-in', external: true, cap: 3},
+      ];
+  const gate: XY = sq ? {x: 540, y: 690} : {x: 1130, y: 782};
+  const chip: XY = sq ? {x: 815, y: 690} : {x: 1130, y: 905};
+  const appR = {x: app.x + app.w / 2, y: app.y};
+  const serverL = {x: server.x - server.w / 2, y: server.y};
+  const serverR = {x: server.x + server.w / 2, y: server.y};
+  const serverB = {x: server.x, y: server.y + server.h / 2};
+  const toApp = hcurve(appR, serverL);
+  const toPool = pools.map((p) =>
+    sq
+      ? vcurve({x: server.x + (p.x > server.x ? 130 : -170), y: server.y + server.h / 2}, {x: p.x, y: p.y - p.h / 2})
+      : hcurve(serverR, {x: p.x - p.w / 2, y: p.y}),
+  );
+  const gateIn = sq ? {x: gate.x, y: gate.y - 62} : {x: gate.x - 70, y: gate.y};
+  const gateOut = sq ? {x: gate.x, y: gate.y + 62} : {x: gate.x + 70, y: gate.y};
+  const toGate = sq ? vcurve({x: gate.x, y: server.y + server.h / 2}, gateIn) : elbow({x: server.x + 130, y: server.y + server.h / 2}, gateIn);
+  const fromGate = pools.map((p) => (sq ? vcurve(gateOut, {x: p.x, y: p.y - p.h / 2}) : hcurve(gateOut, {x: p.x - p.w / 2, y: p.y})));
+  const toPg = sq ? hcurve(serverR, {x: pg.x - 70, y: pg.y}) : vcurve(serverB, {x: pg.x, y: pg.y - 48});
+  return {app, server, pg, pools, gate, chip, toApp, toPool, toGate, fromGate, toPg, textW: sq ? 960 : 1660};
+};
 
 const usePop = (at: number, config = SNAP) => {
   const frame = useCurrentFrame();
@@ -58,118 +73,117 @@ const usePop = (at: number, config = SNAP) => {
   return spring({frame: frame - at, fps, config});
 };
 
-const draw = (frame: number, at: number, len = 18) => interpolate(frame, [at, at + len], [0, 1], {...clamp, easing: OUT});
+const draw = (frame: number, at: number, len = 16) => interpolate(frame, [at, at + len], [0, 1], {...clamp, easing: OUT});
 
-/** Cubic between two points, bending horizontally first (reads like a wire). */
-const wire = (a: XY, b: XY) => {
-  const mx = (a.x + b.x) / 2;
-  return `M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`;
-};
-const wireV = (a: XY, b: XY) => {
-  const my = (a.y + b.y) / 2;
-  return `M ${a.x} ${a.y} C ${a.x} ${my}, ${b.x} ${my}, ${b.x} ${b.y}`;
-};
+// When each sandbox lands in a pool (beats). Private pools fill to quota first; the
+// external pools only fill after the policy flips to overflow.
+const fillAt = (pool: number, k: number) => (pool < 2 ? 0.9 + (k * 2 + pool) * 0.38 : 8.7 + (k * 2 + (pool - 2)) * 0.35);
 
-/** Point along a cubic path string built by wire()/wireV(). */
-const along = (a: XY, b: XY, t: number, vertical = false) => {
-  const c1 = vertical ? {x: a.x, y: (a.y + b.y) / 2} : {x: (a.x + b.x) / 2, y: a.y};
-  const c2 = vertical ? {x: b.x, y: (a.y + b.y) / 2} : {x: (a.x + b.x) / 2, y: b.y};
-  const m = 1 - t;
-  return {
-    x: m * m * m * a.x + 3 * m * m * t * c1.x + 3 * m * t * t * c2.x + t * t * t * b.x,
-    y: m * m * m * a.y + 3 * m * m * t * c1.y + 3 * m * t * t * c2.y + t * t * t * b.y,
-  };
-};
-
-// Backend-neutral on purpose: Differently's job is orchestration across pools, not one VM technology.
-const POOLS = ['rack-a', 'rack-b', 'gpu'];
-const BADGES = ['quotas', 'audit', 'trust report'];
-
-const Node: React.FC<{n: Layout['nodes'][number]; i: number; base: number; sq: boolean}> = ({n, i, base, sq}) => {
+const Pool: React.FC<{p: PoolSpec; i: number; sq: boolean; open: number}> = ({p, i, sq, open}) => {
   const frame = useCurrentFrame();
-  const pop = usePop(base);
+  const {fps} = useVideoConfig();
+  const pop = usePop(beat(p.external ? 4.7 + (i - 2) * 0.2 : 0.55 + i * 0.25));
+  const filled = Array.from({length: p.cap}).filter((_, k) => frame >= beat(fillAt(i, k))).length;
+  const full = filled >= p.cap;
+  const dim = p.external ? 0.45 + 0.55 * open : 1;
   return (
     <div
       style={{
         position: 'absolute',
-        left: n.x - n.w / 2,
-        top: n.y - n.h / 2,
-        width: n.w,
-        height: n.h,
-        border: `2.5px solid ${d.ink}`,
+        left: p.x - p.w / 2,
+        top: p.y - p.h / 2,
+        width: p.w,
+        height: p.h,
+        border: `2.5px ${p.external ? 'dashed' : 'solid'} ${d.ink}`,
         borderRadius: 12,
-        background: d.surface,
+        background: p.external ? 'transparent' : d.surface,
         transform: `scale(${pop})`,
-        opacity: Math.min(1, pop * 2),
+        opacity: Math.min(1, pop * 2) * dim,
         boxSizing: 'border-box',
-        padding: sq ? '14px 16px' : '14px 20px',
+        padding: sq ? '12px 16px' : '12px 18px',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
       }}
     >
-      <div style={{fontFamily: inter, fontWeight: 600, fontSize: sq ? 21 : 25, color: d.ink, letterSpacing: '-0.01em'}}>
-        private pool <span style={{color: d.muted, fontWeight: 500}}>· {POOLS[i]}</span>
+      <div style={{display: 'flex', alignItems: 'baseline', gap: 10, whiteSpace: 'nowrap'}}>
+        <span style={{fontFamily: inter, fontWeight: 600, fontSize: sq ? 23 : 26, color: d.ink, letterSpacing: '-0.02em'}}>{p.title}</span>
+        <span style={{fontFamily: inter, fontWeight: 500, fontSize: sq ? 16 : 18, color: d.muted}}>{p.sub}</span>
       </div>
-      <div style={{display: 'flex', gap: 12, marginTop: sq ? 16 : 12, flexWrap: 'wrap'}}>
-        {Array.from({length: n.vms}).map((_, v) => {
-          const p = spring({frame: frame - (base + 14 + v * 7 + i * 4), fps: 60, config: {damping: 11, stiffness: 260, mass: 0.5}});
+      <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+        {Array.from({length: p.cap}).map((_, k) => {
+          const c = spring({frame: frame - beat(fillAt(i, k)), fps, config: {damping: 11, stiffness: 260, mass: 0.5}});
           return (
-            <div
-              key={v}
-              style={{
-                width: sq ? 80 : 94,
-                height: sq ? 58 : 58,
-                borderRadius: 9,
-                background: d.ink,
-                color: d.bg,
-                transform: `scale(${p})`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontFamily: mono,
-                fontSize: sq ? 16 : 19,
-                fontWeight: 500,
-              }}
-            >
-              sbx
+            <div key={k} style={{width: sq ? 70 : 78, height: p.external ? 34 : 42, borderRadius: 8, border: `2px solid ${d.line}`, position: 'relative', boxSizing: 'border-box'}}>
+              <div style={{position: 'absolute', inset: -2, borderRadius: 8, background: d.ink, transform: `scale(${c})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: mono, fontSize: sq ? 14 : 16, color: d.bg}}>
+                sbx
+              </div>
             </div>
           );
         })}
+        {!p.external ? (
+          <div style={{marginLeft: 'auto', textAlign: 'right'}}>
+            <div style={{fontFamily: mono, fontSize: sq ? 14 : 16, color: full ? d.ink : d.muted, fontWeight: full ? 500 : 400}}>{full ? 'quota full' : `quota ${filled}/${p.cap}`}</div>
+            <div style={{width: sq ? 90 : 110, height: 6, borderRadius: 3, background: d.line, marginTop: 6, overflow: 'hidden'}}>
+              <div style={{width: `${(filled / p.cap) * 100}%`, height: '100%', background: d.ink}} />
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
 };
 
-/** One API in the middle, your private pools on one side, external providers behind a fail-closed gate. */
+const AUDIT = [
+  {at: 10.7, text: 'placed    sbx_7f2  → microVMs   private-first'},
+  {at: 11.1, text: 'rejected  sbx_9c1    no_eligible_pool'},
+  {at: 11.5, text: 'placed    sbx_3ad  → daytona    overflow'},
+];
+
+const BADGES = [
+  {t: 'quotas', at: 2.5},
+  {t: 'audit', at: 10.4},
+  {t: 'trust report', at: 11.8},
+];
+
+/**
+ * Orchestration: one API in front of your own pools (microVMs, OpenSandbox), quotas that
+ * fill up, external providers behind a fail-closed gate that opens only when policy says
+ * overflow, and an audit trail for every placement.
+ */
 export const Diagram: React.FC = () => {
   const frame = useCurrentFrame();
   const {width, height} = useVideoConfig();
   const sq = width === height;
   const L = layout(sq);
-  const appPop = usePop(beat(0.25));
-  const serverPop = usePop(beat(1));
-  const pgPop = usePop(beat(1.75));
-  const appWire = draw(frame, beat(0.75));
-  const pgWire = draw(frame, beat(1.75));
+  const appPop = usePop(0);
+  const serverPop = usePop(beat(0.3));
+  const pgPop = usePop(beat(0.5));
 
-  // Gate act
-  const gatePop = usePop(beat(10));
-  const extPop = usePop(beat(10.4));
-  const gateWire = draw(frame, beat(10), 24);
-  const open = interpolate(frame, [beat(16), beat(16.5)], [0, 1], {...clamp, easing: OUT});
-  const deniedAt = beat(12.75);
+  const gatePop = usePop(beat(4.6));
+  const open = interpolate(frame, [beat(8.2), beat(8.6)], [0, 1], {...clamp, easing: OUT});
+  const deniedAt = beat(6.2);
   const stamp = usePop(deniedAt, {damping: 9, stiffness: 300, mass: 0.5});
-  const stampGone = interpolate(frame, [beat(14.8), beat(15.2)], [0, 1], clamp);
-  const flip = frame >= beat(15) + 18;
+  const stampGone = interpolate(frame, [beat(7.3), beat(7.6)], [0, 1], clamp);
+  const flipAt = beat(7.5);
+  const flip = frame >= flipAt + 14;
   const chipText = flip ? 'external: "overflow"' : 'external: "never"';
-  const chipTyped = frame < beat(15) ? chipText.length : frame < beat(15) + 18 ? Math.round(interpolate(frame, [beat(15), beat(15) + 18], [chipText.length, 10])) : Math.round(interpolate(frame, [beat(15) + 18, beat(15) + 34], [10, chipText.length], clamp));
+  const chipTyped =
+    frame < flipAt
+      ? chipText.length
+      : frame < flipAt + 14
+        ? Math.round(interpolate(frame, [flipAt, flipAt + 14], [chipText.length, 10]))
+        : Math.round(interpolate(frame, [flipAt + 14, flipAt + 28], [10, chipText.length], clamp));
+  const badge = (at: number) => spring({frame: frame - beat(at), fps: 60, config: {damping: 11, stiffness: 260, mass: 0.5}});
+  const auditIn = interpolate(frame, [beat(10.3), beat(10.8)], [0, 1], {...clamp, easing: OUT});
 
-  // Hand-off to the outro: the server box's light fill grows to cover the screen while its
-  // mark glides to the centre at exactly the size and place the outro starts from.
-  const handT = interpolate(frame, [beat(20.25), beat(22) - 1], [0, 1], {...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1)});
-  const handing = frame >= beat(20.25);
+  // Hand-off into the p50 scene: the server box's light fill grows to cover the screen
+  // while its mark glides to the centre, exactly where the next scene picks it up.
+  const handT = interpolate(frame, [beat(13), beat(15) - 1], [0, 1], {...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1)});
+  const handing = frame >= beat(13);
   const markSize = sq ? 52 : 58;
   const markCx = L.server.x - L.server.w / 2 + (sq ? 28 : 32) + markSize / 2;
-  const drift = 1 + Math.min(frame, beat(20.25)) * 0.00006;
-  const layerScale = drift * (1 + 0.1 * handT);
+  const drift = 1 + Math.min(frame, beat(13)) * 0.00006;
   const H = handoff(width, height);
   const lerp = (a: number, b: number) => a + (b - a) * handT;
   const box = {
@@ -179,67 +193,53 @@ export const Diagram: React.FC = () => {
     cy: lerp(L.server.y, height / 2),
     r: lerp(14 * drift, 0),
   };
-  const mk = {
-    x: lerp(L.server.x + (markCx - L.server.x) * drift, H.x),
-    y: lerp(L.server.y, H.y),
-    size: lerp(markSize * drift, H.size),
-  };
+  const mk = {x: lerp(L.server.x + (markCx - L.server.x) * drift, H.x), y: lerp(L.server.y, H.y), size: lerp(markSize * drift, H.size)};
 
-  const serverR = {x: L.server.x + L.server.w / 2, y: L.server.y};
-  const serverB = {x: L.server.x, y: L.server.y + L.server.h / 2};
-  const appR = {x: L.app.x + L.app.w / 2, y: L.app.y};
-  const gateIn = sq ? {x: L.gate.x, y: L.gate.y - 40} : {x: L.gate.x - 60, y: L.gate.y};
-  const serverOut = sq ? {x: L.server.x + L.server.w / 2 - 40, y: L.server.y + L.server.h / 2} : {x: L.server.x + 90, y: L.server.y + L.server.h / 2};
-  const extIn = sq ? {x: L.ext.x, y: L.ext.y - L.ext.h / 2} : {x: L.ext.x - L.ext.w / 2, y: L.ext.y};
-  const gateOut = sq ? {x: L.gate.x, y: L.gate.y + 40} : {x: L.gate.x + 60, y: L.gate.y};
-
-  // Packets: requests flow app → server → nodes once the nodes exist.
+  // Packets: each sandbox travels app → server → the pool that takes it, landing as its chip pops.
   const packets: React.ReactNode[] = [];
-  if (frame > beat(5)) {
-    for (let k = 0; k < 6; k++) {
-      const ph = ((frame - beat(5)) / 70 + k / 6) % 1;
-      const node = L.nodes[k % L.nodes.length];
-      const nodeIn = sq ? {x: node.x, y: node.y - node.h / 2} : {x: node.x - node.w / 2, y: node.y};
-      const p = ph < 0.4 ? along(appR, {x: L.server.x - L.server.w / 2, y: L.server.y}, ph / 0.4) : ph > 0.55 ? along(sq ? {x: L.server.x - 60, y: L.server.y + L.server.h / 2} : serverR, nodeIn, (ph - 0.55) / 0.45, sq) : null;
-      if (p) packets.push(<circle key={`p${k}`} cx={p.x} cy={p.y} r={7} fill={d.ink} />);
+  const dot = (key: string, p: XY, r = 7) => packets.push(<circle key={key} cx={p.x} cy={p.y} r={r} fill={d.ink} />);
+  L.pools.forEach((pool, i) => {
+    for (let k = 0; k < pool.cap; k++) {
+      const land = beat(fillAt(i, k));
+      const t0 = land - 26;
+      if (frame < t0 || frame >= land) continue;
+      const q = (frame - t0) / 26;
+      if (i < 2) dot(`p${i}${k}`, q < 0.45 ? along(L.toApp, q / 0.45) : along(L.toPool[i], (q - 0.45) / 0.55));
+      else dot(`p${i}${k}`, q < 0.5 ? along(L.toGate, q / 0.5) : along(L.fromGate[i], (q - 0.5) / 0.5));
     }
+  });
+  if (frame >= beat(5.6) && frame < beat(6.9)) {
+    const go = interpolate(frame, [beat(5.6), deniedAt], [0, 1], {...clamp, easing: IN});
+    const back = interpolate(frame, [deniedAt, beat(6.9)], [0, 1], {...clamp, easing: OUT});
+    dot('denied', along(L.toGate, go * (1 - back * 0.5)), 10);
   }
-  // The denied request: travels to the gate, bounces back.
-  if (frame >= beat(12) && frame < beat(13.6)) {
-    const go = interpolate(frame, [beat(12), deniedAt], [0, 1], {...clamp, easing: IN});
-    const back = interpolate(frame, [deniedAt, beat(13.6)], [0, 1], {...clamp, easing: OUT});
-    const p = along(serverOut, gateIn, go * (1 - back * 0.55), sq);
-    packets.push(<circle key="denied" cx={p.x} cy={p.y} r={10} fill={d.ink} />);
-  }
-  // Overflow allowed: a burst flows through the open gate.
-  if (frame > beat(16.5)) {
-    for (let k = 0; k < 4; k++) {
-      const ph = ((frame - beat(16.5)) / 50 + k / 4) % 1;
-      const p = ph < 0.5 ? along(serverOut, gateIn, ph / 0.5, sq) : along(gateOut, extIn, (ph - 0.5) / 0.5, sq);
-      packets.push(<circle key={`o${k}`} cx={p.x} cy={p.y} r={7} fill={d.ink} />);
-    }
-  }
+
+  const wireStroke = (c: Curve, p: number, key: string, color: string = d.ink, dashed = false, opacity = 1) => (
+    <path
+      key={key}
+      d={pathOf(c)}
+      stroke={color}
+      strokeWidth={2.5}
+      fill="none"
+      pathLength={1}
+      strokeDasharray={dashed ? '0.012 0.02' : '1 1'}
+      strokeDashoffset={dashed ? 0 : 1 - p}
+      opacity={dashed ? opacity * p : opacity}
+      strokeLinecap="round"
+    />
+  );
 
   return (
     <AbsoluteFill style={{background: d.bg, overflow: 'hidden'}}>
-      <AbsoluteFill style={{transform: `scale(${layerScale})`, transformOrigin: `${L.server.x}px ${L.server.y}px`, opacity: 1 - handT}}>
+      <AbsoluteFill style={{transform: `scale(${drift * (1 + 0.1 * handT)})`, transformOrigin: `${L.server.x}px ${L.server.y}px`, opacity: 1 - handT}}>
         <svg width={width} height={height} style={{position: 'absolute', inset: 0}}>
-          <path d={wire(appR, {x: L.server.x - L.server.w / 2, y: L.server.y})} stroke={d.ink} strokeWidth={2.5} fill="none" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - appWire} />
-          {sq ? (
-            <path d={wire(serverR, {x: L.pg.x - 70, y: L.pg.y})} stroke={d.muted} strokeWidth={2} fill="none" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - pgWire} />
-          ) : (
-            <path d={wireV(serverB, {x: L.pg.x, y: L.pg.y - 48})} stroke={d.muted} strokeWidth={2} fill="none" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - pgWire} />
-          )}
-          {L.nodes.map((n, i) => {
-            const p = draw(frame, beat(2.6 + i * 0.35));
-            const nodeIn = sq ? {x: n.x, y: n.y - n.h / 2} : {x: n.x - n.w / 2, y: n.y};
-            const from = sq ? {x: L.server.x - 60, y: L.server.y + L.server.h / 2} : serverR;
-            return <path key={i} d={sq ? wireV(from, nodeIn) : wire(from, nodeIn)} stroke={d.ink} strokeWidth={2.5} fill="none" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - p} />;
-          })}
-          {frame >= beat(10) ? (
+          {wireStroke(L.toApp, draw(frame, beat(0.2)), 'w-app')}
+          {wireStroke(L.toPg, draw(frame, beat(0.5)), 'w-pg', d.muted)}
+          {L.toPool.slice(0, 2).map((c, i) => wireStroke(c, draw(frame, beat(0.5 + i * 0.25)), `w-pool${i}`))}
+          {frame >= beat(4.6) ? (
             <>
-              <path d={sq ? wireV(serverOut, gateIn) : wireV(serverOut, gateIn)} stroke={d.ink} strokeWidth={2.5} fill="none" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - gateWire} />
-              <path d={sq ? wireV(gateOut, extIn) : wire(gateOut, extIn)} stroke={d.ink} strokeWidth={2.5} fill="none" strokeDasharray="3 9" strokeLinecap="round" opacity={0.35 + 0.65 * open} />
+              {wireStroke(L.toGate, draw(frame, beat(4.6), 20), 'w-gate')}
+              {L.fromGate.slice(2).map((c, i) => wireStroke(c, draw(frame, beat(4.8 + i * 0.2)), `w-ext${i}`, d.ink, true, 0.35 + 0.65 * open))}
             </>
           ) : null}
           {packets}
@@ -253,20 +253,18 @@ export const Diagram: React.FC = () => {
 
         {/* server */}
         <div style={{position: 'absolute', left: L.server.x - L.server.w / 2, top: L.server.y - L.server.h / 2, width: L.server.w, height: L.server.h, borderRadius: 14, background: d.ink, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 22, padding: sq ? '0 28px' : '0 32px', transform: `scale(${serverPop})`, opacity: handing ? 0 : Math.min(1, serverPop * 2)}}>
-          <Mark size={sq ? 52 : 58} color={d.bg} />
+          <Mark size={markSize} color={d.bg} />
           <div>
             <div style={{fontFamily: inter, fontWeight: 600, fontSize: sq ? 30 : 36, color: d.bg, letterSpacing: '-0.03em', whiteSpace: 'nowrap'}}>differently-server</div>
             <div style={{fontFamily: inter, fontWeight: 500, fontSize: sq ? 20 : 23, color: tokens.light.muted, marginTop: 4}}>one API · policy · placement</div>
           </div>
         </div>
-
-        {/* orchestration badges */}
         <div style={{position: 'absolute', left: L.server.x, top: L.server.y - L.server.h / 2 - (sq ? 42 : 52), transform: 'translateX(-50%)', display: 'flex', gap: 12}}>
-          {BADGES.map((b, k) => {
-            const p = spring({frame: frame - beat(4 + k * 0.66), fps: 60, config: {damping: 11, stiffness: 260, mass: 0.5}});
+          {BADGES.map((b) => {
+            const p = badge(b.at);
             return (
-              <div key={b} style={{transform: `scale(${p})`, opacity: Math.min(1, p * 2), border: `2px solid ${d.ink}`, borderRadius: 999, padding: sq ? '5px 14px' : '6px 16px', fontFamily: inter, fontWeight: 600, fontSize: sq ? 19 : 22, color: d.ink, whiteSpace: 'nowrap', background: d.bg}}>
-                {b}
+              <div key={b.t} style={{transform: `scale(${p})`, opacity: Math.min(1, p * 2), border: `2px solid ${d.ink}`, borderRadius: 999, padding: sq ? '5px 14px' : '6px 16px', fontFamily: inter, fontWeight: 600, fontSize: sq ? 19 : 22, color: d.ink, whiteSpace: 'nowrap', background: d.bg}}>
+                {b.t}
               </div>
             );
           })}
@@ -283,8 +281,8 @@ export const Diagram: React.FC = () => {
           </svg>
         </div>
 
-        {L.nodes.map((n, i) => (
-          <Node key={i} n={n} i={i} base={beat(3 + i * 0.35)} sq={sq} />
+        {L.pools.map((p, i) => (
+          <Pool key={p.title} p={p} i={i} sq={sq} open={open} />
         ))}
 
         {/* gate */}
@@ -292,61 +290,23 @@ export const Diagram: React.FC = () => {
           <div style={{position: 'absolute', left: 0, top: 0, width: 12, height: 120, borderRadius: 6, background: d.ink}} />
           <div style={{position: 'absolute', right: 0, top: 0, width: 12, height: 120, borderRadius: 6, background: d.ink}} />
           {[-1, 1].map((s) => (
-            <div
-              key={s}
-              style={{
-                position: 'absolute',
-                top: 18,
-                height: 84,
-                width: 58 * (1 - open * 0.85),
-                left: s < 0 ? 12 : undefined,
-                right: s > 0 ? 12 : undefined,
-                border: `3px solid ${d.ink}`,
-                borderRadius: 6,
-                boxSizing: 'border-box',
-                opacity: 1 - open * 0.6,
-              }}
-            />
+            <div key={s} style={{position: 'absolute', top: 18, height: 84, width: 58 * (1 - open * 0.85), left: s < 0 ? 12 : undefined, right: s > 0 ? 12 : undefined, border: `3px solid ${d.ink}`, borderRadius: 6, boxSizing: 'border-box', opacity: 1 - open * 0.6}} />
           ))}
           <div style={{position: 'absolute', left: 70 - 22, top: 60 - 26, transform: `translateY(${-open * 50}px)`, opacity: 1 - open * 0.3}}>
             <Padlock size={44} color={d.ink} open={open} />
           </div>
         </div>
-        <div style={{position: 'absolute', left: L.chip.x, top: L.chip.y, transform: `translate(-50%, -50%) scale(${gatePop})`, fontFamily: mono, fontSize: sq ? 22 : 24, color: d.ink, background: d.surface, border: `2px solid ${d.line}`, borderRadius: 10, padding: '8px 16px', whiteSpace: 'pre'}}>
+        <div style={{position: 'absolute', left: L.chip.x, top: L.chip.y, transform: `translate(-50%, -50%) scale(${gatePop})`, fontFamily: mono, fontSize: sq ? 21 : 24, color: d.ink, background: d.surface, border: `2px solid ${d.line}`, borderRadius: 10, padding: '8px 16px', whiteSpace: 'pre'}}>
           {chipText.slice(0, chipTyped)}
-          <span style={{opacity: frame >= beat(15) && frame < beat(15) + 40 && Math.floor(frame / 8) % 2 === 0 ? 1 : 0}}>▍</span>
+          <span style={{opacity: frame >= flipAt && frame < flipAt + 36 && Math.floor(frame / 8) % 2 === 0 ? 1 : 0}}>▍</span>
         </div>
 
-        {/* external pool */}
-        <div
-          style={{
-            position: 'absolute',
-            left: L.ext.x - L.ext.w / 2,
-            top: L.ext.y - L.ext.h / 2,
-            width: L.ext.w,
-            height: L.ext.h,
-            border: `2.5px dashed ${d.ink}`,
-            borderRadius: 12,
-            boxSizing: 'border-box',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transform: `scale(${extPop})`,
-            opacity: Math.min(1, extPop * 2) * (0.45 + 0.55 * open),
-          }}
-        >
-          <div style={{fontFamily: inter, fontWeight: 600, fontSize: sq ? 26 : 28, color: d.ink, letterSpacing: '-0.02em'}}>external provider</div>
-          <div style={{fontFamily: inter, fontWeight: 500, fontSize: sq ? 18 : 20, color: d.muted, marginTop: 4}}>opt-in · named in policy</div>
-        </div>
-
-        {/* 422 stamp */}
         {frame >= deniedAt ? (
           <div
             style={{
               position: 'absolute',
-              left: L.gate.x + (sq ? -250 : -40),
-              top: L.gate.y - (sq ? 175 : 150),
+              left: L.gate.x - 330,
+              top: L.gate.y - (sq ? 30 : 140),
               transform: `scale(${stamp * (1 - stampGone)}) rotate(-4deg)`,
               background: d.ink,
               color: d.bg,
@@ -359,6 +319,38 @@ export const Diagram: React.FC = () => {
             }}
           >
             422 no_eligible_pool
+          </div>
+        ) : null}
+
+        {/* audit log */}
+        {auditIn > 0 ? (
+          <div
+            style={{
+              position: 'absolute',
+              left: sq ? 40 : 60,
+              width: sq ? width - 80 : 800,
+              top: sq ? 780 : 800,
+              height: sq ? 260 : 240,
+              transform: `translateY(${(1 - auditIn) * 320}px)`,
+              background: d.surface,
+              border: `2px solid ${d.line}`,
+              borderRadius: 14,
+              padding: '18px 24px',
+              boxSizing: 'border-box',
+              fontFamily: mono,
+              fontSize: sq ? 19 : 21,
+              color: d.ink,
+            }}
+          >
+            <div style={{color: d.muted, marginBottom: 12}}>$ differently admin audit --tail</div>
+            {AUDIT.map((l) => {
+              const p = interpolate(frame, [beat(l.at), beat(l.at) + 8], [0, 1], clamp);
+              return (
+                <div key={l.text} style={{opacity: p, transform: `translateX(${(1 - p) * 20}px)`, whiteSpace: 'pre', lineHeight: 1.7}}>
+                  {l.text}
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </AbsoluteFill>
@@ -385,13 +377,12 @@ export const Diagram: React.FC = () => {
         </>
       ) : null}
 
-      <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 80 : 70, opacity: 1 - handT * 4}}>
-        <Card text="Bring your own *metal*." from={0} to={beat(4)} width={L.textW} max={sq ? 88 : 104} tone="dark" />
-        <Card text="Quotas. Audit. Trust report." from={beat(4)} to={beat(7)} width={L.textW} max={sq ? 88 : 104} tone="dark" stagger={beat(0.66)} />
-        <Card text="Policy decides where work goes." from={beat(7)} to={beat(10)} width={L.textW} max={sq ? 88 : 104} tone="dark" />
-        <Card text="External providers?" from={beat(10)} to={beat(12.5)} width={L.textW} max={sq ? 88 : 104} tone="dark" />
-        <Card text="*Fail* closed." from={beat(12.5)} to={beat(15)} width={L.textW} max={sq ? 88 : 104} tone="dark" />
-        <Card text="Open only if policy allows." from={beat(15)} to={beat(20.4)} width={L.textW} max={sq ? 88 : 104} tone="dark" exit />
+      <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 80 : 60, opacity: 1 - handT * 4}}>
+        <Card text="Your pools first." from={0} to={beat(2.5)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
+        <Card text="Quotas per team." from={beat(2.5)} to={beat(5)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
+        <Card text="Full? It fails *closed*." from={beat(5)} to={beat(7.5)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
+        <Card text="Overflow only if policy allows." from={beat(7.5)} to={beat(10.3)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
+        <Card text="Every placement, audited." from={beat(10.3)} to={beat(13)} width={L.textW} max={sq ? 88 : 100} tone="dark" exit />
       </AbsoluteFill>
     </AbsoluteFill>
   );

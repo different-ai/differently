@@ -239,22 +239,22 @@ for i, root in enumerate([45, 41, 48, 43] * 4):
     place(music, pan(bass(root - 12, length, cutoff=380 + 600 * min(1, tt / act1_end)), 0), tt, 0.9)
 
 # Hard stop before the reveal; a reverse swell pulls into the logo hit.
-place(fx, pan(reverse_swell(at('reveal', 4) - at('reveal', 2.4)), 0), at('reveal', 2.4), 0.9)
-drone_len = at('reveal', 4) - at('reveal', 0)
+place(fx, pan(reverse_swell(at('reveal', 3) - at('reveal', 1.6)), 0), at('reveal', 1.6), 0.9)
+drone_len = at('reveal', 3) - at('reveal', 0)
 dr = saw_voice(33, drone_len, cutoff=220, detune=(-5, 5), attack=0.6, release=0.3) * 0.25
 place(music, pan(dr, 0), at('reveal', 0))
 
 # Act 2 (logo → diagram): warm groove in C: C – G – Am – F.
 CHORDS = [[48, 55, 60, 64], [43, 50, 55, 59], [45, 52, 57, 60], [41, 48, 53, 57]]
-groove_start = at('reveal', 4)
-groove_end = at('outro', 4.7)
+groove_start = at('reveal', 3)
+groove_end = at('outro', 3.6)
 bar = 4 * B
 nbar = int(np.ceil((groove_end - groove_start) / bar))
 for i in range(nbar):
     t0 = groove_start + i * bar
     ch = CHORDS[i % 4]
-    full = t0 >= at('reveal', 8)
-    gate_dip = at('diagram', 10) <= t0 < at('diagram', 16)
+    full = t0 >= at('reveal', 5)
+    gate_dip = at('diagram', 5) <= t0 < at('diagram', 8.2)
     pad = sum(saw_voice(m + 12, bar + 0.4, cutoff=1500 if not gate_dip else 700, attack=0.08, release=0.4, sustain=0.8) for m in ch[1:]) * 0.12
     place(music, pan(pad, 0), t0)
     for k in range(8):  # bass on 8ths, pumping
@@ -285,7 +285,7 @@ for i in range(nbar):
                 place(drums, pan(hat(), -0.3), tt + h * B / 4, 0.5 if h % 2 else 0.25)
 
 # Outro: final chord rings out from the end-card hit.
-end_hit = at('outro', 4.7)
+end_hit = at('outro', 3.6)
 for m in [48, 55, 60, 64, 67, 72]:
     place(music, pan(saw_voice(m, 5.0, cutoff=2400, attack=0.01, release=3.0, sustain=0.5) * 0.1, (m % 5 - 2) / 3), end_hit)
 place(music, pan(mallet(84, 1.2, 0.5), -0.2), end_hit + B * 1.5, 0.4)
@@ -323,68 +323,86 @@ for i in range(18):  # padlocks ripple
     place(fx, pan(lock_click(), ((i % 6) - 2.5) / 3), at('crowd', S + 4) + ((i % 6) + i // 6) * 3 / 60, 0.25)
 for i in range(5):  # "contact sales" stamps
     place(fx, pan(pop(72 - i * 2), (i - 2) / 3), at('crowd', S + 8) + ((i * 3) % 7) * 4 / 60, 0.6)
-place(fx, whoosh(0.5, up=False), at('crowd', S + 9.4), 0.6)
+# Whip pan from the grid into "my own servers".
+place(fx, pan(whoosh(0.45), 0.4), at('crowd', S + 9.35), 0.8)
 
-# Mine: parts drop with squelchy glue on every beat.
+# Mine: parts drop with squelchy glue on every beat, then everything is sucked into the knot.
 for k, b in enumerate([0, 0.5, 1]):
-    place(fx, pan(pop(64 + k * 5), -0.4), at('mine', 0) + b * 0.13, 0.5)
+    place(fx, pan(pop(64 + k * 5), -0.4), at('mine', 0.6) + b * 0.13, 0.5)
 for k, b in enumerate([4, 5, 6, 7, 8]):
     place(fx, pan(squelch(48 + k * 2), (k - 2) / 4), at('mine', b), 0.8)
 for k in range(3):
-    place(fx, pan(squelch(44 - k * 3), 0), at('mine', 9 + k * 0.5), 0.9)
-place(fx, pan(rattle(1.2), 0), at('mine', 10.3), 0.5)
+    place(fx, pan(squelch(44 - k * 3), 0), at('mine', 9 + k * 0.4), 0.9)
+place(fx, pan(rattle(0.7), 0), at('mine', 9.6), 0.5)
+place(fx, pan(reverse_swell(at('mine', 10.75) - at('mine', 10.1)), 0), at('mine', 10.1), 0.7)
+n = int(0.25 * SR)
+tt = np.arange(n) / SR
+place(fx, pan(np.sin(2 * np.pi * (55 + 90 * np.exp(-tt * 30)) * tt) * exp_env(n, 0.001, 0.08), 0), at('mine', 10.75), 0.8)
 
 # Reveal
-place(fx, pan(whoosh(0.8), 0), at('reveal', 3.2), 0.6)
-place(fx, pan(boom(), 0), at('reveal', 4))
-place(fx, pan(mallet(84, 1.0, 0.4), 0), at('reveal', 4), 0.6)
-place(fx, pan(whoosh(0.5), 0), at('reveal', 7.7), 0.35)
-place(fx, pan(tick(), 0), at('reveal', 8.4), 1.0)
-place(fx, pan(tick(), 0), at('reveal', 11), 1.0)
+place(fx, pan(whoosh(0.8), 0), at('reveal', 2.2), 0.6)
+place(fx, pan(boom(), 0), at('reveal', 3))
+place(fx, pan(mallet(84, 1.0, 0.4), 0), at('reveal', 3), 0.6)
+place(fx, pan(whoosh(0.5), 0), at('reveal', 4.65), 0.35)
+for b in [5.3, 7.6]:
+    place(fx, pan(tick(), 0), at('reveal', b), 1.0)
 
 # Code: keyboard while the snippet types, a buzz when the vendor line is struck.
-for k in range(46):
-    place(fx, pan(keyclick(k), np.sin(k) * 0.3), at('code', 0) + 2 / 60 + k * (B * 1.6 - 2 / 60) / 46)
+for k in range(40):
+    place(fx, pan(keyclick(k), np.sin(k) * 0.3), at('code', 0) + 2 / 60 + k * (B * 1.1 - 2 / 60) / 40)
 for k in range(10):
-    place(fx, pan(keyclick(100 + k), 0.2), at('code', 4) + k * B * 0.5 / 10)
-for b in [0, 2, 4]:
+    place(fx, pan(keyclick(100 + k), 0.2), at('code', 2.5) + k * B * 0.4 / 10)
+for b in [0, 2.5]:
     place(fx, pan(tick(), 0), at('code', b), 1.0)
-place(fx, pan(deny()[: int(0.3 * SR)], 0), at('code', 4.7), 0.6)
-place(fx, pan(whoosh(0.3, up=False), 0), at('code', 5.3), 0.4)
+place(fx, pan(deny()[: int(0.3 * SR)], 0), at('code', 3.05), 0.6)
+place(fx, pan(whoosh(0.3, up=False), 0), at('code', 3.6), 0.4)
 
-# Diagram: nodes and microVMs pop, gate locks, request denied, policy flips, gate opens.
-place(fx, pan(pop(67), -0.6), at('diagram', 0.25), 0.6)
-place(fx, pan(pop(72), 0), at('diagram', 1), 0.6)
-place(fx, pan(pop(64), 0), at('diagram', 1.75), 0.4)
-for i in range(3):
-    place(fx, pan(pop(76 + i * 3), 0.6), at('diagram', 3 + i * 0.35), 0.5)
-    for v in range(4):
-        place(fx, pan(pop(84 + v * 2 + i), 0.5), at('diagram', 3 + i * 0.35) + (14 + v * 7 + i * 4) / 60, 0.25)
-for b in [7, 10, 12.5, 15]:
+# Diagram: pools pop, sandboxes land as they fill to quota, the gate locks, a request is
+# denied, the policy flips, the gate opens, overflow lands outside, the audit log types.
+place(fx, pan(pop(67), -0.6), at('diagram', 0), 0.6)
+place(fx, pan(pop(72), 0), at('diagram', 0.3), 0.6)
+place(fx, pan(pop(64), 0), at('diagram', 0.5), 0.4)
+for i in range(2):
+    place(fx, pan(pop(76 + i * 3), 0.6), at('diagram', 0.55 + i * 0.25), 0.5)
+for pool in range(4):
+    for k in range(4 if pool < 2 else 3):
+        fill = 0.9 + (k * 2 + pool) * 0.38 if pool < 2 else 8.7 + (k * 2 + (pool - 2)) * 0.35
+        place(fx, pan(pop(84 + k * 2 + pool), 0.5), at('diagram', fill), 0.3)
+for b in [2.5, 5, 7.5, 10.3]:
     place(fx, pan(tick(), 0), at('diagram', b), 1.0)
-for k in range(3):  # quotas / audit / trust report badges
-    place(fx, pan(pop(79 + k * 3), (k - 1) / 3), at('diagram', 4 + k * 0.66), 0.7)
-place(fx, pan(lock_click(), 0.3), at('diagram', 10), 0.9)
-place(fx, pan(whoosh(0.4), 0.3), at('diagram', 12) + 0.1, 0.3)
-place(fx, pan(deny(), 0.2), at('diagram', 12.75), 0.9)
+place(fx, pan(pop(79), 0), at('diagram', 2.5), 0.6)  # quotas badge
+place(fx, pan(lock_click(), 0.3), at('diagram', 4.6), 0.9)
+place(fx, pan(whoosh(0.4), 0.3), at('diagram', 5.6), 0.3)
+place(fx, pan(deny(), 0.2), at('diagram', 6.2), 0.9)
 for k in range(8):
-    place(fx, pan(keyclick(200 + k), 0.3), at('diagram', 15) + 18 / 60 + k * 16 / 60 / 8)
-place(fx, pan(lock_click(), 0.3), at('diagram', 16), 1.0)
-place(fx, pan(chime(), 0.3), at('diagram', 16.05), 0.8)
+    place(fx, pan(keyclick(200 + k), 0.3), at('diagram', 7.5) + 14 / 60 + k * 14 / 60 / 8)
+place(fx, pan(lock_click(), 0.3), at('diagram', 8.2), 1.0)
+place(fx, pan(chime(), 0.3), at('diagram', 8.25), 0.8)
+place(fx, pan(whoosh(0.4), -0.3), at('diagram', 10.3), 0.35)
+for k, b in enumerate([10.7, 11.1, 11.5]):
+    for j in range(6):
+        place(fx, pan(keyclick(300 + k * 10 + j), -0.3), at('diagram', b) + j * 0.02)
+place(fx, pan(pop(82), 0), at('diagram', 10.4), 0.5)
+place(fx, pan(pop(86), 0), at('diagram', 11.8), 0.5)
 # Hand-off: the server box fills the screen; a soft rising air, then a low landing.
-hand = at('diagram', 20.25)
-place(fx, pan(riser(at('diagram', 22) - hand) * 0.7, 0), hand, 0.7)
-place(fx, pan(whoosh(at('diagram', 22) - hand + 0.2), 0), hand, 0.5)
+hand = at('diagram', 13)
+place(fx, pan(riser(at('diagram', 15) - hand) * 0.7, 0), hand, 0.7)
+place(fx, pan(whoosh(at('diagram', 15) - hand + 0.2), 0), hand, 0.5)
+
+# p50: the mark lifts, the number counts up with a run of ticks, then lands.
+place(fx, pan(boom(), 0), at('p50', 0), 0.4)
+place(fx, pan(whoosh(0.5), 0), at('p50', 0.25), 0.35)
+for k in range(16):
+    place(fx, pan(tick(), 0), at('p50', 1) + (k / 16) ** 1.6 * (at('p50', 2) - at('p50', 1)), 0.6)
+place(fx, pan(chime(), 0), at('p50', 2), 0.6)
 
 # Outro
-place(fx, pan(boom(), 0), at('outro', 0), 0.45)
-place(fx, pan(whoosh(0.5), 0), at('outro', 0.3), 0.35)
 for i in range(4):
-    place(fx, pan(pop(72 + i * 3), (i - 1.5) / 2), at('outro', 1.5 + i * 0.35), 0.6)
-place(fx, pan(whoosh(0.5), 0), at('outro', 4.2), 0.4)
+    place(fx, pan(pop(72 + i * 3), (i - 1.5) / 2), at('outro', 0.5 + i * 0.3), 0.6)
+place(fx, pan(whoosh(0.5), 0), at('outro', 3.15), 0.4)
 place(fx, pan(boom(), 0), end_hit, 0.9)
 for i in range(3):
-    place(fx, pan(tick(), 0), at('outro', 5.2 + i * 0.5), 1.0)
+    place(fx, pan(tick(), 0), at('outro', 4 + i * 0.5), 1.0)
 
 # ---------------------------------------------------------------- mix
 
