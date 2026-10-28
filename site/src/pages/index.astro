@@ -65,15 +65,15 @@ differently admin trust-report`,
 const features = [
   {
     k: '01',
-    title: 'Self-hosted, end to end',
-    body: 'API, dashboard, auth, keys, scheduler, queue, quotas, audit and metering all run in your cluster. Postgres is the only production dependency. There is no license server, telemetry or phone-home path.',
-    href: '/docs/deploy/',
-    cta: 'Deployment overview',
+    title: 'Providers behind adapters',
+    body: 'Firecracker node agents, Daytona, Freestyle and any service speaking the adapter protocol plug in behind one contract. Applications keep calling the same API while operators change where work goes.',
+    href: '/docs/adapters/specification/',
+    cta: 'Adapter specification',
   },
   {
     k: '02',
-    title: 'Policy-gated overflow',
-    body: 'Registering Daytona or Freestyle authorizes nothing. Work leaves your pools only when global, organization and project policy, the data classification and the request all allow it. Anything unclear fails closed.',
+    title: 'Quotas and policy-gated overflow',
+    body: 'Registering Daytona or Freestyle authorizes nothing. Work leaves your pools only when global, organization and project policy, the data classification and the request all allow it. Quotas are derived from state and enforced at admission. Anything unclear fails closed.',
     href: '/docs/guides/hybrid-overflow/',
     cta: 'Hybrid overflow guide',
   },
@@ -99,8 +99,8 @@ const features = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Differently · Run VMs differently: own them</title>
-    <meta name="description" content="Open-source, self-hosted control plane for sandboxes and Firecracker microVMs. Your infrastructure. Your rules. One API." />
+    <title>Differently · Orchestrate sandboxes on your terms</title>
+    <meta name="description" content="Open-source, self-hosted orchestration for sandboxes and microVMs: one API, policy-gated placement across your pools and providers, quotas, audit and a trust report." />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -135,12 +135,13 @@ const features = [
 
     <main>
       <section class="hero wrap">
-        <p class="eyebrow">Open source · Apache-2.0 · Self-hosted</p>
-        <h1>Run VMs differently:<br /><em>own them.</em></h1>
+        <p class="eyebrow">Open source · Apache-2.0 · Self-hosted orchestration</p>
+        <h1>Everyone builds sandboxes.<br /><em>We orchestrate them.</em></h1>
         <p class="lede">
-          Differently is a control plane for sandboxes and Firecracker microVMs that you install in the
-          Kubernetes cluster you already run. Your developers get one simple API. You keep the keys,
-          the nodes, the data and the audit trail.
+          Differently is the orchestration and resource-management layer for sandboxes. Install it in
+          infrastructure you already run, connect your own microVM pools and, if you choose, external
+          providers. Your developers get one API; policy decides where each sandbox runs, quotas keep
+          usage in check, and every decision is audited.
         </p>
         <div class="ctas">
           <a class="btn primary" href={`${base}/docs/guides/quickstart/`}>Read the quickstart</a>
@@ -150,17 +151,17 @@ const features = [
           <span>$</span><code>helm install differently deploy/helm/differently</code>
         </div>
         <ul class="pillars">
-          <li><b>Your infrastructure.</b> KVM nodes you control.</li>
-          <li><b>Your rules.</b> Policy decides where work may go.</li>
           <li><b>One API.</b> Applications never name a backend.</li>
+          <li><b>Many pools.</b> Your nodes and opt-in providers, behind adapters.</li>
+          <li><b>Your rules.</b> Policy, quotas and audit you own.</li>
         </ul>
       </section>
 
       <section class="how wrap" id="how">
         <div class="section-head">
           <p class="eyebrow">How it works</p>
-          <h2>One door in. Every room is yours.</h2>
-          <p>Stateless API replicas admit requests against quota and queue them in Postgres. A single elected scheduler places each sandbox on an eligible pool. Node agents run Firecracker microVMs on hosts labelled for KVM. External providers sit behind a policy gate that is closed by default.</p>
+          <h2>One API in. Policy decides where it runs.</h2>
+          <p>Requests are admitted against quota and queued. A single elected scheduler filters every registered pool against global, organization and project policy, ranks what is left and records why. Adapters run the sandbox on your own microVM nodes or, only where policy allows, on an external provider.</p>
         </div>
         <figure class="diagram">
           <svg viewBox="0 0 960 360" role="img" aria-labelledby="dtitle">
@@ -216,7 +217,7 @@ const features = [
       <section class="features wrap" id="features">
         <div class="section-head">
           <p class="eyebrow">What you get</p>
-          <h2>Yours by default.</h2>
+          <h2>Orchestration you own.</h2>
         </div>
         <div class="grid">
           {features.map((f) => (
@@ -252,7 +253,7 @@ const features = [
       </section>
 
       <section class="cta wrap">
-        <h2>Bring your own metal.</h2>
+        <h2>Run sandboxes differently.</h2>
         <p>Built in the open by the OpenWork team. Issues, ideas and pull requests welcome.</p>
         <div class="ctas">
           <a class="btn primary" href={`${base}/docs/`}>Browse the docs</a>

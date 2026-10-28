@@ -12,7 +12,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'Differently',
-      description: 'Run VMs differently: own them. A self-hosted control plane for sandboxes and Firecracker microVMs.',
+      description: 'Self-hosted orchestration and resource management for sandboxes and microVMs across your own pools and opt-in providers.',
       logo: { light: './src/assets/mark-light.svg', dark: './src/assets/mark-dark.svg', alt: 'Differently' },
       favicon: '/favicon.svg',
       social: [{ icon: 'github', label: 'GitHub', href: repo }],
