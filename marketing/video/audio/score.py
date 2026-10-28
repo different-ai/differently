@@ -389,12 +389,17 @@ hand = at('diagram', 13)
 place(fx, pan(riser(at('diagram', 15) - hand) * 0.7, 0), hand, 0.7)
 place(fx, pan(whoosh(at('diagram', 15) - hand + 0.2), 0), hand, 0.5)
 
-# p50: the mark lifts, the number counts up with a run of ticks, then lands.
-place(fx, pan(boom(), 0), at('p50', 0), 0.4)
-place(fx, pan(whoosh(0.5), 0), at('p50', 0.25), 0.35)
+# Route: the mark lifts, wires branch out, the two destinations land, the number counts up.
+place(fx, pan(boom(), 0), at('route', 0), 0.4)
+place(fx, pan(whoosh(0.5), 0), at('route', 0.25), 0.35)
+place(fx, pan(whoosh(0.4), -0.5), at('route', 0.9), 0.3)
+place(fx, pan(whoosh(0.4), 0.5), at('route', 1.0), 0.3)
+place(fx, pan(pop(76), -0.5), at('route', 1.3), 0.6)
+place(fx, pan(pop(81), 0.5), at('route', 1.9), 0.6)
 for k in range(16):
-    place(fx, pan(tick(), 0), at('p50', 1) + (k / 16) ** 1.6 * (at('p50', 2) - at('p50', 1)), 0.6)
-place(fx, pan(chime(), 0), at('p50', 2), 0.6)
+    place(fx, pan(tick(), -0.4), at('route', 2.3) + (k / 16) ** 1.6 * (at('route', 3.1) - at('route', 2.3)), 0.55)
+place(fx, pan(chime(), -0.3), at('route', 3.1), 0.55)
+place(fx, pan(lock_click(), 0.5), at('route', 2.8), 0.5)
 
 # Outro
 for i in range(4):

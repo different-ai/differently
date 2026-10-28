@@ -57,7 +57,7 @@ export const Reveal: React.FC = () => {
       <AbsoluteFill style={{background: d.ink, opacity: flash}} />
       <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', paddingTop: sq ? 220 : 160}}>
         <Card text="Not another sandbox." from={beat(5.3)} to={beat(7.6)} width={textW} max={sq ? 110 : 140} tone="dark" />
-        <Card text={'We *orchestrate* them.'} from={beat(7.6)} to={beat(10)} width={textW} max={sq ? 110 : 140} tone="dark" stagger={6} />
+        <Card text={'A sandbox *router*.'} from={beat(7.6)} to={beat(10)} width={textW} max={sq ? 110 : 140} tone="dark" stagger={6} />
       </AbsoluteFill>
     </AbsoluteFill>
   );

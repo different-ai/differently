@@ -18,7 +18,7 @@ const PILLS = [
 ];
 
 /**
- * Honest status, then the end card. The mark arrives in its lifted pose from the p50 scene,
+ * Honest status, then the end card. The mark arrives in its lifted pose from the routing scene,
  * sits above the status line, then settles into the lockup. The last ~3 s are still.
  */
 export const Outro: React.FC = () => {

@@ -5,7 +5,7 @@ import {Crowd, Mine} from './scenes/Problem';
 import {Code, Reveal} from './scenes/Reveal';
 import {Diagram} from './scenes/Diagram';
 import {Outro} from './scenes/Outro';
-import {P50} from './scenes/P50';
+import {Route} from './scenes/Route';
 import {tokens} from './theme';
 import {beat, SCENES} from './time';
 import {clamp, Mark} from './ui';
@@ -16,7 +16,7 @@ const SCENE_COMPONENTS: Record<string, React.FC> = {
   reveal: Reveal,
   code: Code,
   diagram: Diagram,
-  p50: P50,
+  route: Route,
   outro: Outro,
 };
 

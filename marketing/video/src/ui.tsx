@@ -16,7 +16,7 @@ export const useSpring = (delay: number, config = SNAP, durationInFrames?: numbe
 /** Where the mark sits on the cut out of the diagram (the next scene starts from it). */
 export const handoff = (width: number, height: number) => ({x: width / 2, y: height / 2, size: width === height ? 150 : 170});
 
-/** The mark's "header" pose above the p50 and status lines; the outro starts from it. */
+/** The mark's "header" pose above the routing slide and the status line; the outro starts from it. */
 export const lifted = (width: number, height: number) => ({x: width / 2, y: width === height ? 190 : 170, size: width === height ? 80 : 88});
 
 /** SVG filter for a horizontal motion blur (whip pans). Reference it as `url(#id)`. */

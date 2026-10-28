@@ -1,6 +1,6 @@
 # Intro video
 
-A 40-second launch video for Differently, built with [Remotion](https://www.remotion.dev/) and a soundtrack synthesised from code. The beat-by-beat plan and the claims we checked are in [STORYBOARD.md](STORYBOARD.md).
+A 41-second launch video for Differently, built with [Remotion](https://www.remotion.dev/) and a soundtrack synthesised from code. The beat-by-beat plan and the claims we checked are in [STORYBOARD.md](STORYBOARD.md).
 
 ## Build
 

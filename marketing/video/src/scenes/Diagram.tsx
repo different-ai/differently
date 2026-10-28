@@ -177,7 +177,7 @@ export const Diagram: React.FC = () => {
   const badge = (at: number) => spring({frame: frame - beat(at), fps: 60, config: {damping: 11, stiffness: 260, mass: 0.5}});
   const auditIn = interpolate(frame, [beat(10.3), beat(10.8)], [0, 1], {...clamp, easing: OUT});
 
-  // Hand-off into the p50 scene: the server box's light fill grows to cover the screen
+  // Hand-off into the routing scene: the server box's light fill grows to cover the screen
   // while its mark glides to the centre, exactly where the next scene picks it up.
   const handT = interpolate(frame, [beat(13), beat(15) - 1], [0, 1], {...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1)});
   const handing = frame >= beat(13);
@@ -378,11 +378,11 @@ export const Diagram: React.FC = () => {
       ) : null}
 
       <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 80 : 60, opacity: 1 - handT * 4}}>
-        <Card text="Your pools first." from={0} to={beat(2.5)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
+        <Card text="Sensitive work stays home." from={0} to={beat(2.5)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
         <Card text="Quotas per team." from={beat(2.5)} to={beat(5)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
         <Card text="Full? It fails *closed*." from={beat(5)} to={beat(7.5)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
-        <Card text="Overflow only if policy allows." from={beat(7.5)} to={beat(10.3)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
-        <Card text="Every placement, audited." from={beat(10.3)} to={beat(13)} width={L.textW} max={sq ? 88 : 100} tone="dark" exit />
+        <Card text="Burst out only if policy allows." from={beat(7.5)} to={beat(10.3)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
+        <Card text="Every route, audited." from={beat(10.3)} to={beat(13)} width={L.textW} max={sq ? 88 : 100} tone="dark" exit />
       </AbsoluteFill>
     </AbsoluteFill>
   );
