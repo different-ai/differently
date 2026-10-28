@@ -1,0 +1,27 @@
+{
+  "name": "differently-intro-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render Intro out/differently-intro-16x9.mp4",
+    "render:square": "remotion render IntroSquare out/differently-intro-1x1.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/layout-utils": "^4.0.539",
+    "@remotion/media": "^4.0.539",
+    "@remotion/media-utils": "4.0.539",
+    "@remotion/motion-blur": "4.0.539",
+    "@remotion/shapes": "4.0.539",
+    "@remotion/transitions": "4.0.539",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "remotion": "4.0.539"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.12",
+    "typescript": "5.9.2"
+  }
+}
