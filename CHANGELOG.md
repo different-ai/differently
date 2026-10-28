@@ -36,6 +36,25 @@ All notable changes are recorded here. The format follows
 - `metrics.listen` serves `/metrics` on its own port; the Helm chart does this
   by default (port 9091), keeping metrics off the ingress.
 
-### Not yet verified
+### Fixed (found by the end-to-end suite)
 
-- No run on real KVM hardware or live Daytona/Freestyle accounts yet.
+- `start` refused every request after the first one: the lifecycle handler
+  reused state between requests.
+- A restarting microVM was hidden from the agent's instance list, so the
+  reconciler failed the sandbox mid-start; the reconciler also now waits
+  30 seconds after any change before correcting a sandbox.
+- Stopping on aarch64 (no Ctrl-Alt-Del) could lose unflushed guest writes;
+  the agent now syncs the guest first.
+- Sandboxes whose microVM stopped behind the control plane's back (for
+  example on an agent restart) stayed `running`; they are now reported
+  `stopped` and can be started again.
+- `differently sandbox list -o json` printed an object instead of an array
+  for a single sandbox.
+- `deploy/images/build-rootfs.sh` failed on macOS with Colima (temporary
+  files outside the shared home directory; unpacking into a host mount).
+
+### Verified
+
+- End-to-end suite (`make e2e`) on real Firecracker microVMs: arm64, nested
+  virtualization on Colima. Not yet verified: x86_64, cloud or bare-metal
+  KVM, Kubernetes, live Daytona/Freestyle accounts.

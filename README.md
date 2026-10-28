@@ -13,10 +13,13 @@ Built by the [OpenWork](https://github.com/different-ai) team, Apache-2.0.
 
 > **Status: pre-release (`0.1.0-dev`).** The control plane, scheduler, policy
 > engine, node agent, adapters, CLI, SDKs, Helm chart and docs are implemented
-> and covered by fast unit and in-process integration tests. Nothing has run on
-> real KVM infrastructure or live provider accounts yet; that is the next phase
-> ("solidification", see [docs/roadmap.md](docs/roadmap.md)). Do not run
-> production workloads on it yet.
+> and covered by unit and in-process integration tests. An
+> [end-to-end suite](test/e2e/README.md) runs the real stack — Postgres, the
+> server and a node agent booting Firecracker microVMs — and passes on arm64
+> under nested virtualization (Colima on Apple Silicon). Cloud and bare-metal
+> KVM, x86_64 and live Daytona/Freestyle accounts are not verified yet
+> ([docs/roadmap.md](docs/roadmap.md)). Do not run production workloads on it
+> yet.
 
 ## Why it exists
 

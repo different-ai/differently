@@ -1,0 +1,58 @@
+# End-to-end stack: Postgres, the control plane and one node agent running
+# real Firecracker microVMs. Needs a Docker host with /dev/kvm (see README.md).
+name: differently-e2e
+
+x-tokens: &tokens
+  # Test-only credentials for this throwaway stack.
+  DIFFERENTLY_BOOTSTRAP_TOKEN: dly_e2eoperator_e2etoken0123456789abcdefghjkmnpqrstvwxyz
+  DIFFERENTLY_AGENT_TOKEN: e2e-agent-registration-token
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: e2e
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  server:
+    image: differently-server:e2e
+    command: ["--config", "/etc/differently/config.yaml"]
+    environment:
+      <<: *tokens
+      DIFFERENTLY_DATABASE_URL: postgres://postgres:e2e@postgres:5432/postgres?sslmode=disable
+    volumes:
+      - ./config.yaml:/etc/differently/config.yaml:ro
+    ports:
+      - "18090:8080"
+      - "19091:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  agent:
+    image: differently-agent-e2e:latest
+    command:
+      - --server=http://server:8080
+      - --pool=fc-local
+      - --node=e2e-node-1
+      - --listen=:9090
+      - --advertise-url=http://agent:9090
+      - --reserve-cpu=0
+      - --reserve-memory-mib=1024
+    environment:
+      DIFFERENTLY_AGENT_TOKEN: e2e-agent-registration-token
+    privileged: true
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    volumes:
+      - agent-state:/var/lib/differently/agent
+    depends_on:
+      - server
+
+volumes:
+  agent-state:

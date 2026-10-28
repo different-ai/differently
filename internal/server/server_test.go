@@ -77,6 +77,7 @@ func newHarnessWith(t *testing.T, policy api.PlacementPolicy, tweak func(*config
 	}
 	inst, _ := st.Installation(ctx)
 	h.sched = scheduler.New(st, pm, cfg, inst, rec, log)
+	h.sched.ReconcileGrace = 0 // tests drive the reconciler directly
 	srv := server.New(cfg, st, pm, h.sched, rec, log, inst, "agent-token")
 	if err := srv.Bootstrap(ctx); err != nil {
 		t.Fatal(err)
@@ -290,8 +291,10 @@ func TestMultiTenantQuotas(t *testing.T) {
 		t.Fatalf("oversized request should be rejected up front, got %d %+v", code, e.Error)
 	}
 	// Stopping releases CPU; starting must re-check quota (a1 holds the only slot).
-	h.must(200, "POST", "/v1/sandboxes/"+a1.ID+"/stop", a, nil, nil)
-	h.must(200, "POST", "/v1/sandboxes/"+a1.ID+"/start", a, nil, nil)
+	for i := 0; i < 2; i++ { // the second cycle catches state leaking between requests
+		h.must(200, "POST", "/v1/sandboxes/"+a1.ID+"/stop", a, nil, nil)
+		h.must(200, "POST", "/v1/sandboxes/"+a1.ID+"/start", a, nil, nil)
+	}
 	h.must(202, "DELETE", "/v1/sandboxes/"+a1.ID, a, nil, nil)
 	h.tick()
 	h.tick()
@@ -405,6 +408,15 @@ func TestFailureRecoveryAndReconcile(t *testing.T) {
 	if got := h.get(token, sb.ID); got.Status != api.StatusRunning || h.fc.Count() != 1 {
 		t.Fatalf("retry did not converge to exactly one instance: %+v (%d)", got, h.fc.Count())
 	}
+	// A backend instance that stops behind the control plane's back (for
+	// example its node agent restarted) makes the sandbox stopped.
+	running0, _ := h.store.GetSandbox(context.Background(), sb.ID)
+	_ = h.fc.Stop(context.Background(), running0.BackendRef)
+	h.sched.Reconcile(context.Background())
+	if got := h.get(token, sb.ID); got.Status != api.StatusStopped {
+		t.Fatalf("state drift not reconciled: %+v", got)
+	}
+	h.must(200, "POST", "/v1/sandboxes/"+sb.ID+"/start", token, nil, nil)
 	inst, _ := h.store.Installation(context.Background())
 	h.fc.Inject("sbx_ghost", inst)
 	running, _ := h.store.GetSandbox(context.Background(), sb.ID)

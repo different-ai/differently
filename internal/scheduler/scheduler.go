@@ -46,6 +46,9 @@ type Scheduler struct {
 	Audit        *auditlog.Recorder
 	Log          *slog.Logger
 	Now          func() time.Time
+	// ReconcileGrace is how long the reconciler leaves a sandbox alone after
+	// it changed, so it never races a lifecycle operation.
+	ReconcileGrace time.Duration
 
 	wake     chan struct{}
 	mu       sync.Mutex
@@ -57,7 +60,8 @@ type Scheduler struct {
 func New(st store.Store, pm *pools.Manager, cfg config.Config, installation string, rec *auditlog.Recorder, log *slog.Logger) *Scheduler {
 	return &Scheduler{
 		Store: st, Pools: pm, Config: cfg, Installation: installation, Audit: rec, Log: log,
-		Now: func() time.Time { return time.Now().UTC() }, wake: make(chan struct{}, 1), inflight: map[string]bool{},
+		Now: func() time.Time { return time.Now().UTC() }, ReconcileGrace: 30 * time.Second,
+		wake: make(chan struct{}, 1), inflight: map[string]bool{},
 	}
 }
 
@@ -563,16 +567,59 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 			}
 			s.release(rec.ID)
 		default:
-			if rec.BackendRef == "" {
+			if rec.BackendRef == "" || s.recentlyChanged(rec) {
 				continue
 			}
-			if _, ok := byRef[rec.BackendRef]; ok {
+			if in, ok := byRef[rec.BackendRef]; ok {
+				s.reconcileState(ctx, pool, rec, in)
 				continue
 			}
 			s.fail(ctx, rec.ID, "backend instance disappeared", nil)
 			metrics.Reconciled.WithLabelValues("lost", pool).Inc()
 		}
 	}
+}
+
+// reconcileState follows a backend instance that changed state behind the
+// control plane's back, for example microVMs that stopped when their node
+// agent restarted. A stopped instance makes the sandbox stopped (so it can
+// be started again from its disk); an instance in error fails it.
+func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.SandboxRecord, in adapter.Instance) {
+	if (rec.Status != api.StatusRunning && rec.Status != api.StatusPaused) || s.isInflight(rec.ID) || s.recentlyChanged(rec) {
+		return
+	}
+	switch in.State {
+	case adapter.StateStopped:
+		out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+			if r.Status != api.StatusRunning && r.Status != api.StatusPaused {
+				return nil
+			}
+			now := s.Now()
+			stopClock(r, now)
+			r.Status, r.StatusReason, r.UpdatedAt = api.StatusStopped, "backend instance stopped unexpectedly; start it to boot from its disk", now
+			return nil
+		})
+		if err == nil && out.Status == api.StatusStopped {
+			metrics.Reconciled.WithLabelValues("stopped", pool).Inc()
+			s.Audit.Record(ctx, api.AuditEvent{Actor: "reconciler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "reconcile.instance_stopped", Resource: rec.ID, Details: map[string]string{"pool": pool, "ref": in.Ref}})
+		}
+	case adapter.StateError:
+		s.fail(ctx, rec.ID, "backend instance failed: "+in.Message, nil)
+		metrics.Reconciled.WithLabelValues("failed", pool).Inc()
+	}
+}
+
+// recentlyChanged reports whether a lifecycle operation (stop, start, pause,
+// resume) may still be in progress on another replica. The reconciler leaves
+// such sandboxes alone instead of racing the operation.
+func (s *Scheduler) recentlyChanged(rec store.SandboxRecord) bool {
+	return s.Now().Sub(rec.UpdatedAt) < s.ReconcileGrace
+}
+
+func (s *Scheduler) isInflight(sid string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.inflight[sid]
 }
 
 // stopClock folds the current running interval into RunSeconds.

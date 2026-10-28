@@ -49,7 +49,9 @@ command -v "$runtime" >/dev/null || { echo "$runtime not found (set CONTAINER_RU
 
 out_dir=$(cd "$(dirname "$output")" && pwd)
 out_name=$(basename "$output")
-work=$(mktemp -d)
+# An explicit template makes macOS honour TMPDIR, so the directory can live
+# somewhere the Docker VM shares (Colima shares only $HOME).
+work=$(mktemp -d "${TMPDIR:-/tmp}/differently-rootfs.XXXXXX")
 cid=""
 cleanup() {
   [ -z "$cid" ] || "$runtime" rm -f "$cid" >/dev/null 2>&1 || true
@@ -61,7 +63,9 @@ platform_args=()
 [ -z "$platform" ] || platform_args=(--platform "$platform")
 
 echo "==> Exporting $image"
-"$runtime" pull ${platform_args[@]+"${platform_args[@]}"} "$image" >/dev/null
+# Use a local image when it exists (for example one just built); pull otherwise.
+"$runtime" image inspect "$image" >/dev/null 2>&1 || \
+  "$runtime" pull ${platform_args[@]+"${platform_args[@]}"} "$image" >/dev/null
 cid=$("$runtime" create ${platform_args[@]+"${platform_args[@]}"} "$image" /bin/sh)
 "$runtime" export "$cid" -o "$work/rootfs.tar"
 "$runtime" rm -f "$cid" >/dev/null
@@ -80,7 +84,9 @@ echo "==> Building $out_name (init: $init_mode)"
   "$builder_image" bash -euo pipefail -c '
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq && apt-get install -y -qq --no-install-recommends e2fsprogs >/dev/null
-    root=/work/root
+    # Unpack inside the builder, not the bind mount: host-shared filesystems
+    # (virtiofs, osxfs) refuse foreign owners and device files.
+    root=/build/root
     mkdir -p "$root"
     tar -xpf /work/rootfs.tar -C "$root" --numeric-owner
     rm -f "$root/.dockerenv"

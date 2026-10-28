@@ -251,8 +251,10 @@ Items marked **Fixed** were resolved before the initial import.
 
 1. **Fixed:** `start` re-reserved CPU and memory without a quota check.
 2. **Fixed:** `start` after a host reboot failed because the tap device was not recreated.
-3. The reconciler does not reconcile state (a stopped VM under a `running`
-   sandbox).
+3. **Fixed:** the reconciler now follows instance state: a stopped VM under a
+   `running` sandbox makes it `stopped`, an instance in error fails it (after a
+   30-second grace so it never races a lifecycle call). Verified end to end by
+   `TestAgentRestartRecovers`.
 4. **Partly fixed:** a heartbeat gap now pauses reconciliation of the pool for
    a 10-minute grace instead of failing the node's sandboxes; a node silent for
    longer is still treated as lost.

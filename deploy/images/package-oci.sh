@@ -42,7 +42,7 @@ done
 [ -f "$kernel" ] || { echo "--kernel must name the vmlinux file" >&2; exit 2; }
 [ "${#rootfs[@]}" -gt 0 ] || { echo "at least one --rootfs is required" >&2; exit 2; }
 
-ctx=$(mktemp -d)
+ctx=$(mktemp -d "${TMPDIR:-/tmp}/differently-oci.XXXXXX")
 trap 'rm -rf "$ctx"' EXIT
 mkdir -p "$ctx/images"
 cp "$kernel" "$ctx/images/vmlinux"

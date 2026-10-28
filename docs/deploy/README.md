@@ -82,14 +82,20 @@ Status values:
 - **unverified:** depends on a claim from research or secondary sources that
   still needs a hands-on check.
 
-**Nothing is tested on real infrastructure yet.** The chart has only been
+**The Helm chart has not been applied to a real cluster yet.** It has been
 checked locally: `helm lint` and `helm template` pass for the default,
 external-PostgreSQL-plus-ingress and hybrid-Daytona value sets, and the
 rendered `config.yaml` parses with the server's own strict config loader.
-No manifest has been applied to a cluster.
+
+The runtime itself is **tested** on one environment: the
+[end-to-end suite](../../test/e2e/README.md) runs the server, Postgres and a
+node agent with real Firecracker microVMs in Docker on a Colima VM with nested
+virtualization (Apple Silicon, arm64). That exercises the same images and
+agent flags the chart uses, but not Kubernetes itself.
 
 | Environment | KVM path | Status | Notes |
 |---|---|---|---|
+| Docker on Colima, Apple Silicon M3+ (`vz`, nested virtualization) | Nested virtualization, arm64 | **tested** (e2e suite, 2026-10-28) | Development and verification only; Firecracker documents nested virtualization as non-production |
 | Any conformant Kubernetes 1.29+ with KVM nodes | Privileged agent DaemonSet | documented | [kubernetes.md](kubernetes.md) |
 | AWS EKS, `.metal` node group | Bare metal | documented | Matches Firecracker's tested platforms. The Terraform module is **unvalidated** |
 | AWS EKS, nested-virtualization node group | `NestedVirtualization` CPU option (M7i/M8i/C7i/C8i/R7i/R8i…) | unverified | EKS managed node group support was reported fixed in 2026. Firecracker calls nested a development setup |

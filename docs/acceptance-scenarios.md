@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | 2026-10-28. `go test -race ./...` passes locally, including the Postgres conformance suite (`internal/store/postgres` `TestConformance`) run against a disposable Postgres container; CI runs it on every PR. |
-| Evidence level | Every test below runs in-process with fake backends. **No scenario has been validated on real KVM hardware or against live Daytona or Freestyle accounts.** |
+| Evidence level | The tests below run in-process with fake backends. In addition, the [end-to-end suite](../test/e2e/README.md) runs scenarios A, C, G, J and L, plus sandbox isolation, against real Firecracker microVMs (arm64, nested virtualization on Colima, 2026-10-28). Cloud and bare-metal KVM, x86_64 and live Daytona or Freestyle accounts are not validated yet. |
 
 Scenario definitions follow the product brief. Stateful sandbox behaviour and
 operator controls, which several scenarios rely on, are covered under G and K

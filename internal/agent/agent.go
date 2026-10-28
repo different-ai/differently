@@ -482,7 +482,9 @@ func (m *Manager) List(_ context.Context, installation string) ([]adapter.Instan
 	defer m.mu.Unlock()
 	out := []adapter.Instance{}
 	for _, vm := range m.vms {
-		if vm.State != adapter.StatePending && (installation == "" || vm.Installation == installation) {
+		// Pending VMs (being created or restarted) are listed too: hiding
+		// them would make a restarting VM look lost to the reconciler.
+		if installation == "" || vm.Installation == installation {
 			out = append(out, instance(vm))
 		}
 	}
@@ -575,8 +577,18 @@ func (m *Manager) Stop(ctx context.Context, ref string) error {
 	if vm.State == adapter.StateStopped {
 		return nil
 	}
+	if vm.State == adapter.StateRunning {
+		// Flush guest page cache to the disk image first: Ctrl-Alt-Del does
+		// not exist on aarch64, so the VMM may be killed without a guest
+		// shutdown, and unflushed writes would be lost.
+		sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		if _, err := m.guest(vm).Exec(sctx, api.ExecRequest{Command: "sync", TimeoutSeconds: 15}); err != nil {
+			m.log.Warn("could not sync the guest before stopping", "vm", vm.ID, "err", err)
+		}
+		cancel()
+	}
 	_ = firecracker.New(vm.APISocket()).CtrlAltDel(ctx)
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for m.launcher.Alive(vm) && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
