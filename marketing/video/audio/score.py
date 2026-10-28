@@ -41,12 +41,13 @@ def buf():
 # ---------------------------------------------------------------- instruments
 
 def kick(level=1.0):
-    n = int(0.45 * SR)
+    n = int(0.4 * SR)
     t = np.arange(n) / SR
-    f = 48 + 110 * np.exp(-t * 32)
-    body = np.sin(2 * np.pi * np.cumsum(f) / SR) * exp_env(n, 0.001, 0.16)
-    click = highpass(rng.standard_normal(n), 3000) * exp_env(n, 0.0002, 0.004) * 0.25
-    return soft_clip((body + click) * level, 1.4)
+    f = 55 + 120 * np.exp(-t * 34)
+    body = np.sin(2 * np.pi * np.cumsum(f) / SR) * exp_env(n, 0.001, 0.12) * 0.8
+    # A short 1-3 kHz beater click so the kick still reads on phone speakers.
+    beater = bandpass(rng.standard_normal(n), 1000, 3200) * exp_env(n, 0.0003, 0.012) * 0.55
+    return soft_clip((body + beater) * level, 1.4)
 
 
 def clap():
@@ -206,88 +207,92 @@ kicks = []  # kick times drive the sidechain
 
 A_MIN_PENTA = [57, 60, 62, 64, 67, 69, 72, 74, 76, 79, 81, 84]
 
-# Act 1 (crowd + mine): playful mallet arps over a half-time beat, getting tense.
+# Act 1 (crowd + mine): sparse "vendor jingle" mallets that drift further out of tune as the
+# crowd and the glue pile up, over a thin beat. Nothing here is warm on purpose.
 act1_end = at('reveal', 0)
-glue_from = at('mine', 4)
-for b in np.arange(0, SCENES['mine'][0] + SCENES['mine'][1], 0.25):
+glue_from = at('mine', 2.3)
+for b in np.arange(0, SCENES['mine'][0] + SCENES['mine'][1], 0.5):
     tt = b * B
-    if tt >= act1_end - 0.25:
+    if tt >= act1_end - 0.2:
         break
-    step = int(round(b * 4))
-    sixteenth = step % 2 == 1
-    if sixteenth and tt < glue_from:
-        continue  # 8ths through the crowd, 16ths once the glue piles up
+    step = int(round(b * 2))
     seq = [0, 4, 2, 5, 3, 6, 4, 7]
-    note = A_MIN_PENTA[seq[(step // 2) % 8] + (2 if (step // 32) % 2 else 0)]
-    if tt >= at('crowd', 1):
-        place(music, pan(mallet(note + 12 * ((step // 2) % 16 == 15), 0.35) * (0.75 if sixteenth else 1.0), (-0.4, 0.4)[(step // 2) % 2]), tt, 0.85)
-    if step % 4 == 2 and tt >= at('crowd', 2):
-        place(drums, hat(), tt, 0.8)
-    if sixteenth and tt >= glue_from:
-        place(drums, hat(), tt, 0.4)
+    note = A_MIN_PENTA[seq[step % 8] + (2 if (step // 16) % 2 else 0)]
+    sour = min(1.0, tt / act1_end)
+    cents = (np.sin(step * 2.1) * 45 + np.cos(step * 1.3) * 25) * sour  # detune grows with the mess
+    if tt >= at('crowd', 0.5):
+        place(music, pan(mallet(note + cents / 100, 0.3) * (1.0 if step % 2 == 0 else 0.7), (-0.5, 0.5)[step % 2]), tt, 0.7)
+    if step % 2 == 1 and tt >= at('crowd', 3):
+        place(drums, hat(), tt, 0.6)
     if step % 4 == 0 and tt >= at('crowd', 2):
         kicks.append(tt)
-        place(drums, kick(0.8), tt)
-    if step % 8 == 4 and tt >= at('crowd', 4):
-        place(drums, clap(), tt, 0.6)
-# Bass under act 1 (Am – F – C – G), wobbling more as the glue piles up.
-for i, root in enumerate([45, 41, 48, 43] * 4):
-    tt = i * 4 * B * 0.5 * 2  # one chord per bar
+        place(drums, kick(0.6), tt)
+    if step % 8 == 4 and tt >= glue_from:
+        place(drums, clap(), tt, 0.45)
+# A low, uneasy bass drone under act 1 (A minor), getting wobblier.
+for i, root in enumerate([45, 41, 45, 40] * 4):
+    tt = i * 4 * B
     if tt >= act1_end - 0.3:
         break
     length = min(4 * B, act1_end - 0.3 - tt)
-    place(music, pan(bass(root - 12, length, cutoff=380 + 600 * min(1, tt / act1_end)), 0), tt, 0.9)
+    place(music, pan(bass(root - 12, length, cutoff=300 + 300 * min(1, tt / act1_end)), 0), tt, 0.7)
 
-# Hard stop before the reveal; a reverse swell pulls into the logo hit.
-place(fx, pan(reverse_swell(at('reveal', 3) - at('reveal', 1.6)), 0), at('reveal', 1.6), 0.9)
-drone_len = at('reveal', 3) - at('reveal', 0)
-dr = saw_voice(33, drone_len, cutoff=220, detune=(-5, 5), attack=0.6, release=0.3) * 0.25
+# Reveal: a breath, a reverse swell into the logo, then pad and bass carry the next line
+# (no dip), and the full groove drops on "The layer above them." with the biggest hit.
+logo_hit = at('reveal', 2.4)
+drop = at('reveal', 6.2)
+place(fx, pan(reverse_swell(logo_hit - at('reveal', 1.2)), 0), at('reveal', 1.2), 0.9)
+dr = saw_voice(33, logo_hit - at('reveal', 0), cutoff=220, detune=(-5, 5), attack=0.4, release=0.3) * 0.22
 place(music, pan(dr, 0), at('reveal', 0))
 
-# Act 2 (logo → diagram): warm groove in C: C – G – Am – F.
 CHORDS = [[48, 55, 60, 64], [43, 50, 55, 59], [45, 52, 57, 60], [41, 48, 53, 57]]
-groove_start = at('reveal', 3)
-groove_end = at('outro', 3.6)
+groove_end = at('outro', 0.9)
 bar = 4 * B
-nbar = int(np.ceil((groove_end - groove_start) / bar))
-for i in range(nbar):
-    t0 = groove_start + i * bar
-    ch = CHORDS[i % 4]
-    full = t0 >= at('reveal', 5)
-    gate_dip = at('diagram', 5) <= t0 < at('diagram', 8.2)
-    pad = sum(saw_voice(m + 12, bar + 0.4, cutoff=1500 if not gate_dip else 700, attack=0.08, release=0.4, sustain=0.8) for m in ch[1:]) * 0.12
+# Logo → drop: warm pad and pulsing bass, no drums yet.
+t0 = logo_hit
+while t0 < drop - 0.01:
+    length = min(bar, drop - t0)
+    ch = CHORDS[0]
+    pad = sum(saw_voice(m + 12, length + 0.3, cutoff=1300, attack=0.05, release=0.3, sustain=0.8) for m in ch[1:]) * 0.13
     place(music, pan(pad, 0), t0)
-    for k in range(8):  # bass on 8ths, pumping
+    for k in range(int(length / (B / 2))):
+        place(music, pan(bass(ch[0] - 12, B / 2 * 0.9, 420), 0), t0 + k * B / 2, 0.55)
+    t0 += length
+# The drop: full groove from "The layer above them." to the end card.
+nbar = int(np.ceil((groove_end - drop) / bar))
+for i in range(nbar):
+    t0 = drop + i * bar
+    ch = CHORDS[i % 4]
+    gate_dip = at('diagram', 5) <= t0 < at('diagram', 7.8)
+    pad = sum(saw_voice(m + 12, bar + 0.4, cutoff=1800 if not gate_dip else 800, attack=0.06, release=0.4, sustain=0.8) for m in ch[1:]) * 0.13
+    place(music, pan(pad, 0), t0)
+    for k in range(8):
         tt = t0 + k * B / 2
         if tt >= groove_end:
             break
-        place(music, pan(bass(ch[0] - 12 + (12 if k % 4 == 3 else 0), B / 2 * 0.9, 600 if full else 380), 0), tt, 0.8 if full else 0.5)
-    for k in range(16):  # arp sparkle on 8ths
+        place(music, pan(bass(ch[0] - 12 + (12 if k % 4 == 3 else 0), B / 2 * 0.9, 700), 0), tt, 0.75)
+    for k in range(16):
         tt = t0 + k * B / 4
-        if not full or tt >= groove_end or k % 2:
+        if tt >= groove_end or k % 2:
             continue
         m = ch[1:][k // 2 % 3] + 24
-        place(music, pan(mallet(m, 0.3, 0.5), np.sin(k) * 0.6), tt, 0.35)
-    if full:
-        for k in range(4):
-            tt = t0 + k * B
-            if tt >= groove_end:
-                break
-            kicks.append(tt)
-            place(drums, kick(1.0), tt)
-            place(drums, pan(hat(open_=True), 0.3), tt + B / 2, 0.7)
-            if k % 2 == 1:
-                place(drums, clap(), tt, 0.8)
-            if k == 2:  # a pickup kick keeps 80 BPM from dragging
-                kicks.append(tt + 0.75 * B)
-                place(drums, kick(0.7), tt + 0.75 * B)
-            for h in range(4):
-                place(drums, pan(hat(), -0.3), tt + h * B / 4, 0.5 if h % 2 else 0.25)
+        place(music, pan(mallet(m, 0.3, 0.5), np.sin(k) * 0.6), tt, 0.4)
+    for k in range(4):
+        tt = t0 + k * B
+        if tt >= groove_end:
+            break
+        kicks.append(tt)
+        place(drums, kick(1.0), tt)
+        place(drums, pan(hat(open_=True), 0.3), tt + B / 2, 0.7)
+        if k % 2 == 1:
+            place(drums, clap(), tt, 0.85)
+        for h in range(4):
+            place(drums, pan(hat(), -0.3), tt + h * B / 4, 0.5 if h % 2 else 0.25)
 
-# Outro: final chord rings out from the end-card hit.
-end_hit = at('outro', 3.6)
+# End card: the final chord rings out from the lockup.
+end_hit = at('outro', 0.4)
 for m in [48, 55, 60, 64, 67, 72]:
-    place(music, pan(saw_voice(m, 5.0, cutoff=2400, attack=0.01, release=3.0, sustain=0.5) * 0.1, (m % 5 - 2) / 3), end_hit)
+    place(music, pan(saw_voice(m, 4.0, cutoff=2600, attack=0.01, release=2.6, sustain=0.5) * 0.1, (m % 5 - 2) / 3), end_hit)
 place(music, pan(mallet(84, 1.2, 0.5), -0.2), end_hit + B * 1.5, 0.4)
 place(music, pan(mallet(88, 1.2, 0.5), 0.2), end_hit + B * 2.25, 0.35)
 place(music, pan(mallet(91, 1.6, 0.5), 0), end_hit + B * 3, 0.3)
@@ -310,55 +315,56 @@ for i in range(n_cards):
         tt = np.arange(n) / SR
         thud = np.sin(2 * np.pi * (60 + 70 * np.exp(-tt * 30)) * tt) * exp_env(n, 0.001, 0.05)
         place(fx, pan(thud, 0), land, 0.6 if dropper else 0.35)
-# The snap: a whoosh and a quick run of clicks as the grid locks in.
-snap = at('crowd', CROWD['snapBeat'])
+S = CROWD['snapBeat']
+snap = at('crowd', S)
 place(fx, pan(whoosh(0.45, up=False), 0), snap - 0.08, 0.7)
 for k in range(18):
     place(fx, pan(lock_click(), ((k % 6) - 2.5) / 3), snap + 0.05 + k * 1.2 / 60 * 1.6, 0.18)
-S = CROWD['snapBeat']
-for b in [S, S + 2, S + 4, S + 6, S + 8]:
+for b in [S, S + 1.5, S + 3, S + 4.5]:
     place(fx, pan(tick(), 0), at('crowd', b), 1.2)
-place(fx, pan(whoosh(0.35), 0), at('crowd', S + 2) - 0.1, 0.5)
+place(fx, pan(whoosh(0.35), 0), at('crowd', S + 1.5) - 0.1, 0.5)
 for i in range(18):  # padlocks ripple
-    place(fx, pan(lock_click(), ((i % 6) - 2.5) / 3), at('crowd', S + 4) + ((i % 6) + i // 6) * 3 / 60, 0.25)
+    place(fx, pan(lock_click(), ((i % 6) - 2.5) / 3), at('crowd', S + 3) + ((i % 6) + i // 6) * 3 / 60, 0.25)
 for i in range(5):  # "contact sales" stamps
-    place(fx, pan(pop(72 - i * 2), (i - 2) / 3), at('crowd', S + 8) + ((i * 3) % 7) * 4 / 60, 0.6)
-# Whip pan from the grid into "my own servers".
-place(fx, pan(whoosh(0.45), 0.4), at('crowd', S + 9.35), 0.8)
+    place(fx, pan(pop(72 - i * 2), (i - 2) / 3), at('crowd', S + 4.9) + ((i * 3) % 7) * 4 / 60, 0.6)
+place(fx, pan(whoosh(0.45), 0.4), at('crowd', S + 6.35), 0.8)  # whip pan
 
-# Mine: parts drop with squelchy glue on every beat, then everything is sucked into the knot.
+# Mine: parts drop with squelchy glue, then everything is sucked into the knot.
 for k, b in enumerate([0, 0.5, 1]):
     place(fx, pan(pop(64 + k * 5), -0.4), at('mine', 0.6) + b * 0.13, 0.5)
-for k, b in enumerate([4, 5, 6, 7, 8]):
+for k, b in enumerate([2.3, 3, 3.7, 4.4, 5.1]):
     place(fx, pan(squelch(48 + k * 2), (k - 2) / 4), at('mine', b), 0.8)
 for k in range(3):
-    place(fx, pan(squelch(44 - k * 3), 0), at('mine', 9 + k * 0.4), 0.9)
-place(fx, pan(rattle(0.7), 0), at('mine', 9.6), 0.5)
-place(fx, pan(reverse_swell(at('mine', 10.75) - at('mine', 10.1)), 0), at('mine', 10.1), 0.7)
+    place(fx, pan(squelch(44 - k * 3), 0), at('mine', 5.8 + k * 0.35), 0.9)
+place(fx, pan(rattle(0.7), 0), at('mine', 6.4), 0.5)
+place(fx, pan(reverse_swell(at('mine', 7.75) - at('mine', 7.1)), 0), at('mine', 7.1), 0.7)
 n = int(0.25 * SR)
 tt = np.arange(n) / SR
-place(fx, pan(np.sin(2 * np.pi * (55 + 90 * np.exp(-tt * 30)) * tt) * exp_env(n, 0.001, 0.08), 0), at('mine', 10.75), 0.8)
+place(fx, pan(np.sin(2 * np.pi * (55 + 90 * np.exp(-tt * 30)) * tt) * exp_env(n, 0.001, 0.08), 0), at('mine', 7.75), 0.8)
 
-# Reveal
-place(fx, pan(whoosh(0.8), 0), at('reveal', 2.2), 0.6)
-place(fx, pan(boom(), 0), at('reveal', 3))
-place(fx, pan(mallet(84, 1.0, 0.4), 0), at('reveal', 3), 0.6)
-place(fx, pan(whoosh(0.5), 0), at('reveal', 4.65), 0.35)
-for b in [5.3, 7.6]:
-    place(fx, pan(tick(), 0), at('reveal', b), 1.0)
+# Reveal: the logo locks (medium hit), then the biggest hit lands on the drop line.
+place(fx, pan(whoosh(0.8), 0), at('reveal', 1.6), 0.6)
+place(fx, pan(boom(), 0), logo_hit, 0.6)
+place(fx, pan(mallet(84, 1.0, 0.4), 0), logo_hit, 0.5)
+place(fx, pan(whoosh(0.5), 0), at('reveal', 3.85), 0.35)
+place(fx, pan(tick(), 0), at('reveal', 4.4), 1.0)
+place(fx, pan(boom(), 0), drop, 1.0)
+crash = highpass(rng.standard_normal(int(1.6 * SR)), 4000) * exp_env(int(1.6 * SR), 0.002, 0.5) * 0.35
+place(fx, pan(crash, 0), drop, 0.8)
 
-# Code: keyboard while the snippet types, a buzz when the vendor line is struck.
-for k in range(40):
-    place(fx, pan(keyclick(k), np.sin(k) * 0.3), at('code', 0) + 2 / 60 + k * (B * 1.1 - 2 / 60) / 40)
+# Code: keyboard while the call types, a buzz when the vendor line is struck.
+for k in range(30):
+    place(fx, pan(keyclick(k), np.sin(k) * 0.3), at('code', 0) + 2 / 60 + k * (B * 0.9 - 2 / 60) / 30)
 for k in range(10):
     place(fx, pan(keyclick(100 + k), 0.2), at('code', 2.5) + k * B * 0.4 / 10)
 for b in [0, 2.5]:
     place(fx, pan(tick(), 0), at('code', b), 1.0)
-place(fx, pan(deny()[: int(0.3 * SR)], 0), at('code', 3.05), 0.6)
-place(fx, pan(whoosh(0.3, up=False), 0), at('code', 3.6), 0.4)
+place(fx, pan(deny()[: int(0.3 * SR)], 0), at('code', 3), 0.6)
+place(fx, pan(whoosh(0.3, up=False), 0), at('code', 3.9), 0.4)
 
 # Diagram: pools pop, sandboxes land as they fill to quota, the gate locks, a request is
-# denied, the policy flips, the gate opens, overflow lands outside, the audit log types.
+# denied (camera punches in), the policy flips, the gate opens, overflow lands outside, the
+# audit log types.
 place(fx, pan(pop(67), -0.6), at('diagram', 0), 0.6)
 place(fx, pan(pop(72), 0), at('diagram', 0.3), 0.6)
 place(fx, pan(pop(64), 0), at('diagram', 0.5), 0.4)
@@ -372,42 +378,39 @@ for b in [2.5, 5, 7.5, 10.3]:
     place(fx, pan(tick(), 0), at('diagram', b), 1.0)
 place(fx, pan(pop(79), 0), at('diagram', 2.5), 0.6)  # quotas badge
 place(fx, pan(lock_click(), 0.3), at('diagram', 4.6), 0.9)
-place(fx, pan(whoosh(0.4), 0.3), at('diagram', 5.6), 0.3)
-place(fx, pan(deny(), 0.2), at('diagram', 6.2), 0.9)
+for b in [5.1, 7.4, 10.1, 12.2]:  # camera moves
+    place(fx, pan(whoosh(0.35), 0), at('diagram', b), 0.3)
+place(fx, pan(deny(), 0.2), at('diagram', 6.2), 1.0)
 for k in range(8):
     place(fx, pan(keyclick(200 + k), 0.3), at('diagram', 7.5) + 14 / 60 + k * 14 / 60 / 8)
 place(fx, pan(lock_click(), 0.3), at('diagram', 8.2), 1.0)
 place(fx, pan(chime(), 0.3), at('diagram', 8.25), 0.8)
-place(fx, pan(whoosh(0.4), -0.3), at('diagram', 10.3), 0.35)
 for k, b in enumerate([10.7, 11.1, 11.5]):
     for j in range(6):
         place(fx, pan(keyclick(300 + k * 10 + j), -0.3), at('diagram', b) + j * 0.02)
 place(fx, pan(pop(82), 0), at('diagram', 10.4), 0.5)
-place(fx, pan(pop(86), 0), at('diagram', 11.8), 0.5)
+place(fx, pan(pop(86), 0), at('diagram', 10.9), 0.5)
 # Hand-off: the server box fills the screen; a soft rising air, then a low landing.
 hand = at('diagram', 13)
 place(fx, pan(riser(at('diagram', 15) - hand) * 0.7, 0), hand, 0.7)
 place(fx, pan(whoosh(at('diagram', 15) - hand + 0.2), 0), hand, 0.5)
 
-# Route: the mark lifts, wires branch out, the two destinations land, the number counts up.
+# Route: the mark lifts, three wires branch out, the destinations land, the number counts up.
 place(fx, pan(boom(), 0), at('route', 0), 0.4)
-place(fx, pan(whoosh(0.5), 0), at('route', 0.25), 0.35)
-place(fx, pan(whoosh(0.4), -0.5), at('route', 0.9), 0.3)
-place(fx, pan(whoosh(0.4), 0.5), at('route', 1.0), 0.3)
-place(fx, pan(pop(76), -0.5), at('route', 1.3), 0.6)
-place(fx, pan(pop(81), 0.5), at('route', 1.9), 0.6)
-for k in range(16):
-    place(fx, pan(tick(), -0.4), at('route', 2.3) + (k / 16) ** 1.6 * (at('route', 3.1) - at('route', 2.3)), 0.55)
-place(fx, pan(chime(), -0.3), at('route', 3.1), 0.55)
-place(fx, pan(lock_click(), 0.5), at('route', 2.8), 0.5)
+place(fx, pan(whoosh(0.5), 0), at('route', 0.2), 0.35)
+for k, (b, p) in enumerate([(1.2, -0.6), (1.5, 0), (1.8, 0.6)]):
+    place(fx, pan(pop(74 + k * 4), p), at('route', b), 0.6)
+for k in range(14):
+    place(fx, pan(tick(), 0), at('route', 2.1) + (k / 14) ** 1.6 * (at('route', 2.9) - at('route', 2.1)), 0.5)
+place(fx, pan(lock_click(), 0.6), at('route', 2.4), 0.5)
 
-# Outro
-for i in range(4):
-    place(fx, pan(pop(72 + i * 3), (i - 1.5) / 2), at('outro', 0.5 + i * 0.3), 0.6)
-place(fx, pan(whoosh(0.5), 0), at('outro', 3.15), 0.4)
-place(fx, pan(boom(), 0), end_hit, 0.9)
+# End card
+place(fx, pan(whoosh(0.5), 0), at('outro', 0), 0.4)
+place(fx, pan(boom(), 0), end_hit, 0.8)
 for i in range(3):
-    place(fx, pan(tick(), 0), at('outro', 4 + i * 0.5), 1.0)
+    place(fx, pan(tick(), 0), at('outro', 0.8 + i * 0.5), 1.0)
+for i in range(3):
+    place(fx, pan(pop(76 + i * 3), (i - 1) / 2), at('outro', 2.2 + i * 0.2), 0.5)
 
 # ---------------------------------------------------------------- mix
 

@@ -6,7 +6,7 @@ import {Code, Reveal} from './scenes/Reveal';
 import {Diagram} from './scenes/Diagram';
 import {Outro} from './scenes/Outro';
 import {Route} from './scenes/Route';
-import {tokens} from './theme';
+import {inter, tokens} from './theme';
 import {beat, SCENES} from './time';
 import {clamp, Mark} from './ui';
 
@@ -20,9 +20,27 @@ const SCENE_COMPONENTS: Record<string, React.FC> = {
   outro: Outro,
 };
 
-// The corner mark shows from the moment the reveal lockup lifts until the diagram's hand-off.
-const CORNER_FROM = SCENES.reveal[0] + 5.3;
-const CORNER_BEATS = SCENES.diagram[0] + 13 - CORNER_FROM;
+// The corner mark shows on the dark product scenes after the reveal (so it never doubles the
+// lockup) and fades with the diagram's badges before the hand-off.
+const CORNER_FROM = SCENES.code[0];
+const CORNER_BEATS = SCENES.diagram[0] + 12.9 - CORNER_FROM;
+// A small brand tag on the light opening scenes, so the first frame says who this is.
+const TAG_BEATS = SCENES.mine[0] + 7.1;
+
+/** "differently · open source" in the corner of the opening, fading as the glue implodes. */
+const BrandTag: React.FC = () => {
+  const frame = useCurrentFrame();
+  const {width, height} = useVideoConfig();
+  const sq = width === height;
+  const o = interpolate(frame, [beat(TAG_BEATS - 0.5), beat(TAG_BEATS)], [1, 0], clamp);
+  return (
+    <div style={{position: 'absolute', top: sq ? 40 : 44, left: sq ? 40 : 52, opacity: o, display: 'flex', alignItems: 'center', gap: 12}}>
+      <Mark size={sq ? 32 : 36} color={tokens.light.ink} />
+      <span style={{fontFamily: inter, fontWeight: 600, fontSize: sq ? 26 : 30, letterSpacing: '-0.04em', color: tokens.light.ink}}>differently</span>
+      <span style={{fontFamily: inter, fontWeight: 500, fontSize: sq ? 20 : 22, color: tokens.light.muted}}>· open source</span>
+    </div>
+  );
+};
 
 /** Small mark in the corner while the dark product scenes play. */
 const CornerMark: React.FC = () => {
@@ -48,6 +66,9 @@ export const Intro: React.FC = () => (
         </Sequence>
       );
     })}
+    <Sequence from={0} durationInFrames={beat(TAG_BEATS)} name="brand-tag">
+      <BrandTag />
+    </Sequence>
     <Sequence from={beat(CORNER_FROM)} durationInFrames={beat(CORNER_FROM + CORNER_BEATS) - beat(CORNER_FROM)} name="corner-mark">
       <CornerMark />
     </Sequence>

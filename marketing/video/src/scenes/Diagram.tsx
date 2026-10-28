@@ -31,15 +31,15 @@ const along = (c: Curve, t: number): XY => {
 };
 
 const layout = (sq: boolean) => {
-  const app: Box = sq ? {x: 175, y: 290, w: 260, h: 130} : {x: 220, y: 470, w: 290, h: 150};
-  const server: Box = sq ? {x: 600, y: 290, w: 440, h: 150} : {x: 700, y: 470, w: 470, h: 170};
-  const pg: XY = sq ? {x: 960, y: 290} : {x: 700, y: 690};
+  const app: Box = sq ? {x: 175, y: 330, w: 260, h: 130} : {x: 220, y: 470, w: 290, h: 150};
+  const server: Box = sq ? {x: 600, y: 330, w: 440, h: 150} : {x: 700, y: 470, w: 470, h: 170};
+  const pg: XY = sq ? {x: 960, y: 330} : {x: 700, y: 690};
   const pools: PoolSpec[] = sq
     ? [
-        {x: 285, y: 505, w: 450, h: 150, title: 'your microVMs', sub: 'Firecracker · private', external: false, cap: 3},
-        {x: 795, y: 505, w: 450, h: 150, title: 'OpenSandbox', sub: 'self-hosted · private', external: false, cap: 3},
-        {x: 300, y: 880, w: 400, h: 110, title: 'Daytona', sub: 'external · opt-in', external: true, cap: 3},
-        {x: 780, y: 880, w: 400, h: 110, title: 'Freestyle', sub: 'external · opt-in', external: true, cap: 3},
+        {x: 285, y: 515, w: 450, h: 140, title: 'your microVMs', sub: 'Firecracker · private', external: false, cap: 3},
+        {x: 795, y: 515, w: 450, h: 140, title: 'OpenSandbox', sub: 'self-hosted · private', external: false, cap: 3},
+        {x: 300, y: 820, w: 400, h: 100, title: 'Daytona', sub: 'external · opt-in', external: true, cap: 3},
+        {x: 780, y: 820, w: 400, h: 100, title: 'Freestyle', sub: 'external · opt-in', external: true, cap: 3},
       ]
     : [
         {x: 1470, y: 290, w: 470, h: 150, title: 'your microVMs', sub: 'Firecracker · private', external: false, cap: 4},
@@ -47,8 +47,8 @@ const layout = (sq: boolean) => {
         {x: 1500, y: 710, w: 410, h: 112, title: 'Daytona', sub: 'external · opt-in', external: true, cap: 3},
         {x: 1500, y: 855, w: 410, h: 112, title: 'Freestyle', sub: 'external · opt-in', external: true, cap: 3},
       ];
-  const gate: XY = sq ? {x: 540, y: 690} : {x: 1130, y: 782};
-  const chip: XY = sq ? {x: 815, y: 690} : {x: 1130, y: 905};
+  const gate: XY = sq ? {x: 540, y: 675} : {x: 1130, y: 782};
+  const chip: XY = sq ? {x: 815, y: 675} : {x: 1130, y: 905};
   const appR = {x: app.x + app.w / 2, y: app.y};
   const serverL = {x: server.x - server.w / 2, y: server.y};
   const serverR = {x: server.x + server.w / 2, y: server.y};
@@ -64,7 +64,7 @@ const layout = (sq: boolean) => {
   const toGate = sq ? vcurve({x: gate.x, y: server.y + server.h / 2}, gateIn) : elbow({x: server.x + 130, y: server.y + server.h / 2}, gateIn);
   const fromGate = pools.map((p) => (sq ? vcurve(gateOut, {x: p.x, y: p.y - p.h / 2}) : hcurve(gateOut, {x: p.x - p.w / 2, y: p.y})));
   const toPg = sq ? hcurve(serverR, {x: pg.x - 70, y: pg.y}) : vcurve(serverB, {x: pg.x, y: pg.y - 48});
-  return {app, server, pg, pools, gate, chip, toApp, toPool, toGate, fromGate, toPg, textW: sq ? 960 : 1660};
+  return {app, server, pg, pools, gate, chip, toApp, toPool, toGate, fromGate, toPg, textW: sq ? 900 : 1660};
 };
 
 const usePop = (at: number, config = SNAP) => {
@@ -143,7 +143,7 @@ const AUDIT = [
 const BADGES = [
   {t: 'quotas', at: 2.5},
   {t: 'audit', at: 10.4},
-  {t: 'trust report', at: 11.8},
+  {t: 'trust report', at: 10.9},
 ];
 
 /**
@@ -176,6 +176,40 @@ export const Diagram: React.FC = () => {
         : Math.round(interpolate(frame, [flipAt + 14, flipAt + 28], [10, chipText.length], clamp));
   const badge = (at: number) => spring({frame: frame - beat(at), fps: 60, config: {damping: 11, stiffness: 260, mass: 0.5}});
   const auditIn = interpolate(frame, [beat(10.3), beat(10.8)], [0, 1], {...clamp, easing: OUT});
+  // Before the hand-off: badges, the server's label and the log fade so the box grows clean.
+  const preHand = interpolate(frame, [beat(12.3), beat(12.9)], [0, 1], clamp);
+
+  // Camera: punch in on the one detail each beat is about (the 422, the policy flip, the
+  // audit log) so it reads on a phone, and be back at 1x before the hand-off.
+  const shots = sq
+    ? [
+        {at: 0, s: 1, x: width / 2, y: height / 2},
+        {at: 5.1, s: 1, x: width / 2, y: height / 2},
+        {at: 5.5, s: 1.5, x: 640, y: 640},
+        {at: 7.4, s: 1.5, x: 640, y: 640},
+        {at: 7.8, s: 1.35, x: 600, y: 720},
+        {at: 10.1, s: 1.35, x: 600, y: 720},
+        {at: 10.5, s: 1.55, x: 540, y: 900},
+        {at: 12.2, s: 1.55, x: 540, y: 900},
+        {at: 12.7, s: 1, x: width / 2, y: height / 2},
+      ]
+    : [
+        {at: 0, s: 1, x: width / 2, y: height / 2},
+        {at: 5.1, s: 1, x: width / 2, y: height / 2},
+        {at: 5.5, s: 1.6, x: 1000, y: 720},
+        {at: 7.4, s: 1.6, x: 1000, y: 720},
+        {at: 7.8, s: 1.4, x: 1230, y: 770},
+        {at: 10.1, s: 1.4, x: 1230, y: 770},
+        {at: 10.5, s: 1.6, x: 520, y: 900},
+        {at: 12.2, s: 1.6, x: 520, y: 900},
+        {at: 12.7, s: 1, x: width / 2, y: height / 2},
+      ];
+  const camAt = (k: 's' | 'x' | 'y') =>
+    interpolate(frame, shots.map((c) => beat(c.at)), shots.map((c) => c[k]), {...clamp, easing: Easing.bezier(0.65, 0, 0.35, 1)});
+  const cs = camAt('s');
+  // Keep the frame filled: the camera centre can't get closer to an edge than half a view.
+  const cx = Math.min(Math.max(camAt('x'), width / (2 * cs)), width - width / (2 * cs));
+  const cy = Math.min(Math.max(camAt('y'), height / (2 * cs)), height - height / (2 * cs));
 
   // Hand-off into the routing scene: the server box's light fill grows to cover the screen
   // while its mark glides to the centre, exactly where the next scene picks it up.
@@ -231,6 +265,7 @@ export const Diagram: React.FC = () => {
 
   return (
     <AbsoluteFill style={{background: d.bg, overflow: 'hidden'}}>
+      <AbsoluteFill style={{transform: `translate(${width / 2 - cx * cs}px, ${height / 2 - cy * cs}px) scale(${cs})`, transformOrigin: '0 0'}}>
       <AbsoluteFill style={{transform: `scale(${drift * (1 + 0.1 * handT)})`, transformOrigin: `${L.server.x}px ${L.server.y}px`, opacity: 1 - handT}}>
         <svg width={width} height={height} style={{position: 'absolute', inset: 0}}>
           {wireStroke(L.toApp, draw(frame, beat(0.2)), 'w-app')}
@@ -254,12 +289,12 @@ export const Diagram: React.FC = () => {
         {/* server */}
         <div style={{position: 'absolute', left: L.server.x - L.server.w / 2, top: L.server.y - L.server.h / 2, width: L.server.w, height: L.server.h, borderRadius: 14, background: d.ink, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 22, padding: sq ? '0 28px' : '0 32px', transform: `scale(${serverPop})`, opacity: handing ? 0 : Math.min(1, serverPop * 2)}}>
           <Mark size={markSize} color={d.bg} />
-          <div>
+          <div style={{opacity: 1 - preHand}}>
             <div style={{fontFamily: inter, fontWeight: 600, fontSize: sq ? 30 : 36, color: d.bg, letterSpacing: '-0.03em', whiteSpace: 'nowrap'}}>differently-server</div>
             <div style={{fontFamily: inter, fontWeight: 500, fontSize: sq ? 20 : 23, color: tokens.light.muted, marginTop: 4}}>one API · policy · placement</div>
           </div>
         </div>
-        <div style={{position: 'absolute', left: L.server.x, top: L.server.y - L.server.h / 2 - (sq ? 42 : 52), transform: 'translateX(-50%)', display: 'flex', gap: 12}}>
+        <div style={{position: 'absolute', left: L.server.x, top: L.server.y - L.server.h / 2 - (sq ? 42 : 52), transform: 'translateX(-50%)', display: 'flex', gap: 12, opacity: 1 - preHand}}>
           {BADGES.map((b) => {
             const p = badge(b.at);
             return (
@@ -296,7 +331,7 @@ export const Diagram: React.FC = () => {
             <Padlock size={44} color={d.ink} open={open} />
           </div>
         </div>
-        <div style={{position: 'absolute', left: L.chip.x, top: L.chip.y, transform: `translate(-50%, -50%) scale(${gatePop})`, fontFamily: mono, fontSize: sq ? 21 : 24, color: d.ink, background: d.surface, border: `2px solid ${d.line}`, borderRadius: 10, padding: '8px 16px', whiteSpace: 'pre'}}>
+        <div style={{position: 'absolute', left: L.chip.x, top: L.chip.y, transform: `translate(-50%, -50%) scale(${gatePop})`, fontFamily: mono, fontSize: sq ? 26 : 32, fontWeight: 500, color: d.ink, background: d.surface, border: `2px solid ${d.line}`, borderRadius: 10, padding: '8px 16px', whiteSpace: 'pre'}}>
           {chipText.slice(0, chipTyped)}
           <span style={{opacity: frame >= flipAt && frame < flipAt + 36 && Math.floor(frame / 8) % 2 === 0 ? 1 : 0}}>▍</span>
         </div>
@@ -305,15 +340,15 @@ export const Diagram: React.FC = () => {
           <div
             style={{
               position: 'absolute',
-              left: L.gate.x - 330,
-              top: L.gate.y - (sq ? 30 : 140),
+              left: sq ? L.gate.x + 30 : L.gate.x - 560,
+              top: L.gate.y - (sq ? 112 : 150),
               transform: `scale(${stamp * (1 - stampGone)}) rotate(-4deg)`,
               background: d.ink,
               color: d.bg,
               fontFamily: mono,
               fontWeight: 500,
-              fontSize: sq ? 22 : 26,
-              padding: '10px 18px',
+              fontSize: sq ? 27 : 38,
+              padding: sq ? '10px 18px' : '12px 22px',
               borderRadius: 10,
               whiteSpace: 'nowrap',
             }}
@@ -327,26 +362,27 @@ export const Diagram: React.FC = () => {
           <div
             style={{
               position: 'absolute',
-              left: sq ? 40 : 60,
-              width: sq ? width - 80 : 800,
-              top: sq ? 780 : 800,
-              height: sq ? 260 : 240,
+              left: sq ? 80 : 60,
+              width: sq ? width - 160 : 900,
+              top: sq ? 892 : 790,
+              height: sq ? 150 : 260,
               transform: `translateY(${(1 - auditIn) * 320}px)`,
+              opacity: 1 - preHand,
               background: d.surface,
               border: `2px solid ${d.line}`,
               borderRadius: 14,
-              padding: '18px 24px',
+              padding: sq ? '12px 20px' : '20px 26px',
               boxSizing: 'border-box',
               fontFamily: mono,
-              fontSize: sq ? 19 : 21,
+              fontSize: sq ? 17 : 26,
               color: d.ink,
             }}
           >
-            <div style={{color: d.muted, marginBottom: 12}}>$ differently admin audit --tail</div>
+            <div style={{color: d.muted, marginBottom: sq ? 4 : 12}}>$ differently admin audit --tail</div>
             {AUDIT.map((l) => {
               const p = interpolate(frame, [beat(l.at), beat(l.at) + 8], [0, 1], clamp);
               return (
-                <div key={l.text} style={{opacity: p, transform: `translateX(${(1 - p) * 20}px)`, whiteSpace: 'pre', lineHeight: 1.7}}>
+                <div key={l.text} style={{opacity: p, transform: `translateX(${(1 - p) * 20}px)`, whiteSpace: 'pre', lineHeight: sq ? 1.45 : 1.6}}>
                   {l.text}
                 </div>
               );
@@ -354,35 +390,25 @@ export const Diagram: React.FC = () => {
           </div>
         ) : null}
       </AbsoluteFill>
+      </AbsoluteFill>
 
       {handing ? (
         <>
           <div style={{position: 'absolute', left: box.cx - box.w / 2, top: box.cy - box.h / 2, width: box.w, height: box.h, borderRadius: box.r, background: interpolateColors(handT, [0, 1], [d.ink, tokens.light.bg])}} />
-          <div
-            style={{
-              position: 'absolute',
-              left: (L.server.x - L.server.w / 2 + (sq ? 28 : 32) + markSize + 22 - L.server.x) * drift + L.server.x,
-              top: L.server.y,
-              transform: `translateY(-50%) scale(${drift})`,
-              transformOrigin: 'left center',
-              opacity: 1 - Math.min(1, handT * 4),
-            }}
-          >
-            <div style={{fontFamily: inter, fontWeight: 600, fontSize: sq ? 30 : 36, color: d.bg, letterSpacing: '-0.03em', whiteSpace: 'nowrap'}}>differently-server</div>
-            <div style={{fontFamily: inter, fontWeight: 500, fontSize: sq ? 20 : 23, color: tokens.light.muted, marginTop: 4}}>one API · policy · placement</div>
-          </div>
           <div style={{position: 'absolute', left: mk.x - mk.size / 2, top: mk.y - mk.size / 2}}>
             <Mark size={mk.size} color={d.bg} />
           </div>
         </>
       ) : null}
 
-      <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 80 : 60, opacity: 1 - handT * 4}}>
-        <Card text="Sensitive work stays home." from={0} to={beat(2.5)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
-        <Card text="Quotas per team." from={beat(2.5)} to={beat(5)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
-        <Card text="Full? It fails *closed*." from={beat(5)} to={beat(7.5)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
-        <Card text="Burst out only if policy allows." from={beat(7.5)} to={beat(10.3)} width={L.textW} max={sq ? 88 : 100} tone="dark" />
-        <Card text="Every route, audited." from={beat(10.3)} to={beat(13)} width={L.textW} max={sq ? 88 : 100} tone="dark" exit />
+      <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 70 : 60, opacity: 1 - handT * 4}}>
+        {/* While the camera is punched in, a dark band keeps the headline readable over the diagram. */}
+        <div style={{position: 'absolute', left: 0, right: 0, top: 0, height: sq ? 190 : 200, background: `linear-gradient(to bottom, ${d.bg} 0%, ${d.bg} 70%, rgba(10,10,10,0) 100%)`, opacity: Math.min(1, Math.max(0, (cs - 1) / 0.25))}} />
+        <Card text="Sensitive work stays home." from={0} to={beat(2.5)} width={L.textW} max={sq ? 80 : 100} tone="dark" />
+        <Card text="Quotas per team." from={beat(2.5)} to={beat(5)} width={L.textW} max={sq ? 80 : 100} tone="dark" />
+        <Card text="Full? It fails *closed*." from={beat(5)} to={beat(7.5)} width={L.textW} max={sq ? 80 : 100} tone="dark" />
+        <Card text="Burst out only if policy allows." from={beat(7.5)} to={beat(10.3)} width={L.textW} max={sq ? 80 : 100} tone="dark" />
+        <Card text="Every placement, audited." from={beat(10.3)} to={beat(13)} width={L.textW} max={sq ? 80 : 100} tone="dark" exit />
       </AbsoluteFill>
     </AbsoluteFill>
   );

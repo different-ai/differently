@@ -10,50 +10,50 @@ const t = tokens.light;
 const SMOOTH = Easing.bezier(0.65, 0, 0.35, 1);
 const OUT = Easing.bezier(0.16, 1, 0.3, 1);
 
-// Generic, made-up vendors: no real company names or logos. The first 18 end up in
-// the grid; the rest only exist to crowd the opening and get flung off-screen.
+// Obviously fictional vendors: the joke is that they're all the same company. The first 18
+// end up in the grid; the rest only crowd the opening and get flung off-screen.
 // `sales` marks the ones whose "self-host" answer turns out to be a sales call.
 const VENDORS = [
-  {name: 'sandbox.co', call: 'sbx.run()', sales: false},
-  {name: 'boxcloud', call: 'box.spawn()', sales: true},
-  {name: 'vm.ly', call: 'vmly.exec()', sales: false},
-  {name: 'cubed', call: 'cube.up()', sales: false},
-  {name: 'runbox', call: 'rb.start()', sales: true},
-  {name: 'isolato', call: 'iso.new()', sales: false},
-  {name: 'podhut', call: 'hut.launch()', sales: false},
-  {name: 'contain.io', call: 'c.create()', sales: true},
-  {name: 'shellco', call: 'sh.open()', sales: false},
-  {name: 'envy', call: 'env.boot()', sales: false},
-  {name: 'jailcell', call: 'jail.lock()', sales: true},
-  {name: 'cellar', call: 'cell.make()', sales: false},
-  {name: 'microbx', call: 'mbx.go()', sales: false},
-  {name: 'vaultvm', call: 'vault.vm()', sales: true},
-  {name: 'krate', call: 'krate.ship()', sales: false},
-  {name: 'hutch', call: 'hutch.run()', sales: false},
-  {name: 'silo', call: 'silo.fill()', sales: false},
-  {name: 'bunkr', call: 'bunkr.dig()', sales: false},
-  {name: 'boxly', call: 'boxly.go()', sales: false},
-  {name: 'sandbin', call: 'bin.exec()', sales: false},
-  {name: 'vmbox.io', call: 'vmb.up()', sales: false},
-  {name: 'runly', call: 'runly.run()', sales: false},
-  {name: 'cagecloud', call: 'cage.new()', sales: false},
-  {name: 'podly', call: 'podly.spin()', sales: false},
-  {name: 'enclavr', call: 'enc.open()', sales: false},
-  {name: 'fencd', call: 'fence.up()', sales: false},
-  {name: 'walld', call: 'wall.build()', sales: false},
-  {name: 'shellbx', call: 'sbx2.sh()', sales: false},
-  {name: 'spawnr', call: 'spawnr.go()', sales: false},
-  {name: 'instabx', call: 'insta.box()', sales: false},
-  {name: 'quikvm', call: 'qvm.boot()', sales: false},
-  {name: 'cellbox', call: 'cb.cell()', sales: false},
-  {name: 'sandpitt', call: 'pit.dig()', sales: false},
-  {name: 'hatchr', call: 'hatch.open()', sales: false},
-  {name: 'vesl', call: 'vesl.sail()', sales: false},
-  {name: 'capsl', call: 'capsl.seal()', sales: false},
-  {name: 'pocketvm', call: 'pkt.vm()', sales: false},
-  {name: 'cratr', call: 'cratr.pack()', sales: false},
-  {name: 'boxfarm', call: 'farm.grow()', sales: false},
-  {name: 'yetanother', call: 'ya.sandbox()', sales: false},
+  {name: 'Sandbox Co. 1', call: 'co1.run()', sales: false},
+  {name: 'Sandbox Co. 2', call: 'co2.spawn()', sales: true},
+  {name: 'Sandbox Co. 3', call: 'co3.exec()', sales: false},
+  {name: 'Sandbox Co. 4', call: 'co4.up()', sales: false},
+  {name: 'Sandbox Co. 5', call: 'co5.start()', sales: true},
+  {name: 'Sandbox Co. 6', call: 'co6.new()', sales: false},
+  {name: 'Sandbox Co. 7', call: 'co7.launch()', sales: false},
+  {name: 'Sandbox Co. 8', call: 'co8.create()', sales: true},
+  {name: 'Sandbox Co. 9', call: 'co9.open()', sales: false},
+  {name: 'Sandbox Co. 10', call: 'co10.boot()', sales: false},
+  {name: 'Sandbox Co. 11', call: 'co11.lock()', sales: true},
+  {name: 'Sandbox Co. 12', call: 'co12.make()', sales: false},
+  {name: 'Sandbox Co. 13', call: 'co13.go()', sales: false},
+  {name: 'Sandbox Co. 14', call: 'co14.vm()', sales: true},
+  {name: 'Sandbox Co. 15', call: 'co15.ship()', sales: false},
+  {name: 'Sandbox Co. 16', call: 'co16.dig()', sales: false},
+  {name: 'Sandbox Co. 17', call: 'co17.fill()', sales: false},
+  {name: 'Sandbox Co. 18', call: 'co18.spin()', sales: false},
+  {name: 'Sandbox Co. 19', call: 'co19.box()', sales: false},
+  {name: 'Sandbox Co. 20', call: 'co20.seal()', sales: false},
+  {name: 'Sandbox Co. 21', call: 'co21.run()', sales: false},
+  {name: 'Sandbox Co. 22', call: 'co22.spawn()', sales: false},
+  {name: 'Sandbox Co. 23', call: 'co23.exec()', sales: false},
+  {name: 'Sandbox Co. 24', call: 'co24.up()', sales: false},
+  {name: 'Sandbox Co. 25', call: 'co25.start()', sales: false},
+  {name: 'Sandbox Co. 26', call: 'co26.new()', sales: false},
+  {name: 'Sandbox Co. 27', call: 'co27.launch()', sales: false},
+  {name: 'Sandbox Co. 28', call: 'co28.create()', sales: false},
+  {name: 'Sandbox Co. 29', call: 'co29.open()', sales: false},
+  {name: 'Sandbox Co. 30', call: 'co30.boot()', sales: false},
+  {name: 'Sandbox Co. 31', call: 'co31.lock()', sales: false},
+  {name: 'Sandbox Co. 32', call: 'co32.make()', sales: false},
+  {name: 'Sandbox Co. 33', call: 'co33.go()', sales: false},
+  {name: 'Sandbox Co. 34', call: 'co34.vm()', sales: false},
+  {name: 'Sandbox Co. 35', call: 'co35.ship()', sales: false},
+  {name: 'Sandbox Co. 36', call: 'co36.dig()', sales: false},
+  {name: 'Sandbox Co. 37', call: 'co37.fill()', sales: false},
+  {name: 'Sandbox Co. 38', call: 'co38.spin()', sales: false},
+  {name: 'Sandbox Co. 39', call: 'co39.box()', sales: false},
+  {name: 'Sandbox Co. 40', call: 'co40.seal()', sales: false},
 ];
 
 /** Small seeded PRNG (mulberry32) so the pile lands the same way on every render. */
@@ -167,8 +167,8 @@ export const Crowd: React.FC = () => {
   // "Their SDK." punches into one grid card, then back out.
   const S = CROWD.snapBeat; // everything after the snap is timed from it
   const focusB = grid(sq ? 2 : 3);
-  const zB = interpolate(frame, [beat(S + 2), beat(S + 2) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(S + 4), beat(S + 4) + 12], [0, 1], {...clamp, easing: OUT}));
-  const zoom = (push + (1 - push) * unpush) * (1 + 0.55 * zB) + interpolate(frame, [snapAt, beat(S + 10)], [0, 0.04], clamp);
+  const zB = interpolate(frame, [beat(S + 1.5), beat(S + 1.5) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(S + 3), beat(S + 3) + 12], [0, 1], {...clamp, easing: OUT}));
+  const zoom = (push + (1 - push) * unpush) * (1 + 0.55 * zB) + interpolate(frame, [snapAt, beat(S + 7)], [0, 0.04], clamp);
   const cx = width / 2;
   const cy = top + (rows * ch) / 2;
   const fx = focusB.x * zB + cx * (1 - zB);
@@ -179,12 +179,12 @@ export const Crowd: React.FC = () => {
   // Plain spring() rather than hooks: cards enter and leave the render, so hook counts would vary.
   const sp = (delay: number, config = SNAP) => spring({frame: frame - delay, fps, config});
   const hosted = (i: number) => sp(snapAt + 12 + ((i * 5) % n));
-  const lock = (i: number) => sp(beat(S + 4) + ((i % cols) + Math.floor(i / cols)) * 3);
-  const sales = (i: number) => sp(beat(S + 8) + ((i * 3) % 7) * 4, {damping: 9, stiffness: 220, mass: 0.6});
-  const sdkFlash = (i: number) => interpolate(frame, [beat(S + 2) + (i % n) * 1.2, beat(S + 2) + (i % n) * 1.2 + 6], [0, 1], clamp) * (frame < beat(S + 4) ? 1 : 0);
+  const lock = (i: number) => sp(beat(S + 3) + ((i % cols) + Math.floor(i / cols)) * 3);
+  const sales = (i: number) => sp(beat(S + 4.9) + ((i * 3) % 7) * 4, {damping: 9, stiffness: 220, mass: 0.6});
+  const sdkFlash = (i: number) => interpolate(frame, [beat(S + 1.5) + (i % n) * 1.2, beat(S + 1.5) + (i % n) * 1.2 + 6], [0, 1], clamp) * (frame < beat(S + 3) ? 1 : 0);
 
   // Out on a whip pan: everything slides left with a horizontal motion blur; Mine whips in from the right.
-  const whip = interpolate(frame, [beat(S + 9.4), beat(S + 10)], [0, 1], {...clamp, easing: Easing.bezier(0.6, 0, 0.9, 0.4)});
+  const whip = interpolate(frame, [beat(S + 6.4), beat(S + 7)], [0, 1], {...clamp, easing: Easing.bezier(0.6, 0, 0.9, 0.4)});
   const textW = width - (sq ? 120 : 260);
   const order = cards.map((_, i) => i).sort((a, b) => rank(a) - rank(b)); // later arrivals on top
 
@@ -283,11 +283,10 @@ export const Crowd: React.FC = () => {
       </AbsoluteFill>
       <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 90 : 70}}>
         <div style={{background: t.bg, borderRadius: 24, padding: '0 24px'}}>
-          <Card text="Their cloud." from={snapAt} to={beat(S + 2)} width={textW} max={sq ? 150 : 200} tone="light" />
-          <Card text="Their SDK." from={beat(S + 2)} to={beat(S + 4)} width={textW} max={sq ? 150 : 200} tone="light" />
-          <Card text="Their *rules*." from={beat(S + 4)} to={beat(S + 6)} width={textW} max={sq ? 150 : 200} tone="light" />
-          <Card text="Self-hosting?" from={beat(S + 6)} to={beat(S + 8)} width={textW} max={sq ? 150 : 200} tone="light" />
-          <Card text="“Contact sales.”" from={beat(S + 8)} to={beat(S + 10)} width={textW} max={sq ? 150 : 200} tone="light" />
+          <Card text="Their cloud." from={snapAt} to={beat(S + 1.5)} width={textW} max={sq ? 150 : 200} tone="light" />
+          <Card text="Their SDK." from={beat(S + 1.5)} to={beat(S + 3)} width={textW} max={sq ? 150 : 200} tone="light" />
+          <Card text="Their *rules*." from={beat(S + 3)} to={beat(S + 4.5)} width={textW} max={sq ? 150 : 200} tone="light" />
+          <Card text={'Self-host? “Contact sales.”'} from={beat(S + 4.5)} to={beat(S + 7)} width={textW} max={sq ? 110 : 150} tone="light" stagger={beat(0.3)} />
         </div>
       </AbsoluteFill>
       </AbsoluteFill>
@@ -296,11 +295,11 @@ export const Crowd: React.FC = () => {
 };
 
 const PARTS = [
-  {name: 'Firecracker', x: 0.6, y: 0.4, at: 4},
-  {name: 'Kubernetes', x: 0.84, y: 0.5, at: 5},
-  {name: 'Postgres', x: 0.62, y: 0.7, at: 6},
-  {name: 'glue.sh', x: 0.86, y: 0.8, at: 7},
-  {name: 'more-glue.yaml', x: 0.68, y: 0.9, at: 8},
+  {name: 'Firecracker', x: 0.6, y: 0.4, at: 2.3},
+  {name: 'Kubernetes', x: 0.84, y: 0.5, at: 3},
+  {name: 'Postgres', x: 0.62, y: 0.7, at: 3.7},
+  {name: 'glue.sh', x: 0.86, y: 0.8, at: 4.4},
+  {name: 'more-glue.yaml', x: 0.68, y: 0.9, at: 5.1},
 ];
 
 /** Your own servers, and the pile of parts you'd have to glue together yourself. */
@@ -311,17 +310,17 @@ export const Mine: React.FC = () => {
   const youPop = useSpring(2, SNAP);
   const rackPop = useSpring(8, SNAP);
   const clusterPop = useSpring(14, SNAP);
-  const shake = interpolate(frame, [beat(9), beat(9.8), beat(10.3)], [0, 1, 1.4], clamp);
+  const shake = interpolate(frame, [beat(6), beat(6.7), beat(7.2)], [0, 1, 1.4], clamp);
   const sx = Math.sin(frame * 1.7) * 7 * shake;
   const sy = Math.cos(frame * 2.3) * 4 * shake;
-  const knot = interpolate(frame, [beat(8.6), beat(10.2)], [0, 1], {...clamp, easing: SMOOTH});
+  const knot = interpolate(frame, [beat(5.6), beat(7)], [0, 1], {...clamp, easing: SMOOTH});
   // In on the whip from Crowd; out by sucking everything into the knot, then a black iris
   // opens from that point into the reveal.
   const whipIn = 1 - interpolate(frame, [0, beat(0.6)], [0, 1], {...clamp, easing: Easing.bezier(0.1, 0.6, 0.4, 1)});
   const kx = width * 0.66;
   const ky = height * 0.62;
-  const implode = interpolate(frame, [beat(10.1), beat(10.75)], [0, 1], {...clamp, easing: Easing.bezier(0.7, 0, 0.84, 0)});
-  const iris = interpolate(frame, [beat(10.45), beat(11) - 1], [0, 1], {...clamp, easing: Easing.bezier(0.5, 0, 0.75, 0)});
+  const implode = interpolate(frame, [beat(7.1), beat(7.75)], [0, 1], {...clamp, easing: Easing.bezier(0.7, 0, 0.84, 0)});
+  const iris = interpolate(frame, [beat(7.45), beat(8.5) - 1], [0, 1], {...clamp, easing: Easing.bezier(0.5, 0, 0.75, 0)});
   const textW = width - (sq ? 120 : 260);
   const baseX = width * (sq ? 0.16 : 0.13);
   const baseY = height * (sq ? 0.5 : 0.5);
@@ -380,13 +379,13 @@ export const Mine: React.FC = () => {
       </AbsoluteFill>
       </AbsoluteFill>
       <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 90 : 70, opacity: 1 - implode}}>
-        <Card text={'I just want sandboxes\non *my* *own* servers.'} from={0} to={beat(4)} width={textW} max={sq ? 96 : 116} tone="light" />
-        <Card text="Firecracker." from={beat(4)} to={beat(5)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
-        <Card text="Kubernetes." from={beat(5)} to={beat(6)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
-        <Card text="Postgres." from={beat(6)} to={beat(7)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
-        <Card text="Glue." from={beat(7)} to={beat(8)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
-        <Card text="More glue." from={beat(8)} to={beat(9)} width={textW} max={sq ? 150 : 190} tone="light" stagger={3} />
-        <Card text="So. Much. *Glue*." from={beat(9)} to={beat(11)} width={textW} max={sq ? 150 : 190} tone="light" stagger={beat(0.4)} />
+        <Card text={'I just want sandboxes\non *my* *own* servers.'} from={0} to={beat(2.3)} width={textW} max={sq ? 96 : 116} tone="light" stagger={3} />
+        <Card text="Firecracker." from={beat(2.3)} to={beat(3)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
+        <Card text="Kubernetes." from={beat(3)} to={beat(3.7)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
+        <Card text="Postgres." from={beat(3.7)} to={beat(4.4)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
+        <Card text="Glue." from={beat(4.4)} to={beat(5.1)} width={textW} max={sq ? 150 : 190} tone="light" stagger={0} />
+        <Card text="More glue." from={beat(5.1)} to={beat(5.8)} width={textW} max={sq ? 150 : 190} tone="light" stagger={3} />
+        <Card text="So. Much. *Glue*." from={beat(5.8)} to={beat(8)} width={textW} max={sq ? 150 : 190} tone="light" stagger={beat(0.35)} />
       </AbsoluteFill>
       </AbsoluteFill>
       {iris > 0 ? <div style={{position: 'absolute', left: kx - iris * width * 1.3, top: ky - iris * width * 1.3, width: iris * width * 2.6, height: iris * width * 2.6, borderRadius: '50%', background: tokens.dark.bg}} /> : null}
@@ -404,7 +403,7 @@ const Glue: React.FC<{sq: boolean; knot: number; anchors: number[][]}> = ({sq, k
       <svg width={width} height={height} style={{position: 'absolute', inset: 0}}>
         {Array.from({length: 22}).map((_, i) => {
           const p = PARTS[i % PARTS.length];
-          const at = beat(p.at + Math.floor(i / PARTS.length) * 0.9 + 0.1);
+          const at = beat(p.at + Math.floor(i / PARTS.length) * 0.6 + 0.1);
           const prog = interpolate(frame, [at, at + 24], [0, 1], {...clamp, easing: OUT});
           const [ax, ay] = anchors[i % 2];
           const tx = px(p) - 60;

@@ -16,23 +16,23 @@ export const Reveal: React.FC = () => {
   const sq = width === height;
   const textW = width - (sq ? 120 : 260);
   // Squares travel in from opposite corners and land exactly on beat 4.
-  const fly = interpolate(frame, [beat(1.6), beat(3)], [0, 1], {...clamp, easing: Easing.bezier(0.5, 0, 0.75, 0)});
-  const settle = spring({frame: frame - beat(3), fps, config: {damping: 12, stiffness: 260, mass: 0.6}});
-  const split = frame < beat(3) ? 0.15 * fly : 0.15 + 0.85 * settle;
-  const word = interpolate(frame, [beat(3) + 4, beat(4)], [0, 1], {...clamp, easing: OUT});
+  const fly = interpolate(frame, [beat(1.2), beat(2.4)], [0, 1], {...clamp, easing: Easing.bezier(0.5, 0, 0.75, 0)});
+  const settle = spring({frame: frame - beat(2.4), fps, config: {damping: 12, stiffness: 260, mass: 0.6}});
+  const split = frame < beat(2.4) ? 0.15 * fly : 0.15 + 0.85 * settle;
+  const word = interpolate(frame, [beat(2.4) + 4, beat(3.3)], [0, 1], {...clamp, easing: OUT});
   // At beat 8 the lockup glides to the top to make room for the hero line.
-  const lift = interpolate(frame, [beat(4.7), beat(5.3)], [0, 1], {...clamp, easing: IN_OUT});
+  const lift = interpolate(frame, [beat(3.9), beat(4.4)], [0, 1], {...clamp, easing: IN_OUT});
   const markSize = (sq ? 130 : 150) * (1 - lift * 0.45);
   const wordSize = (sq ? 120 : 150) * (1 - lift * 0.45);
   const cy = height / 2 - lift * (height / 2 - (sq ? 230 : 230));
-  const enter = frame < beat(3) ? fly : 1;
-  const flash = interpolate(frame, [beat(3) - 1, beat(3), beat(3) + 8], [0, 0.14, 0], clamp);
+  const enter = frame < beat(2.4) ? fly : 1;
+  const flash = 0;
   return (
     <AbsoluteFill style={{background: d.bg}}>
       <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center'}}>
-        <Card text="So we did it…" from={0} to={beat(1.8)} width={textW} max={sq ? 140 : 170} tone="dark" exit />
+        <Card text="So we did it…" from={0} to={beat(1.5)} width={textW} max={sq ? 140 : 170} tone="dark" exit />
       </AbsoluteFill>
-      {frame >= beat(1.6) ? (
+      {frame >= beat(1.2) ? (
         <div
           style={{
             position: 'absolute',
@@ -56,22 +56,18 @@ export const Reveal: React.FC = () => {
       ) : null}
       <AbsoluteFill style={{background: d.ink, opacity: flash}} />
       <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', paddingTop: sq ? 220 : 160}}>
-        <Card text="Not another sandbox." from={beat(5.3)} to={beat(7.6)} width={textW} max={sq ? 110 : 140} tone="dark" />
-        <Card text={'A sandbox *router*.'} from={beat(7.6)} to={beat(10)} width={textW} max={sq ? 110 : 140} tone="dark" stagger={6} />
+        <Card text="Not another sandbox." from={beat(4.4)} to={beat(6.2)} width={textW} max={sq ? 110 : 140} tone="dark" />
+        <Card text={'The layer *above* them.'} from={beat(6.2)} to={beat(8.5)} width={textW} max={sq ? 110 : 140} tone="dark" stagger={6} />
       </AbsoluteFill>
     </AbsoluteFill>
   );
 };
 
-const CODE = `import { Differently } from "@differently/sdk";
-
-const differently = new Differently({
-  apiKey: process.env.DIFFERENTLY_API_KEY,
-});
-
-const sandbox = await differently.sandboxes.create({
+// The request names a shape and a policy, never a backend. `external` can only narrow
+// what the operator's policy allows (sdk/typescript/src/types.ts).
+const CODE = `await differently.sandboxes.create({
   profile: "small",
-  placement: { strategy: "private-first", external: "never" },
+  placement: { external: "never" },
 });`;
 
 const KW = /\b(import|from|const|new|await)\b/g;
@@ -111,27 +107,27 @@ const Line: React.FC<{text: string; size: number; hl: number; strike?: number}> 
   );
 };
 
-/** "One API in. Never a backend." over the real SDK call. */
+/** "One API in. Write a policy, not a provider." over the real SDK call. */
 export const Code: React.FC = () => {
   const frame = useCurrentFrame();
   const {width, height} = useVideoConfig();
   const sq = width === height;
   const lines = CODE.split('\n');
-  const size = sq ? 23 : 31;
-  const chars = Math.floor(interpolate(frame, [2, beat(1.1)], [0, CODE.length], clamp));
+  const size = sq ? 31 : 46;
+  const chars = Math.floor(interpolate(frame, [2, beat(0.9)], [0, CODE.length], clamp));
   let budget = chars;
   const typed = lines.map((l) => {
     const take = Math.max(0, Math.min(l.length, budget));
     budget -= l.length + 1;
     return l.slice(0, take);
   });
-  const hlShape = interpolate(frame, [beat(0.7), beat(0.7) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(2.5), beat(2.5) + 8], [0, 1], clamp));
-  const hlPolicy = interpolate(frame, [beat(1.3), beat(1.3) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(2.5), beat(2.5) + 8], [0, 1], clamp));
+  const hlShape = 0;
+  const hlPolicy = interpolate(frame, [beat(1.1), beat(1.1) + 10], [0, 1], {...clamp, easing: OUT}) * (1 - interpolate(frame, [beat(2.5), beat(2.5) + 8], [0, 1], clamp));
   // A vendor line tries to sneak in, gets struck through and removed.
   const ghostType = Math.floor(interpolate(frame, [beat(2.5), beat(2.9)], [0, 26], clamp));
-  const ghostStrike = interpolate(frame, [beat(3.05), beat(3.25)], [0, 1], {...clamp, easing: OUT});
-  const ghostGone = interpolate(frame, [beat(3.6), beat(4)], [0, 1], {...clamp, easing: IN_OUT});
-  const shake = frame > beat(3.05) && frame < beat(3.5) ? Math.sin(frame * 2.2) * 6 : 0;
+  const ghostStrike = interpolate(frame, [beat(3), beat(3.2)], [0, 1], {...clamp, easing: OUT});
+  const ghostGone = interpolate(frame, [beat(3.9), beat(4.3)], [0, 1], {...clamp, easing: IN_OUT});
+  const shake = frame > beat(3) && frame < beat(3.45) ? Math.sin(frame * 2.2) * 8 : 0;
   const ghost = '  backend: "sandbox.co",';
   const textW = width - (sq ? 120 : 260);
   const camera = 1 + frame * 0.0002;
@@ -139,7 +135,7 @@ export const Code: React.FC = () => {
     <AbsoluteFill style={{background: d.bg}}>
       <AbsoluteFill style={{justifyContent: 'flex-start', alignItems: 'center', paddingTop: sq ? 110 : 90}}>
         <Card text="One API in." from={0} to={beat(2.5)} width={textW} max={sq ? 104 : 124} tone="dark" />
-        <Card text="Never a *backend*." from={beat(2.5)} to={beat(5)} width={textW} max={sq ? 104 : 124} tone="dark" />
+        <Card text="Write a policy, not a *provider*." from={beat(2.5)} to={beat(5)} width={textW} max={sq ? 96 : 116} tone="dark" />
       </AbsoluteFill>
       <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', paddingTop: sq ? 230 : 250, transform: `scale(${camera})`}}>
         <div
