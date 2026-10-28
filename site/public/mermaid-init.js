@@ -5,7 +5,7 @@ if (blocks.length) {
   const sources = [...blocks].map((b) => b.textContent);
   const render = async () => {
     const dark = document.documentElement.dataset.theme === 'dark';
-    mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'neutral', fontFamily: 'IBM Plex Sans, sans-serif' });
+    mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'neutral', fontFamily: 'Inter, sans-serif' });
     blocks.forEach((b, i) => { b.removeAttribute('data-processed'); b.textContent = sources[i]; });
     await mermaid.run({ nodes: [...blocks] });
   };

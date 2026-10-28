@@ -104,7 +104,7 @@ const features = [
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <script is:inline>
       try {
         const t = localStorage.getItem('starlight-theme');
@@ -120,7 +120,7 @@ const features = [
 
     <header class="nav wrap">
       <a class="brand" href={`${base}/`}>
-        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="1.5" y="1.5" width="29" height="29" rx="8" /><circle cx="16" cy="13" r="4.5" /><path d="M13.6 16.5h4.8l1.4 8.5h-7.6z" /></svg>
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="10" y="3" width="19" height="19" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="3" y="10" width="19" height="19" rx="4" fill="currentColor"/></svg>
         Differently
       </a>
       <nav>
@@ -184,8 +184,7 @@ const features = [
             <path class="edge" d="M420 160C455 160 455 106 486 106" marker-end="url(#arr)" />
             <path class="edge" d="M420 200C455 200 455 218 486 218" marker-end="url(#arr)" />
             <path class="edge ext" d="M420 228C600 300 760 270 786 200" marker-end="url(#arr)" />
-            <g class="gate"><circle cx="760" cy="268" r="15" /><circle cx="760" cy="264" r="4" /><path d="M758 267h4l1 7h-6z" /></g>
-            <text class="elabel ext" x="640" y="316">only if every policy allows</text>
+                        <text class="elabel ext" x="640" y="316">only if every policy allows</text>
           </svg>
         </figure>
         <ol class="steps">
@@ -208,7 +207,7 @@ const features = [
         </div>
         {samples.map((s, i) => (
           <div class="panel" role="tabpanel" id={`panel-${s.id}`} aria-labelledby={`tab-${s.id}`} hidden={i !== 0}>
-            <Code code={s.code} lang={s.lang as any} themes={{ light: 'github-light', dark: 'vitesse-dark' }} />
+            <Code code={s.code} lang={s.lang as any} themes={{ light: 'github-light', dark: 'github-dark' }} />
           </div>
         ))}
         <p class="note">Try it on a laptop with <code>./bin/differently-server --dev</code>. Dev mode runs commands directly on your machine with no isolation; it exists to exercise the API, not to contain untrusted code.</p>
@@ -217,7 +216,7 @@ const features = [
       <section class="features wrap" id="features">
         <div class="section-head">
           <p class="eyebrow">What you get</p>
-          <h2>Sovereign by default.</h2>
+          <h2>Yours by default.</h2>
         </div>
         <div class="grid">
           {features.map((f) => (

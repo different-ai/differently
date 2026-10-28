@@ -13,7 +13,7 @@ export default defineConfig({
     starlight({
       title: 'Differently',
       description: 'Run VMs differently: own them. A self-hosted control plane for sandboxes and Firecracker microVMs.',
-      logo: { src: './src/assets/mark.svg', alt: 'Differently' },
+      logo: { light: './src/assets/mark-light.svg', dark: './src/assets/mark-dark.svg', alt: 'Differently' },
       favicon: '/favicon.svg',
       social: [{ icon: 'github', label: 'GitHub', href: repo }],
       editLink: { baseUrl: `${repo}/edit/pre-release/` },
@@ -25,7 +25,7 @@ export default defineConfig({
           tag: 'link',
           attrs: {
             rel: 'stylesheet',
-            href: 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap',
+            href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap',
           },
         },
         { tag: 'script', attrs: { type: 'module', src: '/differently/mermaid-init.js' } },

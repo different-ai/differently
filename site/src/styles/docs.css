@@ -1,43 +1,51 @@
-/* Differently palette for Starlight: brass on deep forest, warm paper in light mode. */
+/* Monochrome Differently theme for Starlight. */
 :root {
-  --sl-font: 'IBM Plex Sans', system-ui, sans-serif;
-  --sl-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
-  --sl-color-accent-low: #2b2210;
-  --sl-color-accent: #e2a93b;
-  --sl-color-accent-high: #f5d79a;
-  --sl-color-white: #f3efe4;
-  --sl-color-gray-1: #e2ddcf;
-  --sl-color-gray-2: #bdb7a8;
-  --sl-color-gray-3: #8c9289;
-  --sl-color-gray-4: #555d57;
-  --sl-color-gray-5: #323a35;
-  --sl-color-gray-6: #1c2420;
-  --sl-color-black: #111714;
+  --sl-font: 'Inter', system-ui, -apple-system, sans-serif;
+  --sl-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --sl-color-accent-low: #262626;
+  --sl-color-accent: #fafafa;
+  --sl-color-accent-high: #ffffff;
+  --sl-color-white: #fafafa;
+  --sl-color-gray-1: #e5e5e5;
+  --sl-color-gray-2: #c4c4c4;
+  --sl-color-gray-3: #8f8f8f;
+  --sl-color-gray-4: #5c5c5c;
+  --sl-color-gray-5: #2a2a2a;
+  --sl-color-gray-6: #161616;
+  --sl-color-black: #0a0a0a;
+  --sl-color-text-accent: #fafafa;
 }
 
 :root[data-theme='light'] {
-  --sl-color-accent-low: #f3e2bd;
-  --sl-color-accent: #8f5a0b;
-  --sl-color-accent-high: #4d3006;
-  --sl-color-white: #141a17;
-  --sl-color-gray-1: #232b27;
-  --sl-color-gray-2: #39423d;
-  --sl-color-gray-3: #5d665f;
-  --sl-color-gray-4: #8c9289;
-  --sl-color-gray-5: #cdc7b8;
-  --sl-color-gray-6: #ece7da;
-  --sl-color-gray-7: #f4f0e6;
-  --sl-color-black: #faf7f0;
+  --sl-color-accent-low: #f0f0f0;
+  --sl-color-accent: #0a0a0a;
+  --sl-color-accent-high: #0a0a0a;
+  --sl-color-white: #0a0a0a;
+  --sl-color-gray-1: #1a1a1a;
+  --sl-color-gray-2: #3a3a3a;
+  --sl-color-gray-3: #6b6b6b;
+  --sl-color-gray-4: #9a9a9a;
+  --sl-color-gray-5: #e3e3e3;
+  --sl-color-gray-6: #f3f3f3;
+  --sl-color-gray-7: #f8f8f8;
+  --sl-color-black: #ffffff;
+  --sl-color-text-accent: #0a0a0a;
 }
 
-.site-title { font-family: 'Bricolage Grotesque', var(--sl-font); font-weight: 700; letter-spacing: -0.01em; }
-.sl-markdown-content h1, h1#_top { font-family: 'Bricolage Grotesque', var(--sl-font); letter-spacing: -0.02em; }
-.sl-markdown-content h2, .sl-markdown-content h3 { font-family: 'Bricolage Grotesque', var(--sl-font); }
+.site-title { font-weight: 600; font-size: 1.05rem; letter-spacing: -0.01em; color: var(--sl-color-white); }
+.site-title img { height: 22px; width: auto; }
+.sl-markdown-content h1, h1#_top { font-weight: 600; letter-spacing: -0.035em; }
+.sl-markdown-content :is(h2, h3, h4) { font-weight: 600; letter-spacing: -0.025em; }
+.sl-markdown-content a { text-underline-offset: 3px; text-decoration-color: var(--sl-color-gray-4); }
+.sl-markdown-content a:hover { text-decoration-color: currentColor; }
+.sl-markdown-content code:not(pre code) { border-radius: 4px; }
+/* Selected sidebar link: inverted pill instead of a colored block. */
+.sidebar-content a[aria-current='page'] { background: var(--sl-color-white); color: var(--sl-color-black); font-weight: 500; }
 
 pre.mermaid {
   background: transparent;
   border: 1px solid var(--sl-color-gray-5);
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
   padding: 1rem;
   text-align: center;
   overflow-x: auto;
