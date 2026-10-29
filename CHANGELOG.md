@@ -22,6 +22,14 @@ class has not run.
   snapshot delete sent the name where Daytona needs the id; and a snapshot
   was returned before it could be used.
 
+### Fixed (Helm chart)
+
+- A pool under `config.pools` can use a provider key stored in Differently
+  (`credentials: {secret: name}`), as the server already allowed; the
+  values schema refused it.
+- An external pool declared under `config.pools` now opens server egress to
+  `providerCIDRs` on 443, like `providers.*` does.
+
 ## [0.1.0-alpha.2] — 2026-10-29
 
 Second alpha, published as a GitHub pre-release. Not for production.
