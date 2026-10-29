@@ -90,44 +90,56 @@ type CreateSandboxRequest struct {
 	Labels         map[string]string `json:"labels,omitempty"`
 	Priority       int               `json:"priority,omitempty"`
 	FromSnapshot   string            `json:"fromSnapshot,omitempty"`
+	// IdleTimeoutSeconds stops (or pauses) the sandbox after this long with
+	// no exec, file, port or keepalive call; the next such call wakes it.
+	// 0 uses the operator default; -1 turns it off.
+	IdleTimeoutSeconds int `json:"idleTimeoutSeconds,omitempty"`
 }
 
 // UpdateSandboxRequest is the body of PATCH /v1/sandboxes/{id}.
 type UpdateSandboxRequest struct {
-	Labels     map[string]string `json:"labels,omitempty"`
-	TTLSeconds *int              `json:"ttlSeconds,omitempty"`
+	Labels             map[string]string `json:"labels,omitempty"`
+	TTLSeconds         *int              `json:"ttlSeconds,omitempty"`
+	IdleTimeoutSeconds *int              `json:"idleTimeoutSeconds,omitempty"`
 }
 
 // Sandbox is an isolated compute environment.
 type Sandbox struct {
-	ID             string             `json:"id"`
-	OrgID          string             `json:"orgId"`
-	ProjectID      string             `json:"projectId"`
-	Status         SandboxStatus      `json:"status"`
-	StatusReason   string             `json:"statusReason,omitempty"`
-	Template       string             `json:"template,omitempty"`
-	Profile        string             `json:"profile,omitempty"`
-	Resources      Resources          `json:"resources"`
-	Capabilities   []string           `json:"capabilities,omitempty"`
-	Classification string             `json:"classification"`
-	Placement      *Placement         `json:"placement,omitempty"`
-	Pool           string             `json:"pool,omitempty"`
-	Adapter        string             `json:"adapter,omitempty"`
-	Trust          string             `json:"trust,omitempty"`
-	Region         string             `json:"region,omitempty"`
-	Labels         map[string]string  `json:"labels,omitempty"`
-	EnvKeys        []string           `json:"envKeys,omitempty"`
-	Priority       int                `json:"priority"`
-	TTLSeconds     int                `json:"ttlSeconds,omitempty"`
-	ExpiresAt      *time.Time         `json:"expiresAt,omitempty"`
-	FromSnapshot   string             `json:"fromSnapshot,omitempty"`
-	Attempts       int                `json:"attempts"`
-	CreatedBy      string             `json:"createdBy"`
-	CreatedAt      time.Time          `json:"createdAt"`
-	UpdatedAt      time.Time          `json:"updatedAt"`
-	StartedAt      *time.Time         `json:"startedAt,omitempty"`
-	EndedAt        *time.Time         `json:"endedAt,omitempty"`
-	Decision       *PlacementDecision `json:"decision,omitempty"`
+	ID             string            `json:"id"`
+	OrgID          string            `json:"orgId"`
+	ProjectID      string            `json:"projectId"`
+	Status         SandboxStatus     `json:"status"`
+	StatusReason   string            `json:"statusReason,omitempty"`
+	Template       string            `json:"template,omitempty"`
+	Profile        string            `json:"profile,omitempty"`
+	Resources      Resources         `json:"resources"`
+	Capabilities   []string          `json:"capabilities,omitempty"`
+	Classification string            `json:"classification"`
+	Placement      *Placement        `json:"placement,omitempty"`
+	Pool           string            `json:"pool,omitempty"`
+	Adapter        string            `json:"adapter,omitempty"`
+	Trust          string            `json:"trust,omitempty"`
+	Region         string            `json:"region,omitempty"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	EnvKeys        []string          `json:"envKeys,omitempty"`
+	Priority       int               `json:"priority"`
+	TTLSeconds     int               `json:"ttlSeconds,omitempty"`
+	ExpiresAt      *time.Time        `json:"expiresAt,omitempty"`
+	// IdleTimeoutSeconds is the idle auto-stop threshold (0: off).
+	IdleTimeoutSeconds int `json:"idleTimeoutSeconds,omitempty"`
+	// LastActivityAt is the last exec, file, port or keepalive call.
+	LastActivityAt *time.Time `json:"lastActivityAt,omitempty"`
+	// IdledAt is set while the sandbox is stopped or paused for being idle;
+	// the next exec, file, port or keepalive call wakes it.
+	IdledAt      *time.Time         `json:"idledAt,omitempty"`
+	FromSnapshot string             `json:"fromSnapshot,omitempty"`
+	Attempts     int                `json:"attempts"`
+	CreatedBy    string             `json:"createdBy"`
+	CreatedAt    time.Time          `json:"createdAt"`
+	UpdatedAt    time.Time          `json:"updatedAt"`
+	StartedAt    *time.Time         `json:"startedAt,omitempty"`
+	EndedAt      *time.Time         `json:"endedAt,omitempty"`
+	Decision     *PlacementDecision `json:"decision,omitempty"`
 }
 
 // PlacementDecision explains where a sandbox was placed and why.

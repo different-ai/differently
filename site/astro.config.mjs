@@ -49,6 +49,7 @@ export default defineConfig({
           { label: 'Go SDK', link: '/docs/sdks/go/' },
           { label: 'Adapter specification', link: '/docs/adapters/specification/' },
         ] },
+        { label: 'Providers', items: [{ autogenerate: { directory: 'docs/providers' } }] },
         { label: 'Deploy and operate', items: [{ autogenerate: { directory: 'docs/deploy' } }] },
         { label: 'Concepts', items: [
           { label: 'Architecture', link: '/docs/architecture/' },

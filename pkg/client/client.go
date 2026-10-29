@@ -234,7 +234,7 @@ func (c *Client) ListFiles(ctx context.Context, id, path string) ([]api.FileInfo
 	return out.Items, c.Do(ctx, http.MethodGet, "/v1/sandboxes/"+url.PathEscape(id)+"/files?path="+url.QueryEscape(path), nil, &out)
 }
 
-// Action runs stop, start, pause or resume.
+// Action runs stop, start, pause, resume or keepalive.
 func (c *Client) Action(ctx context.Context, id, action string) (api.Sandbox, error) {
 	var sb api.Sandbox
 	return sb, c.Do(ctx, http.MethodPost, "/v1/sandboxes/"+url.PathEscape(id)+"/"+action, nil, &sb)

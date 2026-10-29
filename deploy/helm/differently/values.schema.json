@@ -62,7 +62,7 @@
       "required": ["name", "adapter"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
-        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "agent-sandbox", "cubesandbox"]},
+        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "vercel", "fly", "agent-sandbox", "cubesandbox"]},
         "trust": {"type": "string", "enum": ["private", "external"]},
         "region": {"type": "string"},
         "labels": {"$ref": "#/definitions/stringMap"},
@@ -234,7 +234,8 @@
             "profile": {"type": "string"},
             "template": {"type": "string"},
             "resources": {"$ref": "#/definitions/resources"},
-            "ttlSeconds": {"$ref": "#/definitions/nonNegativeInt"}
+            "ttlSeconds": {"$ref": "#/definitions/nonNegativeInt"},
+            "idleTimeoutSeconds": {"$ref": "#/definitions/nonNegativeInt"}
           }
         },
         "classifications": {

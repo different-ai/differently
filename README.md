@@ -115,7 +115,7 @@ await sandbox.delete();
 | Where | How | Status |
 |---|---|---|
 | Laptop | `differently-server --dev` | Verified (no isolation; for trying it) |
-| Any Docker host | [`test/e2e`](test/e2e/README.md) Compose stack | Verified: end-to-end suite 12/12 |
+| Any Docker host | [`test/e2e`](test/e2e/README.md) Compose stack | Verified: end-to-end suite 14/14 |
 | One Linux VM: Azure, AWS, Google Cloud, bare metal | [k3s + Helm](docs/deploy/single-vm.md) | Verified on Azure; same steps elsewhere, not yet run |
 | Existing Kubernetes: EKS, GKE, AKS, k3s, RKE2 | [Helm chart](docs/deploy/kubernetes.md) | Helm install verified on k3s; managed clusters documented |
 | Cloud notes | [AWS](docs/deploy/aws.md) · [Google Cloud](docs/deploy/gcp.md) · [Azure](docs/deploy/azure.md) · [Bare metal](docs/deploy/bare-metal.md) | Documented |
@@ -127,9 +127,14 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 
 ## Status
 
-**Verified** (2026-10-28):
-- the end-to-end suite passes 12/12 on OpenSandbox's Docker runtime and on its
+**Verified** (2026-10-28 and 29):
+- the end-to-end suite passes 14/14 on OpenSandbox's Docker runtime and on its
   Kubernetes runtime (k3s on Azure, both installed with Helm);
+- on the Kubernetes runtime: stop/start keeping the disk, snapshots and fork
+  through a snapshot registry, signed port URLs (including WebSockets) and
+  egress policy;
+- idle sandboxes stop (Kubernetes) or pause (Docker) and wake on the next
+  call;
 - the published `v0.1.0-alpha.1` chart and images install from public
   artifacts alone;
 - real OpenSandbox responses are recorded and replayed in every `go test`;
@@ -142,11 +147,9 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 - managed EKS, GKE and AKS;
 - live Daytona and Freestyle accounts through Differently.
 
-**In progress:** stop/start, snapshots, fork and port URLs on OpenSandbox's
-Kubernetes runtime, through a snapshot registry and OpenSandbox's signed
-gateway.
-
-The [roadmap](docs/roadmap.md) and [feature parity](docs/feature-parity.md)
+Each backend has a page with its status and configuration in the
+[provider catalog](docs/providers/README.md). The
+[roadmap](docs/roadmap.md) and [feature parity](docs/feature-parity.md)
 pages track the details. Releases follow [semantic versioning](https://semver.org/):
 pre-releases are tagged `vX.Y.Z-alpha.N` or `-rc.N`, and images are
 `ghcr.io/different-ai/differently-{server,cli}:X.Y.Z`.
