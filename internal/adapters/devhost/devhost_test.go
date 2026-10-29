@@ -57,3 +57,29 @@ func TestLifecycleAndSnapshotRestore(t *testing.T) {
 		t.Fatalf("deleted sandbox still present: %v", err)
 	}
 }
+
+func TestRejectsRefsOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	a, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, ref := range []string{"", ".", "..", "../x", "a/b"} {
+		if _, err := a.Create(ctx, adapter.CreateRequest{ID: ref}); err == nil {
+			t.Errorf("Create(%q) succeeded", ref)
+		}
+		if _, err := a.Get(ctx, ref); err == nil {
+			t.Errorf("Get(%q) succeeded", ref)
+		}
+		if err := a.Delete(ctx, ref); err == nil {
+			t.Errorf("Delete(%q) succeeded", ref)
+		}
+		if err := a.DeleteSnapshot(ctx, ref); err == nil {
+			t.Errorf("DeleteSnapshot(%q) succeeded", ref)
+		}
+	}
+	if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_ok", FromSnapshot: ".."}); err == nil {
+		t.Error("Create from snapshot \"..\" succeeded")
+	}
+}
