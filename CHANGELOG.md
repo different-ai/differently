@@ -17,6 +17,16 @@ All notable changes are recorded here. The format follows
   `idledAt`, SDK and CLI (`--idle-timeout`) support, and audit event
   `sandbox.idled` / `sandbox.woke`.
 
+### Added (Blaxel provider)
+
+- `blaxel` adapter for Blaxel sandboxes (always `trust: external`): exec
+  and streamed exec, files, stdin, token-protected port previews and a TTL
+  backstop. Tested against a fake server built from Blaxel's published
+  specs, not a live account.
+- Provider pages for Blaxel, Runloop (not supported: the service is
+  winding down), Beam and Koyeb (documented: a `remote` plugin on their
+  SDKs) under `docs/providers/`.
+
 ### Added (cloud providers' own sandboxes)
 
 - Adapters for the cloud providers' sandbox services, each tested against a
