@@ -172,6 +172,11 @@ type Store interface {
 	Usage(ctx context.Context, orgID, projectID string) (api.QuotaUsage, error)
 	// PoolActive counts sandboxes holding a slot on each pool.
 	PoolActive(ctx context.Context) (map[string]int, error)
+	// ReclaimSlot gives a paused sandbox whose slot was released its slot back,
+	// atomically with the pool's concurrency check (maxConcurrency 0: no
+	// limit). A full pool answers insufficient_capacity and changes nothing;
+	// a sandbox that holds its slot already is returned unchanged.
+	ReclaimSlot(ctx context.Context, id string, maxConcurrency int, now time.Time) (SandboxRecord, error)
 
 	CreateSnapshot(ctx context.Context, s SnapshotRecord) error
 	GetSnapshot(ctx context.Context, id string) (SnapshotRecord, error)
@@ -187,14 +192,21 @@ type Store interface {
 	Close() error
 }
 
-// HoldsPoolSlot reports whether a sandbox occupies pool concurrency.
-func HoldsPoolSlot(s api.SandboxStatus) bool {
-	switch s {
-	case api.StatusProvisioning, api.StatusRunning, api.StatusPaused, api.StatusStopped, api.StatusTerminating:
+// HoldsPoolSlot reports whether a sandbox occupies pool concurrency. A paused
+// sandbox on a pool that checkpoints on pause has given its slot back
+// (SlotReleased) until it resumes.
+func HoldsPoolSlot(s SandboxRecord) bool {
+	switch s.Status {
+	case api.StatusProvisioning, api.StatusRunning, api.StatusStopped, api.StatusTerminating:
 		return true
+	case api.StatusPaused:
+		return !s.SlotReleased
 	}
 	return false
 }
+
+// SlotHolders is the SQL condition matching HoldsPoolSlot.
+const SlotHolders = `(status IN ('provisioning','running','stopped','terminating') OR (status = 'paused' AND NOT COALESCE((doc->>'slotReleased')::boolean, false)))`
 
 // Tally computes quota usage from records.
 func Tally(recs []SandboxRecord, snapshots int) api.QuotaUsage {
@@ -303,6 +315,11 @@ func FairOrder(queued []SandboxRecord, activeCPUByOrg map[string]int) []SandboxR
 		}
 	}
 	return out
+}
+
+// InsufficientCapacity is the error for a pool at its concurrency limit.
+func InsufficientCapacity(pool string) error {
+	return &api.Error{Code: "insufficient_capacity", Message: "pool " + pool + " is at its concurrency limit"}
 }
 
 // NotFound builds a not_found error for a resource kind.

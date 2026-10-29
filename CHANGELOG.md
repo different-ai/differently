@@ -6,6 +6,20 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added (capacity)
+
+- A paused sandbox on a pool that checkpoints on pause
+  (`lifecycle.pause-checkpoint`: OpenSandbox Fast Sandbox, Freestyle) gives
+  its slot back. Resuming takes one again; on a full pool the resume waits in
+  a queue (202) and runs when a slot frees.
+- Pool preemption (`preemption.mode: idle | lru`) pauses running sandboxes to
+  make room for waiting work; `preemptible: false` opts a sandbox out.
+- Lifecycle limits `maxRunSeconds` and `maxPausedSeconds` (request, `PATCH`
+  and operator defaults).
+- Capacity metrics (`differently_pool_slots`, `differently_resume_wait_seconds`,
+  `differently_preemptions_total` and more) and a capacity model,
+  `cmd/differently-capsim`, with results in `docs/scheduling/capacity.md`.
+
 ### Documentation
 
 - `docs/deploy/azure-vms.md`: a verified install on two Azure VMs with Fast

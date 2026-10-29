@@ -94,6 +94,16 @@ type CreateSandboxRequest struct {
 	// no exec, file, port or keepalive call; the next such call wakes it.
 	// 0 uses the operator default; -1 turns it off.
 	IdleTimeoutSeconds int `json:"idleTimeoutSeconds,omitempty"`
+	// MaxRunSeconds pauses (or stops) the sandbox after it has run this long
+	// without a break, busy or not, so long-running sandboxes give their slot
+	// back. 0 uses the operator default; -1 turns it off.
+	MaxRunSeconds int `json:"maxRunSeconds,omitempty"`
+	// MaxPausedSeconds deletes the sandbox after it has stayed paused or
+	// stopped this long. 0 uses the operator default; -1 turns it off.
+	MaxPausedSeconds int `json:"maxPausedSeconds,omitempty"`
+	// Preemptible false keeps the scheduler from pausing this sandbox to make
+	// room for other work on a full pool. Default true.
+	Preemptible *bool `json:"preemptible,omitempty"`
 }
 
 // UpdateSandboxRequest is the body of PATCH /v1/sandboxes/{id}.
@@ -101,6 +111,9 @@ type UpdateSandboxRequest struct {
 	Labels             map[string]string `json:"labels,omitempty"`
 	TTLSeconds         *int              `json:"ttlSeconds,omitempty"`
 	IdleTimeoutSeconds *int              `json:"idleTimeoutSeconds,omitempty"`
+	MaxRunSeconds      *int              `json:"maxRunSeconds,omitempty"`
+	MaxPausedSeconds   *int              `json:"maxPausedSeconds,omitempty"`
+	Preemptible        *bool             `json:"preemptible,omitempty"`
 }
 
 // Sandbox is an isolated compute environment.
@@ -131,15 +144,29 @@ type Sandbox struct {
 	LastActivityAt *time.Time `json:"lastActivityAt,omitempty"`
 	// IdledAt is set while the sandbox is stopped or paused for being idle;
 	// the next exec, file, port or keepalive call wakes it.
-	IdledAt      *time.Time         `json:"idledAt,omitempty"`
-	FromSnapshot string             `json:"fromSnapshot,omitempty"`
-	Attempts     int                `json:"attempts"`
-	CreatedBy    string             `json:"createdBy"`
-	CreatedAt    time.Time          `json:"createdAt"`
-	UpdatedAt    time.Time          `json:"updatedAt"`
-	StartedAt    *time.Time         `json:"startedAt,omitempty"`
-	EndedAt      *time.Time         `json:"endedAt,omitempty"`
-	Decision     *PlacementDecision `json:"decision,omitempty"`
+	IdledAt *time.Time `json:"idledAt,omitempty"`
+	// MaxRunSeconds and MaxPausedSeconds are the lifecycle limits in force
+	// (0: off); see CreateSandboxRequest.
+	MaxRunSeconds    int `json:"maxRunSeconds,omitempty"`
+	MaxPausedSeconds int `json:"maxPausedSeconds,omitempty"`
+	// Preemptible reports whether the scheduler may pause this sandbox to make
+	// room on a full pool (pools with a preemption policy only).
+	Preemptible bool `json:"preemptible"`
+	// PausedAt is when the sandbox last paused or stopped.
+	PausedAt *time.Time `json:"pausedAt,omitempty"`
+	// SlotReleased is true while a paused sandbox holds no pool slot: its pool
+	// checkpoints on pause (lifecycle.pause-checkpoint).
+	SlotReleased bool `json:"slotReleased,omitempty"`
+	// ResumeRequestedAt is set while a resume waits for a free slot.
+	ResumeRequestedAt *time.Time         `json:"resumeRequestedAt,omitempty"`
+	FromSnapshot      string             `json:"fromSnapshot,omitempty"`
+	Attempts          int                `json:"attempts"`
+	CreatedBy         string             `json:"createdBy"`
+	CreatedAt         time.Time          `json:"createdAt"`
+	UpdatedAt         time.Time          `json:"updatedAt"`
+	StartedAt         *time.Time         `json:"startedAt,omitempty"`
+	EndedAt           *time.Time         `json:"endedAt,omitempty"`
+	Decision          *PlacementDecision `json:"decision,omitempty"`
 }
 
 // PlacementDecision explains where a sandbox was placed and why.
@@ -362,9 +389,36 @@ type Pool struct {
 	CredentialRef  string            `json:"credentialRef,omitempty"`
 	Source         string            `json:"source"` // config | api
 	Capabilities   []string          `json:"capabilities,omitempty"`
-	Health         *PoolHealth       `json:"health,omitempty"`
-	Capacity       *PoolCapacity     `json:"capacity,omitempty"`
-	Active         int               `json:"active"`
+	// Preemption lets the scheduler pause running sandboxes to make room for
+	// waiting work on this pool. Nil or mode "off" never preempts.
+	Preemption *Preemption   `json:"preemption,omitempty"`
+	Health     *PoolHealth   `json:"health,omitempty"`
+	Capacity   *PoolCapacity `json:"capacity,omitempty"`
+	Active     int           `json:"active"`
+	// Released counts paused sandboxes on the pool that hold no slot.
+	Released int `json:"released,omitempty"`
+}
+
+// Preemption modes.
+const (
+	PreemptOff  = "off"
+	PreemptIdle = "idle" // only sandboxes with no activity for IdleSeconds (recommended)
+	PreemptLRU  = "lru"  // the least recently used running sandbox, busy or not
+)
+
+// Preemption is a pool's policy for making room when work waits for a slot.
+// Only pools that checkpoint on pause (lifecycle.pause-checkpoint) preempt:
+// elsewhere a pause would not free the slot. The victim is paused, keeping
+// its memory, and resumes in the queue like any other paused sandbox.
+type Preemption struct {
+	Mode string `json:"mode"`
+	// MinRunSeconds protects a sandbox that started or resumed recently from
+	// mode lru, so busy sandboxes do not trade the slot back and forth.
+	// Default 600.
+	MinRunSeconds int `json:"minRunSeconds,omitempty"`
+	// IdleSeconds is how long without activity makes a sandbox a candidate in
+	// mode idle. Default 60.
+	IdleSeconds int `json:"idleSeconds,omitempty"`
 }
 
 // PoolHealth is the last observed health of a pool.

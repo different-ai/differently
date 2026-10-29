@@ -69,6 +69,16 @@
         "enabled": {"type": "boolean"},
         "maxConcurrency": {"$ref": "#/definitions/nonNegativeInt"},
         "costModel": {"$ref": "#/definitions/costModel"},
+        "preemption": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Pause running sandboxes to make room for waiting work (pools that checkpoint on pause only).",
+          "properties": {
+            "mode": {"type": "string", "enum": ["off", "idle", "lru"]},
+            "minRunSeconds": {"$ref": "#/definitions/nonNegativeInt"},
+            "idleSeconds": {"$ref": "#/definitions/nonNegativeInt"}
+          }
+        },
         "config": {"$ref": "#/definitions/stringMap", "description": "Adapter settings; every value must be a string."},
         "credentials": {
           "type": "object",
@@ -242,7 +252,9 @@
             "template": {"type": "string"},
             "resources": {"$ref": "#/definitions/resources"},
             "ttlSeconds": {"$ref": "#/definitions/nonNegativeInt"},
-            "idleTimeoutSeconds": {"$ref": "#/definitions/nonNegativeInt"}
+            "idleTimeoutSeconds": {"$ref": "#/definitions/nonNegativeInt"},
+            "maxRunSeconds": {"$ref": "#/definitions/nonNegativeInt"},
+            "maxPausedSeconds": {"$ref": "#/definitions/nonNegativeInt"}
           }
         },
         "classifications": {

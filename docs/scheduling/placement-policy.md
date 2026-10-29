@@ -111,7 +111,7 @@ An eligible pool **has capacity** unless (first match wins):
 | Check | Reason |
 |---|---|
 | Health probe failed, adapter could not be built, or the pool was marked unhealthy after a provisioning failure | `unhealthy: <detail>` |
-| `maxConcurrency > 0` and active slots ≥ cap (slots: provisioning, running, paused, stopped, terminating) | `at concurrency limit N` |
+| `maxConcurrency > 0` and active slots ≥ cap (slots: provisioning, running, stopped, terminating, and paused unless the pool checkpoints on pause; see [capacity.md](capacity.md)) | `at concurrency limit N` |
 | Bounded capacity and the sandbox does not fit (uses the roomiest single node when reported) | `insufficient free capacity` |
 
 Unbounded adapters (OpenSandbox, Daytona, Freestyle, devhost) always fit;

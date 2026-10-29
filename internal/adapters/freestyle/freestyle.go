@@ -101,7 +101,7 @@ func (a *Adapter) Info() adapter.Info {
 func (a *Adapter) Capabilities(context.Context) (adapter.Capabilities, error) {
 	return adapter.Capabilities{Features: []string{
 		adapter.FeatureExec, adapter.FeatureFiles, adapter.FeatureStopStart, adapter.FeaturePersistDisk,
-		adapter.FeaturePauseResume, adapter.FeatureSnapshotMem, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
+		adapter.FeaturePauseResume, adapter.FeaturePauseCheckpoint, adapter.FeatureSnapshotMem, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
 		adapter.FeaturePorts, adapter.FeatureEgressControl, adapter.FeatureMicroVM, adapter.FeatureArchAMD64,
 	}, MaxCPU: 32, MaxMemoryMiB: 65536, MaxDiskGiB: 256}, nil
 }

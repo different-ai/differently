@@ -82,11 +82,12 @@ var KubernetesFeatures = []string{
 
 // FastSandboxFeatures are the defaults with runtime: fastsandbox. Fast Sandbox
 // runs each sandbox in a Firecracker microVM, and its pause checkpoints the VM,
-// so memory and processes survive a pause and resume. snapshots.memory is not
+// so memory and processes survive a pause and resume, and a paused microVM
+// leaves the host (lifecycle.pause-checkpoint). snapshots.memory is not
 // advertised: restoring a new sandbox from a memory snapshot is not verified.
 var FastSandboxFeatures = []string{
 	adapter.FeatureExec, adapter.FeatureExecStream, adapter.FeatureFiles,
-	adapter.FeaturePauseResume, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
+	adapter.FeaturePauseResume, adapter.FeaturePauseCheckpoint, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
 }
 
 // Options configures the adapter. Pool config keys: apiURL (required, the

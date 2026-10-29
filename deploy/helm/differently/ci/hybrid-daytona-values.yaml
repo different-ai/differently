@@ -4,6 +4,9 @@
 config:
   store:
     driver: postgres
+  defaults:
+    maxRunSeconds: 28800
+    maxPausedSeconds: 1209600
   policy:
     external: overflow
     externalPools: [daytona, freestyle]
@@ -16,6 +19,7 @@ config:
       trust: external
       maxConcurrency: 10
       credentials: {secret: freestyle-key}
+      preemption: {mode: idle, idleSeconds: 60}
       config:
         egress: none
 

@@ -72,6 +72,13 @@ type Defaults struct {
 	// IdleTimeoutSeconds stops or pauses sandboxes left idle this long
 	// (0: off unless a request asks). At least 60 when set.
 	IdleTimeoutSeconds int `json:"idleTimeoutSeconds"`
+	// MaxRunSeconds pauses (or stops) sandboxes that have run this long
+	// without a break, so long runners give their slot back (0: off unless a
+	// request asks). At least 60 when set.
+	MaxRunSeconds int `json:"maxRunSeconds"`
+	// MaxPausedSeconds deletes sandboxes left paused or stopped this long
+	// (0: off unless a request asks). At least 60 when set.
+	MaxPausedSeconds int `json:"maxPausedSeconds"`
 }
 
 // CredentialRef points at a secret without containing it.
@@ -145,6 +152,9 @@ type PoolConfig struct {
 	CostModel      api.CostModel     `json:"costModel,omitempty"`
 	Config         map[string]string `json:"config,omitempty"`
 	Credentials    CredentialRef     `json:"credentials,omitempty"`
+	// Preemption lets the scheduler pause running sandboxes to make room for
+	// waiting work (pools that checkpoint on pause only).
+	Preemption *api.Preemption `json:"preemption,omitempty"`
 }
 
 // ToPool converts to the API representation.
@@ -153,8 +163,24 @@ func (p PoolConfig) ToPool() api.Pool {
 	return api.Pool{
 		Name: p.Name, Adapter: p.Adapter, Trust: p.Trust, Region: p.Region, Labels: p.Labels,
 		Enabled: enabled, MaxConcurrency: p.MaxConcurrency, CostModel: p.CostModel, Config: p.Config,
-		CredentialRef: p.Credentials.String(), Source: "config",
+		CredentialRef: p.Credentials.String(), Source: "config", Preemption: p.Preemption,
 	}
+}
+
+// ValidatePreemption checks a pool's preemption policy.
+func ValidatePreemption(p *api.Preemption) error {
+	if p == nil {
+		return nil
+	}
+	switch p.Mode {
+	case "", api.PreemptOff, api.PreemptIdle, api.PreemptLRU:
+	default:
+		return fmt.Errorf("preemption.mode must be off, idle or lru, not %q", p.Mode)
+	}
+	if p.MinRunSeconds < 0 || p.IdleSeconds < 0 {
+		return fmt.Errorf("preemption seconds must not be negative")
+	}
+	return nil
 }
 
 // SchedulerConfig tunes the dispatch and reconcile loops.
@@ -352,6 +378,16 @@ func (c Config) Validate() error {
 	}
 	var errs []error
 	bad := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
+	for name, d := range map[string]int{"maxRunSeconds": c.Defaults.MaxRunSeconds, "maxPausedSeconds": c.Defaults.MaxPausedSeconds} {
+		if d != 0 && d < 60 {
+			bad("defaults.%s must be 0 (off) or at least 60, not %d", name, d)
+		}
+	}
+	for _, p := range c.Pools {
+		if err := ValidatePreemption(p.Preemption); err != nil {
+			bad("pool %s: %v", p.Name, err)
+		}
+	}
 	for _, o := range c.CORS.AllowedOrigins {
 		u, err := url.Parse(o)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || strings.Contains(u.Host, "*") || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
