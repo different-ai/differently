@@ -160,7 +160,7 @@ Postgres against a real OpenSandbox server with the Docker runtime and passed
 | Talos | Differently's chart; OpenSandbox per its docs | unverified | |
 | OpenSandbox on a plain Linux host, Differently elsewhere | Docker runtime on that host | documented | [bare-metal.md](bare-metal.md#register-an-opensandbox-server-on-a-plain-linux-host) |
 | Air-gapped | Any of the above | documented | [air-gapped.md](air-gapped.md) |
-| Managed provider pools | Provider APIs | unverified | Adapters are checked against each provider's published API with fake servers, not live accounts ([provider catalog](../providers/README.md)) |
+| Managed provider pools | Provider APIs | Daytona and Freestyle **tested** against live accounts (2026-10-29); the others unverified | The other adapters are checked against each provider's published API with fake servers ([provider catalog](../providers/README.md)) |
 
 ## Security model in one paragraph
 
