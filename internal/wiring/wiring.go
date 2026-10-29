@@ -10,9 +10,11 @@ import (
 	"github.com/different-ai/differently/internal/adapters/devhost"
 	"github.com/different-ai/differently/internal/adapters/e2b"
 	"github.com/different-ai/differently/internal/adapters/fake"
+	"github.com/different-ai/differently/internal/adapters/fly"
 	"github.com/different-ai/differently/internal/adapters/freestyle"
 	"github.com/different-ai/differently/internal/adapters/morph"
 	"github.com/different-ai/differently/internal/adapters/opensandbox"
+	"github.com/different-ai/differently/internal/adapters/vercel"
 	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/internal/pools"
 	"github.com/different-ai/differently/pkg/adapter"
@@ -42,6 +44,28 @@ func Register() {
 			return nil, err
 		}
 		return freestyle.New(freestyle.FromConfig(p.Config, key)), nil
+	})
+	pools.Register("vercel", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		key, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := vercel.FromConfig(p.Config, key)
+		if err != nil {
+			return nil, err
+		}
+		return vercel.New(opts), nil
+	})
+	pools.Register("fly", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		key, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := fly.FromConfig(p.Config, key)
+		if err != nil {
+			return nil, err
+		}
+		return fly.New(opts), nil
 	})
 	pools.Register("boat", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
 		key, err := resolve(p, d)

@@ -614,8 +614,8 @@ func poolAddCmd() *cobra.Command {
 		return raw("POST", "/v1/admin/pools", body)
 	}}
 	f := cmd.Flags()
-	f.StringVar(&adapterKind, "adapter", "", "daytona, freestyle, boat, e2b, morph, opensandbox or remote")
-	f.StringVar(&trust, "trust", "", "external (someone else runs it) or private (you do); daytona, freestyle, boat and morph are always external; opensandbox and e2b need one")
+	f.StringVar(&adapterKind, "adapter", "", "daytona, freestyle, opensandbox, remote, vercel, fly, boat, e2b or morph")
+	f.StringVar(&trust, "trust", "", "external (someone else runs it) or private (you do); daytona, freestyle, vercel, fly, boat and morph are always external; opensandbox and e2b need one")
 	f.StringArrayVar(&settings, "config", nil, "adapter setting key=value (repeatable), e.g. apiURL=https://app.daytona.io/api")
 	f.StringVar(&region, "region", "", "region label")
 	f.IntVar(&maxConcurrency, "max-concurrency", 0, "most sandboxes at once (0: quotas only)")

@@ -38,6 +38,8 @@ const kinds = {
   morph: ["Morph Cloud", "external", [["apiURL", "API URL (default https://cloud.morph.so/api)"], ["snapshot", "snapshot"], ["image", "image (default morphvm-minimal)"], ["portAuth", "port auth", ["none", "api_key"]]]],
   opensandbox: ["OpenSandbox", "", [["apiURL", "lifecycle API URL", null, true], ["image", "image"], ["templateId", "template id"], ["isolation", "isolation", ["container", "microvm"]], ["runtime", "runtime", ["docker", "kubernetes"]], ["lineEndings", "line endings", ["kept", "stripped"]], ["ports", "port URLs", ["signed"]], ["egress", "egress", ["none", "public", "allowlist"]], ["egressAllow", "egress allowlist (comma-separated hosts)"], ["useServerProxy", "server proxy", ["true", "false"]]]],
   remote: ["Remote plugin", "", [["endpoint", "plugin endpoint URL", null, true]]],
+  vercel: ["Vercel Sandbox", "external", [["project", "project ID or name", null, true], ["team", "team ID"], ["region", "region (default iad1)"], ["image", "image"], ["architecture", "architecture", ["amd64", "arm64"]], ["ports", "ports (comma separated)"], ["maxTimeoutSeconds", "max session seconds (default 2700)"]]],
+  fly: ["Fly.io Machines", "external", [["app", "Fly app name", null, true], ["region", "region"], ["image", "image"], ["cpuKind", "CPU kind", ["shared", "performance"]], ["suspend", "suspend for pause", ["true", "false"]]]],
 };
 function pickKind() {
   const [, trust, fields] = kinds[$("#pk-kind").value], t = $("#pk-trust");

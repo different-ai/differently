@@ -71,7 +71,9 @@ func (c *Client) Do(ctx context.Context, method, url string, body io.Reader, con
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	req.Header.Set("Accept", "application/json")
+	if req.Header.Get("Accept") == "" {
+		req.Header.Set("Accept", "application/json")
+	}
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
