@@ -134,6 +134,12 @@ func (s *Scheduler) Tick(ctx context.Context) {
 // Drain waits for in-flight provisioning and termination.
 func (s *Scheduler) Drain() { s.wg.Wait() }
 
+// Policies returns the placement policies that apply to a tenant: global,
+// then the organization's and the project's when they exist.
+func (s *Scheduler) Policies(ctx context.Context, orgID, projectID string) []api.PlacementPolicy {
+	return s.policies(ctx, orgID, projectID)
+}
+
 func (s *Scheduler) policies(ctx context.Context, orgID, projectID string) []api.PlacementPolicy {
 	global := s.Config.Policy
 	if p, ok, _ := s.Store.GetPolicy(ctx, "global"); ok {

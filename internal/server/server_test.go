@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -762,5 +763,47 @@ func TestPauseOutlivesTheRequest(t *testing.T) {
 			t.Fatalf("pause was abandoned with the request: %+v", h.get(token, sb.ID))
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// GET /v1/capabilities answers a tenant with the pools its placement
+// policies let it use, and an operator with every pool.
+func TestCapabilitiesFollowTenantPolicy(t *testing.T) {
+	pools := func(h *harness, token string) []string {
+		var out struct {
+			Items []struct {
+				Pool string `json:"pool"`
+			} `json:"items"`
+		}
+		h.must(200, "GET", "/v1/capabilities", token, nil, &out)
+		var names []string
+		for _, it := range out.Items {
+			names = append(names, it.Pool)
+		}
+		slices.Sort(names)
+		return names
+	}
+
+	closed := newHarness(t, api.PlacementPolicy{})
+	_, _, token := closed.tenant("acme", api.Quota{})
+	if got := pools(closed, token); !slices.Equal(got, []string{"fc"}) {
+		t.Fatalf("with external placement off, a tenant should see only the private pool: %v", got)
+	}
+	if got := pools(closed, operatorToken); !slices.Equal(got, []string{"burst", "fc"}) {
+		t.Fatalf("an operator sees every pool: %v", got)
+	}
+
+	h := newHarness(t, overflowPolicy)
+	_, _, open := h.tenant("open", api.Quota{})
+	if got := pools(h, open); !slices.Equal(got, []string{"burst", "fc"}) {
+		t.Fatalf("an approved external pool is usable: %v", got)
+	}
+	org, _, narrowed := h.tenant("narrowed", api.Quota{})
+	h.must(200, "PUT", "/v1/policies/org:"+org, operatorToken, api.PlacementPolicy{DeniedPools: []string{"fc"}}, nil)
+	if got := pools(h, narrowed); !slices.Equal(got, []string{"burst"}) {
+		t.Fatalf("an organization policy narrows what its keys see: %v", got)
+	}
+	if got := pools(h, open); !slices.Equal(got, []string{"burst", "fc"}) {
+		t.Fatalf("another organization's policy changes nothing here: %v", got)
 	}
 }
