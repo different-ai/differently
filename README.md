@@ -43,7 +43,7 @@ Apache-2.0, fully self-hosted, no telemetry. Built by the
   <br><sub>▶ <a href="https://different-ai.github.io/differently/#video">Watch the 36-second intro</a></sub>
 </p>
 
-> **Pre-release ([`v0.1.0-alpha.1`](https://github.com/different-ai/differently/releases)).**
+> **Pre-release ([`v0.1.0-alpha.2`](https://github.com/different-ai/differently/releases)).**
 > The whole platform is implemented and tested end to end against real
 > OpenSandbox servers (Docker and Kubernetes runtimes). It isn't ready for
 > production workloads yet: see [what is verified](#status).

@@ -6,6 +6,40 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.2] — 2026-10-29
+
+Second alpha, published as a GitHub pre-release. Not for production.
+OpenSandbox pools come close to Freestyle on the Kubernetes runtime, Fast
+Sandbox microVMs run live, idle sandboxes stop and wake, and 15 more
+provider adapters join OpenSandbox. The managed-provider adapters are tested
+only against fakes of each provider's API, and multi-node and managed
+clusters are not verified yet (see the provider catalog and
+`docs/roadmap.md`).
+
+### Added (OpenSandbox parity with Freestyle)
+
+- `runtime: kubernetes` for OpenSandbox pools. With the controller's snapshot
+  registry, the pool offers stop/start with the disk kept (OpenSandbox's
+  pause commits the root filesystem and frees the pod), disk snapshots and
+  fork, and refuses a memory pause it cannot keep.
+- `ports: signed`: port URLs through OpenSandbox's ingress gateway (route
+  mode `uri`, Secure Access), signed and time-limited, with no header or key.
+- `egress: none` or `allowlist` (`egressAllow`), enforced by OpenSandbox's
+  egress sidecar; the pool advertises `network.egress-control`.
+- Exec stdin on OpenSandbox pools, staged in a file the command reads.
+- Helm values `opensandbox.runtime`, `ports`, `portScheme`,
+  `portURLSeconds`, `egress` and `egressAllow`; the e2e test `TestPortURL`;
+  the recording `kubernetes-registry-1.2.0`.
+
+### Added (Fast Sandbox runtime)
+
+- `runtime: fastsandbox` for OpenSandbox pools: Firecracker microVMs created
+  from a Fast Sandbox template, pause/resume with memory kept, disk snapshots
+  and fork. A sandbox's idle timeout becomes OpenSandbox's own idle policy
+  (pause on idle, wake on access); the scheduler leaves those pools to it and
+  the reconciler follows the backend's pauses and gateway wakes. New optional
+  adapter interface `adapter.NativeIdler`.
+
 ### Fixed (Fast Sandbox, run live)
 
 - `portScheme` now applies to every gateway endpoint OpenSandbox returns
@@ -18,6 +52,17 @@ All notable changes are recorded here. The format follows
   recording replays in every `go test`, and the pools guide lists measured
   timings with Workbot's desktop and the gaps found, each marked as an
   OpenSandbox limitation or not built yet.
+
+### Added (idle auto-stop)
+
+- `idleTimeoutSeconds` on sandboxes (create and `PATCH`) and
+  `defaults.idleTimeoutSeconds`: the scheduler leader pauses (pools that keep
+  memory) or stops (disk kept) a sandbox with no exec, file, port or
+  keepalive call for that long, and the next such call wakes it. A sandbox a
+  caller stopped or paused is never woken this way. New
+  `POST /v1/sandboxes/{id}/keepalive`, sandbox fields `lastActivityAt` and
+  `idledAt`, SDK and CLI (`--idle-timeout`) support, and audit event
+  `sandbox.idled` / `sandbox.woke`.
 
 ### Added (provider catalog)
 
@@ -33,41 +78,6 @@ All notable changes are recorded here. The format follows
 - `boat`, `morph` (always external) and `e2b` (declared trust: it is
   self-hostable) adapters; a page for CodeSandbox (documented). Tested with
   fake servers, not live accounts.
-
-### Added (self-hosted runtimes)
-
-- `agent-sandbox` pools: Sandboxes from kubernetes-sigs/agent-sandbox, or
-  SandboxClaims on a warm pool, through the Kubernetes API with no client-go
-  dependency; exec and files over WebSocket `pods/exec` (stdin and
-  streaming included); stop/start with a per-sandbox volume. Checked live on
-  kind with agent-sandbox v1.0.8.
-- `cubesandbox` pools: CubeSandbox's KVM microVMs through its E2B-compatible
-  CubeAPI and envd: exec (streamed), files, pause/resume, memory snapshots
-  and fork. Tested with a fake server; not run against CubeSandbox yet.
-- Provider pages `docs/providers/agent-sandbox.md`, `cubesandbox.md` and
-  `microsandbox.md` (not supported: no self-hosted server API since its
-  rewrite).
-
-### Added (idle auto-stop)
-
-- `idleTimeoutSeconds` on sandboxes (create and `PATCH`) and
-  `defaults.idleTimeoutSeconds`: the scheduler leader pauses (pools that keep
-  memory) or stops (disk kept) a sandbox with no exec, file, port or
-  keepalive call for that long, and the next such call wakes it. A sandbox a
-  caller stopped or paused is never woken this way. New
-  `POST /v1/sandboxes/{id}/keepalive`, sandbox fields `lastActivityAt` and
-  `idledAt`, SDK and CLI (`--idle-timeout`) support, and audit event
-  `sandbox.idled` / `sandbox.woke`.
-
-### Added (Blaxel provider)
-
-- `blaxel` adapter for Blaxel sandboxes (always `trust: external`): exec
-  and streamed exec, files, stdin, token-protected port previews and a TTL
-  backstop. Tested against a fake server built from Blaxel's published
-  specs, not a live account.
-- Provider pages for Blaxel, Runloop (not supported: the service is
-  winding down), Beam and Koyeb (documented: a `remote` plugin on their
-  SDKs) under `docs/providers/`.
 
 ### Added (cloud providers' own sandboxes)
 
@@ -85,20 +95,38 @@ All notable changes are recorded here. The format follows
 - Provider pages in `docs/providers/` for these, plus AgentCore Runtime and
   GKE Agent Sandbox (documented, no adapter).
 
-### Added (OpenSandbox parity with Freestyle)
+### Added (self-hosted runtimes)
 
-- `runtime: kubernetes` for OpenSandbox pools. With the controller's snapshot
-  registry, the pool offers stop/start with the disk kept (OpenSandbox's
-  pause commits the root filesystem and frees the pod), disk snapshots and
-  fork, and refuses a memory pause it cannot keep.
-- `ports: signed`: port URLs through OpenSandbox's ingress gateway (route
-  mode `uri`, Secure Access), signed and time-limited, with no header or key.
-- `egress: none` or `allowlist` (`egressAllow`), enforced by OpenSandbox's
-  egress sidecar; the pool advertises `network.egress-control`.
-- Exec stdin on OpenSandbox pools, staged in a file the command reads.
-- Helm values `opensandbox.runtime`, `ports`, `portScheme`,
-  `portURLSeconds`, `egress` and `egressAllow`; the e2e test `TestPortURL`;
-  the recording `kubernetes-registry-1.2.0`.
+- `agent-sandbox` pools: Sandboxes from kubernetes-sigs/agent-sandbox, or
+  SandboxClaims on a warm pool, through the Kubernetes API with no client-go
+  dependency; exec and files over WebSocket `pods/exec` (stdin and
+  streaming included); stop/start with a per-sandbox volume. Checked live on
+  kind with agent-sandbox v1.0.8.
+- `cubesandbox` pools: CubeSandbox's KVM microVMs through its E2B-compatible
+  CubeAPI and envd: exec (streamed), files, pause/resume, memory snapshots
+  and fork. Tested with a fake server; not run against CubeSandbox yet.
+- Provider pages `docs/providers/agent-sandbox.md`, `cubesandbox.md` and
+  `microsandbox.md` (not supported: no self-hosted server API since its
+  rewrite).
+
+### Added (Blaxel provider)
+
+- `blaxel` adapter for Blaxel sandboxes (always `trust: external`): exec
+  and streamed exec, files, stdin, token-protected port previews and a TTL
+  backstop. Tested against a fake server built from Blaxel's published
+  specs, not a live account.
+- Provider pages for Blaxel, Runloop (not supported: the service is
+  winding down), Beam and Koyeb (documented: a `remote` plugin on their
+  SDKs) under `docs/providers/`.
+
+### Added (end-to-end checks for microVM pools)
+
+- `TestPauseKeepsMemory`, `TestIdlePauseAndWakeThroughPortURL`,
+  `TestMemorySnapshot` and `TestDesktopStreams` (VNC over a port URL's
+  WebSocket), each skipped where the pool lacks the feature. The suite runs
+  against Fast Sandbox pools by template (`DIFFERENTLY_E2E_TEMPLATE`), checks
+  a microVM guest's size instead of cgroup limits, and expects Fast Sandbox's
+  precise refusals of sandbox env and of a template the pool does not serve.
 
 ### Fixed (found against real OpenSandbox runtimes)
 
@@ -116,6 +144,20 @@ All notable changes are recorded here. The format follows
   instead of as pending.
 - The Helm chart's default `opensandbox.apiURL` and NetworkPolicy now match
   OpenSandbox's own chart (namespace `opensandbox-system`, port 80).
+- A sandbox whose create outlived the provision timeout stayed
+  `provisioning` and was provisioned again on every scheduler tick: the retry
+  ran on the expired context, so its PostgreSQL writes failed. Only the
+  backend call is bounded by the timeout now.
+
+### Security
+
+- `devhost` refs must match the generated ID pattern; before, `..` reached
+  the adapter root, so deleting it removed the root.
+- Sandbox file reads from the API and the adapter protocol are served as
+  downloads (`Content-Disposition: attachment`, `nosniff` and a sandbox CSP),
+  so browsers never render sandbox content on the API origin.
+- The SDKs trim trailing slashes from the base URL without a backtracking
+  regular expression.
 
 ### Changed
 
@@ -125,16 +167,36 @@ All notable changes are recorded here. The format follows
 - The end-to-end suite adapts to the pool's capabilities, adds
   `TestUnpullableImageKeepsPoolHealthy`, and runs against any deployment
   (`OPENSANDBOX_E2E_INTERNAL_URL`, `DIFFERENTLY_E2E_POOL`).
+- CI approves a pull request from this repository once every CI job passes,
+  which satisfies `main`'s one-approval rule; forks are never approved and a
+  new push dismisses the approval.
+- Documentation: a maintainer guide (`docs/maintaining.md`), deployment
+  guides for any cloud or bare metal with a verified single-VM recipe, the
+  provider catalog, and a website and README that describe the project
+  plainly. The internal architecture decision records were removed.
 
 ### Verified
 
-- OpenSandbox's Kubernetes runtime on single-node k3s (Azure, x86_64),
-  installed with OpenSandbox's charts and Differently's Helm chart: the
-  end-to-end suite passes 12/12 (pause and snapshots checked as refusals).
-  The Docker runtime passes 12/12 too.
-- Real runs of both runtimes are recorded under
-  `internal/adapters/opensandbox/testdata/recordings` and replayed by
-  `TestReplayRecordings` in every `go test`.
+- OpenSandbox's Docker runtime (arm64, Colima) and Kubernetes runtime
+  (single-node k3s on Azure, installed with Helm): the end-to-end suite
+  passes 14/14, including stop/start, snapshots and fork through a snapshot
+  registry, signed port URLs (WebSockets included), egress policy, stdin, and
+  idle auto-stop with wake.
+- Fast Sandbox on one node (nested KVM on Azure), with OpenWork's Workbot
+  desktop through Differently: create in 1.2 s, the desktop streamed over the
+  HTTPS port URL, pause in about 3 minutes and resume in 0.9 s with memory
+  kept, and an idle sandbox woken by a port request in 0.67 s. A partial
+  end-to-end run passed files and pause/resume; fork failed on a 1 vCPU,
+  1 GiB template (not yet diagnosed), and the port URL, idle-wake, memory and
+  desktop checks did not run.
+- The `agent-sandbox` adapter against agent-sandbox v1.0.8 on a kind cluster.
+- OpenWork's Workbot computers through Differently as a sandbox gateway,
+  behind a flag.
+- Recorded runs of the Docker, Kubernetes (with and without a snapshot
+  registry) and Fast Sandbox runtimes replay in every `go test`.
+- Not verified: the managed-provider adapters against live accounts (each is
+  tested against a fake of its provider's published API), multi-node clusters
+  and node drains, and managed EKS, GKE and AKS.
 
 ## [0.1.0-alpha.1] — 2026-10-28
 
@@ -275,5 +337,6 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.1...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.2...pre-release
+[0.1.0-alpha.2]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.1
