@@ -579,7 +579,13 @@ func (s *Server) readFile(w http.ResponseWriter, r *http.Request, p auth.Princip
 		return err
 	}
 	s.audit(r, p, "sandbox.file_read", rec.ID, rec.OrgID, rec.ProjectID, map[string]string{"path": truncate(path, 256)})
-	w.Header().Set("Content-Type", "application/octet-stream")
+	// Sandbox files are untrusted: force a download and stop browsers from
+	// sniffing or rendering them on the API origin.
+	h := w.Header()
+	h.Set("Content-Type", "application/octet-stream")
+	h.Set("Content-Disposition", "attachment")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	_, _ = w.Write(data)
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sync"
 
 	"github.com/different-ai/differently/internal/id"
@@ -42,6 +43,18 @@ func New(root string) (*Adapter, error) {
 	return &Adapter{Root: root}, nil
 }
 
+// refPattern matches the IDs Differently generates for sandboxes and
+// snapshots. Anything else, including "." and "..", could name a path outside
+// the adapter root, so it is rejected before touching the filesystem.
+var refPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
+func checkRef(ref string) error {
+	if !refPattern.MatchString(ref) {
+		return api.Errorf(api.CodeInvalidRequest, "invalid ref %q", ref)
+	}
+	return nil
+}
+
 func (a *Adapter) dir(ref string) string {
 	return filepath.Join(a.Root, "sandboxes", filepath.Base(ref))
 }
@@ -49,6 +62,9 @@ func (a *Adapter) fsDir(ref string) string { return filepath.Join(a.dir(ref), "f
 
 func (a *Adapter) load(ref string) (meta, error) {
 	var m meta
+	if !refPattern.MatchString(ref) {
+		return m, adapter.NotFound(ref)
+	}
 	b, err := os.ReadFile(filepath.Join(a.dir(ref), "meta.json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return m, adapter.NotFound(ref)
@@ -60,6 +76,9 @@ func (a *Adapter) load(ref string) (meta, error) {
 }
 
 func (a *Adapter) save(m meta) error {
+	if err := checkRef(m.Ref); err != nil {
+		return err
+	}
 	b, _ := json.Marshal(m)
 	return os.WriteFile(filepath.Join(a.dir(m.Ref), "meta.json"), b, 0o600)
 }
@@ -86,6 +105,9 @@ func (a *Adapter) Create(_ context.Context, req adapter.CreateRequest) (adapter.
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	ref := req.ID // the sandbox ID is the idempotency key and the ref
+	if !refPattern.MatchString(ref) {
+		return adapter.Instance{}, checkRef(ref)
+	}
 	if m, err := a.load(ref); err == nil {
 		return m.Instance, nil
 	}
@@ -93,6 +115,9 @@ func (a *Adapter) Create(_ context.Context, req adapter.CreateRequest) (adapter.
 		return adapter.Instance{}, err
 	}
 	if req.FromSnapshot != "" {
+		if !refPattern.MatchString(req.FromSnapshot) {
+			return adapter.Instance{}, checkRef(req.FromSnapshot)
+		}
 		src := filepath.Join(a.Root, "snapshots", filepath.Base(req.FromSnapshot))
 		if err := copyTree(src, a.fsDir(ref)); err != nil {
 			_ = os.RemoveAll(a.dir(ref))
@@ -124,6 +149,9 @@ func (a *Adapter) List(_ context.Context, installation string) ([]adapter.Instan
 }
 
 func (a *Adapter) Delete(_ context.Context, ref string) error {
+	if !refPattern.MatchString(ref) {
+		return adapter.NotFound(ref)
+	}
 	return os.RemoveAll(a.dir(ref))
 }
 
@@ -213,6 +241,9 @@ func (a *Adapter) Snapshot(_ context.Context, ref, kind string) (adapter.Snapsho
 }
 
 func (a *Adapter) DeleteSnapshot(_ context.Context, ref string) error {
+	if !refPattern.MatchString(ref) {
+		return adapter.NotFound(ref)
+	}
 	return os.RemoveAll(filepath.Join(a.Root, "snapshots", filepath.Base(ref)))
 }
 

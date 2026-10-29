@@ -208,7 +208,13 @@ func (h *handler) readFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/octet-stream")
+	// Sandbox files are untrusted: force a download and stop browsers from
+	// sniffing or rendering them on the API origin.
+	hdr := w.Header()
+	hdr.Set("Content-Type", "application/octet-stream")
+	hdr.Set("Content-Disposition", "attachment")
+	hdr.Set("X-Content-Type-Options", "nosniff")
+	hdr.Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	_, _ = w.Write(data)
 }
 
