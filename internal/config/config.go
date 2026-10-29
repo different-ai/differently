@@ -198,10 +198,10 @@ type DashboardConfig struct {
 func (d DashboardConfig) On() bool { return d.Enabled == nil || *d.Enabled }
 
 // Adapter kinds that always run on third-party infrastructure.
-var externalKinds = []string{"daytona", "freestyle", "vercel", "fly", "boat", "morph"}
+var externalKinds = []string{"daytona", "freestyle", "vercel", "fly", "boat", "morph", "blaxel"}
 
 // KnownAdapters lists adapter kinds the server can build.
-var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "vercel", "fly", "boat", "e2b", "morph"}
+var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "vercel", "fly", "boat", "e2b", "morph", "blaxel"}
 
 // Adapter kinds that run where the operator put them (a plugin they deploy,
 // the dev host, the test fake), so they are private unless declared.
