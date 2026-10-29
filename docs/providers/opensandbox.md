@@ -106,5 +106,7 @@ default `https` with signed ports, else `http`) and `portURLSeconds`
   as `fastsandbox-1.2.0`, and OpenWork's Workbot desktop through
   Differently: create, viewer streamed over a port URL, pause and resume
   keeping memory, idle pause and wake by a port request.
-- Not run: the end-to-end suite on Fast Sandbox, multi-node clusters and
-  node drains, managed EKS, GKE and AKS.
+- The end-to-end suite on a Fast Sandbox pool, on two-node k3s with a
+  Standard_D16s_v6 KVM node, 2026-10-29: 14 of 14 run passed
+  ([azure-vms.md](../deploy/azure-vms.md#verify)).
+- Not run: node drains, more than one KVM node, managed EKS, GKE and AKS.

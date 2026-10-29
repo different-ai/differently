@@ -128,15 +128,14 @@ const verified = [
   ['Idle auto-stop', 'Idle sandboxes stop (Kubernetes) or pause (Docker) and wake on the next call.'],
   ['Release artifacts', 'The published chart and images install from public registries; the first sandbox runs in about 2 s.'],
   ['Recorded runtimes', 'Real OpenSandbox responses from both runtimes are replayed in every go test.'],
-  ['OpenWork', 'Workbot computers run through Differently as a sandbox gateway, behind a flag: commands with Python tools, files, and stop/start.'],
+  ['OpenWork', "Workbot computers run through Differently as a sandbox gateway, behind a flag: commands with Python tools, files, pause and resume, and Workbot's desktop on Fast Sandbox microVMs."],
   ['Failure isolation', 'An image that cannot be pulled fails that sandbox only; the shared pool stays healthy.'],
   ['agent-sandbox', 'The adapter runs against a Kubernetes cluster (kind, runc).'],
   ['Daytona and Freestyle', 'The adapters run against live accounts: exec, files, port URLs, stop/start and snapshots on both, and egress policy, pause/resume, memory snapshots and fork on Freestyle.'],
-  ['Fast Sandbox', "Firecracker microVMs on one node: Workbot's desktop streamed over a port URL, paused and resumed with its memory (a pause takes minutes), idled and woken by a request."],
+  ['Fast Sandbox', "Firecracker microVMs on Azure: the end-to-end suite passes on the microVM pool, and Workbot's desktop streams over a port URL, pauses and resumes with its memory (a pause takes minutes), idles and wakes on a request."],
 ];
 const notVerified = [
-  'The end-to-end suite on Fast Sandbox microVMs',
-  'Multi-node clusters and node drains',
+  'Node drains, and more than one KVM node',
   'Managed EKS, GKE and AKS clusters',
   'The other 12 provider adapters against live accounts; each is tested against a fake of its published API',
 ];

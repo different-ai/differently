@@ -69,7 +69,9 @@ the pool `TestStoredProviderKeyAndSwitching` registers, and
 `DIFFERENTLY_E2E_POOL` names the config's private pool (`opensandbox`). The
 server's config must match [`config.yaml`](config.yaml) where the tests
 depend on it: the `small` and `medium` profiles, `audit.failClosed: true`
-and a short `scheduler.reconcileIntervalSeconds`. On a Fast Sandbox pool, sandboxes boot templates, not images:
+and a short `scheduler.reconcileIntervalSeconds`. With several server replicas, point
+`DIFFERENTLY_E2E_METRICS_URL` at the scheduler leader's pod: only the
+leader counts sandbox transitions. On a Fast Sandbox pool, sandboxes boot templates, not images:
 `DIFFERENTLY_E2E_TEMPLATE` and `DIFFERENTLY_E2E_PYTHON_TEMPLATE` name them,
 and the pool's `templateId` must be that template. Tests adapt to what the
 pool advertises: where pause or snapshots are not offered (the Kubernetes
@@ -112,6 +114,7 @@ them precisely instead.
 | 2026-10-29 | Azure k3s and Colima, as above | same | 14/14 on both; an idle sandbox is stopped (Kubernetes) or paused (Docker) after 60 s and woken by the next exec in about 1.7 s (Kubernetes) or under 0.1 s (Docker) |
 | 2026-10-28 | k3s v1.36.5 on an Azure `Standard_D8s_v6`, x86_64; Differently from its Helm chart with embedded PostgreSQL | server, controller and `execd` release-1.2.0, Kubernetes runtime, no snapshot registry | 12/12 passed (pause and snapshots checked as refusals); sandboxes running in about 1.4–2.7 s; an unpullable image retries after OpenSandbox's 60 s pod-ready timeout with the pool healthy |
 | 2026-10-29 | same Azure VM; pool `opensandbox-microvm` (`runtime: fastsandbox`), template `tpl-1cbcfa94` (1 vCPU, 1 GiB, guest kernel 6.18.36+) | server, Fast Sandbox and `execd` release-1.2.0 | **Partial run**, stopped when the VM was deallocated. Sandboxes running in about 1.3 s; files and pause/resume passed (pause about 52 s for 1 GiB); sandbox env and a template other than the pool's are refused precisely (the tests now expect that). Fork failed with a bare 422 from OpenSandbox on restore, not yet diagnosed. Port URL, idle wake, memory kept and the desktop stream did not run |
+| 2026-10-29 | Azure, two-node k3s (`Standard_D8s_v6` + `Standard_D16s_v6` KVM node), Postgres Flexible Server, two server replicas | server 1.2.0, Fast Sandbox with a 6.18.36 guest kernel with nftables; pool `runtime: fastsandbox` with OpenWork's Workbot desktop template | 14/14 run passed (desktop, unpullable-image, idle-sweep and switching tests not run); pause about 3–4 min for the 4 GiB desktop, idle wake by a port request 2.3 s |
 
 Not covered yet:
 

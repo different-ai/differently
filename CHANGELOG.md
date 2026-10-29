@@ -6,6 +6,16 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Documentation
+
+- `docs/deploy/azure-vms.md`: a verified install on two Azure VMs with Fast
+  Sandbox microVMs, managed Postgres, ACR and Key Vault, serving OpenWork's
+  Workbot computers, and what it took (guest kernel, template registry,
+  Key Vault CSI on VMs, ACR token scopes, sandbox network policy).
+- The OpenWork guide records the end-to-end run, Freestyle template slugs
+  and OpenSandbox's maximum timeout; the e2e suite runs on installs with
+  several pools and replicas, and gives Fast Sandbox checkpoints time.
+
 ### Added (admin console)
 
 - `console/`: an admin app built with Astro, separate from the server. It has

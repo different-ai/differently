@@ -7,11 +7,13 @@ contract against this API. OpenWork then holds a single Differently key.
 Differently holds the OpenSandbox, Daytona and Freestyle credentials, and
 decides by policy where each computer runs.
 
-Status: **documented and unit-tested on both sides; not run end to end**.
-Differently's side is covered by its tests and the e2e suite. The OpenWork
-adapter passes OpenWork's conformance cases against a fake Differently
-server. Nobody has yet driven a Workbot runner through a real Differently
-installation.
+Status: **run end to end on 2026-10-29.** OpenWork's headless runner, run
+locally, drove Workbot computers through an install on Azure VMs
+([azure-vms.md](../deploy/azure-vms.md)): a model turn used the computer on a
+Fast Sandbox microVM, Workbot opened a page in the desktop's browser, the
+viewer streamed it, and OpenWork's `proof:live` passed through the gateway,
+pause and resume included. The runner fell back to its own provider when the
+gateway could not start a computer.
 
 ## What OpenWork needs, and where Differently provides it
 
@@ -99,15 +101,20 @@ config:
   templates:
     - name: workbot-computer
       description: Workbot's Linux computer
-      images:
-        opensandbox: ghcr.io/example/workbot-computer:2026-10-28 # OpenSandbox image (or a Fast Sandbox template ID)
-        daytona: workbot-computer-v12                          # Daytona snapshot name
-        freestyle: workbot-computer-v12                         # Freestyle snapshot ID or slug
+      pools: [opensandbox-microvm, freestyle]
+      images:                                  # keyed by pool name
+        opensandbox-microvm: tpl-...           # a Fast Sandbox template ID (the pool's templateId)
+        freestyle: workbot-desktop-freestyle-0123456789abcdef  # the Freestyle snapshot's slug
+        # opensandbox: <registry>/workbot-computer:<tag>     # an image, on the container runtimes
+        # daytona: <snapshot name>
 ```
 
 A template with `images` runs only on the pools it lists, and placement
 explanations say so. A template name with no configured entry is passed to
-the backend unchanged, as before.
+the backend unchanged, as before. Freestyle's VM create takes the snapshot's
+slug (the name OpenWork's snapshot builder prints), not its `sh-...` id.
+Workbot's desktop needs Daytona's `linux-vm` class, so leave Daytona out of
+the template where the account has none.
 
 ## 2. Give OpenWork a project and a key
 
@@ -180,8 +187,18 @@ should use it; every other organization keeps the runner's own provider.
   their own deletion deadline ([backlog E0.20](../backlog.md)). Keep their
   TTLs generous or unset there.
 - **Desktop viewers** need a pool whose backend exposes ports without the
-  backend's API key: Freestyle (public TLS host) or Daytona (signed preview
-  URL). OpenSandbox's proxied endpoints are not handed out.
+  backend's API key: Freestyle (public TLS host), Daytona (signed preview
+  URL), or OpenSandbox behind its ingress gateway (signed URLs on the
+  Kubernetes runtime, route scopes on Fast Sandbox). OpenSandbox's proxied
+  endpoints are not handed out.
+- **OpenSandbox's maximum timeout.** The adapter sends a computer's TTL as
+  OpenSandbox's own expiry, and the runner keeps computers
+  `HEADLESS_COMPUTER_KEEP_DAYS` (14 by default). Set the OpenSandbox servers'
+  `max_sandbox_timeout_seconds` above that, or every create is refused and
+  the runner falls back to its own provider.
+- **Fast Sandbox pause takes minutes** (a full checkpoint: about three for a
+  4 GiB desktop). Differently finishes it even when the runner stops
+  waiting; OpenWork's runner gives pauses five minutes.
 - **Den's Cloud workers** need detached processes and persistent volumes;
   both are in the [backlog](../backlog.md) and Den stays on Daytona until
   then.
