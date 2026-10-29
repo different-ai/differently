@@ -102,7 +102,7 @@ export class HttpClient {
         response = await config.fetch(url, {
           method: req.method,
           headers,
-          body: body ?? null,
+          body: (body ?? null) as RequestInit["body"],
           signal: attempt.signal,
           redirect: "manual",
         });

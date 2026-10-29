@@ -1,0 +1,52 @@
+---
+import '../styles/console.css';
+import Sidebar from '../components/Sidebar.astro';
+import Icon from '../components/Icon.astro';
+interface Props { title: string; active: string }
+const { title, active } = Astro.props;
+const base = import.meta.env.BASE_URL;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>{title} · Differently</title>
+    <link rel="icon" href={base + 'favicon.svg'} type="image/svg+xml" />
+    <script is:inline>
+      try { const t = localStorage.getItem('differently.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+    </script>
+  </head>
+  <body>
+    <div class="shell" id="shell">
+      <Sidebar active={active} />
+      <div class="main">
+        <div class="topbar">
+          <button class="btn ghost icon-btn menu-toggle" type="button" id="menu-toggle" aria-label="Open menu"><Icon name="menu" /></button>
+          <span class="crumb">{title}</span>
+          <span class="spacer"></span>
+          <a class="btn small" href="https://different-ai.github.io/differently/docs/" target="_blank" rel="noopener">Docs</a>
+        </div>
+        <main class="content" id="content">
+          <slot />
+        </main>
+      </div>
+    </div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <dialog class="modal" id="confirm">
+      <form method="dialog">
+        <div class="modal-head"><h2 id="confirm-title">Are you sure?</h2></div>
+        <p id="confirm-body" style="margin:0;color:var(--muted)"></p>
+        <div class="modal-foot">
+          <button class="btn" value="cancel">Cancel</button>
+          <button class="btn primary" value="ok" id="confirm-ok">Confirm</button>
+        </div>
+      </form>
+    </dialog>
+    <script>
+      import { boot } from '../lib/shell';
+      boot();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,57 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Icon from '../components/Icon.astro';
+---
+<Console title="Policies" active="policies">
+  <PageHeader title="Policies" description="Where sandboxes may run. A narrower scope can only restrict a wider one." />
+  <div id="list"></div>
+
+  <dialog class="modal" id="edit">
+    <form>
+      <div class="modal-head"><h2 id="edit-title">Edit policy</h2><button class="btn ghost icon-btn" type="button" data-close aria-label="Close"><Icon name="x" /></button></div>
+      <input type="hidden" name="scope" />
+      <label class="field"><span>Policy</span><textarea name="policy" rows="12" required spellcheck="false"></textarea>
+        <small>Fields: external (never, overflow, allowed), externalPools, allowedPools, deniedPools, allowedRegions, strategy, maxCostPerHour, maxQueueSeconds.</small></label>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Close</button><button class="btn primary" data-save>Save policy</button></div>
+    </form>
+  </dialog>
+</Console>
+<script>
+  import { client } from '../lib/connection';
+  import { dialog, el, empty, isSet, relTime, section, toast } from '../lib/ui';
+  import type { PlacementPolicy } from '@differently/sdk';
+
+  const c = client();
+  const editable = ({ scope, updatedAt, updatedBy, ...rest }: PlacementPolicy) => rest;
+  const list = (v?: string[]) => (v?.length ? v.join(', ') : '—');
+
+  async function load() {
+    await section('#list', async () => {
+      const policies = await c.policies.list();
+      if (!policies.length) return empty('No policies yet.', ['shield']);
+      return el('div', { class: 'rows' }, ...policies.map((p) => el('div', { class: 'row' },
+        el('div', {},
+          el('div', { class: 'title' }, p.scope === 'global' ? 'Global' : p.scope),
+          el('div', { class: 'sub' }, `External: ${p.external ?? 'never'} · Strategy: ${p.strategy ?? 'private-first'} · External pools: ${list(p.externalPools)}${p.allowedPools?.length ? ` · Allowed pools: ${list(p.allowedPools)}` : ''}`),
+          el('div', { class: 'sub' }, isSet(p.updatedAt) ? `Updated ${relTime(p.updatedAt)}${p.updatedBy ? ` by ${p.updatedBy}` : ''}` : 'Default, never changed')),
+        el('button', { class: 'btn', type: 'button', onclick: () => open(p) }, 'Edit'))));
+    });
+  }
+  const editor = dialog('edit', async (form) => {
+    const scope = String(new FormData(form).get('scope'));
+    let body: Record<string, unknown>;
+    try { body = JSON.parse(String(new FormData(form).get('policy'))); } catch { toast('The policy is not valid JSON', 'bad'); return false; }
+    await c.policies.put(scope, body);
+    toast('Policy saved');
+    await load();
+  });
+  function open(p: PlacementPolicy) {
+    editor.open();
+    (editor.form.elements.namedItem('scope') as HTMLInputElement).value = p.scope;
+    (editor.form.elements.namedItem('policy') as HTMLTextAreaElement).value = JSON.stringify(editable(p), null, 2);
+    (document.getElementById('edit-title') as HTMLElement).textContent = `Edit ${p.scope === 'global' ? 'global' : p.scope} policy`;
+    editor.form.dispatchEvent(new Event('input'));
+  }
+  void load();
+</script>

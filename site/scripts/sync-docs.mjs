@@ -24,6 +24,7 @@ const special = {
   'api/openapi.yaml': 'reference/api',
   'sdk/typescript/README.md': 'sdks/typescript',
   'sdk/python/README.md': 'sdks/python',
+  'console/README.md': 'guides/console',
   'pkg/client/client.go': 'sdks/go',
   'pkg/client': 'sdks/go',
   'README.md': '',
@@ -110,6 +111,7 @@ for (const [lang, title] of [['typescript', 'TypeScript SDK'], ['python', 'Pytho
   const rel = `sdk/${lang}/README.md`;
   write(`sdks/${lang}`, page(rel, fs.readFileSync(path.join(repo, rel), 'utf8'), { title }));
 }
+write('guides/console', page('console/README.md', fs.readFileSync(path.join(repo, 'console/README.md'), 'utf8'), { title: 'Admin console' }));
 
 // 3. Hand-written pages
 const hand = path.join(site, 'pages-src');

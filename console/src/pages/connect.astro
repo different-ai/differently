@@ -1,0 +1,41 @@
+---
+import Bare from '../layouts/Bare.astro';
+---
+<Bare title="Connect">
+  <h1>Connect to Differently</h1>
+  <p>Enter your server and an API key. The key stays in this browser.</p>
+  <form id="connect">
+    <label class="field"><span>Server URL</span><input type="url" name="url" required placeholder="https://differently.example.com" /></label>
+    <label class="field"><span>API key</span><input type="password" name="key" required autocomplete="off" placeholder="dly_…" /></label>
+    <label class="check"><input type="checkbox" name="remember" />Remember on this device</label>
+    <div class="notice bad" id="error" hidden></div>
+    <button class="btn primary" type="submit">Connect</button>
+  </form>
+</Bare>
+<script>
+  import { base, client, mode, saveConnection, serverURL } from '../lib/connection';
+  import { message } from '../lib/ui';
+  import { DifferentlyError } from '@differently/sdk';
+
+  if (mode === 'server') location.href = `${base}sign-in/`;
+  const form = document.getElementById('connect') as HTMLFormElement;
+  (form.elements.namedItem('url') as HTMLInputElement).value = serverURL();
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = new FormData(form);
+    const url = String(data.get('url')).replace(/\/$/, '');
+    const key = String(data.get('key')).trim();
+    const error = document.getElementById('error') as HTMLElement;
+    error.hidden = true;
+    try {
+      await client({ url, key }).me();
+      saveConnection(url, key, data.get('remember') === 'on');
+      location.href = base;
+    } catch (err) {
+      error.hidden = false;
+      error.textContent = err instanceof DifferentlyError && err.code === 'connection_error' && new URL(url).origin !== location.origin
+        ? `Could not reach ${url}. If the server is up, add ${location.origin} to its cors.allowedOrigins.`
+        : err instanceof DifferentlyError && err.code === 'unauthenticated' ? 'That key was not accepted.' : message(err);
+    }
+  });
+</script>

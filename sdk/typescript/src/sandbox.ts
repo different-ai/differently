@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { DifferentlyError } from "./errors.js";
 import type { HttpClient } from "./http.js";
 import { readSse } from "./sse.js";
@@ -303,7 +302,7 @@ export class Sandboxes {
       method: "POST",
       path: "/v1/sandboxes",
       json: params,
-      headers: { "Idempotency-Key": options.idempotencyKey ?? randomUUID() },
+      headers: { "Idempotency-Key": options.idempotencyKey ?? globalThis.crypto.randomUUID() },
       retry: true,
       signal: options.signal,
     });

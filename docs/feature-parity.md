@@ -133,7 +133,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 | OpenTelemetry | Metrics + logs | Prometheus `/metrics`, structured JSON logs | 🟡 OTel traces 📋 |
 | Integrated coding agents (prompt, steer, events) | Yes | — | — (out of scope: Differently is the substrate agents run on) |
 | CI runners | GitHub Actions runners | — | — |
-| Web console | Yes | Built-in dashboard (operator + tenant views, same API) | ✅ |
+| Web console | Yes | Built-in dashboard (operator + tenant views, same API), and a separate [console](../console/README.md) to host as static files or on Node with sign-in | ✅ |
 | CLI | `boat` (~80 commands) | `differently` | ✅ core commands |
 | SDKs | Python, TypeScript | TypeScript, Python, Go | ✅ |
 | OpenAPI spec | Public | [api/openapi.yaml](../api/openapi.yaml), served at `/openapi.yaml` | ✅ |

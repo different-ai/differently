@@ -1,0 +1,30 @@
+{
+  "name": "@differently/console",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Admin console for Differently: a static Astro app, with an optional server for sign-in and an API proxy.",
+  "scripts": {
+    "dev": "astro dev",
+    "dev:server": "CONSOLE_MODE=server astro dev",
+    "build": "astro build",
+    "build:server": "CONSOLE_MODE=server astro build",
+    "preview": "astro preview",
+    "start": "node --env-file-if-exists=.env ./dist/server/entry.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "astro": "7.4.4"
+  },
+  "optionalDependencies": {
+    "@astrojs/node": "11.1.9",
+    "better-auth": "1.7.13"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "22.20.5"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

@@ -68,6 +68,26 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm test
 
+  console:
+    name: console
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - name: static build
+        run: npm run build
+      - name: server build
+        run: npm run build:server
+
   sdk-python:
     name: sdk (python ${{ matrix.python }})
     runs-on: ubuntu-latest
@@ -157,7 +177,7 @@ jobs:
   # again. It approves what CI checked, not what a reviewer read.
   approve:
     name: approve when CI passes
-    needs: [go, postgres, sdk-typescript, sdk-python, helm, images, dco, release-source]
+    needs: [go, postgres, sdk-typescript, console, sdk-python, helm, images, dco, release-source]
     if: >-
       always() &&
       github.event_name == 'pull_request' &&

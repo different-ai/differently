@@ -1,0 +1,93 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Icon from '../components/Icon.astro';
+---
+<Console title="Sandboxes" active="sandboxes">
+  <PageHeader title="Sandboxes" description="Every sandbox this key can see, newest first.">
+    <button class="btn primary" type="button" data-open="create"><Icon name="plus" size={15} />Create sandbox</button>
+  </PageHeader>
+  <div class="toolbar">
+    <div class="segmented" id="filter">
+      <button type="button" data-status="" aria-pressed="true">All</button>
+      <button type="button" data-status="running">Running</button>
+      <button type="button" data-status="queued,provisioning">Queued</button>
+      <button type="button" data-status="stopped,paused">Stopped</button>
+      <button type="button" data-status="failed">Failed</button>
+    </div>
+  </div>
+  <div id="list"></div>
+
+  <dialog class="modal" id="create">
+    <form>
+      <div class="modal-head"><h2>New sandbox</h2><button class="btn ghost icon-btn" type="button" data-close aria-label="Close"><Icon name="x" /></button></div>
+      <label class="field" id="project-field" hidden><span>Project</span><select name="projectId" id="projects"></select><small>Operator and organization keys choose the project the sandbox belongs to.</small></label>
+      <div class="grid-2">
+        <label class="field"><span>Profile</span><select name="profile" id="profiles"></select></label>
+        <label class="field"><span>Template</span><select name="template" id="templates"><option value="">Profile default</option></select></label>
+      </div>
+      <label class="field"><span>Time to live</span>
+        <select name="ttl"><option value="">Server default</option><option value="3600">1 hour</option><option value="28800">8 hours</option><option value="86400">1 day</option></select>
+      </label>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Close</button><button class="btn primary" data-save>Create</button></div>
+    </form>
+  </dialog>
+</Console>
+<script>
+  import { client } from '../lib/connection';
+  import { badge, confirmAction, dialog, el, empty, field, relTime, rowMenu, run, section, table, toast } from '../lib/ui';
+  import type { Sandbox, SandboxStatus } from '@differently/sdk';
+
+  const c = client();
+  let status = '';
+
+  async function load() {
+    await section('#list', async () => {
+      const filter = status ? (status.split(',') as SandboxStatus[]) : undefined;
+      const { items } = await c.sandboxes.list({ limit: 200, status: filter });
+      const act = (label: string, fn: () => Promise<unknown>) => ({ label, run: async () => { await fn(); toast(`${label}: done`); await load(); } });
+      return table<Sandbox>([
+        { label: 'Sandbox', cell: (s) => el('span', { class: 'mono' }, s.id) },
+        { label: 'Status', cell: (s) => badge(s.status) },
+        { label: 'Pool', cell: (s) => s.info.pool || el('span', { class: 'muted' }, '—') },
+        { label: 'Profile', cell: (s) => s.info.profile || s.info.template || '—' },
+        { label: 'Created', cell: (s) => el('span', { class: 'muted' }, relTime(s.info.createdAt)) },
+        { label: '', className: 'actions', cell: (s) => rowMenu([
+          { ...act('Stop', () => s.stop()), hidden: s.status !== 'running' },
+          { ...act('Start', () => s.start()), hidden: s.status !== 'stopped' },
+          { ...act('Pause', () => s.pause()), hidden: s.status !== 'running' },
+          { ...act('Resume', () => s.resume()), hidden: s.status !== 'paused' },
+          { label: 'Copy ID', run: () => navigator.clipboard.writeText(s.id).then(() => toast('Copied')) },
+          { label: 'Delete', danger: true, hidden: s.status === 'terminated' || s.status === 'terminating',
+            run: async () => { if (await confirmAction('Delete sandbox?', `${s.id} and its disk are removed. This cannot be undone.`, 'Delete')) { await s.delete(); toast('Deleted'); await load(); } } },
+        ]) },
+      ], items, empty('No sandboxes yet. Create one, or call the API from your app.', ['box'], el('button', { class: 'btn primary', type: 'button', onclick: () => create.open() }, 'Create sandbox')));
+    });
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('#filter button').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('#filter button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    status = b.dataset.status ?? '';
+    void load();
+  }));
+
+  const create = dialog('create', async (form) => {
+    const ttl = field(form, 'ttl');
+    const s = await c.sandboxes.create({ projectId: field(form, 'projectId') || undefined, profile: field(form, 'profile') || undefined, template: field(form, 'template') || undefined, ttlSeconds: ttl ? Number(ttl) : undefined }, { wait: false });
+    toast(`Created ${s.id}`);
+    await load();
+  });
+
+  run(async () => {
+    const [profiles, templates, me] = await Promise.all([c.profiles.list(), c.templates.list(), c.me()]);
+    if (!me.projectId) {
+      const projects = await c.projects.list();
+      (document.getElementById('projects') as HTMLSelectElement).replaceChildren(...projects.map((p) => el('option', { value: p.id }, `${p.name} · ${p.id}`)));
+      (document.getElementById('project-field') as HTMLElement).hidden = false;
+    }
+    (document.getElementById('profiles') as HTMLSelectElement).replaceChildren(...profiles.map((p) => el('option', { value: p.name }, `${p.name} · ${p.resources.cpu} CPU, ${Math.round(p.resources.memoryMiB / 1024)} GiB`)));
+    (document.getElementById('templates') as HTMLSelectElement).append(...templates.map((t) => el('option', { value: t.name }, t.name)));
+  });
+  void load();
+  if (new URLSearchParams(location.search).has('create')) create.open();
+</script>

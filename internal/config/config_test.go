@@ -144,3 +144,19 @@ func TestProviderKindsTrust(t *testing.T) {
 		}
 	}
 }
+
+// CORS origins must be exact origins, never wildcards or URLs with paths.
+func TestCORSOriginsMustBeExact(t *testing.T) {
+	for _, o := range []string{"*", "https://*.example.com", "console.example.com", "https://console.example.com/app", "ftp://x.example"} {
+		c := Default()
+		c.CORS.AllowedOrigins = []string{o}
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "cors.allowedOrigins") {
+			t.Errorf("%q: want a cors.allowedOrigins error, got %v", o, err)
+		}
+	}
+	c := Default()
+	c.CORS.AllowedOrigins = []string{"https://console.example.com", "http://localhost:4321"}
+	if err := c.Validate(); err != nil && strings.Contains(err.Error(), "cors") {
+		t.Fatalf("exact origins are valid: %v", err)
+	}
+}
