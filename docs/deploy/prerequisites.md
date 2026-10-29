@@ -22,7 +22,7 @@ following its documentation. Differently's chart does not install it
 
 | Requirement | Notes |
 |---|---|
-| An OpenSandbox lifecycle server reachable from the control plane | The chart's default `opensandbox.apiURL` is `http://opensandbox-server.opensandbox.svc:8090/v1`, a server in namespace `opensandbox`. Any URL ending in `/v1` works |
+| An OpenSandbox lifecycle server reachable from the control plane | The chart's default `opensandbox.apiURL` is `http://opensandbox-server.opensandbox-system.svc/v1`, a server in namespace `opensandbox`. Any URL ending in `/v1` works |
 | A server API key | OpenSandbox's server-wide `api_key` (sent as the `OPEN-SANDBOX-API-KEY` header). Differently reads it from a Secret into an environment variable and refers to it by name; it never reaches tenants or sandboxes |
 | A runtime | Docker or Kubernetes (containers that share the host kernel), or Fast Sandbox (Firecracker microVMs, which need KVM hosts, below) |
 | Pinned versions | Pin the server and `execd` image versions. The adapter was checked against server `release-1.2.0` with `execd` `v1.1.0`; the published spec runs ahead of the images, so rerun the live test after any upgrade ([day-2.md](day-2.md#upgrade)) |
@@ -103,7 +103,7 @@ with the CIS profile enforces `restricted` (see [bare-metal.md](bare-metal.md)).
 | From | To | Port | Purpose |
 |---|---|---|---|
 | Clients, dashboard users | Server (Service or ingress) | 8080 / 443 | API and dashboard |
-| Server | OpenSandbox server | 8090 (or your `apiURL`) | Lifecycle calls, and exec and file transfer through OpenSandbox's proxy (API key header) |
+| Server | OpenSandbox server | 80 with OpenSandbox's chart, 8090 for a standalone server (or your `apiURL`) | Lifecycle calls, and exec and file transfer through OpenSandbox's proxy (API key header) |
 | Server | PostgreSQL | 5432 | State |
 | Server | Daytona / Freestyle APIs | 443 | Only when a provider is enabled |
 | Prometheus | Server | 9091 | `/metrics` (unauthenticated; `metrics.port`) |
@@ -111,8 +111,8 @@ with the CIS profile enforces `restricted` (see [bare-metal.md](bare-metal.md)).
 - **Exec and files go through the OpenSandbox server's proxy** by default
   (`opensandbox.useServerProxy: true`), so the control plane needs only the
   server's port, which the chart allows through
-  `networkPolicy.server.egress.opensandbox` (namespace `opensandbox`, port
-  8090 by default; set `cidrs` for a server outside the cluster). If you turn
+  `networkPolicy.server.egress.opensandbox` (namespace `opensandbox-system`,
+  port 80 by default; set `cidrs` for a server outside the cluster). If you turn
   the proxy off, the control plane connects to each sandbox's endpoint
   directly; allow that egress with `networkPolicy.server.egress.extra`.
 - **Encryption.** The default `apiURL` is plain HTTP inside the cluster, and
@@ -135,7 +135,7 @@ kubectl version                                   # server 1.29+
 helm version                                      # 3.8+ or 4.x
 # OpenSandbox answers with its API key (from a pod in the cluster, or through a port-forward):
 curl -fsS -H "OPEN-SANDBOX-API-KEY: $OSB_KEY" \
-  "http://opensandbox-server.opensandbox.svc:8090/v1/sandboxes?page=1&pageSize=1"
+  "http://opensandbox-server.opensandbox-system.svc/v1/sandboxes?page=1&pageSize=1"
 # Fast Sandbox only, on each KVM node: /dev/kvm and /dev/net/tun exist, cgroup2fs,
 # an XFS image volume with reflink, and an enlarged /dev/shm
 ```

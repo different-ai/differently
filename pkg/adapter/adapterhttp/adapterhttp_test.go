@@ -3,6 +3,7 @@ package adapterhttp_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http/httptest"
 	"slices"
 	"testing"
@@ -119,5 +120,16 @@ func TestUnsupportedOptionalOperations(t *testing.T) {
 	}
 	if err := c.Pause(ctx, in.Ref); !api.IsCode(err, api.CodeUnsupportedOperation) {
 		t.Fatalf("pause: want unsupported_operation, got %v", err)
+	}
+}
+
+// One sandbox's failure keeps its code across the protocol, so the scheduler
+// does not mistake it for an outage of the plugin's backend.
+func TestSandboxFailedSurvivesTheProtocol(t *testing.T) {
+	backend := fake.New(fake.Options{})
+	backend.FailCreates, backend.FailWith = 1, adapter.SandboxFailed(errors.New("pod not ready"))
+	c := serve(t, backend, "")
+	if _, err := c.Create(context.Background(), adapter.CreateRequest{ID: "sbx_1", Installation: "inst"}); !api.IsCode(err, adapter.CodeSandboxFailed) {
+		t.Fatalf("want sandbox_failed, got %v", err)
 	}
 }

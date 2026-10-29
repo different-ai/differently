@@ -15,7 +15,7 @@ configuration.
 | Path | Details |
 |---|---|
 | **Nested-virtualization-capable VM sizes** | Sizes whose feature table says "Nested Virtualization: Supported", for example **Dsv6** (Intel Emerald Rapids). **Dpsv6** (Arm, Cobalt 100) is not supported. Microsoft documents nested virtualization for Hyper-V. Running KVM inside a Linux VM works but is described as **not officially supported** (Microsoft Q&A answer; **unverified** as policy). There is no AKS documentation on exposing `/dev/kvm` on Ubuntu or Azure Linux nodes (**unverified**) |
-| AKS Pod Sandboxing | Kata Containers with Cloud Hypervisor on the Microsoft Hypervisor (MSHV), Azure Linux only. **Not a KVM path**: Firecracker is KVM-only, so Fast Sandbox cannot use it |
+| AKS Pod Sandboxing | Kata Containers with Cloud Hypervisor on the Microsoft Hypervisor (MSHV), Azure Linux only. **Not a KVM path**: Firecracker is KVM-only, so Fast Sandbox cannot use it. OpenSandbox's Kubernetes runtime can use it instead: its AKS example sets `[secure_runtime] type = "kata"` with RuntimeClass `kata-vm-isolation`, so each sandbox gets its own VM. Not yet run with Differently |
 
 If you need microVM isolation with a supported KVM path, a safer layout is to
 run the control plane on AKS and the OpenSandbox server with Fast Sandbox on
@@ -78,7 +78,7 @@ config:
 postgresql:
   external: {existingSecret: differently-database}
 opensandbox:
-  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+  apiURL: http://opensandbox-server.opensandbox-system.svc/v1
   trust: private
   isolation: container                 # microvm with Fast Sandbox
   existingSecret: opensandbox-api-key

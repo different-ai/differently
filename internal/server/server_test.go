@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -469,6 +470,38 @@ func TestTTLChangeMovesBackendExpiry(t *testing.T) {
 	backend := h.fc.ExpiryOf(sb.ID)
 	if out.ExpiresAt == nil || !backend.Equal(out.ExpiresAt.Add(5*time.Minute)) {
 		t.Fatalf("backend expiry %v, sandbox expires %v", backend, out.ExpiresAt)
+	}
+}
+
+// A backend that cannot start one sandbox is retried without being marked
+// unhealthy, so one tenant's failing sandbox does not move other tenants'
+// work off the pool; a backend that is unavailable still is.
+func TestSandboxFailureKeepsPoolHealthy(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	_, _, token := h.tenant("a", api.Quota{})
+	fcHealthy := func() (bool, string) {
+		for _, v := range h.sched.Pools.Views(nil) {
+			if v.Pool.Name == "fc" {
+				return v.Healthy, v.HealthDetail
+			}
+		}
+		t.Fatal("pool fc missing")
+		return false, ""
+	}
+	h.fc.FailCreates, h.fc.FailWith = 1, adapter.SandboxFailed(errors.New("pod not ready within 60s"))
+	sb := h.create(token, api.CreateSandboxRequest{})
+	h.tick()
+	if got := h.get(token, sb.ID); got.Status != api.StatusQueued || got.Attempts != 1 {
+		t.Fatalf("a failed sandbox should be retried: %+v", got)
+	}
+	if ok, detail := fcHealthy(); !ok {
+		t.Fatalf("one sandbox's failure marked the pool unhealthy: %s", detail)
+	}
+	h.fc.FailCreates, h.fc.FailWith = 1, nil
+	h.create(token, api.CreateSandboxRequest{})
+	h.tick()
+	if ok, _ := fcHealthy(); ok {
+		t.Fatal("an unavailable backend should be marked unhealthy until its next probe")
 	}
 }
 

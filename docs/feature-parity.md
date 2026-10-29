@@ -152,10 +152,10 @@ operation a backend lacks returns `unsupported_operation` (501).
 | `exec.stream` | ✅ e2e | — (falls back to buffered) | — (falls back to buffered) | As advertised | ✅ |
 | `files` | ✅ e2e | 🧪 | 🧪 | As advertised | ✅ |
 | `lifecycle.stop-start` / `persistence.disk` | — (OpenSandbox has no stop) | 🧪 | 🧪 (stop = in-guest poweroff) | As advertised | ✅ |
-| `lifecycle.pause-resume` | ✅ e2e | 🧪 VM class only | 🧪 | As advertised | — |
-| `snapshots.disk` / `fork` | ✅ e2e | 🧪 | 🧪 | As advertised | ✅ |
+| `lifecycle.pause-resume` | ✅ e2e (Docker runtime); Kubernetes runtime only with a snapshot registry | 🧪 VM class only | 🧪 | As advertised | — |
+| `snapshots.disk` / `fork` | ✅ e2e (Docker runtime); Kubernetes runtime only with a snapshot registry | 🧪 | 🧪 | As advertised | ✅ |
 | `snapshots.memory` | 🧪 opt-in per pool (Fast Sandbox) | 🧪 VM class only | 🧪 always memory+disk | As advertised | — |
-| `ports.expose` | 🧪 direct endpoints only (never ones needing the server key) | 🧪 signed preview URL | 🧪 public TLS host | As advertised | — |
+| `ports.expose` | opt-in: direct endpoints are runtime-internal (`host.docker.internal`, pod IPs); never ones needing the server key | 🧪 signed preview URL | 🧪 public TLS host | As advertised | — |
 | `network.egress-control` | — (OpenSandbox network policy not wired yet) | — | 🧪 firewall (deny by default; `egress: public` to allow) | As advertised | — |
 | Max size | Server and runtime limits | 4 vCPU / 8 GiB / 10 GiB (provider default) | 32 vCPU / 64 GiB / 256 GiB (plan-dependent) | Plugin limits | Host |
 | Idempotent create | Metadata lookup | Label lookup | Slug derived from sandbox ID | Required by the contract (sandbox ID is the key) | Directory per sandbox ID |

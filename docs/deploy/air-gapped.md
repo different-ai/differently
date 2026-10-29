@@ -85,7 +85,7 @@ postgresql:
 auth:
   existingSecret: differently-tokens
 opensandbox:
-  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+  apiURL: http://opensandbox-server.opensandbox-system.svc/v1
   trust: private
   isolation: container
   image: registry.internal.example.com/library/ubuntu:24.04   # mirrored sandbox image
@@ -107,7 +107,7 @@ helm install dly oci://$REG/charts/differently --version 0.2.0 -n differently -f
 
 With providers disabled, the server NetworkPolicy has no TCP 443 egress rule;
 its OpenSandbox rule (`networkPolicy.server.egress.opensandbox`) allows only
-the OpenSandbox namespace (or `cidrs`) on port 8090.
+the OpenSandbox namespace (or `cidrs`) on the server's port (80 by default).
 Even a misconfigured provider pool could not reach the internet from the
 server pods, as long as the CNI enforces NetworkPolicy. For defence in depth,
 add a namespace-wide default-deny egress policy as well.
@@ -139,4 +139,4 @@ helm test dly -n differently --logs
 
 For an independent check, watch flows from the server pods with your CNI's
 flow logs (for example Cilium Hubble, or VPC flow logs). Expect only DNS,
-PostgreSQL and the OpenSandbox server's port (8090 by default).
+PostgreSQL and the OpenSandbox server's port (80 by default).

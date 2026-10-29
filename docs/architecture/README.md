@@ -171,7 +171,7 @@ flowchart LR
   end
   PG[("PostgreSQL<br/>internal/store/postgres")]
   subgraph OSB["OpenSandbox (installed separately)"]
-    OSS["lifecycle server :8090<br/>(and execd proxy)"]
+    OSS["lifecycle server :80<br/>(and execd proxy)"]
     RT["runtime: Docker, Kubernetes<br/>or Fast Sandbox"]
     EX["execd :44772<br/>(in each sandbox)"]
   end
@@ -489,11 +489,11 @@ and its design remains only in git history.
 | Clients | API listener (`:8080`) | Through your ingress; TLS is terminated there, the server speaks plain HTTP |
 | Scrapers | `/metrics` (`metrics.listen`, chart default `:9091`) | Unauthenticated; keep it off the ingress |
 | Server | PostgreSQL | TLS as set in the DSN |
-| Server | OpenSandbox lifecycle API (default port 8090) | Carries the server's API key in `OPEN-SANDBOX-API-KEY`. With `useServerProxy` (the default) `execd` traffic goes through the same server, so this is the only OpenSandbox port needed; without it the server connects to each sandbox's endpoint directly. The chart's default URL is plain HTTP inside the cluster |
+| Server | OpenSandbox lifecycle API (port 80 with OpenSandbox's chart, 8090 standalone) | Carries the server's API key in `OPEN-SANDBOX-API-KEY`. With `useServerProxy` (the default) `execd` traffic goes through the same server, so this is the only OpenSandbox port needed; without it the server connects to each sandbox's endpoint directly. The chart's default URL is plain HTTP inside the cluster |
 | Server | Provider APIs, remote plugins | HTTPS for Daytona and Freestyle; whatever URL a plugin is given |
 
 The Helm chart's NetworkPolicy restricts server egress to DNS, the
-database, OpenSandbox (`networkPolicy.server.egress.opensandbox`, port 8090)
+database, OpenSandbox (`networkPolicy.server.egress.opensandbox`, port 80)
 and enabled providers.
 
 **Sandbox networking is the runtime's.** Egress, inbound access, DNS and
@@ -542,7 +542,7 @@ which deploys the control plane only):
   block (enabled by default; `apiURL`, `trust`, `isolation`, the API key
   from `existingSecret` or `apiKey`);
 - a `NetworkPolicy` for the server, including egress to OpenSandbox on port
-  8090;
+  80;
 - `Secret` objects for the bootstrap token, database DSN, OpenSandbox API key
   and provider keys, referenced from the config by environment variable name.
 

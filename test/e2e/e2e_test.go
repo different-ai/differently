@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -37,6 +38,11 @@ var (
 	metricsURL = env("DIFFERENTLY_E2E_METRICS_URL", "http://localhost:19091")
 	osbURL     = env("OPENSANDBOX_E2E_URL", "http://localhost:18091/v1")
 	osbKey     = env("OPENSANDBOX_E2E_KEY", "osb-live-test-key-0123456789")
+	// osbInternalURL is OpenSandbox as the Differently server reaches it, for
+	// pools the tests register.
+	osbInternalURL = env("OPENSANDBOX_E2E_INTERNAL_URL", "http://opensandbox-server:8090/v1")
+	// mainPool is the private pool the server's config defines.
+	mainPool = env("DIFFERENTLY_E2E_POOL", "opensandbox")
 )
 
 func env(k, def string) string {
@@ -103,6 +109,38 @@ func eventually(t *testing.T, timeout time.Duration, what string, ok func() bool
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+// advertises reports whether the pool advertises a capability. The suite
+// runs against any OpenSandbox runtime: where an operation is not offered
+// (pause on the Kubernetes runtime without a snapshot registry, say), it
+// checks that Differently refuses it precisely instead.
+func advertises(t *testing.T, feature string) bool {
+	t.Helper()
+	var caps api.List[struct {
+		Pool         string   `json:"pool"`
+		Capabilities []string `json:"capabilities"`
+	}]
+	if err := operator.Do(ctx(t), "GET", "/v1/capabilities", nil, &caps); err != nil {
+		t.Fatalf("capabilities: %v", err)
+	}
+	for _, p := range caps.Items {
+		if p.Pool == mainPool {
+			return slices.Contains(p.Capabilities, feature)
+		}
+	}
+	t.Fatalf("pool %s not in %+v", mainPool, caps.Items)
+	return false
+}
+
+// poolHealthy reports the private pool's health as placement sees it.
+func poolHealthy(t *testing.T) (bool, string) {
+	t.Helper()
+	var p api.Pool
+	if err := operator.Do(ctx(t), "GET", "/v1/admin/pools/"+mainPool, nil, &p); err != nil || p.Health == nil {
+		t.Fatalf("pool %s: %+v %v", mainPool, p, err)
+	}
+	return p.Health.Status == "healthy", p.Health.Message
 }
 
 // osb calls OpenSandbox directly, as an operator would behind Differently's back.
@@ -182,7 +220,7 @@ func TestMain(m *testing.M) {
 func TestSandboxRunsOnOpenSandboxWithLimits(t *testing.T) {
 	c := tenant(t, "boot", api.Quota{})
 	sb := create(t, c, api.CreateSandboxRequest{Profile: "medium"})
-	if sb.Adapter != "opensandbox" || sb.Trust != api.TrustPrivate || sb.Pool != "opensandbox" {
+	if sb.Adapter != "opensandbox" || sb.Trust != api.TrustPrivate || sb.Pool != mainPool {
 		t.Fatalf("placed on %s/%s/%s", sb.Pool, sb.Adapter, sb.Trust)
 	}
 	if !osbExists(t, backendRef(t, sb.ID)) {
@@ -263,6 +301,20 @@ func TestFiles(t *testing.T) {
 func TestPauseResumeAndUnsupportedStop(t *testing.T) {
 	c := tenant(t, "pause", api.Quota{})
 	sb := create(t, c, api.CreateSandboxRequest{})
+	// OpenSandbox has no stop; Differently says so precisely.
+	if _, err := c.Action(ctx(t), sb.ID, "stop"); !api.IsCode(err, api.CodeUnsupportedOperation) {
+		t.Fatalf("stop should be unsupported_operation, got %v", err)
+	}
+	if !advertises(t, "lifecycle.pause-resume") {
+		if _, err := c.Action(ctx(t), sb.ID, "pause"); !api.IsCode(err, api.CodeUnsupportedOperation) {
+			t.Fatalf("pause on a pool without pause-resume: want unsupported_operation, got %v", err)
+		}
+		if got, _ := c.GetSandbox(ctx(t), sb.ID); got.Status != api.StatusRunning {
+			t.Fatalf("a refused pause changed the sandbox: %+v", got)
+		}
+		t.Log("pool does not advertise pause-resume: checked the refusal")
+		return
+	}
 	sh(t, c, sb.ID, "echo 42 > /dev/shm/in-memory")
 	if _, err := c.Action(ctx(t), sb.ID, "pause"); err != nil {
 		t.Fatal(err)
@@ -276,15 +328,18 @@ func TestPauseResumeAndUnsupportedStop(t *testing.T) {
 	if got := strings.TrimSpace(sh(t, c, sb.ID, "cat /dev/shm/in-memory").Stdout); got != "42" {
 		t.Fatalf("memory not kept across pause/resume: %q", got)
 	}
-	// OpenSandbox has no stop; Differently says so precisely.
-	if _, err := c.Action(ctx(t), sb.ID, "stop"); !api.IsCode(err, api.CodeUnsupportedOperation) {
-		t.Fatalf("stop should be unsupported_operation, got %v", err)
-	}
 }
 
 func TestSnapshotAndFork(t *testing.T) {
 	c := tenant(t, "fork", api.Quota{})
 	parent := create(t, c, api.CreateSandboxRequest{})
+	if !advertises(t, "snapshots.disk") {
+		if _, err := c.Fork(ctx(t), parent.ID); !api.IsCode(err, api.CodeUnsupportedOperation) && !api.IsCode(err, api.CodeUnsupportedCapability) {
+			t.Fatalf("fork on a pool without snapshots: want a precise refusal, got %v", err)
+		}
+		t.Log("pool does not advertise snapshots.disk: checked the refusal")
+		return
+	}
 	sh(t, c, parent.ID, "echo v1 > /root/state && sync")
 	child, err := c.Fork(ctx(t), parent.ID)
 	if err != nil {
@@ -304,6 +359,43 @@ func TestSnapshotAndFork(t *testing.T) {
 }
 
 // Scenario I against a real backend: the only pool cannot stop and start.
+// A sandbox whose image cannot be pulled fails or is retried with a reason
+// that names the image, and the pool stays healthy for everyone else
+// throughout: the backend itself is fine.
+func TestUnpullableImageKeepsPoolHealthy(t *testing.T) {
+	c := tenant(t, "badimage", api.Quota{})
+	sb, err := c.CreateSandbox(ctx(t), api.CreateSandboxRequest{Template: "docker.io/library/debian:no-such-tag-differently"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.DeleteSandbox(context.Background(), sb.ID) })
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		if ok, msg := poolHealthy(t); !ok {
+			t.Fatalf("one sandbox's unpullable image marked the pool unhealthy: %s", msg)
+		}
+		got, err := c.GetSandbox(ctx(t), sb.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		failedOnce := got.Status == api.StatusFailed || got.Status == api.StatusQueued && got.Attempts > 0
+		if failedOnce {
+			if !strings.Contains(got.StatusReason, "image") {
+				t.Fatalf("the reason should name the image: %q", got.StatusReason)
+			}
+			if strings.Contains(got.StatusReason, "provider_unavailable") {
+				t.Fatalf("an image problem is reported as a provider outage: %q", got.StatusReason)
+			}
+			t.Logf("%s after %d attempt(s): %s", got.Status, got.Attempts, got.StatusReason)
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the sandbox never failed: %+v", got)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 func TestCapabilityMismatchIsPrecise(t *testing.T) {
 	c := tenant(t, "caps", api.Quota{})
 	_, err := c.CreateSandbox(ctx(t), api.CreateSandboxRequest{Capabilities: []string{"lifecycle.stop-start"}}, false)
@@ -422,7 +514,7 @@ func TestAuditTrustAndMetrics(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if !strings.Contains(string(body), `differently_sandbox_transitions_total{pool="opensandbox",to="running"}`) {
+	if !strings.Contains(string(body), `differently_sandbox_transitions_total{pool="`+mainPool+`",to="running"}`) {
 		t.Fatal("metrics listener has no sandbox transitions for the OpenSandbox pool")
 	}
 }
@@ -444,19 +536,19 @@ func TestStoredProviderKeyAndSwitching(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := map[string]any{"name": "osb-stored", "adapter": "opensandbox", "trust": "private", "credentials": map[string]string{"secret": "osb-stored-key"},
-		"config": map[string]string{"apiURL": "http://opensandbox-server:8090/v1", "image": "debian:bookworm-slim", "isolation": "container", "features": "exec,exec.stream,files"}}
+		"config": map[string]string{"apiURL": osbInternalURL, "image": "debian:bookworm-slim", "isolation": "container", "features": "exec,exec.stream,files"}}
 	if err := operator.Do(ctx(t), "POST", "/v1/admin/pools", body, nil); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = operator.UsePool(context.Background(), "opensandbox", false)
+		_, _ = operator.UsePool(context.Background(), mainPool, false)
 		_ = operator.Do(context.Background(), "DELETE", "/v1/admin/pools/osb-stored", nil, nil)
 		_ = operator.Do(context.Background(), "DELETE", "/v1/admin/secrets/osb-stored-key", nil, nil)
 	})
 	eventually(t, 30*time.Second, "the new pool is healthy with its stored key", func() bool { return pool().Health.Status == "healthy" })
 
 	switched, err := operator.UsePool(ctx(t), "osb-stored", false)
-	if err != nil || len(switched.Drained) != 1 || switched.Drained[0] != "opensandbox" {
+	if err != nil || len(switched.Drained) != 1 || switched.Drained[0] != mainPool {
 		t.Fatalf("switch: %+v %v", switched, err)
 	}
 	sb := create(t, c, api.CreateSandboxRequest{})
@@ -481,11 +573,11 @@ func TestStoredProviderKeyAndSwitching(t *testing.T) {
 	}
 
 	// Switch back: new sandboxes go to the original pool, the running one stays.
-	if _, err := operator.UsePool(ctx(t), "opensandbox", false); err != nil {
+	if _, err := operator.UsePool(ctx(t), mainPool, false); err != nil {
 		t.Fatal(err)
 	}
 	back := create(t, c, api.CreateSandboxRequest{})
-	if back.Pool != "opensandbox" {
+	if back.Pool != mainPool {
 		t.Fatalf("after switching back, placed on %q", back.Pool)
 	}
 	for _, id := range []string{sb.ID, back.ID} {

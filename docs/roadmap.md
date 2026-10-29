@@ -60,9 +60,9 @@ with its own tooling and registered as a pool with `trust: private`.
 |---|---|---|
 | `opensandbox` adapter | ✅ live (Docker runtime) | `internal/adapters/opensandbox`; fake-server tests plus `TestLiveOpenSandbox` against OpenSandbox server `release-1.2.0` and `execd` v1.1.0 (arm64, Colima); a manual run through Differently ([spike](research/opensandbox-spike.md)) |
 | OpenSandbox as the default private runtime | ✅ decided | [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md); the Helm chart's `opensandbox:` values render a pool named `opensandbox` |
-| OpenSandbox Kubernetes runtime | 📋 | Unverified ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
+| OpenSandbox Kubernetes runtime | 🟡 | Single-node k3s on Azure: e2e 12/12 and a recorded adapter run; pause and snapshots need OpenSandbox's snapshot registry; multi-node and drain not run ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
 | OpenSandbox Fast Sandbox (Firecracker microVMs) | 📋 | Unverified; first Phase 3 item ([E18](backlog.md#e18-fast-sandbox-spike)) |
-| End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 (Docker runtime): 10/10 on arm64 Colima, 2026-10-28 ([results](../test/e2e/README.md)). Kubernetes and Fast Sandbox runtimes not yet |
+| End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (12/12, arm64 Colima) and the Kubernetes runtime (12/12, k3s on Azure, Helm install), 2026-10-28 ([results](../test/e2e/README.md)). Fast Sandbox not yet |
 | Sandbox egress control | 📋 | Not enforced by Differently; OpenSandbox's network policy is not wired up ([E19](backlog.md#e19-opensandbox-network-policy-and-egress)) |
 | Node agent: lifecycle, capacity, heartbeat, `doctor` | ⛔ | Removed (`internal/agent`, `cmd/differently-agent`) |
 | Firecracker API client | ⛔ | Removed (`internal/firecracker`) |
@@ -71,7 +71,7 @@ with its own tooling and registered as a pool with `trust: private`.
 | Stop/start, disk snapshots, fork pinned to node | ⛔ | OpenSandbox has pause/resume and snapshots, no stop/start |
 | Restart recovery ([POC 2](proof-of-concepts.md#poc-2-agent-restart-semantics-in-kubernetes)) | ⛔ | Backend outages are now [POC 13](proof-of-concepts.md#poc-13-opensandbox-outage-and-recovery) |
 | Firecracker pool adapter (multi-agent placement, routing) | ⛔ | Removed (`internal/adapters/firecracker`) |
-| Helm chart with agent DaemonSet | ⛔ | The chart now deploys the control plane only, with an egress rule to OpenSandbox on port 8090 |
+| Helm chart with agent DaemonSet | ⛔ | The chart now deploys the control plane only, with an egress rule to OpenSandbox on port 80 |
 | Terraform for AWS | 🟡 | `deploy/terraform/aws`; creates EKS with a KVM node group, which only Fast Sandbox needs; not run |
 | Kernel and rootfs build scripts, systemd unit | ⛔ | Removed (`deploy/images`, `deploy/systemd`) |
 | Any run on real KVM ([POC 1](proof-of-concepts.md#poc-1-firecracker-on-real-kvm), [E1](backlog.md#e1-firecracker-on-real-kvm)) | ⛔ | The agent's e2e suite booted real microVMs under nested virtualization on Colima before removal; KVM through OpenSandbox is [E18](backlog.md#e18-fast-sandbox-spike) |

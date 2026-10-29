@@ -109,7 +109,7 @@ allow.
   allow-list, only the listed destinations.
 
 The control plane's own egress is a separate matter: the Helm chart's
-NetworkPolicy lets the server reach OpenSandbox on port 8090, and that
+NetworkPolicy lets the server reach OpenSandbox on its port (80 by default), and that
 restricts the control plane, not sandboxes.
 
 ## E20. Credential Vault evaluation

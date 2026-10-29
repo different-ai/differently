@@ -132,11 +132,12 @@ sequenceDiagram
 
 Adapters return `*api.Error` values (`pkg/api/errors.go`). Helpers:
 `adapter.NotFound`, `adapter.Unsupported`, `adapter.Unavailable`,
-`adapter.InsufficientCapacity`.
+`adapter.InsufficientCapacity`, `adapter.SandboxFailed`.
 
 | Code | Use it for | Control-plane reaction |
 |---|---|---|
 | `insufficient_capacity` | No room right now: node full, provider plan cap, provider 429 | Provisioning: requeue after 2 s, the attempt is not counted, pool health untouched. Activation: try the next ranked pool. Public API: shown as `503 provider_unavailable`. HTTP protocol status: 503. |
+| `sandbox_failed` | The backend is up but this one sandbox failed: its pod never became ready, the backend reports it `Failed` | Provisioning: requeue with backoff and count the attempt, but leave pool health untouched, so one tenant's failing sandbox does not move other tenants' work elsewhere. Public API: shown as `503 provider_unavailable`. HTTP protocol status: 503. |
 | `provider_unavailable` | Backend unreachable, timed out, credentials rejected, 5xx | Provisioning: pool marked unhealthy until its next probe; requeue with backoff `2 s × 2^min(attempts, 5)`; failed after `scheduler.maxAttempts` (default 3). Probes: pool unhealthy. Public API: `503`. |
 | `not_found` | Instance or snapshot does not exist | `Delete` must not return it. Elsewhere passed through as `404`. |
 | `unsupported_operation` | The backend cannot do this at all | Passed through as `501`. |
@@ -199,7 +200,8 @@ backlog E0.34.
   `/info` and `/health`) requires `Authorization: Bearer <token>`, compared in
   constant time; failures are `401 unauthenticated`.
 - Errors: `{"error": {"code", "message", "details"}}` with the status from
-  `api.Error.HTTPStatus`, except `insufficient_capacity`, which is 503.
+  `api.Error.HTTPStatus`, except `insufficient_capacity` and
+  `sandbox_failed`, which are 503.
 - File content is raw bytes (`application/octet-stream`), at most
   `MaxFileBytes` = 100 MiB.
 
@@ -384,8 +386,10 @@ envelope for anything else, and set the protocol header.
 3. Treat a missing instance in `Delete` as success.
 4. Never return a partial `List`; return an error if any part of the
    backend could not be read.
-5. Return `insufficient_capacity` for "full right now" and
-   `provider_unavailable` for outages; the scheduler treats them differently.
+5. Return `insufficient_capacity` for "full right now", `sandbox_failed`
+   when only this sandbox failed, `invalid_request` when it can never start
+   (an image that does not exist), and `provider_unavailable` for outages;
+   the scheduler treats each differently.
 
 ### Register the pool
 
@@ -442,8 +446,9 @@ check against a real backend behind a build tag:
       returned as `unsupported_operation` or documented in `Info.Description`.
 - [ ] Every declared feature works; undeclared operations answer
       `unsupported_operation`.
-- [ ] Capacity errors are `insufficient_capacity`; outages and bad credentials
-      are `provider_unavailable`; credentials never appear in messages.
+- [ ] Capacity errors are `insufficient_capacity`; one sandbox's failure is
+      `sandbox_failed`; outages and bad credentials are
+      `provider_unavailable`; credentials never appear in messages.
 - [ ] `Health` fails when the backend cannot accept work.
 
 ## 12. Known issues in the contract implementation

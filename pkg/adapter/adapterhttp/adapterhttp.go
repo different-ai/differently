@@ -336,7 +336,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func writeErr(w http.ResponseWriter, err error) {
 	e := api.AsError(err)
 	status := e.HTTPStatus()
-	if e.Code == adapter.CodeInsufficientCapacity {
+	if e.Code == adapter.CodeInsufficientCapacity || e.Code == adapter.CodeSandboxFailed {
 		status = http.StatusServiceUnavailable
 	}
 	writeJSON(w, status, api.ErrorEnvelope{Error: e})

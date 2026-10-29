@@ -6,6 +6,42 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Fixed (found against real OpenSandbox runtimes)
+
+- A sandbox whose image cannot be pulled no longer marks its pool unhealthy
+  for every other tenant (which could move their work to another pool or
+  external provider). The Docker runtime's failed pull fails the sandbox
+  after one attempt; the Kubernetes runtime's pod-ready timeout is retried
+  as this sandbox's failure (new adapter error `sandbox_failed`), not a
+  provider outage.
+- Pause on a runtime that accepts it but never starts it (the Kubernetes
+  runtime without a snapshot registry) returns `unsupported_operation` after
+  30 s instead of `provider_unavailable` after 3 minutes; snapshots without a
+  registry say so instead of reporting an outage.
+- A sandbox being deleted on the Kubernetes runtime is treated as gone
+  instead of as pending.
+- The Helm chart's default `opensandbox.apiURL` and NetworkPolicy now match
+  OpenSandbox's own chart (namespace `opensandbox-system`, port 80).
+
+### Changed
+
+- OpenSandbox pools no longer advertise `ports.expose` by default: their
+  direct endpoints are runtime-internal addresses (`host.docker.internal`,
+  pod IPs).
+- The end-to-end suite adapts to the pool's capabilities, adds
+  `TestUnpullableImageKeepsPoolHealthy`, and runs against any deployment
+  (`OPENSANDBOX_E2E_INTERNAL_URL`, `DIFFERENTLY_E2E_POOL`).
+
+### Verified
+
+- OpenSandbox's Kubernetes runtime on single-node k3s (Azure, x86_64),
+  installed with OpenSandbox's charts and Differently's Helm chart: the
+  end-to-end suite passes 12/12 (pause and snapshots checked as refusals).
+  The Docker runtime passes 12/12 too.
+- Real runs of both runtimes are recorded under
+  `internal/adapters/opensandbox/testdata/recordings` and replayed by
+  `TestReplayRecordings` in every `go test`.
+
 ## [0.1.0-alpha.1] — 2026-10-28
 
 First alpha, published as a GitHub pre-release for early testing. Not for

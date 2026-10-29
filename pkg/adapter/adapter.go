@@ -71,6 +71,12 @@ const (
 // requeues the sandbox without marking the pool unhealthy.
 const CodeInsufficientCapacity = "insufficient_capacity"
 
+// CodeSandboxFailed signals that the backend is up but could not start this
+// one sandbox (its pod never became ready, say). The scheduler retries it
+// without marking the pool unhealthy, so one tenant's bad sandbox does not
+// move other tenants' work elsewhere.
+const CodeSandboxFailed = "sandbox_failed"
+
 // Info identifies an adapter implementation.
 type Info struct {
 	Kind        string `json:"kind"`
@@ -284,6 +290,12 @@ func Unsupported(op string) error {
 // Unavailable wraps a backend failure that should count against pool health.
 func Unavailable(err error) error {
 	return api.Errorf(api.CodeProviderUnavailable, "backend unavailable: %v", err)
+}
+
+// SandboxFailed is returned when the backend reports that one sandbox failed
+// while the backend itself is healthy.
+func SandboxFailed(err error) error {
+	return &api.Error{Code: CodeSandboxFailed, Message: err.Error()}
 }
 
 // InsufficientCapacity is returned when the backend has no room right now.

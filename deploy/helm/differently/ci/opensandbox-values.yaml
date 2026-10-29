@@ -2,7 +2,7 @@
 # with its API key in an existing Secret. Fast Sandbox is not yet verified
 # with Differently; the declared isolation is reported, not enforced.
 opensandbox:
-  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+  apiURL: http://opensandbox-server.opensandbox-system.svc/v1
   trust: private
   pool:
     name: opensandbox-microvm

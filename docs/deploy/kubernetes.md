@@ -29,18 +29,27 @@ Install OpenSandbox with its own Helm chart or manifests, following its
 documentation. This chart does not do it for you. Decide:
 
 - **Runtime.** Docker or Kubernetes for containers (they share the host
-  kernel), or Fast Sandbox for Firecracker microVMs on KVM nodes. Only the
-  Docker runtime has been run with Differently; the Kubernetes runtime and
-  Fast Sandbox are **unverified**
+  kernel), or Fast Sandbox for Firecracker microVMs on KVM nodes. The Docker
+  runtime and the Kubernetes runtime (single-node k3s, from OpenSandbox's own
+  charts) have run with Differently; Fast Sandbox is **unverified**
   ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime),
   [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter)).
+- **OpenSandbox's charts.** Install `base` (the CRDs) first and let it create
+  its namespaces (`opensandbox-system`, `opensandbox-dataplane`); creating
+  them yourself makes `base` refuse to install. The charts default to images
+  in a registry in mainland China; Docker Hub has the same images as
+  `docker.io/opensandbox/{server,controller,execd,egress,image-committer}:release-1.2.0`.
+- **Pause and snapshots on the Kubernetes runtime** need the controller's
+  snapshot registry (`controller.snapshot.registry`). Without one, set
+  `opensandbox.features: [exec, exec.stream, files]`.
 - **API key.** Set the server's `api_key`. Without one, OpenSandbox refuses to
   start unless insecure mode is acknowledged; do not run it that way.
 - **Versions.** Pin the server and `execd` images. The adapter was checked
-  against server `release-1.2.0` with `execd` `v1.1.0`.
+  against server `release-1.2.0` with `execd` `release-1.2.0` (set
+  `opensandbox.lineEndings: kept`) and `v1.1.0`.
 - **Location.** The chart's default `apiURL` assumes a Service
-  `opensandbox-server` in namespace `opensandbox` on port 8090. Note the real
-  URL if yours differs.
+  `opensandbox-server` in namespace `opensandbox-system` on port 80, which is
+  where OpenSandbox's own chart puts it. Note the real URL if yours differs.
 - **Sandbox egress.** Differently does not configure OpenSandbox's network
   policy. Restrict sandbox egress in OpenSandbox or with NetworkPolicy in its
   namespace, and block cloud metadata endpoints.
@@ -134,7 +143,7 @@ default pool, first in the pool list (`config.pools` defaults to empty):
 | Value | Default | Purpose |
 |---|---|---|
 | `opensandbox.enabled` | `true` | Register the OpenSandbox server as a pool |
-| `opensandbox.apiURL` | `http://opensandbox-server.opensandbox.svc:8090/v1` | Lifecycle API base URL, ending in `/v1` |
+| `opensandbox.apiURL` | `http://opensandbox-server.opensandbox-system.svc/v1` | Lifecycle API base URL, ending in `/v1` |
 | `opensandbox.trust` | `private` | `private` if you operate the server and its runtime, `external` if someone else does |
 | `opensandbox.pool.name` | `opensandbox` | Pool name; also `pool.region`, `pool.labels`, `pool.maxConcurrency`, `pool.costModel` |
 | `opensandbox.image` | empty (`ubuntu:24.04`) | Default image URI; a request's template overrides it |
@@ -163,7 +172,7 @@ config:
   # policy stays external: never unless you opt in (see "Hybrid" below)
 
 opensandbox:
-  apiURL: http://opensandbox-server.opensandbox.svc:8090/v1
+  apiURL: http://opensandbox-server.opensandbox-system.svc/v1
   trust: private
   isolation: container          # microvm only if OpenSandbox runs Fast Sandbox
   existingSecret: opensandbox-api-key
@@ -220,7 +229,7 @@ What the install does:
   dashboard or API need `networkPolicy.server.egress.runtimeProviders: true`,
   which allows `providerCIDRs` on port 443. The OpenSandbox rule is
   `networkPolicy.server.egress.opensandbox`: by default pods in namespace
-  `opensandbox` (`namespaceSelector`) on port 8090. Change `namespaceSelector`
+  `opensandbox-system` (`namespaceSelector`) on port 80. Change `namespaceSelector`
   or `podSelector` if OpenSandbox runs elsewhere in the cluster, or set
   `cidrs` for a server outside it. With `opensandbox.useServerProxy: false`,
   add the per-sandbox endpoints through `networkPolicy.server.egress.extra`.
@@ -307,7 +316,7 @@ If the sandbox stays `queued` or fails, the placement explanation and
 `statusReason` say why. Usual causes:
 
 - the `opensandbox` pool is unhealthy: wrong `apiURL`, wrong API key, or the
-  NetworkPolicy blocks port 8090;
+  NetworkPolicy blocks the server's port (80 with OpenSandbox's chart);
 - OpenSandbox cannot pull the image or start the sandbox (its own logs say
   why);
 - the request asks for a capability the pool does not offer (for example
@@ -339,7 +348,7 @@ and the comments explain each one. Useful ones:
 | `secrets.enabled` | `true` | Give the server a secrets key, so provider credentials can be stored in Differently; `false` means none can be stored |
 | `secrets.existingSecret` / `existingSecretKey` | empty (chart generates `<fullname>-secrets-key`) / `secrets-key` | A Secret you manage holding the base64 32-byte key; required for renderers that cannot `lookup` |
 | `opensandbox.*` | enabled | The default pool: see the table in step 5 |
-| `networkPolicy.server.egress.opensandbox` | namespace `opensandbox`, port 8090 | Where the server may connect to reach OpenSandbox |
+| `networkPolicy.server.egress.opensandbox` | namespace `opensandbox-system`, port 80 | Where the server may connect to reach OpenSandbox |
 | `providers.daytona/freestyle.enabled` | `false` | Register an external pool (still gated by `config.policy`) |
 | `networkPolicy.server.egress.restricted` | `true` | Server egress limited to DNS, the database, OpenSandbox and enabled providers |
 | `networkPolicy.server.egress.runtimeProviders` | `false` | Also allow `providerCIDRs` on 443 for providers added at runtime (dashboard or API); `providers.*` already open it |

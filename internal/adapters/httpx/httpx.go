@@ -104,10 +104,11 @@ func (c *Client) mapError(status int, raw []byte) error {
 		msg = http.StatusText(status)
 	}
 	msg = c.Provider + ": " + msg
-	if body.Code != "" {
-		msg += " (" + body.Code + ")"
-	}
 	e := &api.Error{Message: msg, Details: map[string]string{"provider": c.Provider, "providerStatus": fmt.Sprint(status)}}
+	if body.Code != "" {
+		e.Message += " (" + body.Code + ")"
+		e.Details["providerCode"] = body.Code
+	}
 	switch {
 	case status == http.StatusNotFound:
 		e.Code = api.CodeNotFound

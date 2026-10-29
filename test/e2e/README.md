@@ -44,6 +44,36 @@ Docker socket. Its configuration and test API key are in
 [`../opensandbox/config.toml`](../opensandbox/config.toml). Every credential
 in `compose.yaml` is a test value for this throwaway stack.
 
+Colima shares only your home folder with its VM, so run the stack from a
+checkout under `$HOME`; bind mounts from elsewhere (such as `/tmp`) fail.
+
+## Run against another deployment
+
+The suite only needs HTTP access to a Differently server, its metrics port
+and the OpenSandbox server behind it, so it also runs against a real
+install, such as a Helm release on Kubernetes reached through `kubectl
+port-forward` or an SSH tunnel:
+
+```bash
+DIFFERENTLY_E2E_URL=http://localhost:28080 \
+DIFFERENTLY_E2E_TOKEN="$(cat operator-token)" \
+DIFFERENTLY_E2E_METRICS_URL=http://localhost:29091 \
+OPENSANDBOX_E2E_URL=http://localhost:28091/v1 \
+OPENSANDBOX_E2E_KEY="$(cat opensandbox-api-key)" \
+OPENSANDBOX_E2E_INTERNAL_URL=http://opensandbox-server.opensandbox-system.svc/v1 \
+go test -tags e2e -count=1 -v ./test/e2e/
+```
+
+`OPENSANDBOX_E2E_INTERNAL_URL` is OpenSandbox as the server reaches it, for
+the pool `TestStoredProviderKeyAndSwitching` registers, and
+`DIFFERENTLY_E2E_POOL` names the config's private pool (`opensandbox`). The
+server's config must match [`config.yaml`](config.yaml) where the tests
+depend on it: the `small` and `medium` profiles, `audit.failClosed: true`
+and a short `scheduler.reconcileIntervalSeconds`. Tests adapt to what the
+pool advertises: where pause or snapshots are not offered (the Kubernetes
+runtime without a snapshot registry), they check that Differently refuses
+them precisely instead.
+
 ## What it checks
 
 | Test | Proves |
@@ -51,8 +81,9 @@ in `compose.yaml` is a test value for this throwaway stack.
 | `TestSandboxRunsOnOpenSandboxWithLimits` | A sandbox placed on the pool runs in OpenSandbox, and its CPU and memory envelope reaches the runtime as cgroup limits |
 | `TestExecSemantics` | Env (sandbox and per command), exit codes, separate stderr, timeouts and streamed output; stdin is refused with `unsupported_operation` |
 | `TestFiles` | Binary file upload, download and listing |
-| `TestPauseResumeAndUnsupportedStop` | Pause and resume keep state; `stop` returns `unsupported_operation` because OpenSandbox has none |
-| `TestSnapshotAndFork` | A fork starts from the parent's snapshot and is independent of it |
+| `TestPauseResumeAndUnsupportedStop` | Pause and resume keep state, or, if the pool does not advertise pause, it is refused with `unsupported_operation`; `stop` returns `unsupported_operation` because OpenSandbox has none |
+| `TestSnapshotAndFork` | A fork starts from the parent's snapshot and is independent of it, or is refused precisely if the pool has no snapshots |
+| `TestUnpullableImageKeepsPoolHealthy` | A sandbox whose image cannot be pulled fails or retries with a reason naming the image, never as a provider outage, and the pool stays healthy throughout |
 | `TestCapabilityMismatchIsPrecise` | A request needing stop/start is rejected up front (422) with the missing capability named |
 | `TestQuotaQueuesAndReleases` | A tenant at its limit queues; the queued sandbox starts when capacity frees |
 | `TestDeleteCleansUpBackend` | Deleting a sandbox removes it from OpenSandbox |
@@ -67,10 +98,12 @@ in `compose.yaml` is a test value for this throwaway stack.
 | 2026-10-28 | Apple M4 Max, macOS 26.5, Colima 0.10.3 (`colima-differently`), arm64 | server 1.2.0, `execd` v1.1.0, Docker runtime | 10/10 passed, twice; sandboxes running in about 0.3–0.8 s |
 | 2026-10-28 | same | server 1.2.0, `execd` release-1.2.0, `lineEndings: kept` | 10/10 passed, including byte-exact output |
 | 2026-10-28 | same | server 1.2.0, `execd` release-1.2.0, `lineEndings: kept` | 11/11 passed, including stored provider keys and switching |
+| 2026-10-28 | same | same | 12/12 passed (the combined suite); an unpullable image fails after one attempt in about 1 s |
+| 2026-10-28 | k3s v1.36.5 on an Azure `Standard_D8s_v6`, x86_64; Differently from its Helm chart with embedded PostgreSQL | server, controller and `execd` release-1.2.0, Kubernetes runtime, no snapshot registry | 12/12 passed (pause and snapshots checked as refusals); sandboxes running in about 1.4–2.7 s; an unpullable image retries after OpenSandbox's 60 s pod-ready timeout with the pool healthy |
 
 Not covered yet:
 
-- OpenSandbox's Kubernetes and Fast Sandbox (Firecracker microVM) runtimes;
-- x86_64 hosts;
-- a Helm install on a real cluster;
+- OpenSandbox's Fast Sandbox (Firecracker microVM) runtime;
+- pause and snapshots on the Kubernetes runtime (they need OpenSandbox's
+  snapshot registry), several nodes, and a node drain;
 - external providers.
