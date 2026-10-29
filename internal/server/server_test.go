@@ -586,3 +586,56 @@ func TestSuspendOrganization(t *testing.T) {
 }
 
 func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
+
+// Idle auto-stop: a sandbox with an idle timeout is paused once nothing has
+// used it for that long, and the next exec wakes it transparently. A
+// keepalive resets the clock; a sandbox a caller stopped is not woken.
+func TestIdleAutoStopAndWake(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	_, _, token := h.tenant("a", api.Quota{})
+	if code := h.call("POST", "/v1/sandboxes", token, api.CreateSandboxRequest{IdleTimeoutSeconds: 30}, nil); code != 400 {
+		t.Fatalf("an idle timeout under 60 s should be refused, got %d", code)
+	}
+	sb := h.create(token, api.CreateSandboxRequest{IdleTimeoutSeconds: 60})
+	h.tick()
+	later := func(d time.Duration) { h.sched.Now = func() time.Time { return time.Now().UTC().Add(d) } }
+
+	later(30 * time.Second)
+	h.sched.SweepIdle(context.Background())
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning {
+		t.Fatalf("swept before its idle timeout: %+v", got.Status)
+	}
+	later(2 * time.Minute)
+	h.sched.SweepIdle(context.Background())
+	got := h.get(token, sb.ID)
+	if got.Status != api.StatusPaused || got.IdledAt == nil {
+		t.Fatalf("an idle sandbox should be paused and marked idled: %s %v", got.Status, got.IdledAt)
+	}
+	var res api.ExecResult
+	h.must(200, "POST", "/v1/sandboxes/"+sb.ID+"/exec", token, api.ExecRequest{Command: "echo hi"}, &res)
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning || got.IdledAt != nil || got.LastActivityAt == nil {
+		t.Fatalf("exec should wake the sandbox: %+v", got)
+	}
+
+	// A keepalive counts as activity.
+	h.sched.Now = func() time.Time { return time.Now().UTC() }
+	h.must(200, "POST", "/v1/sandboxes/"+sb.ID+"/keepalive", token, nil, nil)
+	later(50 * time.Second)
+	h.sched.SweepIdle(context.Background())
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning {
+		t.Fatalf("swept despite a keepalive 50 s ago: %s", got.Status)
+	}
+
+	// A caller's pause is respected: exec does not wake it.
+	h.must(200, "POST", "/v1/sandboxes/"+sb.ID+"/pause", token, nil, nil)
+	if code := h.call("POST", "/v1/sandboxes/"+sb.ID+"/exec", token, api.ExecRequest{Command: "true"}, nil); code != 409 {
+		t.Fatalf("exec on a sandbox the caller paused should be refused, got %d", code)
+	}
+	var off api.Sandbox
+	h.must(200, "PATCH", "/v1/sandboxes/"+sb.ID, token, api.UpdateSandboxRequest{IdleTimeoutSeconds: ptr(-1)}, &off)
+	if off.IdleTimeoutSeconds != 0 {
+		t.Fatalf("-1 should turn idle auto-stop off: %d", off.IdleTimeoutSeconds)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

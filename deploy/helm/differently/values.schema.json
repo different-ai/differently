@@ -220,7 +220,8 @@
             "profile": {"type": "string"},
             "template": {"type": "string"},
             "resources": {"$ref": "#/definitions/resources"},
-            "ttlSeconds": {"$ref": "#/definitions/nonNegativeInt"}
+            "ttlSeconds": {"$ref": "#/definitions/nonNegativeInt"},
+            "idleTimeoutSeconds": {"$ref": "#/definitions/nonNegativeInt"}
           }
         },
         "classifications": {

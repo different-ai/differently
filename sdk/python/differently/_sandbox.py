@@ -157,9 +157,20 @@ class Sandbox:
         """Waits until the sandbox reaches ``status``."""
         return self._set(wait_for_status(self._http, self.id, status, timeout))
 
-    def update(self, *, labels: Optional[Mapping[str, str]] = None, ttl_seconds: Optional[int] = None) -> "Sandbox":
-        """Merges labels (an empty value removes one) and/or resets the TTL."""
-        body = compact(labels=dict(labels) if labels is not None else None, ttlSeconds=ttl_seconds)
+    def update(
+        self,
+        *,
+        labels: Optional[Mapping[str, str]] = None,
+        ttl_seconds: Optional[int] = None,
+        idle_timeout_seconds: Optional[int] = None,
+    ) -> "Sandbox":
+        """Merges labels (an empty value removes one), resets the TTL, and/or sets
+        the idle timeout (at least 60 seconds, or -1 to turn it off)."""
+        body = compact(
+            labels=dict(labels) if labels is not None else None,
+            ttlSeconds=ttl_seconds,
+            idleTimeoutSeconds=idle_timeout_seconds,
+        )
         return self._set(self._http.json("PATCH", self._path, json=body))
 
     def delete(self) -> "Sandbox":
@@ -240,6 +251,10 @@ class Sandbox:
     def resume(self) -> "Sandbox":
         return self._lifecycle("resume")
 
+    def keepalive(self) -> "Sandbox":
+        """Counts as activity for idle auto-stop, and wakes an idled sandbox."""
+        return self._lifecycle("keepalive")
+
     def snapshot(self, *, kind: Optional[str] = None) -> Snapshot:
         """Captures a ``disk`` (default) or ``memory`` snapshot."""
         return self._http.json("POST", f"{self._path}/snapshots", json=compact(kind=kind))
@@ -284,6 +299,7 @@ class Sandboxes:
         labels: Optional[Mapping[str, str]] = None,
         priority: Optional[int] = None,
         from_snapshot: Optional[str] = None,
+        idle_timeout_seconds: Optional[int] = None,
         wait: bool = True,
         timeout: float = DEFAULT_WAIT_SECONDS,
         idempotency_key: Optional[str] = None,
@@ -305,6 +321,7 @@ class Sandboxes:
             labels=dict(labels) if labels is not None else None,
             priority=priority,
             fromSnapshot=from_snapshot,
+            idleTimeoutSeconds=idle_timeout_seconds,
         )
         info = self._http.json(
             "POST",

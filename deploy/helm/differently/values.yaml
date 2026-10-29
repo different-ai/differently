@@ -67,6 +67,10 @@ config:
     classification: internal
     profile: small
     ttlSeconds: 3600
+    # Stop (or pause) sandboxes after this many seconds with no exec, file,
+    # port or keepalive call; the next call wakes them. 0 is off unless a
+    # request sets idleTimeoutSeconds. At least 60 when set.
+    idleTimeoutSeconds: 0
 
   # Data sensitivity levels. `external` is the most permissive external
   # placement mode a class allows: never | overflow | allowed. The global

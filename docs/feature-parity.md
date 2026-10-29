@@ -63,7 +63,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 | Get / list with labels, cursor | Yes | `GET /v1/sandboxes`, `?label=k=v`, `cursor`, `status` | ✅ | |
 | Update (rename, TTL, subdomain) | `PATCH` | `PATCH /v1/sandboxes/{id}` (labels, TTL) | 🟡 | No rename or subdomain. |
 | Delete | `DELETE` with confirm header, async | `DELETE /v1/sandboxes/{id}` (202, idempotent) | ✅ | No confirm header; SDK/CLI are explicit. |
-| TTL / auto-stop | `ttlSeconds` (default 1 h, max 30 d) | `ttlSeconds` (operator default, max via quota) | ✅ | Expiry terminates; idle-based stop 📋. |
+| TTL / auto-stop | `ttlSeconds` (default 1 h, max 30 d) | `ttlSeconds`, and `idleTimeoutSeconds` (operator default `defaults.idleTimeoutSeconds`) | ✅ e2e | Expiry terminates. Idle auto-stop pauses (pools that keep memory) or stops (disk kept) a sandbox after its idle timeout with no exec, file, port or `keepalive` call, and the next such call wakes it: about 1.7 s on OpenSandbox's Kubernetes runtime, under 0.1 s on Docker. Traffic straight to a port URL is not seen; viewers call `keepalive`. |
 | Sizes | 4 fixed types | Operator-defined profiles + explicit `resources` | ✅ | |
 | Recover (power-cycle) | `POST /recover` | — | 📋 | Stop/start or pause/resume, where the backend has them. |
 | Share with org members | `POST /share` | Project-scoped keys | — | Different tenancy model. |
@@ -178,7 +178,21 @@ Known unverified provider details (default exec timeouts, pause semantics,
 rate limits) are listed in [proof-of-concepts.md](proof-of-concepts.md) for
 live-account verification.
 
-## 4. Boat-compatible facade: decision
+## 4. Remaining OpenSandbox gaps: limitation or not built yet
+
+Against what Freestyle gives Workbot computers, as of 2026-10-29:
+
+| Gap | Kind | Why, and what would close it |
+|---|---|---|
+| Pause that keeps memory, on the Kubernetes runtime | **Limitation** of OpenSandbox's Kubernetes runtime | Its pause commits the root filesystem and frees the pod; memory and processes are gone. Differently offers stop/start there. Fast Sandbox (Firecracker) and OpenSandbox's QEMU VMState mode are documented to keep memory: not built or run with Differently yet. |
+| Memory snapshots | **Limitation** on Docker and Kubernetes; **not run** on Fast Sandbox | Same reason. Running Fast Sandbox needs KVM nodes ([E18](backlog.md#e18-fast-sandbox-spike)). |
+| Idle auto-stop seeing port traffic | **Not built yet** | Differently sees exec, file and port calls, not requests sent straight to a port URL, so viewers call `keepalive`. OpenSandbox's gateway records that traffic in Redis (`gateway.activity`) and could feed Differently's idle clock. |
+| Wake on a port request | **Limitation** for the Kubernetes and Docker runtimes in OpenSandbox 1.2.0 | OpenSandbox's gateway wake-on-access covers Fast Sandbox only. A stopped sandbox wakes on the next API call (or `keepalive`), not on a hit to its URL. |
+| Per-request port URL lifetime | **Not built yet** | URLs last the pool's `portURLSeconds`; the ports API takes no `ttlSeconds`. |
+| Egress on the Docker runtime | **Not checked** | The setting is sent on both runtimes; enforcement was checked on Kubernetes only. |
+| Detached processes, PTY, SSH | **Not built yet** | OpenSandbox's execd offers background commands; not wired into the adapter. |
+
+## 5. Boat-compatible facade: decision
 
 **Not in the MVP.** Differently's own vendor-neutral API is the contract.
 Reasons:
@@ -207,7 +221,7 @@ portable core only, and document every semantic difference. Mapping sketch:
 | `POST /sandboxes/{id}/host` | `…/ports` | Availability depends on the backend. |
 | `X-Ascii-Confirm-Delete` | not required | Facade would accept and ignore it. |
 
-## 5. Biggest gaps, in priority order
+## 6. Biggest gaps, in priority order
 
 1. Run OpenSandbox's Kubernetes and Fast Sandbox runtimes under
    Differently on real infrastructure, so microVM isolation through
