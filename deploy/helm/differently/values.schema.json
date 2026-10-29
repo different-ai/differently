@@ -62,7 +62,7 @@
       "required": ["name", "adapter"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
-        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "vercel", "fly", "agent-sandbox", "cubesandbox"]},
+        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "vercel", "fly", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel"]},
         "trust": {"type": "string", "enum": ["private", "external"]},
         "region": {"type": "string"},
         "labels": {"$ref": "#/definitions/stringMap"},

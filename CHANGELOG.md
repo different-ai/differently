@@ -31,6 +31,32 @@ All notable changes are recorded here. The format follows
   `idledAt`, SDK and CLI (`--idle-timeout`) support, and audit event
   `sandbox.idled` / `sandbox.woke`.
 
+### Added (Blaxel provider)
+
+- `blaxel` adapter for Blaxel sandboxes (always `trust: external`): exec
+  and streamed exec, files, stdin, token-protected port previews and a TTL
+  backstop. Tested against a fake server built from Blaxel's published
+  specs, not a live account.
+- Provider pages for Blaxel, Runloop (not supported: the service is
+  winding down), Beam and Koyeb (documented: a `remote` plugin on their
+  SDKs) under `docs/providers/`.
+
+### Added (cloud providers' own sandboxes)
+
+- Adapters for the cloud providers' sandbox services, each tested against a
+  fake server built from the provider's published API (not yet live):
+  `aws-agentcore` (Amazon Bedrock AgentCore Code Interpreter),
+  `azure-sandboxes` (Azure Container Apps Sandboxes), `azure-sessions`
+  (Azure Container Apps dynamic sessions, Python code-interpreter pools),
+  `gcp-sandboxes` (Google Cloud Agent Platform shell sandboxes) and
+  `northflank`. Pools of these kinds must declare `trust` (external, or
+  private if the operator's policy treats their own cloud account so).
+- Cloud IAM credentials without SDKs: Microsoft Entra ID (client secret or
+  workload identity federation), Google service-account keys, and AWS
+  Signature Version 4, in `internal/adapters/cloudhttp`.
+- Provider pages in `docs/providers/` for these, plus AgentCore Runtime and
+  GKE Agent Sandbox (documented, no adapter).
+
 ### Added (OpenSandbox parity with Freestyle)
 
 - `runtime: kubernetes` for OpenSandbox pools. With the controller's snapshot
