@@ -203,8 +203,13 @@ var externalKinds = []string{"daytona", "freestyle"}
 // KnownAdapters lists adapter kinds the server can build.
 var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake"}
 
+// Adapter kinds that run where the operator put them (a plugin they deploy,
+// the dev host, the test fake), so they are private unless declared.
+var privateByDefaultKinds = []string{"remote", "devhost", "fake"}
+
 // Adapter kinds whose trust boundary depends on who operates the backend, so
-// the operator must declare it.
+// the operator must declare it. Any kind in none of these lists is treated the
+// same way: a new adapter never becomes private by omission.
 var declaredTrustKinds = []string{"opensandbox"}
 
 // Default returns a configuration with every default applied.
@@ -285,7 +290,7 @@ func (c *Config) applyDefaults() {
 		if slices.Contains(externalKinds, p.Adapter) {
 			p.Trust = api.TrustExternal
 		}
-		if p.Trust == "" && !slices.Contains(declaredTrustKinds, p.Adapter) {
+		if p.Trust == "" && slices.Contains(privateByDefaultKinds, p.Adapter) {
 			p.Trust = api.TrustPrivate
 		}
 	}
@@ -372,7 +377,7 @@ func (c Config) Validate() error {
 			bad("pool %s: unknown adapter %q (known: %s)", p.Name, p.Adapter, strings.Join(KnownAdapters, ", "))
 		}
 		switch {
-		case p.Trust == "" && slices.Contains(declaredTrustKinds, p.Adapter):
+		case p.Trust == "":
 			bad("pool %s: set trust explicitly for the %s adapter: private if you operate it, external if someone else does", p.Name, p.Adapter)
 		case p.Trust != api.TrustPrivate && p.Trust != api.TrustExternal:
 			bad("pool %s: trust must be private or external", p.Name)

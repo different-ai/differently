@@ -122,7 +122,9 @@ const ways = [
 ];
 
 const verified = [
-  "End-to-end suite, 12 of 12, on OpenSandbox's Docker runtime (arm64) and its Kubernetes runtime (single-node k3s on Azure, both charts installed with Helm).",
+  "End-to-end suite, 14 of 14, on OpenSandbox's Docker runtime (arm64) and its Kubernetes runtime (single-node k3s on Azure, both charts installed with Helm).",
+  'On the Kubernetes runtime: stop/start that keeps the disk, snapshots and fork through a snapshot registry, signed port URLs (WebSockets included) and egress policy.',
+  'Idle sandboxes stop (Kubernetes) or pause (Docker) after their idle timeout and wake on the next call.',
   'The published alpha chart and image installed from public artifacts only; a sandbox ran in about 2 s.',
   'Real OpenSandbox responses from the Docker and Kubernetes runtimes are recorded and replayed in every go test.',
   "OpenWork's Workbot computer ran through Differently as a sandbox gateway over HTTPS: commands with Python tools, files, and stop/start that keeps the disk (OpenWork pull request #6649, not merged yet).",
@@ -134,10 +136,8 @@ const notVerified = [
   'Managed EKS, GKE and AKS clusters',
   'Live Daytona and Freestyle accounts through Differently',
   'Memory-preserving pause on the Kubernetes runtime',
-  'Port URLs on OpenSandbox pools',
 ];
 const inProgress = [
-  'Parity with Freestyle on the Kubernetes runtime: stop/start, snapshots and fork through a snapshot registry, and port URLs through OpenSandbox\'s signed gateway (Differently pull request #20).',
   'OpenWork using Differently as a per-organization sandbox gateway (OpenWork pull request #6649).',
 ];
 

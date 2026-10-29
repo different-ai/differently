@@ -276,8 +276,9 @@ providers:
       labels: {}
       maxConcurrency: 0
       costModel: {}
-      # Adapter keys: apiURL, target, snapshot, class (container|linux-vm),
-      # autoStopMinutes. Values must be strings.
+      # Adapter keys: apiURL, target, snapshot, class (container|linux-vm).
+      # Values must be strings. Daytona's auto-stop is always off: Differently
+      # owns TTL and lifecycle.
       config:
         apiURL: https://app.daytona.io/api
     # Secret holding the API key (recommended). Created by you.
