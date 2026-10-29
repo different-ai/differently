@@ -35,6 +35,11 @@ account of it:
 Apache-2.0, fully self-hosted, no telemetry. Built by the
 [OpenWork](https://github.com/different-ai) team.
 
+<p align="center">
+  <a href="https://different-ai.github.io/differently/#video"><img alt="Watch: Differently in 36 seconds" src="docs/assets/differently-intro-poster.jpg" width="640"></a>
+  <br><sub>▶ <a href="https://different-ai.github.io/differently/#video">Watch the 36-second intro</a></sub>
+</p>
+
 > **Pre-release ([`v0.1.0-alpha.1`](https://github.com/different-ai/differently/releases)).**
 > The whole platform is implemented and tested end to end against real
 > OpenSandbox servers (Docker and Kubernetes runtimes). It isn't ready for
@@ -137,8 +142,9 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 - managed EKS, GKE and AKS;
 - live Daytona and Freestyle accounts through Differently.
 
-**In progress:** stop/start, snapshots and fork on OpenSandbox's Kubernetes
-runtime, through a snapshot registry.
+**In progress:** stop/start, snapshots, fork and port URLs on OpenSandbox's
+Kubernetes runtime, through a snapshot registry and OpenSandbox's signed
+gateway.
 
 The [roadmap](docs/roadmap.md) and [feature parity](docs/feature-parity.md)
 pages track the details. Releases follow [semantic versioning](https://semver.org/):

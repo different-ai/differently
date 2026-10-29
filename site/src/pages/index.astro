@@ -9,10 +9,11 @@ const version = 'v0.1.0-alpha.1';
 
 // Launch video slot. Set videoSrc to a video URL (and optionally a poster image and a
 // WebVTT captions file) to show it under the hero. While videoSrc is '' nothing renders.
-const videoSrc: string = '';
-const videoPoster: string = '';
+// The video is silent; its figcaption summarises what it shows.
+const videoSrc: string = `${base}/media/differently-intro.mp4`;
+const videoPoster: string = `${base}/media/differently-intro-poster.jpg`;
 const videoCaptions: string = '';
-const videoTitle = 'Differently in action';
+const videoTitle = 'Differently in 36 seconds: sensitive work stays on OpenSandbox in your cluster and VMs, and bursts out to Daytona or Freestyle only when your policy says overflow.';
 
 const samples = [
   {
@@ -136,7 +137,7 @@ const notVerified = [
   'Port URLs on OpenSandbox pools',
 ];
 const inProgress = [
-  'Parity with Freestyle on the Kubernetes runtime: a snapshot registry for stop/start, snapshots and fork.',
+  'Parity with Freestyle on the Kubernetes runtime: stop/start, snapshots and fork through a snapshot registry, and port URLs through OpenSandbox\'s signed gateway (Differently pull request #20).',
   'OpenWork using Differently as a per-organization sandbox gateway (OpenWork pull request #6649).',
 ];
 
@@ -268,7 +269,7 @@ const compare = [
 
         {/* Launch video slot. Renders only when videoSrc (top of this file) is non-empty. */}
         {videoSrc && (
-          <figure class="video">
+          <figure class="video" id="video">
             <video controls preload="metadata" playsinline poster={videoPoster || undefined} aria-label={videoTitle}>
               <source src={videoSrc} />
               {videoCaptions && <track kind="captions" src={videoCaptions} srclang="en" label="English" default />}
