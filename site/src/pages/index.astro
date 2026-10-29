@@ -127,19 +127,18 @@ const verified = [
   'Idle sandboxes stop (Kubernetes) or pause (Docker) after their idle timeout and wake on the next call.',
   'The published alpha chart and image installed from public artifacts only; a sandbox ran in about 2 s.',
   'Real OpenSandbox responses from the Docker and Kubernetes runtimes are recorded and replayed in every go test.',
-  "OpenWork's Workbot computer ran through Differently as a sandbox gateway over HTTPS: commands with Python tools, files, and stop/start that keeps the disk (OpenWork pull request #6649, not merged yet).",
+  "OpenWork's Workbot computer ran through Differently as a sandbox gateway over HTTPS: commands with Python tools, files, and stop/start that keeps the disk (behind a flag in OpenWork).",
   'A sandbox whose image cannot be pulled never marks a shared pool unhealthy.',
+  'The agent-sandbox adapter against a Kubernetes cluster (kind, runc).',
 ];
 const notVerified = [
   'Fast Sandbox microVMs',
   'Multi-node clusters and node drains',
   'Managed EKS, GKE and AKS clusters',
-  'Live Daytona and Freestyle accounts through Differently',
+  'Live accounts on the managed providers (their adapters are tested against fakes of each published API)',
   'Memory-preserving pause on the Kubernetes runtime',
 ];
-const inProgress = [
-  'OpenWork using Differently as a per-organization sandbox gateway (OpenWork pull request #6649).',
-];
+const inProgress: string[] = [];
 
 const tryIt = `make build
 ./bin/differently-server --dev
@@ -151,7 +150,7 @@ const features = [
   {
     k: '01',
     title: 'Providers behind adapters',
-    body: 'OpenSandbox servers you run, Daytona, Freestyle and any service speaking the adapter protocol plug in behind one contract. Applications keep calling the same API while operators change where work goes.',
+    body: 'OpenSandbox, agent-sandbox and CubeSandbox servers you run; E2B, Daytona, Freestyle, Vercel, Fly.io and the AWS, Azure and Google Cloud sandbox services; and any service speaking the adapter protocol plug in behind one contract. Applications keep calling the same API while operators change where work goes.',
     href: '/docs/adapters/specification/',
     cta: 'Adapter specification',
   },
@@ -189,7 +188,7 @@ const added = [
   ['Multi-tenancy', 'Organizations, projects and scoped API keys. OpenSandbox has one server-wide key.'],
   ['Quotas and fair queueing', 'Usage derived from state, enforced at admission, queued fairly across tenants.'],
   ['Policy-gated placement', 'Global, org and project policy plus data classification decide which pool may run each sandbox. External pools fail closed.'],
-  ['Many backends, one API', 'OpenSandbox pools, Daytona, Freestyle and your own adapters behind one contract and one SDK.'],
+  ['Many backends, one API', '16 built-in provider adapters and your own plugins behind one contract and one SDK.'],
   ['Placement explanations', 'Every decision records the pools considered, the ones rejected and why.'],
   ['Audit and trust report', 'A tamper-evident audit chain and one report of endpoints, credentials by reference, external placements and limits.'],
 ];
@@ -209,7 +208,7 @@ const compare = [
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Differently · Orchestrate sandboxes on your terms</title>
-    <meta name="description" content="Open-source, self-hosted control plane for sandboxes. It runs on infrastructure you already have and places each sandbox on OpenSandbox, Daytona, Freestyle or a plugin by your policy, with one API, quotas and audit." />
+    <meta name="description" content="Open-source, self-hosted control plane for sandboxes. It runs on infrastructure you already have and places each sandbox on OpenSandbox, E2B, Daytona, the cloud providers' sandbox services or a plugin by your policy, with one API, quotas and audit." />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -223,7 +222,7 @@ const compare = [
   </head>
   <body>
     <div class="status" role="note">
-      <strong>Pre-release, not for production.</strong> {version} has run end to end on OpenSandbox's Docker runtime and on a single-node k3s cluster. Fast Sandbox microVMs, multi-node and managed clusters, and live Daytona or Freestyle accounts are not verified yet.
+      <strong>Pre-release, not for production.</strong> {version} has run end to end on OpenSandbox's Docker runtime and on a single-node k3s cluster. Fast Sandbox microVMs, multi-node and managed clusters, and live accounts on managed providers are not verified yet.
       <a href="#proven">What is proven</a>
     </div>
 
@@ -250,7 +249,7 @@ const compare = [
         <h1>Everyone builds sandboxes.<br /><em>We orchestrate them.</em></h1>
         <p class="lede">
           Differently runs on infrastructure you already have: any cloud or your own hardware. It places
-          each sandbox on OpenSandbox, Daytona, Freestyle or a plugin, as your policy allows. Your developers
+          each sandbox on OpenSandbox, E2B, Daytona, a cloud provider's sandbox service or a plugin, as your policy allows. Your developers
           get one API; quotas keep usage in check, and every decision is audited.
         </p>
         <div class="ctas">
@@ -421,12 +420,14 @@ const compare = [
             <h3>Not verified yet</h3>
             <ul>{notVerified.map((v) => <li>{v}</li>)}</ul>
           </div>
-          <div>
-            <h3>In progress, not merged</h3>
-            <ul>{inProgress.map((v) => <li>{v}</li>)}</ul>
-          </div>
+          {inProgress.length > 0 && (
+            <div>
+              <h3>In progress, not merged</h3>
+              <ul>{inProgress.map((v) => <li>{v}</li>)}</ul>
+            </div>
+          )}
         </div>
-        <p class="note">Read before you deploy: the <a href={`${base}/docs/deploy/`}>support matrix</a>, <a href={`${base}/docs/security/hardening-checklist/`}>hardening checklist</a>, <a href={`${base}/docs/proof-of-concepts/`}>proofs of concept</a> and the <a href={`${base}/docs/feature-parity/`}>feature parity</a> table.</p>
+        <p class="note">Read before you deploy: the <a href={`${base}/docs/deploy/`}>support matrix</a>, <a href={`${base}/docs/providers/`}>provider catalog</a>, <a href={`${base}/docs/security/hardening-checklist/`}>hardening checklist</a>, <a href={`${base}/docs/proof-of-concepts/`}>proofs of concept</a> and the <a href={`${base}/docs/feature-parity/`}>feature parity</a> table.</p>
       </section>
 
       <section class="start wrap" id="start">

@@ -20,13 +20,63 @@ code and published documentation.
 
 ## Providers
 
-| Provider | Adapter | Status | Trust | Isolation | Notes |
-|---|---|---|---|---|---|
-| [OpenSandbox](opensandbox.md) | `opensandbox` | **Verified live** (Docker and Kubernetes runtimes, 2026-10-29) | declared | containers, or Firecracker microVMs (Fast Sandbox, not verified) | The default private runtime. Stop/start, snapshots, fork, signed port URLs and egress policy on Kubernetes |
-| [Daytona](daytona.md) | `daytona` | **Tested with a fake server** | external | containers, or VMs (`class: linux-vm`) | Pause and memory snapshots on the VM class only; no stdin |
-| [Freestyle](freestyle.md) | `freestyle` | **Tested with a fake server** | external | microVMs | Memory snapshots and fork; deny-all egress by default; exposed ports are public |
-| [Remote plugin](remote.md) | `remote` | **Tested with a fake server** | private unless declared | the plugin's | Any backend behind Differently's HTTP adapter protocol |
-| Dev host | `devhost` | **Verified live** (dev mode only) | private | **none** | Runs commands on the server's own machine; `--dev` only, for trying the API |
+26 providers are covered: 16 with a built-in adapter, 8 reachable through a
+[remote plugin](remote.md), and 2 that cannot be supported. Two of the 16
+have run live; the rest are implemented from published APIs and tested
+against fakes of them. "Persists" means stop/start keeps the disk or pause
+keeps memory; "Snapshots" are disk unless marked memory.
+
+### Built-in adapters
+
+| Provider | Adapter | Status | Trust | Isolation | Persists | Snapshots · fork | Port URLs |
+|---|---|---|---|---|---|---|---|
+| [OpenSandbox](opensandbox.md) | `opensandbox` | **Verified live** (Docker and Kubernetes, 2026-10-29) | declared | containers; Firecracker with Fast Sandbox (not verified) | stop/start (Kubernetes), pause (Docker) | yes · yes | signed (Kubernetes) |
+| [agent-sandbox](agent-sandbox.md) (Kubernetes SIG) | `agent-sandbox` | **Verified live** (kind cluster, runc, 2026-10-28) | declared | the pod's RuntimeClass: runc, gVisor or Kata | stop/start with a volume | no · no | in-cluster only |
+| [Daytona](daytona.md) | `daytona` | Tested with a fake server | external | containers, or VMs | stop/start; pause on VMs | yes (memory on VMs) · no | signed |
+| [Freestyle](freestyle.md) | `freestyle` | Tested with a fake server | external | microVMs | stop/start, pause | memory · yes | public |
+| [E2B](e2b.md) | `e2b` | Tested with a fake server | declared (self-hostable) | Firecracker microVMs | pause | memory · yes | public, opt-in |
+| [Boat](boat.md) | `boat` | Tested with a fake server | external | VMs | stop/start | yes · yes | token, or public |
+| [Morph Cloud](morph.md) | `morph` | Tested with a fake server | external | VMs | pause | memory · yes | public by default |
+| [Vercel Sandbox](vercel.md) | `vercel` | Tested with a fake server | external | Firecracker microVMs | stop/start | yes · yes | public, ports set at creation |
+| [Fly.io Machines](fly.md) | `fly` | Tested with a fake server | external | Firecracker microVMs | stop/start; suspend opt-in | no · no | no |
+| [Blaxel](blaxel.md) | `blaxel` | Tested with a fake server | external | microVMs | automatic standby only | no · no | token in the URL |
+| [CubeSandbox](cubesandbox.md) | `cubesandbox` | Tested with a fake server | declared (self-hostable) | KVM microVMs | pause | memory · yes | opt-in |
+| [Amazon Bedrock AgentCore Code Interpreter](aws-agentcore.md) | `aws-agentcore` | Tested with a fake server | declared (your AWS account) | microVM per session | no | no · no | no |
+| [Azure Container Apps Sandboxes](azure-sandboxes.md) | `azure-sandboxes` | Tested with a fake server | declared (your subscription) | Microsoft-managed boundary | stop/start | yes · yes | public |
+| [Azure Container Apps dynamic sessions](azure-sessions.md) | `azure-sessions` | Tested with a fake server (Python pools) | declared (your subscription) | Hyper-V | no | no · no | no |
+| [Google Cloud Agent Platform sandboxes](gcp-sandboxes.md) | `gcp-sandboxes` | Tested with a fake server | declared (your project) | Google-managed containers | stop/start | memory · yes | no |
+| [Northflank](northflank.md) | `northflank` | Tested with a fake server | declared (BYOC possible) | microVMs or gVisor | no | no · no | public |
+
+Two more kinds are not providers: [`remote`](remote.md), for any backend
+behind the HTTP adapter protocol (private unless declared), and `devhost`,
+which runs commands on the server's own machine with **no isolation**, in
+`--dev` mode only.
+
+Egress control (`network.egress-control`) is offered by OpenSandbox on
+Kubernetes, Freestyle and Azure Container Apps Sandboxes; each page says how.
+
+### Through a remote plugin (documented)
+
+These have no built-in adapter. Each page explains why and what a plugin
+would wrap.
+
+| Provider | Why there is no adapter |
+|---|---|
+| [Modal](modal.md) | Sandboxes have no public REST API; the SDKs speak a gRPC API Modal says is not public |
+| [Cloudflare Sandbox SDK and Containers](cloudflare.md) | Containers are reachable only through a Durable Object in a Worker |
+| [CodeSandbox](codesandbox.md) | The supported interface is the `@codesandbox/sdk` |
+| [Beam](beam.md) | Driven through Beam's SDK; its open-source engine (beta9) can be self-hosted |
+| [Koyeb](koyeb.md) | Sandboxes (public preview) are driven through Koyeb's SDK |
+| [Sprites](sprites.md) (Fly.io) | Exec is specified only over WebSocket; a built-in adapter is possible later |
+| [Amazon Bedrock AgentCore Runtime](aws-agentcore-runtime.md) | Command execution needs a plugin or a future adapter |
+| [GKE Agent Sandbox](gke-agent-sandbox.md) | A GKE add-on with no Google HTTP API of its own |
+
+### Not supported
+
+| Provider | Why |
+|---|---|
+| [Runloop](runloop.md) | The service is winding down; transition support ends 2026-11-13 |
+| [microsandbox](microsandbox.md) | Since its 2026 rewrite it has no server API: the runtime is embedded in each SDK process |
 
 ## Choose a route for a new provider
 
