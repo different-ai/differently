@@ -6,6 +6,14 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Changed
+
+- `GET /v1/capabilities` answers a tenant key with the pools its placement
+  policies allow (denied, allowed, external and region rules, for the default
+  classification); operator keys still see every pool. OpenWork's runner
+  reads it to decide whether idle computers can be paused, so a pool the
+  organization may not use no longer turns pausing off.
+
 ### Fixed (Daytona and Freestyle, run live)
 
 The `daytona` and `freestyle` adapters ran against live accounts for the
