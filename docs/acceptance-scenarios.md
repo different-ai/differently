@@ -436,8 +436,9 @@ only a reference to its credential ([spike](research/opensandbox-spike.md)).
 | `TestOpenAPICoversRoutes` | Every server route appears in `api/openapi.yaml` |
 | `TestOpenSandboxLifecycleExecFiles`, `TestOpenSandboxCredentialsAndConfig` | OpenSandbox adapter against a fake server that reproduces the deployed images' behaviour |
 | `TestLiveOpenSandbox` (`-tags live`) | OpenSandbox adapter against a real server ([test/opensandbox](../test/opensandbox/README.md)) |
-| `TestDaytonaAdapter`, `TestDaytonaErrorMapping` | Daytona adapter against a fake server built from the published spec |
-| `TestFreestyleAdapter` | Freestyle adapter against a fake server built from the published spec |
+| `TestDaytonaAdapter`, `TestDaytonaErrorMapping` | Daytona adapter against a fake server built from the published spec and what the live API did |
+| `TestFreestyleAdapter` | Freestyle adapter against a fake server built from the published spec and what the live API did |
+| `TestLiveDaytona`, `TestLiveFreestyle` (`-tags live`) | Daytona and Freestyle adapters against live accounts ([Daytona](providers/daytona.md), [Freestyle](providers/freestyle.md)) |
 | `TestLifecycleAndSnapshotRestore` | `devhost` adapter (dev mode only) |
 | `TestRunnerExecAndFiles`, `TestRunnerTimeoutKillsProcessGroup` | `internal/localexec`, the command runner `devhost` uses |
 | `TestMetricsCanLeaveTheAPIListener` | `/metrics` off the API listener with `metrics.listen` |

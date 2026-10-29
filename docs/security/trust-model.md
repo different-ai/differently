@@ -25,7 +25,8 @@ Verification level of the backends: OpenSandbox with the Docker runtime has
 run live through the adapter and through `differently-server`. The Kubernetes
 runtime and Fast Sandbox have not, so microVM isolation through Differently
 is unverified ([backlog E18](../backlog.md#e18-fast-sandbox-spike)). Daytona
-and Freestyle are tested only against fake servers.
+(container class) and Freestyle ran live through their adapters and
+`differently-server` on 2026-10-29; Daytona's VM class has not.
 
 ## 1. Assets
 
