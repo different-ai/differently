@@ -223,6 +223,28 @@ opensandbox:
   # adapter default when empty) suits execd 1.1, which drops line endings; a
   # newline is restored after each line.
   lineEndings: ""
+  # The OpenSandbox runtime: docker (the adapter default when empty) or
+  # kubernetes. On Kubernetes, OpenSandbox's pause commits the root
+  # filesystem to the controller's snapshot registry and frees the pod, so the
+  # pool offers stop/start (disk kept) instead of pause/resume (memory kept),
+  # plus disk snapshots and fork. Without controller.snapshot.registry, set
+  # features to [exec, exec.stream, files].
+  runtime: ""
+  # Port URLs tenants can open: signed uses OpenSandbox's ingress gateway in
+  # route mode uri with secure-access signing keys. Sandboxes are created
+  # with secure access, and ports.expose returns a signed, time-limited URL
+  # (/{sandbox}/{port}/{expires}/{signature}) that needs no header. Empty
+  # offers no port URLs: direct endpoints are runtime-internal addresses.
+  ports: ""
+  # Scheme of the gateway address OpenSandbox announces (https in production).
+  portScheme: ""
+  # How long a signed port URL stays valid (default 3600).
+  portURLSeconds: null
+  # Outbound traffic from each sandbox, enforced by OpenSandbox's egress
+  # sidecar: none (deny all) or allowlist (only egressAllow's hosts). Empty
+  # or public leaves it open. Checked on the Kubernetes runtime.
+  egress: ""
+  egressAllow: []
   # Secret holding the OpenSandbox server's API key. When empty, the server
   # reads key api-key of the Secret <fullname>-opensandbox: the chart creates
   # it from apiKey, or you create it before installing (see NOTES).

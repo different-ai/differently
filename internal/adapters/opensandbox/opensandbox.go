@@ -19,8 +19,8 @@
 //
 // Written against the published specs of release 1.2.0 (2026-10-28). Exec
 // output arrives as a stream of typed, line-based events (newline-delimited
-// JSON in practice, SSE "data:" framing also accepted); stdin is not
-// supported.
+// JSON in practice, SSE "data:" framing also accepted). execd takes no stdin,
+// so the adapter stages stdin in a file the command reads.
 // Checked live against the release 1.2.0 server with the Docker runtime and
 // execd release-1.2.0 (lineEndings: kept) and v1.1.0 (see test/opensandbox).
 package opensandbox
@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/different-ai/differently/internal/adapters/httpx"
+	"github.com/different-ai/differently/internal/id"
 	"github.com/different-ai/differently/pkg/adapter"
 	"github.com/different-ai/differently/pkg/api"
 )
@@ -69,10 +70,24 @@ var DefaultFeatures = []string{
 	adapter.FeaturePauseResume, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
 }
 
+// KubernetesFeatures are the defaults with runtime: kubernetes. There,
+// OpenSandbox's pause commits the root filesystem to the snapshot registry
+// and releases the pod; memory and processes are not kept. That is stop/start
+// with the disk kept, so the pool offers it as such and not as pause/resume.
+// Both it and snapshots need the controller's snapshot registry.
+var KubernetesFeatures = []string{
+	adapter.FeatureExec, adapter.FeatureExecStream, adapter.FeatureFiles,
+	adapter.FeatureStopStart, adapter.FeaturePersistDisk, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
+}
+
 // Options configures the adapter. Pool config keys: apiURL (required, the
 // lifecycle base URL ending in /v1), image (default image URI), templateId,
 // isolation (microvm|container), features (comma list), useServerProxy
-// (true|false, default true), lineEndings (kept|stripped, default stripped).
+// (true|false, default true), lineEndings (kept|stripped, default stripped),
+// runtime (docker|kubernetes, default docker), egress (none|public|allowlist,
+// with egressAllow a comma list of hosts), ports (signed: tenant URLs
+// through OpenSandbox's ingress gateway), portScheme (https|http, default
+// https) and portURLSeconds (default 3600).
 type Options struct {
 	APIURL         string
 	APIKey         string
@@ -86,7 +101,20 @@ type Options struct {
 	// release-1.2.0 and later keep each line's terminator; execd 1.1 strips
 	// it, so without this the adapter restores a newline after every line.
 	LineEndingsKept bool
-	ReadyTimeout    time.Duration
+	// Runtime is what the OpenSandbox server runs sandboxes on. It decides
+	// what pause means: a memory freeze on Docker, a root filesystem commit
+	// on Kubernetes (offered as stop/start).
+	Runtime string
+	// SignedPorts creates sandboxes with OpenSandbox's Secure Access and
+	// answers ports.expose with the ingress gateway's signed, time-limited
+	// URLs (route mode uri), which need no header and so carry no secret.
+	SignedPorts bool
+	PortScheme  string
+	PortURLTTL  time.Duration
+	// NetworkPolicy is OpenSandbox's per-sandbox egress policy, enforced by
+	// its egress sidecar; nil leaves egress open.
+	NetworkPolicy map[string]any
+	ReadyTimeout  time.Duration
 	// PauseStartTimeout bounds how long a pause may show no progress. Some
 	// runtimes accept a pause they cannot perform (the Kubernetes runtime
 	// without a snapshot registry) and leave the sandbox running.
@@ -99,7 +127,54 @@ func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
 		APIURL: strings.TrimRight(cfg["apiURL"], "/"), APIKey: apiKey, Trust: trust,
 		Image: cfg["image"], TemplateID: cfg["templateId"], Isolation: cfg["isolation"],
 		UseServerProxy: cfg["useServerProxy"] != "false", Features: slices.Clone(DefaultFeatures),
-		LineEndingsKept: cfg["lineEndings"] == "kept",
+		LineEndingsKept: cfg["lineEndings"] == "kept", Runtime: cfg["runtime"],
+	}
+	switch cfg["egress"] {
+	case "", "public":
+	case "none":
+		o.NetworkPolicy = map[string]any{"defaultAction": "deny", "egress": []any{}}
+	case "allowlist":
+		var rules []any
+		for _, d := range strings.Split(cfg["egressAllow"], ",") {
+			if d = strings.TrimSpace(d); d != "" {
+				rules = append(rules, map[string]string{"action": "allow", "target": d})
+			}
+		}
+		if len(rules) == 0 {
+			return o, errors.New("opensandbox config.egress=allowlist needs config.egressAllow, a comma list of hosts")
+		}
+		o.NetworkPolicy = map[string]any{"defaultAction": "deny", "egress": rules}
+	default:
+		return o, fmt.Errorf("opensandbox config.egress must be none, public or allowlist, not %q", cfg["egress"])
+	}
+	switch cfg["ports"] {
+	case "":
+	case "signed":
+		o.SignedPorts, o.PortScheme, o.PortURLTTL = true, "https", time.Hour
+		if s := cfg["portScheme"]; s != "" {
+			if s != "https" && s != "http" {
+				return o, fmt.Errorf("opensandbox config.portScheme must be https or http, not %q", s)
+			}
+			o.PortScheme = s
+		}
+		if v := cfg["portURLSeconds"]; v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 60 {
+				return o, fmt.Errorf("opensandbox config.portURLSeconds must be a number of seconds, at least 60, not %q", v)
+			}
+			o.PortURLTTL = time.Duration(n) * time.Second
+		}
+	default:
+		return o, fmt.Errorf("opensandbox config.ports must be signed (OpenSandbox's ingress gateway in uri route mode with secure access keys), not %q", cfg["ports"])
+	}
+	switch o.Runtime {
+	case "":
+		o.Runtime = "docker"
+	case "docker":
+	case "kubernetes":
+		o.Features = slices.Clone(KubernetesFeatures)
+	default:
+		return o, fmt.Errorf("opensandbox config.runtime must be docker or kubernetes, not %q", o.Runtime)
 	}
 	if le := cfg["lineEndings"]; le != "" && le != "kept" && le != "stripped" {
 		return o, fmt.Errorf("opensandbox config.lineEndings must be kept (execd release-1.2.0 or later) or stripped (execd 1.1), not %q", le)
@@ -117,6 +192,12 @@ func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
 				o.Features = append(o.Features, v)
 			}
 		}
+	}
+	if o.NetworkPolicy != nil && !slices.Contains(o.Features, adapter.FeatureEgressControl) {
+		o.Features = append(o.Features, adapter.FeatureEgressControl)
+	}
+	if o.SignedPorts && !slices.Contains(o.Features, adapter.FeaturePorts) {
+		o.Features = append(o.Features, adapter.FeaturePorts)
 	}
 	switch o.Isolation {
 	case "":
@@ -243,8 +324,12 @@ func state(s sandbox) string {
 // runtime keeps a deleted sandbox for a few seconds as Stopping/DELETING.
 func gone(s sandbox) bool { return s.Status.State == "Terminated" || s.Status.Reason == "DELETING" }
 
-func inst(s sandbox) adapter.Instance {
-	return adapter.Instance{Ref: s.ID, SandboxID: s.Metadata[metaSandbox], State: state(s), Message: strings.TrimSpace(s.Status.Reason + " " + s.Status.Message)}
+func (a *Adapter) inst(s sandbox) adapter.Instance {
+	st := state(s)
+	if st == adapter.StatePaused && a.opts.Runtime == "kubernetes" {
+		st = adapter.StateStopped // a filesystem commit with the pod released
+	}
+	return adapter.Instance{Ref: s.ID, SandboxID: s.Metadata[metaSandbox], State: st, Message: strings.TrimSpace(s.Status.Reason + " " + s.Status.Message)}
 }
 
 // metadataFilter encodes the server's metadata query: url-encoded k=v pairs.
@@ -319,6 +404,12 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 				"cpu": strconv.Itoa(max(req.Resources.CPU, 1)), "memory": strconv.Itoa(max(req.Resources.MemoryMiB, 128)) + "Mi",
 			},
 		}
+		if a.opts.SignedPorts {
+			body["secureAccess"] = true // the gateway checks every caller
+		}
+		if a.opts.NetworkPolicy != nil {
+			body["networkPolicy"] = a.opts.NetworkPolicy
+		}
 		switch {
 		case req.FromSnapshot != "":
 			body["snapshotId"] = req.FromSnapshot
@@ -345,7 +436,7 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 	if err := a.waitExecd(ctx, s.ID); err != nil {
 		return adapter.Instance{}, err
 	}
-	return inst(s), nil
+	return a.inst(s), nil
 }
 
 // createError reclassifies create failures that concern this one sandbox
@@ -383,7 +474,7 @@ func (a *Adapter) waitExecd(ctx context.Context, ref string) error {
 
 func (a *Adapter) Get(ctx context.Context, ref string) (adapter.Instance, error) {
 	s, err := a.get(ctx, ref)
-	return inst(s), err
+	return a.inst(s), err
 }
 
 func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Instance, error) {
@@ -393,7 +484,7 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 	}
 	out := make([]adapter.Instance, 0, len(items))
 	for _, s := range items {
-		out = append(out, inst(s))
+		out = append(out, a.inst(s))
 	}
 	return out, nil
 }
@@ -489,15 +580,23 @@ type event struct {
 // reports success with an execution_complete event (exit code 0) and a
 // non-zero exit as an error event named CommandExecError.
 func (a *Adapter) run(ctx context.Context, ref string, req api.ExecRequest, emit func(api.ExecEvent) error) (int, error) {
-	if req.Stdin != "" {
-		return -1, api.Errorf(api.CodeUnsupportedOperation, "the opensandbox backend does not support exec stdin").With("operation", "exec.stdin")
-	}
 	// execd's argv field is newer than the execd images servers deploy
 	// (v1.1.0 requires command), so argument lists go as a quoted command.
-	body := map[string]any{"command": req.Command}
+	command := req.Command
 	if len(req.Args) > 0 {
-		body["command"] = httpx.ShellQuote(req.Args)
+		command = httpx.ShellQuote(req.Args)
 	}
+	if req.Stdin != "" {
+		// execd's command API takes no stdin: stage it in a file the command
+		// reads, and remove the file whatever the command's exit code.
+		file := "/tmp/.differently-stdin-" + id.New("in")
+		if err := a.WriteFile(ctx, ref, file, []byte(req.Stdin)); err != nil {
+			return -1, err
+		}
+		q := httpx.ShellQuote([]string{file})
+		command = "(" + command + ") < " + q + "; rc=$?; rm -f " + q + "; exit $rc"
+	}
+	body := map[string]any{"command": command}
 	if req.Cwd != "" {
 		body["cwd"] = req.Cwd
 	}
@@ -670,6 +769,30 @@ func (a *Adapter) SetExpiry(ctx context.Context, ref string, at time.Time) error
 // transition) is reported as unsupported after PauseStartTimeout, rather than
 // as an outage after ReadyTimeout.
 func (a *Adapter) Pause(ctx context.Context, ref string) error {
+	if a.opts.Runtime == "kubernetes" {
+		return api.Errorf(api.CodeUnsupportedOperation, "the Kubernetes runtime does not keep memory across a pause; use stop/start, which keeps the disk").With("operation", adapter.FeaturePauseResume)
+	}
+	return a.pause(ctx, ref, adapter.FeaturePauseResume)
+}
+
+// Stop and Start serve runtime: kubernetes, where OpenSandbox's pause commits
+// the root filesystem and releases the pod, and resume recreates it from that
+// image: the disk is kept, memory is not.
+func (a *Adapter) Stop(ctx context.Context, ref string) error {
+	if a.opts.Runtime != "kubernetes" {
+		return adapter.Unsupported(adapter.FeatureStopStart)
+	}
+	return a.pause(ctx, ref, adapter.FeatureStopStart)
+}
+
+func (a *Adapter) Start(ctx context.Context, ref string) error {
+	if a.opts.Runtime != "kubernetes" {
+		return adapter.Unsupported(adapter.FeatureStopStart)
+	}
+	return a.Resume(ctx, ref)
+}
+
+func (a *Adapter) pause(ctx context.Context, ref, feature string) error {
 	before, err := a.get(ctx, ref)
 	if err != nil {
 		return err
@@ -688,7 +811,7 @@ func (a *Adapter) Pause(ctx context.Context, ref string) error {
 		case s.Status.State == "Failed":
 			return false, adapter.SandboxFailed(fmt.Errorf("opensandbox sandbox %s failed while pausing: %s %s", ref, s.Status.Reason, s.Status.Message))
 		case s.Status.State == "Running" && s.Status.LastTransitionAt == before.Status.LastTransitionAt && time.Now().After(stalled):
-			return false, api.Errorf(api.CodeUnsupportedOperation, "OpenSandbox accepted the pause, but sandbox %s did not start pausing within %s; its runtime may not support pause (the Kubernetes runtime needs a snapshot registry)", ref, a.opts.PauseStartTimeout).With("operation", adapter.FeaturePauseResume)
+			return false, api.Errorf(api.CodeUnsupportedOperation, "OpenSandbox accepted the pause, but sandbox %s did not start pausing within %s; its runtime may not support pause (the Kubernetes runtime needs a snapshot registry)", ref, a.opts.PauseStartTimeout).With("operation", feature)
 		}
 		return false, nil
 	})
@@ -743,24 +866,34 @@ func (a *Adapter) DeleteSnapshot(ctx context.Context, ref string) error {
 	return err
 }
 
-// ExposePort returns a direct endpoint for a sandbox port. Endpoints that
-// need headers are refused: the only header a proxied endpoint needs is the
-// pool's own API key, which must never be handed to tenants.
+// ExposePort returns a URL for a sandbox port. With ports: signed it is the
+// ingress gateway's signed, time-limited URL, which carries no secret and
+// needs no header. Otherwise it is the runtime's direct endpoint. Endpoints
+// that need headers are always refused: they would hand tenants a credential
+// (the server key, or the sandbox's secure-access token).
 func (a *Adapter) ExposePort(ctx context.Context, ref string, port int) (string, error) {
 	var out struct {
 		Endpoint string            `json:"endpoint"`
 		Headers  map[string]string `json:"headers"`
 	}
-	if err := a.call(ctx, http.MethodGet, fmt.Sprintf("/sandboxes/%s/endpoints/%d?use_server_proxy=false", url.PathEscape(ref), port), nil, &out); err != nil {
+	path := fmt.Sprintf("/sandboxes/%s/endpoints/%d?use_server_proxy=false", url.PathEscape(ref), port)
+	if a.opts.SignedPorts {
+		path += fmt.Sprintf("&expires=%d", time.Now().Add(a.opts.PortURLTTL).Unix())
+	}
+	if err := a.call(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return "", err
 	}
 	if len(out.Headers) > 0 {
 		return "", api.Errorf(api.CodeUnsupportedOperation, "this OpenSandbox deployment only serves port %d with request headers, which Differently cannot hand out", port).With("operation", adapter.FeaturePorts)
 	}
-	if !strings.HasPrefix(out.Endpoint, "http") {
-		out.Endpoint = "http://" + out.Endpoint
+	if strings.HasPrefix(out.Endpoint, "http://") || strings.HasPrefix(out.Endpoint, "https://") {
+		return out.Endpoint, nil
 	}
-	return out.Endpoint, nil
+	scheme := "http"
+	if a.opts.SignedPorts {
+		scheme = a.opts.PortScheme
+	}
+	return scheme + "://" + out.Endpoint, nil
 }
 
 var (
@@ -768,6 +901,7 @@ var (
 	_ adapter.Streamer         = (*Adapter)(nil)
 	_ adapter.FileSystem       = (*Adapter)(nil)
 	_ adapter.Pauser           = (*Adapter)(nil)
+	_ adapter.Lifecycle        = (*Adapter)(nil)
 	_ adapter.Snapshotter      = (*Adapter)(nil)
 	_ adapter.PortExposer      = (*Adapter)(nil)
 )

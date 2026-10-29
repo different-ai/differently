@@ -209,6 +209,12 @@ api-key
 {{- with $o.image }}{{ $_ := set $c "image" . }}{{ end -}}
 {{- with $o.templateId }}{{ $_ := set $c "templateId" . }}{{ end -}}
 {{- with $o.lineEndings }}{{ $_ := set $c "lineEndings" . }}{{ end -}}
+{{- with $o.runtime }}{{ $_ := set $c "runtime" . }}{{ end -}}
+{{- with $o.ports }}{{ $_ := set $c "ports" . }}{{ end -}}
+{{- with $o.egress }}{{ $_ := set $c "egress" . }}{{ end -}}
+{{- with $o.egressAllow }}{{ $_ := set $c "egressAllow" (join "," .) }}{{ end -}}
+{{- with $o.portScheme }}{{ $_ := set $c "portScheme" . }}{{ end -}}
+{{- with $o.portURLSeconds }}{{ $_ := set $c "portURLSeconds" (toString .) }}{{ end -}}
 {{- with $o.features }}{{ $_ := set $c "features" (join "," .) }}{{ end -}}
 {{- $pool := dict "name" $o.pool.name "adapter" "opensandbox" "trust" $o.trust "config" $c "credentials" (dict "env" $o.env) -}}
 {{- if $o.pool.region }}{{ $_ := set $pool "region" $o.pool.region }}{{ end -}}
