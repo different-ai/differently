@@ -17,8 +17,7 @@ The control plane needs no KVM, privileged pods or host paths.
 The default private runtime is an
 [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) server, which
 you install and operate with OpenSandbox's own Helm chart or manifests,
-following its documentation. Differently's chart does not install it
-([ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md)).
+following its documentation. Differently's chart does not install it.
 
 | Requirement | Notes |
 |---|---|

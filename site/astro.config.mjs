@@ -69,7 +69,6 @@ export default defineConfig({
           { label: 'OpenSandbox spike', link: '/docs/research/opensandbox-spike/' },
           { label: 'Acceptance scenarios', link: '/docs/acceptance-scenarios/' },
         ] },
-        { label: 'Decision records', items: [{ autogenerate: { directory: 'docs/adr' } }] },
       ],
     }),
   ],

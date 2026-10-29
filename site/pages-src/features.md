@@ -3,7 +3,7 @@ title: Features
 description: What OpenSandbox provides, what Differently adds on top, and how that compares to using a single provider.
 ---
 
-Differently is an orchestration and resource-management layer. It does not run sandboxes itself: it decides where each one runs and keeps account of it. Its default private runtime is [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox), which you operate; other pools can be any of the [built-in provider adapters](/differently/docs/providers/), from E2B and Daytona to the cloud providers' sandbox services, or any service that speaks the [adapter protocol](/differently/docs/adapters/specification/). See [ADR 0020](/differently/docs/adr/0020-opensandbox-replaces-node-agent/) for why.
+Differently is an orchestration and resource-management layer. It does not run sandboxes itself: it decides where each one runs and keeps account of it. Its default private runtime is [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox), run by the operator; other pools can be any of the [built-in provider adapters](/differently/docs/providers/), from E2B and Daytona to the cloud providers' sandbox services, or any service that speaks the [adapter protocol](/differently/docs/adapters/specification/).
 
 :::caution[Pre-release]
 The end-to-end suite passes 14/14 against real OpenSandbox servers on the Docker runtime and on the Kubernetes runtime (single-node k3s). Fast Sandbox (microVM), multi-node and managed clusters, and live accounts on managed providers are not verified yet. See the [roadmap](/differently/docs/roadmap/).

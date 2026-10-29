@@ -9,8 +9,7 @@ page holds the reasoning and the commands.
 Differently is a control plane. It owns tenancy, keys, quotas, fair queueing,
 placement policy, reconciliation, audit and the trust report. It runs no
 sandboxes itself: OpenSandbox (the default private runtime), Daytona,
-Freestyle and `remote` plugins do, behind the adapter contract
-([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)). Most bugs worth
+Freestyle and `remote` plugins do, behind the adapter contract. Most bugs worth
 fixing sit where the two meet: what a backend really returns, and what the
 control plane does with it.
 

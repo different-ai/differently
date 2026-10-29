@@ -31,7 +31,7 @@ A pool's credential is never returned by the API and never reaches
 sandboxes. It can live in one of two places.
 
 **In Differently.** The value is sealed in the database under the server's
-secrets key ([ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md)).
+secrets key.
 This needs no Kubernetes Secret, and replacing the value later takes effect
 without a restart. Store the key, then register the pool at runtime with
 `credentials: {secret: daytona-key}`:

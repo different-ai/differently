@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | 2026-10-28, after [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md) removed the Firecracker node agent. Every test named below exists on this branch. CI runs the Go tests, including the Postgres conformance suite (`internal/store/postgres` `TestConformance`) in its `postgres conformance` job. |
+| Status | 2026-10-28, after the move to OpenSandbox removed the Firecracker node agent. Every test named below exists on this branch. CI runs the Go tests, including the Postgres conformance suite (`internal/store/postgres` `TestConformance`) in its `postgres conformance` job. |
 | Evidence level | The server tests run in-process with fake backends. The `opensandbox` adapter is also checked against a real OpenSandbox server (release 1.2.0, Docker runtime, arm64 on Colima) by `TestLiveOpenSandbox`. The [end-to-end suite](../test/e2e/README.md) runs the real control plane (Postgres and `differently-server`) against a real OpenSandbox server with the Docker runtime and passed 10/10 on arm64 Colima on 2026-10-28. Earlier end-to-end results on real Firecracker microVMs tested the removed agent and no longer apply. OpenSandbox's Kubernetes and Fast Sandbox runtimes, cloud KVM, and live Daytona or Freestyle accounts are not validated. |
 
 Scenario definitions follow the product brief. Stateful sandbox behaviour and
@@ -103,8 +103,7 @@ not starve another; released capacity lets queued work start.
 **How it is satisfied.** Admission checks queue and size limits; activation
 re-checks concurrency, CPU, memory and disk atomically; usage is derived from
 state; dispatch uses fair ordering; termination nudges waiting work
-([ADR 0005](adr/0005-quota-derived-from-state-atomic-activation.md),
-[placement policy §11–12](scheduling/placement-policy.md#11-fairness)).
+([placement policy §11–12](scheduling/placement-policy.md#11-fairness)).
 
 **Code path.** `internal/store/store.go` (`CheckAdmission`,
 `CheckActivation`, `Tally`, `FairOrder`), `memory.go` and `postgres.go`
@@ -360,14 +359,13 @@ management of existing workloads and without application changes.
   tooling. Pin its server and `execd` versions and run `TestLiveOpenSandbox`
   (and the end-to-end suite) against the new version before upgrading, because
   its published spec runs ahead of its default images
-  ([ADR 0019](adr/0019-opensandbox-backend-first.md),
-  [backlog E21](backlog.md#e21-opensandbox-version-pinning-and-upgrade-testing)).
+  ([backlog E21](backlog.md#e21-opensandbox-version-pinning-and-upgrade-testing)).
 - *Replacing a backend.* Register the new pool, drain the old one
   (`POST /v1/admin/pools/{name}/drain`) and change policy if needed; existing
   sandboxes stay managed on the drained pool while new work goes to the new
   one, with no application change (Scenario F). Running state is never
   migrated between backends. Moving from the removed `firecracker` pool kind
-  to OpenSandbox (ADR 0020) follows this procedure, with one difference: the
+  to OpenSandbox follows this procedure, with one difference: the
   new server no longer knows the `firecracker` kind. A config file naming it
   is rejected, and a pool of that kind registered through the API stays in
   the store with no adapter, so its sandboxes can be neither reached nor

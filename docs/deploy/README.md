@@ -27,8 +27,7 @@ Apache-2.0. It does not run sandboxes itself. A deployment has two parts:
   you install and operate yourself, with its own tooling, and register as a
   pool (`adapter: opensandbox`). OpenSandbox runs the sandboxes with the
   runtime you choose for it: Docker or Kubernetes containers, or Firecracker
-  microVMs with Fast Sandbox. See
-  [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md).
+  microVMs with Fast Sandbox.
 
 Pools are where sandboxes run:
 
@@ -80,8 +79,7 @@ are OpenSandbox prerequisites for that runtime.
   OpenSandbox (port 80 by default) and enabled providers.
 - Secrets are never written into the server config. Pools reference
   credentials by environment variable or file, or name a provider key that
-  operators stored in Differently, sealed under the chart's secrets key
-  ([ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md)). The
+  operators stored in Differently, sealed under the chart's secrets key. The
   chart keeps the bootstrap token, the OpenSandbox API key and the secrets
   key in Secrets.
 - Differently has no telemetry or phone-home code paths (see [air-gapped.md](air-gapped.md)).
