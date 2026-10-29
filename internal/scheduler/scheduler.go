@@ -336,14 +336,16 @@ func (s *Scheduler) provision(ctx context.Context, rec store.SandboxRecord) {
 		s.retry(ctx, rec, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.Config.Scheduler.ProvisionTimeoutSeconds)*time.Second)
+	// The timeout bounds the backend call only: recording its outcome, a
+	// retry included, must not run on a context that has already expired.
+	createCtx, cancel := context.WithTimeout(ctx, time.Duration(s.Config.Scheduler.ProvisionTimeoutSeconds)*time.Second)
 	defer cancel()
 	labels := map[string]string{adapter.LabelOrg: rec.OrgID, adapter.LabelProject: rec.ProjectID}
 	for k, v := range rec.Labels {
 		labels[k] = v
 	}
 	start := s.Now()
-	inst, err := a.Create(ctx, adapter.CreateRequest{
+	inst, err := a.Create(createCtx, adapter.CreateRequest{
 		ID: rec.ID, Installation: s.Installation, Template: s.Config.BackendTemplate(rec.Template, rec.Pool), Resources: rec.Resources,
 		Env: rec.Env, Labels: labels, TTLSeconds: rec.TTLSeconds, FromSnapshot: rec.SnapshotBackendRef,
 		IdleTimeoutSeconds: rec.IdleTimeoutSeconds,
