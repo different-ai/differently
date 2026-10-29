@@ -69,7 +69,9 @@ the pool `TestStoredProviderKeyAndSwitching` registers, and
 `DIFFERENTLY_E2E_POOL` names the config's private pool (`opensandbox`). The
 server's config must match [`config.yaml`](config.yaml) where the tests
 depend on it: the `small` and `medium` profiles, `audit.failClosed: true`
-and a short `scheduler.reconcileIntervalSeconds`. Tests adapt to what the
+and a short `scheduler.reconcileIntervalSeconds`. On a Fast Sandbox pool, sandboxes boot templates, not images:
+`DIFFERENTLY_E2E_TEMPLATE` and `DIFFERENTLY_E2E_PYTHON_TEMPLATE` name them,
+and the pool's `templateId` must be that template. Tests adapt to what the
 pool advertises: where pause or snapshots are not offered (the Kubernetes
 runtime without a snapshot registry), they check that Differently refuses
 them precisely instead.
@@ -92,6 +94,10 @@ them precisely instead.
 | `TestReconcilesDriftInTheBackend` | An orphan carrying this installation's metadata is deleted; a sandbox deleted behind Differently's back is failed and its quota released |
 | `TestAuditTrustAndMetrics` | Audit chain intact with fail-closed request records; the trust report shows the pool's isolation and no secrets; metrics only on their own port |
 | `TestStoredProviderKeyAndSwitching` | A provider key stored in Differently drives a second pool; `use` sends new sandboxes there and back; replacing the stored key takes the pool down and brings it back without a restart |
+| `TestPauseKeepsMemory` | Where the pool pauses, a background process keeps its PID and 1 MiB in `/dev/shm` keeps its checksum across pause and resume |
+| `TestIdlePauseAndWakeThroughPortURL` | On a microVM pool that pauses and exposes ports, an idle sandbox is paused, and asking for its port URL wakes it with the same server process |
+| `TestMemorySnapshot` | A memory snapshot is taken where the pool advertises `snapshots.memory`, and refused precisely otherwise |
+| `TestDesktopStreams` | With `DIFFERENTLY_E2E_DESKTOP_IMAGE` (the image in [`desktop/`](desktop/), or a Fast Sandbox template built from it), VNC over the port URL's WebSocket completes the RFB 3.8 handshake and returns a full frame, saved as a PNG; where the pool pauses, the same X server streams again after resume |
 
 ## Verified on
 
@@ -105,9 +111,10 @@ them precisely instead.
 | 2026-10-29 | Apple M4 Max, Colima, arm64 | server 1.2.0, `execd` release-1.2.0, Docker runtime | 13/13 passed |
 | 2026-10-29 | Azure k3s and Colima, as above | same | 14/14 on both; an idle sandbox is stopped (Kubernetes) or paused (Docker) after 60 s and woken by the next exec in about 1.7 s (Kubernetes) or under 0.1 s (Docker) |
 | 2026-10-28 | k3s v1.36.5 on an Azure `Standard_D8s_v6`, x86_64; Differently from its Helm chart with embedded PostgreSQL | server, controller and `execd` release-1.2.0, Kubernetes runtime, no snapshot registry | 12/12 passed (pause and snapshots checked as refusals); sandboxes running in about 1.4–2.7 s; an unpullable image retries after OpenSandbox's 60 s pod-ready timeout with the pool healthy |
+| 2026-10-29 | same Azure VM; pool `opensandbox-microvm` (`runtime: fastsandbox`), template `tpl-1cbcfa94` (1 vCPU, 1 GiB, guest kernel 6.18.36+) | server, Fast Sandbox and `execd` release-1.2.0 | **Partial run**, stopped when the VM was deallocated. Sandboxes running in about 1.3 s; files and pause/resume passed (pause about 52 s for 1 GiB); sandbox env and a template other than the pool's are refused precisely (the tests now expect that). Fork failed with a bare 422 from OpenSandbox on restore, not yet diagnosed. Port URL, idle wake, memory kept and the desktop stream did not run |
 
 Not covered yet:
 
-- OpenSandbox's Fast Sandbox (Firecracker microVM) runtime;
+- the full suite on OpenSandbox's Fast Sandbox (Firecracker microVM) runtime (one partial run, above);
 - several nodes and a node drain on the Kubernetes runtime;
 - external providers.
