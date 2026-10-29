@@ -590,3 +590,13 @@ func TestHostRoutingAndPorts(t *testing.T) {
 		t.Fatalf("configured domain %q %v", u, err)
 	}
 }
+
+// A request too large for one Connect message is refused before it is framed.
+func TestEnvelopeRefusesOversizedRequest(t *testing.T) {
+	if _, err := envelope(map[string]string{"cmd": strings.Repeat("x", maxMessage)}); !api.IsCode(err, api.CodeInvalidRequest) {
+		t.Fatalf("oversized request: %v", err)
+	}
+	if _, err := envelope(map[string]string{"cmd": "ls"}); err != nil {
+		t.Fatalf("small request: %v", err)
+	}
+}

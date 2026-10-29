@@ -108,6 +108,9 @@ func envelope(v any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(b) > maxMessage {
+		return nil, api.Errorf(api.CodeInvalidRequest, "cubesandbox: the command request is %d bytes; the limit is %d", len(b), maxMessage)
+	}
 	out := make([]byte, 5, 5+len(b))
 	binary.BigEndian.PutUint32(out[1:], uint32(len(b)))
 	return append(out, b...), nil
