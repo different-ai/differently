@@ -198,11 +198,11 @@ func (d DashboardConfig) On() bool { return d.Enabled == nil || *d.Enabled }
 var externalKinds = []string{"daytona", "freestyle"}
 
 // KnownAdapters lists adapter kinds the server can build.
-var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake"}
+var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "agent-sandbox", "cubesandbox"}
 
 // Adapter kinds whose trust boundary depends on who operates the backend, so
 // the operator must declare it.
-var declaredTrustKinds = []string{"opensandbox"}
+var declaredTrustKinds = []string{"opensandbox", "agent-sandbox", "cubesandbox"}
 
 // Default returns a configuration with every default applied.
 func Default() Config {
@@ -373,6 +373,9 @@ func (c Config) Validate() error {
 		}
 		if p.Adapter == "opensandbox" && p.Config["apiURL"] == "" {
 			bad("pool %s: the opensandbox adapter needs config.apiURL", p.Name)
+		}
+		if p.Adapter == "cubesandbox" && p.Config["apiURL"] == "" {
+			bad("pool %s: the cubesandbox adapter needs config.apiURL (CubeAPI, e.g. http://cube-api:3000)", p.Name)
 		}
 		if p.Adapter == "devhost" && !c.Dev {
 			bad("pool %s: the devhost adapter has no isolation and is only allowed with dev: true", p.Name)

@@ -62,7 +62,7 @@
       "required": ["name", "adapter"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
-        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake"]},
+        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "agent-sandbox", "cubesandbox"]},
         "trust": {"type": "string", "enum": ["private", "external"]},
         "region": {"type": "string"},
         "labels": {"$ref": "#/definitions/stringMap"},
@@ -103,6 +103,20 @@
                 }
               }
             }
+          }
+        },
+        {
+          "if": {"properties": {"adapter": {"const": "agent-sandbox"}}},
+          "then": {
+            "required": ["trust"],
+            "properties": {"config": {"properties": {"isolation": {"enum": ["", "container", "microvm"]}}}}
+          }
+        },
+        {
+          "if": {"properties": {"adapter": {"const": "cubesandbox"}}},
+          "then": {
+            "required": ["config", "trust"],
+            "properties": {"config": {"required": ["apiURL"], "properties": {"proxyScheme": {"enum": ["https", "http"]}}}}
           }
         }
       ]

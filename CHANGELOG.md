@@ -6,6 +6,20 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added (self-hosted runtimes)
+
+- `agent-sandbox` pools: Sandboxes from kubernetes-sigs/agent-sandbox, or
+  SandboxClaims on a warm pool, through the Kubernetes API with no client-go
+  dependency; exec and files over WebSocket `pods/exec` (stdin and
+  streaming included); stop/start with a per-sandbox volume. Checked live on
+  kind with agent-sandbox v1.0.8.
+- `cubesandbox` pools: CubeSandbox's KVM microVMs through its E2B-compatible
+  CubeAPI and envd: exec (streamed), files, pause/resume, memory snapshots
+  and fork. Tested with a fake server; not run against CubeSandbox yet.
+- Provider pages `docs/providers/agent-sandbox.md`, `cubesandbox.md` and
+  `microsandbox.md` (not supported: no self-hosted server API since its
+  rewrite).
+
 ### Added (OpenSandbox parity with Freestyle)
 
 - `runtime: kubernetes` for OpenSandbox pools. With the controller's snapshot
