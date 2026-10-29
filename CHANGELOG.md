@@ -6,6 +6,13 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Fixed (Fast Sandbox port URLs)
+
+- `portScheme` now applies to every gateway endpoint OpenSandbox returns
+  without a scheme, not only signed ones, so a Fast Sandbox gateway behind
+  TLS in route mode `uri` gives `https://` port URLs and execd traffic.
+  Before, those came back as `http://` on a TLS-only port.
+
 ### Added (provider catalog)
 
 - `docs/providers/`: 26 providers, each with a tested status (verified live,

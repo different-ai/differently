@@ -252,7 +252,9 @@ opensandbox:
   # (/{sandbox}/{port}/{expires}/{signature}) that needs no header. Empty
   # offers no port URLs: direct endpoints are runtime-internal addresses.
   ports: ""
-  # Scheme of the gateway address OpenSandbox announces (https in production).
+  # Scheme for gateway endpoints OpenSandbox returns without one: port URLs,
+  # and execd reached past the server proxy. Default https with ports: signed,
+  # else http; set https for a Fast Sandbox gateway behind TLS.
   portScheme: ""
   # How long a signed port URL stays valid (default 3600).
   portURLSeconds: null

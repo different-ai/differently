@@ -68,7 +68,8 @@ differently admin secret put opensandbox-key --from-file ./opensandbox-api-key.t
 
 Other keys: `templateId` (a Fast Sandbox template instead of an image),
 `features` (a comma list that replaces the defaults), `useServerProxy`
-(default `true`), `portScheme` (default `https`) and `portURLSeconds`
+(default `true`), `portScheme` (the scheme for gateway endpoints returned without one;
+default `https` with signed ports, else `http`) and `portURLSeconds`
 (default 3600).
 
 ## Limits and differences

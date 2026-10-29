@@ -97,8 +97,9 @@ var FastSandboxFeatures = []string{
 // (fastsandbox: the expiry sent when a sandbox has no TTL, default 86400),
 // egress (none|public|allowlist,
 // with egressAllow a comma list of hosts), ports (signed: tenant URLs
-// through OpenSandbox's ingress gateway), portScheme (https|http, default
-// https) and portURLSeconds (default 3600).
+// through OpenSandbox's ingress gateway), portScheme (https|http: the scheme
+// for gateway endpoints that come back without one, default https with signed
+// ports, else http) and portURLSeconds (default 3600).
 type Options struct {
 	APIURL         string
 	APIKey         string
@@ -120,8 +121,11 @@ type Options struct {
 	// answers ports.expose with the ingress gateway's signed, time-limited
 	// URLs (route mode uri), which need no header and so carry no secret.
 	SignedPorts bool
-	PortScheme  string
-	PortURLTTL  time.Duration
+	// PortScheme is the scheme for gateway endpoints the server returns
+	// without one: port URLs, and execd reached past the server proxy. A
+	// gateway behind TLS (Fast Sandbox in uri route mode) needs https.
+	PortScheme string
+	PortURLTTL time.Duration
 	// NetworkPolicy is OpenSandbox's per-sandbox egress policy, enforced by
 	// its egress sidecar; nil leaves egress open.
 	NetworkPolicy map[string]any
@@ -163,15 +167,18 @@ func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
 	default:
 		return o, fmt.Errorf("opensandbox config.egress must be none, public or allowlist, not %q", cfg["egress"])
 	}
+	switch s := cfg["portScheme"]; s {
+	case "", "https", "http":
+		o.PortScheme = s
+	default:
+		return o, fmt.Errorf("opensandbox config.portScheme must be https or http, not %q", s)
+	}
 	switch cfg["ports"] {
 	case "":
 	case "signed":
-		o.SignedPorts, o.PortScheme, o.PortURLTTL = true, "https", time.Hour
-		if s := cfg["portScheme"]; s != "" {
-			if s != "https" && s != "http" {
-				return o, fmt.Errorf("opensandbox config.portScheme must be https or http, not %q", s)
-			}
-			o.PortScheme = s
+		o.SignedPorts, o.PortURLTTL = true, time.Hour
+		if o.PortScheme == "" {
+			o.PortScheme = "https"
 		}
 		if v := cfg["portURLSeconds"]; v != "" {
 			n, err := strconv.Atoi(v)
@@ -620,7 +627,10 @@ func (a *Adapter) resolve(ctx context.Context, ref string, refresh bool) (endpoi
 	ep = endpoint{URL: out.Endpoint, Headers: out.Headers}
 	if !strings.HasPrefix(ep.URL, "http://") && !strings.HasPrefix(ep.URL, "https://") {
 		scheme := "http"
-		if strings.HasPrefix(a.opts.APIURL, "https://") {
+		switch {
+		case !a.opts.UseServerProxy && a.opts.PortScheme != "":
+			scheme = a.opts.PortScheme // the ingress gateway's scheme
+		case strings.HasPrefix(a.opts.APIURL, "https://"):
 			scheme = "https"
 		}
 		ep.URL = scheme + "://" + ep.URL
@@ -1014,7 +1024,7 @@ func (a *Adapter) ExposePort(ctx context.Context, ref string, port int) (string,
 		return out.Endpoint, nil
 	}
 	scheme := "http"
-	if a.opts.SignedPorts {
+	if a.opts.PortScheme != "" {
 		scheme = a.opts.PortScheme
 	}
 	return scheme + "://" + out.Endpoint, nil

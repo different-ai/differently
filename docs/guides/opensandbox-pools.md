@@ -220,7 +220,15 @@ Fast Sandbox template (template mode):
   wake it. If a call still meets a paused sandbox (the gateway's park budget
   ran out), the adapter resumes it and sends the call again; a paused
   sandbox runs nothing, so nothing runs twice.
-- **No `ports: signed`**: signing needs secure access, which templates reject.
+- **Port URLs come from Fast Sandbox's own route scopes.** `ports: signed`
+  is refused (it needs secure access, which templates reject). With the
+  server and its ingress gateway in route mode `uri`, OpenSandbox returns
+  `<gateway address>/<scope>`, where the scope is an HMAC over the sandbox
+  and port: no header or key is needed, and it does not expire. Add
+  `ports.expose` to `features`, and set `portScheme: https` when the gateway
+  is behind TLS; the server's gateway address has no scheme, and the same
+  scheme reaches execd. In route mode `header` port URLs are refused, since
+  they need a request header.
 
 OpenSandbox needs the idle sweeper (`[automation.idle_pause]` with Redis) and
 the ingress flags `--activity-enabled` and `--wake-enabled`; without them
