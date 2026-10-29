@@ -1,0 +1,41 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+---
+<Console title="Trust report" active="trust-report">
+  <PageHeader title="Trust report" description="Where work can go, which credentials are used, and what Differently cannot prove." />
+  <div id="report"></div>
+</Console>
+<script>
+  import { client } from '../lib/connection';
+  import { badge, date, el, empty, section, table } from '../lib/ui';
+  import type { TrustPool, TrustPlacement } from '@differently/sdk';
+
+  const c = client();
+  void section('#report', async () => {
+    const r = await c.admin.trustReport();
+    const block = (title: string, ...body: (Node | string | null)[]) => el('section', { class: 'section' }, el('h2', { class: 'section-title' }, title), ...body);
+    return [
+      block('Summary', el('dl', { class: 'facts' },
+        el('dt', {}, 'Version'), el('dd', {}, r.version),
+        el('dt', {}, 'Installation'), el('dd', { class: 'mono' }, r.installation),
+        el('dt', {}, 'Telemetry'), el('dd', {}, r.telemetry),
+        el('dt', {}, 'Audit chain'), el('dd', {}, badge(r.auditChain.ok ? 'valid' : 'invalid'), ` ${r.auditChain.events} events`),
+        el('dt', {}, 'Generated'), el('dd', {}, date(r.generatedAt)))),
+      block('Pools', table<TrustPool>([
+        { label: 'Pool', cell: (p) => el('span', { style: 'font-weight:500' }, p.name) },
+        { label: 'Trust', cell: (p) => p.trust },
+        { label: 'Isolation', cell: (p) => p.isolation || '—' },
+        { label: 'Endpoint', cell: (p) => el('span', { class: 'mono muted' }, p.endpoint || '—') },
+        { label: 'Credential', cell: (p) => el('span', { class: 'mono muted' }, p.credentialRef || '—') },
+        { label: 'External placement', cell: (p) => (p.trust === 'external' ? badge(p.approvedForExternalPlacement ? 'allowed' : 'denied') : '—') },
+      ], r.pools ?? [], empty('No pools.'))),
+      block('Recent external placements', table<TrustPlacement>([
+        { label: 'Sandbox', cell: (p) => el('span', { class: 'mono' }, p.sandboxId) },
+        { label: 'Pool', cell: (p) => p.pool },
+        { label: 'Placed', cell: (p) => el('span', { class: 'muted' }, date(p.placedAt)) },
+      ], r.recentExternalPlacements ?? [], el('p', { class: 'muted', style: 'margin:0' }, 'No sandbox has been placed outside private pools.'))),
+      block('What Differently cannot prove', el('ul', { style: 'margin:0;padding-left:18px;color:var(--muted);display:grid;gap:6px' }, ...r.limitations.map((l) => el('li', {}, l)))),
+    ];
+  });
+</script>

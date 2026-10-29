@@ -6,6 +6,37 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added (admin console)
+
+- `console/`: an admin app built with Astro, separate from the server. It has
+  a sidebar and pages for sandboxes, snapshots, API keys, providers, secrets,
+  policies, usage, the audit log and the trust report. It builds to static
+  files for any host (the browser holds the API key), or runs on Node with
+  Better Auth sign-in, an email allowlist and optional GitHub, where only the
+  console server holds the key. See [console/README.md](console/README.md).
+- `cors.allowedOrigins` (Helm `config.cors.allowedOrigins`): exact origins
+  that browsers may call the API from. Empty by default, so nothing changes
+  unless you set it.
+- The TypeScript SDK runs in browsers: it no longer imports `node:crypto`.
+
+### Fixed (Fast Sandbox)
+
+- A Fast Sandbox microVM's clock is set right after create and resume; it
+  used to start at the time its template or checkpoint was written.
+- Pause and snapshot on Fast Sandbox wait up to `checkpointTimeoutSeconds`
+  (default 900) instead of the general three-minute ready timeout, which a
+  4 GiB desktop's checkpoint could exceed.
+- The `fastsandbox-1.2.0` recording was made again on a two-node cluster
+  with Workbot's desktop template.
+
+### Changed
+
+- `GET /v1/capabilities` answers a tenant key with the pools its placement
+  policies allow (denied, allowed, external and region rules, for the default
+  classification); operator keys still see every pool. OpenWork's runner
+  reads it to decide whether idle computers can be paused, so a pool the
+  organization may not use no longer turns pausing off.
+
 ### Fixed (Daytona and Freestyle, run live)
 
 The `daytona` and `freestyle` adapters ran against live accounts for the
@@ -21,6 +52,24 @@ class has not run.
   repeated delete, or one during a stop, failed with `invalid_state`;
   snapshot delete sent the name where Daytona needs the id; and a snapshot
   was returned before it could be used.
+
+### Fixed (Helm chart)
+
+- A pool under `config.pools` can use a provider key stored in Differently
+  (`credentials: {secret: name}`), as the server already allowed; the
+  values schema refused it.
+- An external pool declared under `config.pools` now opens server egress to
+  `providerCIDRs` on 443, like `providers.*` does.
+- The `preflight` init container gets `server.extraVolumeMounts` too, so a
+  `file:` credential on a mounted volume (such as a Key Vault CSI mount)
+  resolves there as it does in the server.
+### Fixed (lifecycle)
+
+- A stop, start, pause or resume now finishes on the backend and is recorded
+  even when the caller stops waiting. A Fast Sandbox pause writes a full
+  checkpoint (about three minutes for a 4 GiB desktop), so a client with a
+  shorter timeout used to cancel it halfway: the backend went on pausing
+  while Differently still showed the sandbox running.
 
 ## [0.1.0-alpha.2] — 2026-10-29
 

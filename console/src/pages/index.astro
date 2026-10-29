@@ -1,0 +1,38 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+const base = import.meta.env.BASE_URL;
+---
+<Console title="Home" active="home">
+  <PageHeader title="Home" description="Sandboxes and the pools they run on.">
+    <a class="btn primary" href={base + 'sandboxes/?create=1'}>Create sandbox</a>
+  </PageHeader>
+  <div class="stats" id="stats"></div>
+  <section class="section">
+    <h2 class="section-title">Pools</h2>
+    <div id="pools"></div>
+  </section>
+</Console>
+<script>
+  import { client } from '../lib/connection';
+  import { badge, el, empty, section, table } from '../lib/ui';
+  import type { PoolCapabilities } from '@differently/sdk';
+
+  const c = client();
+  section('#stats', async () => {
+    const { items } = await c.sandboxes.list({ limit: 500 });
+    const count = (...s: string[]) => items.filter((x) => s.includes(x.status)).length;
+    const stat = (label: string, value: number) => el('div', { class: 'stat' }, el('div', { class: 'label' }, label), el('div', { class: 'value' }, value));
+    return [stat('Running', count('running')), stat('Queued', count('queued', 'provisioning')), stat('Stopped or paused', count('stopped', 'paused')), stat('Failed', count('failed'))];
+  });
+  section('#pools', async () => {
+    const pools = await c.capabilities.list();
+    return table<PoolCapabilities>([
+      { label: 'Pool', cell: (p) => el('span', { style: 'font-weight:500' }, p.pool) },
+      { label: 'Adapter', cell: (p) => p.adapter },
+      { label: 'Trust', cell: (p) => p.trust },
+      { label: 'Region', cell: (p) => p.region || '—' },
+      { label: 'Health', cell: (p) => badge(p.enabled ? p.health : 'disabled') },
+    ], pools, empty('No pools are registered yet.', ['server']));
+  });
+</script>

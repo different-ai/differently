@@ -172,7 +172,7 @@ func (s *Server) Handler() http.Handler {
 	s.sandboxRoutes(authed)
 	s.tenancyRoutes(authed)
 	s.adminRoutes(authed)
-	return s.recover(mux)
+	return s.recover(s.cors(mux))
 }
 
 // MetricsHandler serves Prometheus metrics. With metrics.listen set the

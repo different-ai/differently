@@ -8,6 +8,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -37,6 +38,7 @@ type Config struct {
 	Audit           AuditConfig          `json:"audit"`
 	Metrics         MetricsConfig        `json:"metrics"`
 	Dashboard       DashboardConfig      `json:"dashboard"`
+	CORS            CORSConfig           `json:"cors"`
 }
 
 // StoreConfig selects persistence.
@@ -187,6 +189,15 @@ type MetricsConfig struct {
 	// removes it from the API listener, so it can stay off the ingress.
 	// Empty serves /metrics on the API listener without authentication.
 	Listen string `json:"listen,omitempty"`
+}
+
+// CORSConfig lets browser apps on other origins call the API, such as the
+// console served from its own host. Requests authenticate with bearer
+// tokens, not cookies, so an allowed origin acts only with a key its user
+// enters.
+type CORSConfig struct {
+	// AllowedOrigins are exact origins (scheme://host[:port]); no wildcards.
+	AllowedOrigins []string `json:"allowedOrigins,omitempty"`
 }
 
 // DashboardConfig toggles the built-in web dashboard.
@@ -341,6 +352,12 @@ func (c Config) Validate() error {
 	}
 	var errs []error
 	bad := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
+	for _, o := range c.CORS.AllowedOrigins {
+		u, err := url.Parse(o)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || strings.Contains(u.Host, "*") || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
+			bad("cors.allowedOrigins: %q must be an exact origin such as https://console.example.com", o)
+		}
+	}
 	if c.Store.Driver != "memory" && c.Store.Driver != "postgres" {
 		bad("store.driver must be memory or postgres, got %q", c.Store.Driver)
 	}

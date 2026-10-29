@@ -1,0 +1,45 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+---
+<Console title="Settings" active="settings">
+  <PageHeader title="Settings" description="This console's connection, your access and appearance." />
+  <div class="rows" id="rows"></div>
+</Console>
+<script>
+  import { client, base, forgetConnection, mode, serverURL, session } from '../lib/connection';
+  import { el, run, section } from '../lib/ui';
+
+  const row = (title: string, sub: Node | string, action?: Node) => el('div', { class: 'row' }, el('div', {}, el('div', { class: 'title' }, title), el('div', { class: 'sub' }, sub)), action ?? null);
+  const theme = () => {
+    const current = (() => { try { return localStorage.getItem('differently.theme') ?? 'system'; } catch { return 'system'; } })();
+    const seg = el('div', { class: 'segmented' });
+    for (const t of ['system', 'light', 'dark']) seg.append(el('button', { type: 'button', 'aria-pressed': String(t === current), onclick: () => {
+      try { if (t === 'system') localStorage.removeItem('differently.theme'); else localStorage.setItem('differently.theme', t); } catch {}
+      if (t === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+      seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.textContent === t[0].toUpperCase() + t.slice(1))));
+    } }, t[0].toUpperCase() + t.slice(1)));
+    return seg;
+  };
+
+  void section('#rows', async () => {
+    const c = client();
+    const [me, v] = await Promise.all([c.me(), c.version()]);
+    const rows: Node[] = [];
+    if (mode === 'server') {
+      const s = await session();
+      rows.push(row('Signed in as', s?.user.email ?? '—', el('button', { class: 'btn', type: 'button', onclick: () => run(async () => {
+        await fetch(`${base}api/auth/sign-out`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: '{}' });
+        location.href = `${base}sign-in/`;
+      }) }, 'Sign out')));
+      rows.push(row('Connection', 'Through this console server, with the key it holds. Browsers never see it.'));
+    } else {
+      rows.push(row('Server', el('span', { class: 'mono' }, serverURL()), el('a', { class: 'btn', href: `${base}connect/` }, 'Change')));
+      rows.push(row('This device', 'The key is kept in this browser only.', el('button', { class: 'btn danger', type: 'button', onclick: () => { forgetConnection(); location.href = `${base}connect/`; } }, 'Disconnect')));
+    }
+    rows.push(row('Key', el('span', {}, el('span', { class: 'mono' }, me.keyId), ` · ${me.operator ? 'operator' : me.scopes.join(', ')}`)));
+    rows.push(row('Differently', `${v.version} · installation ${v.installation}`));
+    rows.push(row('Appearance', 'Follow the system, or pick one.', theme()));
+    return rows;
+  });
+</script>

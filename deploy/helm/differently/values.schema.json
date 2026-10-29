@@ -73,10 +73,11 @@
         "credentials": {
           "type": "object",
           "additionalProperties": false,
-          "description": "Reference to a secret by environment variable or file; never the secret itself.",
+          "description": "Reference to a secret by environment variable, file or a key stored in Differently; never the secret itself.",
           "properties": {
             "env": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
-            "file": {"type": "string", "pattern": "^/"}
+            "file": {"type": "string", "pattern": "^/"},
+            "secret": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$"}
           }
         }
       },
@@ -323,6 +324,12 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {"enabled": {"type": "boolean"}}
+        },
+        "cors": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Browser origins allowed to call the API, such as the console's own host.",
+          "properties": {"allowedOrigins": {"type": "array", "items": {"type": "string", "pattern": "^https?://[^/*]+$"}}}
         }
       }
     },

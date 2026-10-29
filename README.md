@@ -83,7 +83,9 @@ make build
 ./bin/differently sandbox placement <sandbox-id>    # why it ran where it ran
 ```
 
-The dashboard is at <http://localhost:8080/dashboard/>.
+The dashboard is at <http://localhost:8080/dashboard/>. The [admin console](console/README.md)
+is the same idea as a separate app you can host anywhere: as static files,
+or on Node with sign-in.
 
 **2. Run the real stack on any Docker host (10 minutes).** Postgres,
 Differently and a real OpenSandbox server, as the end-to-end suite runs it:

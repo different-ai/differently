@@ -1,0 +1,32 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+---
+<Console title="Audit log" active="audit-log">
+  <PageHeader title="Audit log" description="Every change, placement and admin action, in a tamper-evident chain.">
+    <button class="btn" type="button" id="verify">Verify chain</button>
+  </PageHeader>
+  <div id="list"></div>
+</Console>
+<script>
+  import { client } from '../lib/connection';
+  import { badge, date, el, empty, run, section, table, toast } from '../lib/ui';
+  import type { AuditEvent } from '@differently/sdk';
+
+  const c = client();
+  void section('#list', async () => {
+    const page = await c.auditEvents.list({ limit: 200 });
+    const events = [...page.items].sort((a, b) => b.seq - a.seq);
+    return table<AuditEvent>([
+      { label: 'Time', cell: (e) => el('span', { class: 'muted' }, date(e.time)) },
+      { label: 'Action', cell: (e) => el('span', { class: 'mono' }, e.action) },
+      { label: 'Resource', cell: (e) => el('span', { class: 'mono muted' }, e.resource) },
+      { label: 'Actor', cell: (e) => el('span', { class: 'muted' }, e.actor) },
+      { label: 'Outcome', cell: (e) => badge(e.outcome) },
+    ], events, empty('No audit events yet.', ['list']));
+  });
+  document.getElementById('verify')?.addEventListener('click', () => run(async () => {
+    const r = await c.admin.verifyAudit();
+    toast(r.ok ? `Chain intact: ${r.events} events checked` : `Chain broken at event ${r.brokenAt ?? '?'}: ${r.problem ?? 'unknown problem'}`, r.ok ? 'info' : 'bad');
+  }));
+</script>

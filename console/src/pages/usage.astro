@@ -1,0 +1,52 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+---
+<Console title="Usage" active="usage">
+  <PageHeader title="Usage" description="What sandboxes used, with estimated cost from each pool's cost model." />
+  <div class="toolbar">
+    <div class="segmented" id="range">
+      <button type="button" data-hours="24" aria-pressed="true">24 hours</button>
+      <button type="button" data-hours="168">7 days</button>
+      <button type="button" data-hours="720">30 days</button>
+    </div>
+    <div class="segmented" id="group">
+      <button type="button" data-group="pool" aria-pressed="true">By pool</button>
+      <button type="button" data-group="project">By project</button>
+      <button type="button" data-group="trust">By trust</button>
+    </div>
+  </div>
+  <div id="list"></div>
+</Console>
+<script>
+  import { client } from '../lib/connection';
+  import { el, empty, section, table } from '../lib/ui';
+  import type { UsageLine } from '@differently/sdk';
+
+  const c = client();
+  let hours = 24;
+  let groupBy: 'pool' | 'project' | 'trust' = 'pool';
+  const h = (s: number) => (s / 3600).toFixed(1);
+  async function load() {
+    await section('#list', async () => {
+      const r = await c.usage.get({ from: new Date(Date.now() - hours * 3600_000), groupBy });
+      const lines = r.lines ?? [];
+      const cols = [
+        { label: groupBy[0].toUpperCase() + groupBy.slice(1), cell: (l: UsageLine) => el('span', { style: 'font-weight:500' }, l.key || '—') },
+        { label: 'Sandboxes', cell: (l: UsageLine) => l.sandboxes },
+        { label: 'CPU hours', cell: (l: UsageLine) => h(l.cpuSeconds) },
+        { label: 'Memory GiB-hours', cell: (l: UsageLine) => h(l.memoryGiBSeconds) },
+        { label: 'Run hours', cell: (l: UsageLine) => h(l.runSeconds) },
+        { label: 'Est. cost', cell: (l: UsageLine) => `$${l.estimatedCost.toFixed(2)}` },
+      ];
+      return [table<UsageLine>(cols, lines.length ? [...lines, { ...r.total, key: 'Total' }] : [], empty('No usage in this period.', ['chart'])), r.note ? el('p', { class: 'table-note' }, r.note) : null];
+    });
+  }
+  const seg = (id: string, set: (b: HTMLButtonElement) => void) => document.querySelectorAll<HTMLButtonElement>(`#${id} button`).forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll(`#${id} button`).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    set(b); void load();
+  }));
+  seg('range', (b) => { hours = Number(b.dataset.hours); });
+  seg('group', (b) => { groupBy = b.dataset.group as typeof groupBy; });
+  void load();
+</script>

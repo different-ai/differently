@@ -143,6 +143,32 @@ func Merge(in Input) Effective {
 	return eff
 }
 
+// PolicyReasons says why the effective policy keeps work off pool p: denied,
+// not allowed, external without approval, or outside the allowed regions.
+// Empty means the policy lets work go there. Capacity, capabilities,
+// templates and cost are not considered.
+func PolicyReasons(eff Effective, p api.Pool) []string {
+	var out []string
+	if slices.Contains(eff.DeniedPools, p.Name) {
+		out = append(out, "denied by policy")
+	}
+	if eff.AllowedPools != nil && !slices.Contains(eff.AllowedPools, p.Name) {
+		out = append(out, "not in allowed pools")
+	}
+	if p.Trust != api.TrustPrivate {
+		switch {
+		case eff.External == api.ExternalNever:
+			out = append(out, fmt.Sprintf("external placement not permitted (effective mode %q)", eff.External))
+		case !slices.Contains(eff.ExternalPools, p.Name):
+			out = append(out, "external pool not approved by policy")
+		}
+	}
+	if eff.Regions != nil && !slices.Contains(eff.Regions, p.Region) {
+		out = append(out, fmt.Sprintf("region %q not allowed", p.Region))
+	}
+	return out
+}
+
 // Result is a placement decision plus the ranked pools to try in order.
 type Result struct {
 	Decision *api.PlacementDecision
@@ -185,22 +211,8 @@ func Decide(in Input) Result {
 		if in.PinnedPool != "" && p.Name != in.PinnedPool {
 			reject("restore requires pool %s", in.PinnedPool)
 		}
-		if slices.Contains(eff.DeniedPools, p.Name) {
-			reject("denied by policy")
-		}
-		if eff.AllowedPools != nil && !slices.Contains(eff.AllowedPools, p.Name) {
-			reject("not in allowed pools")
-		}
-		if p.Trust != api.TrustPrivate {
-			switch {
-			case eff.External == api.ExternalNever:
-				reject("external placement not permitted (effective mode %q)", eff.External)
-			case !slices.Contains(eff.ExternalPools, p.Name):
-				reject("external pool not approved by policy")
-			}
-		}
-		if eff.Regions != nil && !slices.Contains(eff.Regions, p.Region) {
-			reject("region %q not allowed", p.Region)
+		for _, why := range PolicyReasons(eff, p) {
+			reject("%s", why)
 		}
 		missing := pv.Capabilities.Missing(sb.Capabilities)
 		policyOK := ev.Eligible

@@ -37,6 +37,7 @@ export default defineConfig({
           { label: 'Features', link: '/docs/features/' },
           { label: 'Quickstart', link: '/docs/guides/quickstart/' },
           { label: 'Deploy anywhere', link: '/docs/deploy/' },
+          { label: 'Admin console', link: '/docs/guides/console/' },
           { label: 'OpenSandbox pools', link: '/docs/guides/opensandbox-pools/' },
           { label: 'Organization onboarding', link: '/docs/guides/organization-onboarding/' },
           { label: 'Hybrid overflow', link: '/docs/guides/hybrid-overflow/' },

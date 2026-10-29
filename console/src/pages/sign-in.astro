@@ -1,0 +1,62 @@
+---
+import Bare from '../layouts/Bare.astro';
+---
+<Bare title="Sign in">
+  <h1 id="heading">Sign in</h1>
+  <p id="lede">Use the email your console administrator allowed.</p>
+  <form id="auth">
+    <label class="field" id="name-field" hidden><span>Name</span><input type="text" name="name" autocomplete="name" /></label>
+    <label class="field"><span>Email</span><input type="email" name="email" required autocomplete="email" /></label>
+    <label class="field"><span>Password</span><input type="password" name="password" required minlength="8" autocomplete="current-password" /></label>
+    <div class="notice bad" id="error" hidden></div>
+    <button class="btn primary" type="submit" id="submit">Sign in</button>
+    <button class="btn" type="button" id="github" hidden>Continue with GitHub</button>
+    <button class="btn ghost" type="button" id="switch">Create an account</button>
+  </form>
+</Bare>
+<script>
+  import { base, mode } from '../lib/connection';
+
+  if (mode !== 'server') location.href = `${base}connect/`;
+  let signUp = false;
+  const form = document.getElementById('auth') as HTMLFormElement;
+  const swap = () => {
+    signUp = !signUp;
+    (document.getElementById('heading') as HTMLElement).textContent = signUp ? 'Create an account' : 'Sign in';
+    (document.getElementById('lede') as HTMLElement).textContent = signUp ? 'Only emails on the console allowlist can create an account.' : 'Use the email your console administrator allowed.';
+    (document.getElementById('name-field') as HTMLElement).hidden = !signUp;
+    (document.getElementById('submit') as HTMLElement).textContent = signUp ? 'Create account' : 'Sign in';
+    (document.getElementById('switch') as HTMLElement).textContent = signUp ? 'I already have an account' : 'Create an account';
+  };
+  document.getElementById('switch')?.addEventListener('click', swap);
+
+  const error = document.getElementById('error') as HTMLElement;
+  const fail = (message: string) => { error.hidden = false; error.textContent = message; };
+  // Better Auth sends a failed GitHub sign-in back here with ?error=.
+  const returned = new URLSearchParams(location.search).get('error');
+  if (returned) fail(`GitHub sign-in did not work (${returned.replaceAll('_', ' ')}). Only emails on the console allowlist can sign in.`);
+
+  const github = document.getElementById('github') as HTMLButtonElement;
+  fetch(`${base}api/sign-in-options`).then((r) => r.json()).then((o) => { github.hidden = !o.github; }).catch(() => {});
+  github.addEventListener('click', async () => {
+    const res = await fetch(`${base}api/auth/sign-in/social`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'github', callbackURL: base, errorCallbackURL: `${base}sign-in/` }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok && body.url) { location.href = body.url; return; }
+    fail(body.message ?? 'GitHub sign-in is not available.');
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form)) as Record<string, string>;
+    error.hidden = true;
+    const res = await fetch(`${base}api/auth/${signUp ? 'sign-up' : 'sign-in'}/email`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(signUp ? { name: data.name || data.email, email: data.email, password: data.password } : { email: data.email, password: data.password }),
+    });
+    if (res.ok) { location.href = base; return; }
+    const body = await res.json().catch(() => ({}));
+    fail(body.message ?? 'That did not work. Check the email and password.');
+  });
+</script>

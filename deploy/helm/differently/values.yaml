@@ -136,6 +136,10 @@ config:
     failClosed: false
   dashboard:
     enabled: true
+  # Origins of browser apps allowed to call the API, such as the console
+  # (console/) served from its own host. Exact origins only, no wildcards.
+  # cors:
+  #   allowedOrigins: ["https://console.example.com"]
 
 # ---------------------------------------------------------------------------
 # Bootstrap token
@@ -495,8 +499,9 @@ networkPolicy:
       # databasePort.
       databaseCIDRs: []
       databasePort: 5432
-      # Destinations for TCP 443 when any provider is enabled. Provider IPs
-      # are not stable, so this is usually 0.0.0.0/0 or your egress proxy.
+      # Destinations for TCP 443 when any provider is enabled (providers.*,
+      # or a config.pools entry with trust: external). Provider IPs are not
+      # stable, so this is usually 0.0.0.0/0 or your egress proxy.
       providerCIDRs: ["0.0.0.0/0"]
       # Also allow TCP 443 to providerCIDRs for providers added at runtime
       # (dashboard or API), such as Daytona or Freestyle with a stored key.

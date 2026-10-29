@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,7 @@ type harness struct {
 	store *store.Memory
 	fc    *fake.Adapter
 	ext   *fake.Adapter
+	pools *pools.Manager
 }
 
 // newHarness runs the real server, scheduler and memory store with two fake
@@ -63,7 +65,7 @@ func newHarnessWith(t *testing.T, policy api.PlacementPolicy, tweak func(*config
 	rec, _ := auditlog.New(st, log, "")
 	box, _ := secrets.New(make([]byte, secrets.KeySize))
 	pm := pools.NewManager(pools.Deps{Store: st, Logger: log, Resolve: server.CredentialResolver(st, box)})
-	h := &harness{t: t, store: mem,
+	h := &harness{t: t, store: mem, pools: pm,
 		fc:  fake.New(fake.Options{Trust: api.TrustPrivate, TotalCPU: 4, TotalMemoryMiB: 16384}),
 		ext: fake.New(fake.Options{Trust: api.TrustExternal, Features: []string{adapter.FeatureExec, adapter.FeatureFiles, adapter.FeaturePorts}}),
 	}
@@ -712,3 +714,96 @@ func TestNativeIdlePools(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// slowPauser is a fake whose pause takes a while and gives up when its
+// context does, like a backend writing a large checkpoint.
+type slowPauser struct {
+	*fake.Adapter
+	delay time.Duration
+}
+
+func (a slowPauser) Pause(ctx context.Context, ref string) error {
+	select {
+	case <-time.After(a.delay):
+		return a.Adapter.Pause(ctx, ref)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// A client that stops waiting for a slow pause does not leave the backend
+// paused while the record says running: the pause finishes and is recorded.
+func TestPauseOutlivesTheRequest(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	slow := slowPauser{fake.New(fake.Options{Trust: api.TrustPrivate}), 300 * time.Millisecond}
+	pool := api.Pool{Name: "slow", Adapter: "fake", Trust: api.TrustPrivate, Enabled: true, Region: "dc1", Source: "config"}
+	ctx := context.Background()
+	_ = h.store.UpsertPool(ctx, pool)
+	h.pools.Set(pool, slow)
+	h.pools.Refresh(ctx)
+	_, _, token := h.tenant("acme", api.Quota{})
+	sb := h.create(token, api.CreateSandboxRequest{Profile: "small", Placement: &api.Placement{AllowedPools: []string{"slow"}}})
+	h.tick()
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning || got.Pool != "slow" {
+		t.Fatalf("not running on the slow pool: %+v", got)
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(reqCtx, "POST", h.srv.URL+"/v1/sandboxes/"+sb.ID+"/pause", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	if resp, err := http.DefaultClient.Do(req); err == nil {
+		resp.Body.Close()
+		t.Fatalf("the client should have given up before the pause finished, got %d", resp.StatusCode)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for h.get(token, sb.ID).Status != api.StatusPaused {
+		if time.Now().After(deadline) {
+			t.Fatalf("pause was abandoned with the request: %+v", h.get(token, sb.ID))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// GET /v1/capabilities answers a tenant with the pools its placement
+// policies let it use, and an operator with every pool.
+func TestCapabilitiesFollowTenantPolicy(t *testing.T) {
+	pools := func(h *harness, token string) []string {
+		var out struct {
+			Items []struct {
+				Pool string `json:"pool"`
+			} `json:"items"`
+		}
+		h.must(200, "GET", "/v1/capabilities", token, nil, &out)
+		var names []string
+		for _, it := range out.Items {
+			names = append(names, it.Pool)
+		}
+		slices.Sort(names)
+		return names
+	}
+
+	closed := newHarness(t, api.PlacementPolicy{})
+	_, _, token := closed.tenant("acme", api.Quota{})
+	if got := pools(closed, token); !slices.Equal(got, []string{"fc"}) {
+		t.Fatalf("with external placement off, a tenant should see only the private pool: %v", got)
+	}
+	if got := pools(closed, operatorToken); !slices.Equal(got, []string{"burst", "fc"}) {
+		t.Fatalf("an operator sees every pool: %v", got)
+	}
+
+	h := newHarness(t, overflowPolicy)
+	_, _, open := h.tenant("open", api.Quota{})
+	if got := pools(h, open); !slices.Equal(got, []string{"burst", "fc"}) {
+		t.Fatalf("an approved external pool is usable: %v", got)
+	}
+	org, _, narrowed := h.tenant("narrowed", api.Quota{})
+	h.must(200, "PUT", "/v1/policies/org:"+org, operatorToken, api.PlacementPolicy{DeniedPools: []string{"fc"}}, nil)
+	if got := pools(h, narrowed); !slices.Equal(got, []string{"burst"}) {
+		t.Fatalf("an organization policy narrows what its keys see: %v", got)
+	}
+	if got := pools(h, open); !slices.Equal(got, []string{"burst", "fc"}) {
+		t.Fatalf("another organization's policy changes nothing here: %v", got)
+	}
+}

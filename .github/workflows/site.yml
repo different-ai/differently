@@ -8,6 +8,7 @@ on:
       - docs/**
       - api/openapi.yaml
       - sdk/*/README.md
+      - console/README.md
       - cmd/differently/**
       - .github/workflows/site.yml
   pull_request:
@@ -16,6 +17,7 @@ on:
       - docs/**
       - api/openapi.yaml
       - sdk/*/README.md
+      - console/README.md
       - cmd/differently/**
       - .github/workflows/site.yml
   workflow_dispatch:
