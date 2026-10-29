@@ -61,7 +61,7 @@ with its own tooling and registered as a pool with `trust: private`.
 | `opensandbox` adapter | ✅ live (Docker runtime) | `internal/adapters/opensandbox`; fake-server tests plus `TestLiveOpenSandbox` against OpenSandbox server `release-1.2.0` and `execd` v1.1.0 (arm64, Colima); a manual run through Differently ([spike](research/opensandbox-spike.md)) |
 | OpenSandbox as the default private runtime | ✅ decided | [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md); the Helm chart's `opensandbox:` values render a pool named `opensandbox` |
 | OpenSandbox Kubernetes runtime | ✅ live (single node) | Single-node k3s on Azure: e2e 14/14 with a snapshot registry (stop/start, snapshots, fork), signed port URLs and egress policy, and recorded adapter runs; multi-node and drain not run ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
-| OpenSandbox Fast Sandbox (Firecracker microVMs) | 📋 | Unverified; first Phase 3 item ([E18](backlog.md#e18-fast-sandbox-spike)) |
+| OpenSandbox Fast Sandbox (Firecracker microVMs) | ✅ live (single node) | Single-node k3s on Azure under nested KVM: the recorded adapter scenario and Workbot's desktop (streamed, paused and resumed with memory, idled and woken); pause takes minutes; e2e suite not run yet ([E18](backlog.md#e18-fast-sandbox-spike)) |
 | End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (14/14, arm64 Colima) and the Kubernetes runtime (14/14, k3s on Azure, Helm install), 2026-10-29 ([results](../test/e2e/README.md)). Fast Sandbox not yet |
 | Sandbox egress control | 🟡 | Per pool: `egress: none` or `allowlist`, enforced by OpenSandbox's egress sidecar (checked live on the Kubernetes runtime); placement and per-request allow-lists not yet ([E19](backlog.md#e19-opensandbox-network-policy-and-egress)) |
 | Node agent: lifecycle, capacity, heartbeat, `doctor` | ⛔ | Removed (`internal/agent`, `cmd/differently-agent`) |
@@ -109,15 +109,16 @@ an operator-visible record of what left private infrastructure.
 **Goal.** Make what exists trustworthy on real infrastructure, close the
 security gaps, and add the features users hit first.
 
-> **Next: [E18 Fast Sandbox spike](backlog.md#e18-fast-sandbox-spike).** Run
-> OpenSandbox's Firecracker runtime on KVM targets through the adapter. Until
-> it is done, microVM isolation through Differently is unverified.
+> **[E18 Fast Sandbox spike](backlog.md#e18-fast-sandbox-spike) ran on
+> 2026-10-29** on one node under nested KVM, through the adapter and with
+> Workbot's desktop. Next: the end-to-end suite on Fast Sandbox and a
+> multi-node cluster.
 
 Ordered by priority. P0 items gate any production recommendation.
 
 | Priority | Epic | Status |
 |---|---|---|
-| P0 | **[E18 Fast Sandbox spike](backlog.md#e18-fast-sandbox-spike)** (POC 11) | 📋 next |
+| P0 | **[E18 Fast Sandbox spike](backlog.md#e18-fast-sandbox-spike)** (POC 11) | ✅ single node, 2026-10-29 |
 | P0 | [E0 Correctness and security fixes from the code review](backlog.md#e0-correctness-and-security-fixes-from-the-code-review) | 📋 |
 | P0 | [E2 External adapters on live accounts](backlog.md#e2-external-adapters-on-live-accounts) (POC 7) | 📋 |
 | P1 | [E19 OpenSandbox network policy and egress](backlog.md#e19-opensandbox-network-policy-and-egress) (replaces E12) | 📋 |

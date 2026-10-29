@@ -32,9 +32,11 @@ installation guide is [OpenSandbox pools](../guides/opensandbox-pools.md).
 
 **Fast Sandbox runtime** (`runtime: fastsandbox`): Firecracker microVMs
 created from a Fast Sandbox template, pause that keeps memory, disk snapshots
-and fork, and OpenSandbox's own idle pause with wake on access. It is
-implemented and tested with a fake server only; it has not run against a
-real Fast Sandbox yet ([setup and limits](../guides/opensandbox-pools.md#fast-sandbox-runtime-microvms-pause-with-memory-native-idle)).
+and fork, and OpenSandbox's own idle pause with wake on access. Run live
+on 2026-10-29 (single node, nested KVM) and recorded; OpenWork's Workbot
+desktop streamed through it. Pause is slow: a full checkpoint upload, about
+3 minutes for a 4 GiB desktop; resume and wake take under a second
+([setup, timings and gaps](../guides/opensandbox-pools.md#fast-sandbox-runtime-microvms-pause-with-memory-native-idle)).
 
 ## Configure
 
@@ -67,8 +69,11 @@ differently admin secret put opensandbox-key --from-file ./opensandbox-api-key.t
 ```
 
 Other keys: `templateId` (a Fast Sandbox template instead of an image),
+`poolCPU` and `poolMemory` (Fast Sandbox: the SandboxPool's size, sent
+when restoring from a snapshot),
 `features` (a comma list that replaces the defaults), `useServerProxy`
-(default `true`), `portScheme` (default `https`) and `portURLSeconds`
+(default `true`), `portScheme` (the scheme for gateway endpoints returned without one;
+default `https` with signed ports, else `http`) and `portURLSeconds`
 (default 3600).
 
 ## Limits and differences
@@ -97,6 +102,10 @@ Other keys: `templateId` (a Fast Sandbox template instead of an image),
   Azure Standard_D8s_v6, both charts installed with Helm), 2026-10-29,
   including stop/start, snapshots, fork, signed port URLs, stdin and idle
   auto-stop with wake.
-- The Fast Sandbox runtime: unit tests against a fake server only.
-- Not run: Fast Sandbox microVMs, multi-node clusters and node drains,
-  managed EKS, GKE and AKS.
+- The Fast Sandbox runtime, live on single-node k3s (Azure
+  Standard_D8s_v6, nested KVM), 2026-10-29: the adapter scenario, recorded
+  as `fastsandbox-1.2.0`, and OpenWork's Workbot desktop through
+  Differently: create, viewer streamed over a port URL, pause and resume
+  keeping memory, idle pause and wake by a port request.
+- Not run: the end-to-end suite on Fast Sandbox, multi-node clusters and
+  node drains, managed EKS, GKE and AKS.

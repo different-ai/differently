@@ -130,9 +130,10 @@ const verified = [
   "OpenWork's Workbot computer ran through Differently as a sandbox gateway over HTTPS: commands with Python tools, files, and stop/start that keeps the disk (behind a flag in OpenWork).",
   'A sandbox whose image cannot be pulled never marks a shared pool unhealthy.',
   'The agent-sandbox adapter against a Kubernetes cluster (kind, runc).',
+  "Fast Sandbox microVMs on one node: Workbot's desktop streamed over a port URL, paused and resumed with its memory (pause takes minutes), idled and woken by a request.",
 ];
 const notVerified = [
-  'Fast Sandbox microVMs',
+  'The end-to-end suite on Fast Sandbox microVMs',
   'Multi-node clusters and node drains',
   'Managed EKS, GKE and AKS clusters',
   'Live accounts on the managed providers (their adapters are tested against fakes of each published API)',
@@ -181,7 +182,7 @@ const fromRuntime = [
   ['Sandbox runtimes', 'Docker, Kubernetes, and Fast Sandbox (Firecracker microVMs on a per-node agent).'],
   ['Lifecycle', 'Create, delete, pause and resume, stop and start on Kubernetes; a provider-side timeout as a TTL backstop.'],
   ['Exec and files', 'Commands with env, cwd, timeouts and streamed output; upload, download and list files.'],
-  ['Snapshots', 'Disk snapshots; memory-preserving pause and OCI snapshots on Fast Sandbox (documented, not yet verified by us).'],
+  ['Snapshots', 'Disk snapshots and fork; memory-preserving pause on Docker and Fast Sandbox (checked live; a Fast Sandbox pause takes minutes).'],
   ['Open source', 'Apache-2.0, self-hostable, with SDKs in several languages.'],
 ];
 const added = [
@@ -222,7 +223,7 @@ const compare = [
   </head>
   <body>
     <div class="status" role="note">
-      <strong>Pre-release, not for production.</strong> {version} has run end to end on OpenSandbox's Docker and Kubernetes runtimes; Fast Sandbox, managed clusters and live provider accounts are not verified yet.
+      <strong>Pre-release, not for production.</strong> {version} has run end to end on OpenSandbox's Docker and Kubernetes runtimes, and on Fast Sandbox microVMs on one node; managed clusters and live provider accounts are not verified yet.
       <a href="#proven">What is proven</a>
     </div>
 

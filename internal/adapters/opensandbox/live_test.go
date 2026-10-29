@@ -41,15 +41,27 @@ func TestLiveOpenSandbox(t *testing.T) {
 		return def
 	}
 	key := env("OPENSANDBOX_API_KEY", "osb-live-test-key-0123456789") // test/opensandbox/config.toml
-	// docker, kubernetes (no snapshot registry) or kubernetes-registry.
+	// docker, kubernetes (no snapshot registry), kubernetes-registry or
+	// fastsandbox (OPENSANDBOX_TEMPLATE, and OPENSANDBOX_PORT_SCHEME=https
+	// when its gateway is behind TLS).
 	runtime := env("OPENSANDBOX_RUNTIME", "docker")
 	cfg := map[string]string{
 		"image":       env("OPENSANDBOX_IMAGE", "debian:bookworm-slim"),
 		"isolation":   "container",
 		"lineEndings": env("OPENSANDBOX_LINE_ENDINGS", "kept"),
 	}
-	if runtime == "kubernetes-registry" {
+	switch runtime {
+	case "kubernetes-registry":
 		cfg["runtime"] = "kubernetes"
+	case runtimeFastSandbox:
+		cfg = map[string]string{"runtime": runtimeFastSandbox, "templateId": os.Getenv("OPENSANDBOX_TEMPLATE"), "lineEndings": cfg["lineEndings"]}
+		if s := os.Getenv("OPENSANDBOX_PORT_SCHEME"); s != "" {
+			cfg["portScheme"] = s
+		}
+		// The SandboxPool's size (e.g. 2 and 4Gi), which a fork must send.
+		if c := os.Getenv("OPENSANDBOX_POOL_CPU"); c != "" {
+			cfg["poolCPU"], cfg["poolMemory"] = c, os.Getenv("OPENSANDBOX_POOL_MEMORY")
+		}
 	}
 	// OPENSANDBOX_EGRESS_ALLOW=pypi.org records an allowlist pool.
 	if allow := os.Getenv("OPENSANDBOX_EGRESS_ALLOW"); allow != "" {
@@ -95,7 +107,9 @@ func TestLiveOpenSandbox(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rec = &recorder{next: http.DefaultTransport, host: u.Host, secret: key}
+		// OPENSANDBOX_GATEWAY_HOST: the ingress gateway execd is reached
+		// through when it is not the server's own address (Fast Sandbox).
+		rec = &recorder{next: http.DefaultTransport, host: u.Host, gateway: os.Getenv("OPENSANDBOX_GATEWAY_HOST"), secret: key}
 		a.c.HTTP.Transport = rec
 		step = rec.mark
 	}
