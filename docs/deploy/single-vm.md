@@ -8,9 +8,10 @@ command that creates the VM differs.
 
 > **Verified 2026-10-28** on an Azure `Standard_D8s_v6`: k3s v1.36.5,
 > OpenSandbox 1.2.0 and Differently `v0.1.0-alpha.1`. A sandbox ran within
-> about 2 s, and the end-to-end suite passed 12/12 against this setup. The AWS,
-> Google Cloud and bare-metal commands below are the equivalent steps, not
-> yet run there.
+> about 2 s, and the end-to-end suite passed 12/12 against this setup; with
+> a snapshot registry, the ingress gateway and egress policy added
+> (2026-10-29), it passed 14/14. The AWS, Google Cloud and bare-metal
+> commands below are the equivalent steps, not yet run there.
 
 This is a single-node evaluation or team setup, not a highly available one.
 Sandboxes are containers that share the VM's kernel. For production, see
@@ -169,7 +170,8 @@ opensandbox:
   apiURL: http://opensandbox-server.opensandbox-system.svc/v1
   existingSecret: opensandbox-api-key
   lineEndings: kept                  # execd release-1.2.0 keeps line endings
-  # Pause and snapshots on the Kubernetes runtime need a snapshot registry.
+  # Stop/start, snapshots and fork need a snapshot registry, and port URLs the
+  # ingress gateway: see docs/guides/opensandbox-pools.md (Kubernetes runtime).
   features: [exec, exec.stream, files]
 networkPolicy:
   server:
@@ -260,7 +262,7 @@ stored provider keys in it ([keys and providers](../guides/keys-and-providers.md
 | OpenSandbox pods `ImagePullBackOff` from a `cn-zhangjiakou` registry | Set the Docker Hub images as above |
 | Create fails after 60 s with `POD_READY_TIMEOUT` | The first pull of a large image was slow. Pre-pull it on the node (`sudo k3s ctr images pull <image>`); Differently retries it meanwhile |
 | The pool shows unhealthy | Check `apiURL`, the API key Secret, and that `networkPolicy.server.egress.opensandbox` allows `opensandbox-system` on port 80 |
-| Pause or snapshots are refused | The Kubernetes runtime needs OpenSandbox's snapshot registry (`controller.snapshot.registry`); leave them out of `features` until it has one |
+| Stop/start or snapshots are refused | The Kubernetes runtime needs OpenSandbox's snapshot registry (`controller.snapshot.registry`); leave them out of `features` until it has one ([setup](../guides/opensandbox-pools.md#kubernetes-runtime-snapshot-registry-signed-ports-and-egress)) |
 
 More in [OpenSandbox pools](../guides/opensandbox-pools.md) and
 [day-2 operations](day-2.md).

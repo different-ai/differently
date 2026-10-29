@@ -67,12 +67,16 @@ export interface CreateSandboxParams {
   labels?: Record<string, string>;
   priority?: number;
   fromSnapshot?: string;
+  /** Stop or pause after this many seconds unused (at least 60); the next call wakes it. -1 turns it off. */
+  idleTimeoutSeconds?: number;
 }
 
 export interface UpdateSandboxParams {
   /** Labels to merge in. An empty string value removes that label. */
   labels?: Record<string, string>;
   ttlSeconds?: number;
+  /** At least 60, or -1 to turn idle auto-stop off. */
+  idleTimeoutSeconds?: number;
 }
 
 export interface ListSandboxesParams {
@@ -109,6 +113,10 @@ export interface SandboxInfo {
   priority: number;
   ttlSeconds?: number;
   expiresAt?: string;
+  idleTimeoutSeconds?: number;
+  lastActivityAt?: string;
+  /** Set while stopped or paused for being idle; the next exec, file, port or keepalive call wakes it. */
+  idledAt?: string;
   fromSnapshot?: string;
   attempts: number;
   createdBy: string;

@@ -185,10 +185,10 @@ the other pool, and deletes only leftovers.
 ## 7. HTTP protocol
 
 `adapterhttp.Handler(adapter, token)` serves any adapter; `adapterhttp.Client`
-consumes one, and the `remote` adapter kind wraps it. Since the node agent
-was removed, nothing in the repository tests this protocol end to end: its
-only tests drove the agent through it. A protocol and conformance suite is
-backlog E0.34.
+consumes one, and the `remote` adapter kind wraps it. `adapterhttp_test.go`
+round-trips every operation through the client and the handler with a fake
+backend. A conformance suite for plugins outside the repository is backlog
+E0.34.
 
 **Conventions**
 
@@ -295,7 +295,8 @@ queue age); cost guards so scaling never exceeds a budget; per-host drain
 Verification level: **unit** = tested in-process with fakes; **spec** =
 written against the provider's published OpenAPI and tested with a fake HTTP
 server. The Verification row says where an adapter has also run against the
-real system.
+real system. Each backend's status and configuration is also on its page in
+the [provider catalog](../providers/README.md).
 
 | | `opensandbox` | `daytona` | `freestyle` | `devhost` | `fake` |
 |---|---|---|---|---|---|
@@ -312,17 +313,17 @@ real system.
 | Resources applied | `resourceLimits` strings (`cpu`, `memory` in Mi). **`diskGiB` is not sent**; quota and cost still use the requested size | **Not sent**: the sandbox gets the snapshot's size; quota and cost still use the requested size | Grown with `/resize` after boot (grow only; never shrinks below the snapshot's size) | not applied | recorded |
 | Env | Sent in the create body (stored by OpenSandbox); per-exec `envs` | Sent in the create body (stored by Daytona) | Written to `/etc/differently/env` (0600) in the VM and sourced by every exec | Stored in `meta.json`; base env for every exec | ignored |
 | Provider TTL backstop | `timeout` (minimum 60 s), set at creation only | `ttlMinutes`; `autoStopInterval: 0` so Differently owns stop | `ttlSeconds` | none | none |
-| `exec` | `execd` `POST /command`: line-based event stream (a final fragment without a newline gains one); argument lists sent as a quoted command; **stdin unsupported**; non-zero exit from `CommandExecError`; timeout sent only if the request sets one; synchronous output is not capped | Toolbox `process/execute`: **stdout and stderr combined** into `stdout`; **stdin unsupported** (`501`); timeout sent as 600 s if unset | `exec-await`: separate streams; stdin (base64); timeout capped at 300 s; exit code 124 when the provider reports a timeout | Host process under the sandbox directory; default timeout 10 min, maximum 2 h | Echo, or `ExecFunc` |
+| `exec` | `execd` `POST /command`: line-based event stream (a final fragment without a newline gains one); argument lists sent as a quoted command; stdin staged in a file the command reads; non-zero exit from `CommandExecError`; timeout sent only if the request sets one; synchronous output is not capped | Toolbox `process/execute`: **stdout and stderr combined** into `stdout`; **stdin unsupported** (`501`); timeout sent as 600 s if unset | `exec-await`: separate streams; stdin (base64); timeout capped at 300 s; exit code 124 when the provider reports a timeout | Host process under the sandbox directory; default timeout 10 min, maximum 2 h | Echo, or `ExecFunc` |
 | `exec.stream` | yes | no (buffered fallback) | no (buffered fallback) | yes | yes |
 | `files` | yes (`execd`; upload metadata sent as a JSON file part; downloads cut at 100 MiB without an error) | yes (toolbox; upload via `upload-v2`) | yes (`fs/read`, `fs/write` mode 0600 with `fs/mkdir`; listings carry name and dir flag only) | yes | yes |
-| Stop / start | **none** (OpenSandbox has pause/resume and delete only) | `POST /sandbox/{id}/stop` / `start` | No stop API: runs `poweroff` in the guest and polls for `stopped`; start via `/start` | State flag only | State flag |
-| Pause / resume | `/pause`, `/resume`, polled until settled; `execd` pinged after resume | Only with `class: linux-vm`; resume uses `/start` | `/pause`, resume uses `/start` | no | yes |
+| Stop / start | With `runtime: kubernetes` and the controller's snapshot registry: OpenSandbox's pause commits the root filesystem and frees the pod, and resume recreates it. None on the Docker runtime | `POST /sandbox/{id}/stop` / `start` | No stop API: runs `poweroff` in the guest and polls for `stopped`; start via `/start` | State flag only | State flag |
+| Pause / resume | Docker runtime only: `/pause`, `/resume`, polled until settled; `execd` pinged after resume; a pause that never starts is reported as `unsupported_operation` | Only with `class: linux-vm`; resume uses `/start` | `/pause`, resume uses `/start` | no | yes |
 | Snapshots | `POST /sandboxes/{id}/snapshots`, polled until `Ready`. Reported as the kind requested (default `disk`); `memory` is refused unless the pool lists `snapshots.memory` in `features`. What is captured depends on the runtime | `POST /sandbox/{id}/snapshot` (`includeMemory` for memory), async; ref is the snapshot name | Always memory and disk, reported as `kind: memory` even when `disk` is requested | `cp -a` of the directory | Copies files |
 | `fork` | yes (via snapshot restore with `snapshotId`) | not advertised | yes (memory) | yes (disk) | yes |
-| `ports.expose` | Direct endpoints only; endpoints that need request headers (the server key) are refused | Signed preview URL, valid 1 h | TLS rule on `<port>-<slug>.<domain>` (default `style.dev`); **public**, anyone with the URL can connect | no | Dummy URL |
-| `network.egress-control` | no (OpenSandbox's network policy is not wired up yet) | no | yes (firewall: deny-all unless `config.egress: public`) | no | no |
-| Pool config keys | `apiURL` (required), `image`, `templateId`, `isolation`, `features`, `useServerProxy`; `trust` required | `apiURL`, `target`, `snapshot`, `class` | `apiURL`, `snapshot`, `egress`, `domain` | `root` | none |
-| Verification | Fake server (`opensandbox_test.go`), plus live (`TestLiveOpenSandbox`) against release 1.2.0 with the Docker runtime and `execd` v1.1.0: create, idempotent create, exec, files, list, pause and resume, snapshot, delete. Not checked live: Kubernetes runtime, Fast Sandbox, restore and fork, port endpoints | spec | spec | unit | n/a |
+| `ports.expose` | With `ports: signed`: signed, time-limited URLs through OpenSandbox's ingress gateway (route mode `uri`, Secure Access); none otherwise. Endpoints that need request headers (the server key) are refused | Signed preview URL, valid 1 h | TLS rule on `<port>-<slug>.<domain>` (default `style.dev`); **public**, anyone with the URL can connect | no | Dummy URL |
+| `network.egress-control` | With `egress: none` or `allowlist` (`egressAllow`), enforced by OpenSandbox's egress sidecar | no | yes (firewall: deny-all unless `config.egress: public`) | no | no |
+| Pool config keys | `apiURL` (required), `image`, `templateId`, `isolation`, `runtime`, `features`, `useServerProxy`, `lineEndings`, `egress`, `egressAllow`, `ports`, `portScheme`, `portURLSeconds`; `trust` required | `apiURL`, `target`, `snapshot`, `class` | `apiURL`, `snapshot`, `egress`, `domain` | `root` | none |
+| Verification | Fake server (`opensandbox_test.go`), recorded Docker and Kubernetes responses replayed in `go test`, `TestLiveOpenSandbox`, and the end-to-end suite (14/14) against release 1.2.0 on the Docker runtime and the Kubernetes runtime (single-node k3s with a snapshot registry, signed ports and egress). Not checked live: Fast Sandbox, multi-node clusters | spec | spec | unit | n/a |
 
 The `remote` kind is a thin wrapper around `adapterhttp.Client`
 (`internal/wiring/wiring.go`); its semantics are those of the plugin behind it.

@@ -67,6 +67,9 @@ type Defaults struct {
 	Template       string        `json:"template,omitempty"`
 	Resources      api.Resources `json:"resources"`
 	TTLSeconds     int           `json:"ttlSeconds"`
+	// IdleTimeoutSeconds stops or pauses sandboxes left idle this long
+	// (0: off unless a request asks). At least 60 when set.
+	IdleTimeoutSeconds int `json:"idleTimeoutSeconds"`
 }
 
 // CredentialRef points at a secret without containing it.
@@ -200,8 +203,13 @@ var externalKinds = []string{"daytona", "freestyle", "vercel", "fly"}
 // KnownAdapters lists adapter kinds the server can build.
 var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "vercel", "fly"}
 
+// Adapter kinds that run where the operator put them (a plugin they deploy,
+// the dev host, the test fake), so they are private unless declared.
+var privateByDefaultKinds = []string{"remote", "devhost", "fake"}
+
 // Adapter kinds whose trust boundary depends on who operates the backend, so
-// the operator must declare it.
+// the operator must declare it. Any kind in none of these lists is treated the
+// same way: a new adapter never becomes private by omission.
 var declaredTrustKinds = []string{"opensandbox"}
 
 // Default returns a configuration with every default applied.
@@ -282,7 +290,7 @@ func (c *Config) applyDefaults() {
 		if slices.Contains(externalKinds, p.Adapter) {
 			p.Trust = api.TrustExternal
 		}
-		if p.Trust == "" && !slices.Contains(declaredTrustKinds, p.Adapter) {
+		if p.Trust == "" && slices.Contains(privateByDefaultKinds, p.Adapter) {
 			p.Trust = api.TrustPrivate
 		}
 	}
@@ -328,6 +336,9 @@ func Parse(b []byte) (Config, error) {
 
 // Validate reports every configuration problem at once.
 func (c Config) Validate() error {
+	if d := c.Defaults.IdleTimeoutSeconds; d != 0 && d < 60 {
+		return fmt.Errorf("defaults.idleTimeoutSeconds must be 0 (off) or at least 60, not %d", d)
+	}
 	var errs []error
 	bad := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
 	if c.Store.Driver != "memory" && c.Store.Driver != "postgres" {
@@ -366,7 +377,7 @@ func (c Config) Validate() error {
 			bad("pool %s: unknown adapter %q (known: %s)", p.Name, p.Adapter, strings.Join(KnownAdapters, ", "))
 		}
 		switch {
-		case p.Trust == "" && slices.Contains(declaredTrustKinds, p.Adapter):
+		case p.Trust == "":
 			bad("pool %s: set trust explicitly for the %s adapter: private if you operate it, external if someone else does", p.Name, p.Adapter)
 		case p.Trust != api.TrustPrivate && p.Trust != api.TrustExternal:
 			bad("pool %s: trust must be private or external", p.Name)

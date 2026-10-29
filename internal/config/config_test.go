@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -65,5 +66,39 @@ func TestCredentialRef(t *testing.T) {
 	}
 	if _, err := ParseCredentialRef("env:MISSING_TOKEN_XYZ").Resolve(); err == nil {
 		t.Fatal("empty env should error")
+	}
+}
+
+// A new adapter kind never becomes private by omission: unless it is listed
+// as external or private by default, its pools must declare their trust.
+func TestNewAdapterKindsMustDeclareTrust(t *testing.T) {
+	saved := KnownAdapters
+	KnownAdapters = append(slices.Clone(KnownAdapters), "newcloud")
+	t.Cleanup(func() { KnownAdapters = saved })
+	cfg := func(trust string) []byte {
+		return []byte("pools:\n  - name: p\n    adapter: newcloud\n" + trust + "    credentials: {env: NEWCLOUD_KEY}\n")
+	}
+	if _, err := Parse(cfg("")); err == nil || !strings.Contains(err.Error(), "set trust explicitly") {
+		t.Fatalf("an undeclared new kind must be rejected, got %v", err)
+	}
+	c, err := Parse(cfg("    trust: external\n"))
+	if err != nil || c.Pools[0].Trust != api.TrustExternal {
+		t.Fatalf("declared external: %+v %v", c.Pools, err)
+	}
+}
+
+// Every adapter kind the server can build sits in exactly one trust list, so
+// adding a kind means deciding who operates it.
+func TestEveryAdapterKindHasATrustRule(t *testing.T) {
+	for _, kind := range KnownAdapters {
+		n := 0
+		for _, list := range [][]string{externalKinds, privateByDefaultKinds, declaredTrustKinds} {
+			if slices.Contains(list, kind) {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("adapter %s is in %d trust lists; put it in exactly one of externalKinds, privateByDefaultKinds or declaredTrustKinds", kind, n)
+		}
 	}
 }

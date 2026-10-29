@@ -454,6 +454,34 @@ func TestPortURL(t *testing.T) {
 	}
 }
 
+// Idle auto-stop: after its idle timeout with no calls, the sandbox is
+// stopped (Kubernetes runtime, disk kept) or paused (Docker runtime, memory
+// kept), and the next exec wakes it with its files intact.
+func TestIdleAutoStopAndWake(t *testing.T) {
+	if !advertises(t, "lifecycle.stop-start") && !advertises(t, "lifecycle.pause-resume") {
+		t.Skip("the pool can neither stop nor pause, so idle sandboxes stay running")
+	}
+	c := tenant(t, "idle", api.Quota{})
+	sb := create(t, c, api.CreateSandboxRequest{IdleTimeoutSeconds: 60})
+	sh(t, c, sb.ID, "echo before-idle > /root/idle-state && sync")
+	var idled api.Sandbox
+	eventually(t, 3*time.Minute, "the idle sandbox to be stopped or paused", func() bool {
+		got, err := c.GetSandbox(context.Background(), sb.ID)
+		idled = got
+		return err == nil && got.IdledAt != nil && (got.Status == api.StatusStopped || got.Status == api.StatusPaused)
+	})
+	t.Logf("%s after idling: %s", idled.Status, idled.StatusReason)
+	start := time.Now()
+	res := sh(t, c, sb.ID, "cat /root/idle-state")
+	t.Logf("exec woke it in %s", time.Since(start).Round(100*time.Millisecond))
+	if strings.TrimSpace(res.Stdout) != "before-idle" {
+		t.Fatalf("files lost across idle and wake: %q", res.Stdout)
+	}
+	if got, _ := c.GetSandbox(ctx(t), sb.ID); got.Status != api.StatusRunning || got.IdledAt != nil {
+		t.Fatalf("after waking: %+v", got)
+	}
+}
+
 func TestCapabilityMismatchIsPrecise(t *testing.T) {
 	c := tenant(t, "caps", api.Quota{})
 	_, err := c.CreateSandbox(ctx(t), api.CreateSandboxRequest{Capabilities: []string{"gpu"}}, false)

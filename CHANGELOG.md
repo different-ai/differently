@@ -6,6 +6,17 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added (idle auto-stop)
+
+- `idleTimeoutSeconds` on sandboxes (create and `PATCH`) and
+  `defaults.idleTimeoutSeconds`: the scheduler leader pauses (pools that keep
+  memory) or stops (disk kept) a sandbox with no exec, file, port or
+  keepalive call for that long, and the next such call wakes it. A sandbox a
+  caller stopped or paused is never woken this way. New
+  `POST /v1/sandboxes/{id}/keepalive`, sandbox fields `lastActivityAt` and
+  `idledAt`, SDK and CLI (`--idle-timeout`) support, and audit event
+  `sandbox.idled` / `sandbox.woke`.
+
 ### Added (OpenSandbox parity with Freestyle)
 
 - `runtime: kubernetes` for OpenSandbox pools. With the controller's snapshot

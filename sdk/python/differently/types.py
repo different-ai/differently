@@ -89,6 +89,9 @@ class SandboxInfo(_SandboxRequired, total=False):
     envKeys: List[str]
     ttlSeconds: int
     expiresAt: str
+    idleTimeoutSeconds: int
+    lastActivityAt: str
+    idledAt: str
     fromSnapshot: str
     startedAt: str
     endedAt: str

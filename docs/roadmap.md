@@ -60,10 +60,10 @@ with its own tooling and registered as a pool with `trust: private`.
 |---|---|---|
 | `opensandbox` adapter | ✅ live (Docker runtime) | `internal/adapters/opensandbox`; fake-server tests plus `TestLiveOpenSandbox` against OpenSandbox server `release-1.2.0` and `execd` v1.1.0 (arm64, Colima); a manual run through Differently ([spike](research/opensandbox-spike.md)) |
 | OpenSandbox as the default private runtime | ✅ decided | [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md); the Helm chart's `opensandbox:` values render a pool named `opensandbox` |
-| OpenSandbox Kubernetes runtime | 🟡 | Single-node k3s on Azure: e2e 12/12 and a recorded adapter run; pause and snapshots need OpenSandbox's snapshot registry; multi-node and drain not run ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
+| OpenSandbox Kubernetes runtime | ✅ live (single node) | Single-node k3s on Azure: e2e 14/14 with a snapshot registry (stop/start, snapshots, fork), signed port URLs and egress policy, and recorded adapter runs; multi-node and drain not run ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
 | OpenSandbox Fast Sandbox (Firecracker microVMs) | 📋 | Unverified; first Phase 3 item ([E18](backlog.md#e18-fast-sandbox-spike)) |
-| End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (12/12, arm64 Colima) and the Kubernetes runtime (12/12, k3s on Azure, Helm install), 2026-10-28 ([results](../test/e2e/README.md)). Fast Sandbox not yet |
-| Sandbox egress control | 📋 | Not enforced by Differently; OpenSandbox's network policy is not wired up ([E19](backlog.md#e19-opensandbox-network-policy-and-egress)) |
+| End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (14/14, arm64 Colima) and the Kubernetes runtime (14/14, k3s on Azure, Helm install), 2026-10-29 ([results](../test/e2e/README.md)). Fast Sandbox not yet |
+| Sandbox egress control | 🟡 | Per pool: `egress: none` or `allowlist`, enforced by OpenSandbox's egress sidecar (checked live on the Kubernetes runtime); placement and per-request allow-lists not yet ([E19](backlog.md#e19-opensandbox-network-policy-and-egress)) |
 | Node agent: lifecycle, capacity, heartbeat, `doctor` | ⛔ | Removed (`internal/agent`, `cmd/differently-agent`) |
 | Firecracker API client | ⛔ | Removed (`internal/firecracker`) |
 | Guest agent over vsock | ⛔ | Removed (`internal/guest`, `cmd/differently-guest`); the command runner moved to `internal/localexec` for `devhost` |
