@@ -176,8 +176,8 @@ records why. Adapters talk to the backends:
 Isolation and egress belong to each backend's runtime. Differently records
 what each pool declares and says so in the trust report.
 
-Read the [architecture](docs/architecture/README.md), the
-[decision records](docs/adr/) and the [security model](docs/security/trust-model.md).
+Read the [architecture](docs/architecture/README.md) and the
+[security model](docs/security/trust-model.md).
 
 ## How it compares
 
@@ -210,7 +210,7 @@ under a control plane you run. See the
 | `api/openapi.yaml` | The HTTP API contract (a test keeps it in sync with the router) |
 | `sdk/typescript`, `sdk/python` | Official SDKs |
 | `deploy/` | Helm chart (control plane only), Terraform (AWS) |
-| `docs/` | Guides, deployment, architecture, ADRs, security, roadmap |
+| `docs/` | Guides, deployment, architecture, security, roadmap |
 | `site/` | The website and docs site |
 | `test/e2e`, `test/opensandbox` | The real-stack end-to-end suite and the live OpenSandbox checks |
 

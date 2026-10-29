@@ -3,7 +3,7 @@
 This guide takes an existing cluster to a first running sandbox. Differently's
 chart deploys the control plane only; sandboxes run on an
 [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) server that
-you install first ([ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md)).
+you install first.
 Cloud-specific notes are in [aws.md](aws.md), [gcp.md](gcp.md) and
 [azure.md](azure.md), and self-managed distributions are in
 [bare-metal.md](bare-metal.md).
@@ -106,7 +106,7 @@ kubectl -n differently create secret generic differently-tokens \
 
 **Secrets key (generated, or yours for GitOps).** This key seals provider
 credentials that operators store in Differently from the dashboard, CLI or
-API ([ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md)).
+API.
 Without your own Secret, the chart does three things:
 
 - it generates 32 random bytes once, into `dly-differently-secrets-key`

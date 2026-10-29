@@ -5,8 +5,7 @@ Status: k3s, RKE2 and a plain Linux host running OpenSandbox are
 hardware yet.
 
 Differently's control plane needs no privilege or KVM, so any of these
-distributions can run it. Sandboxes run on an OpenSandbox server
-([ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md)), installed in the
+distributions can run it. Sandboxes run on an OpenSandbox server, installed in the
 same cluster or on separate hosts. Bare metal matters most for OpenSandbox's
 Fast Sandbox runtime: `/dev/kvm` comes straight from the CPU, with no nested
 virtualization. Enable VT-x/AMD-V (and VT-d if you like) in firmware, and

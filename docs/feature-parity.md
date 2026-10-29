@@ -36,12 +36,11 @@ and where workloads may go.
 | Trust report (endpoints, credentials by ref, external placements, limits) | ✅ `GET /v1/admin/trust-report` | No | No | No | No | No |
 | Tamper-evident audit log | ✅ hash chain + verify endpoint + JSON-lines export | Audit/OTel export (UNVERIFIED scope) | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
 | Multi-tenant orgs/projects with quotas | ✅ | Orgs, seats, wallets | Orgs, tiers | Account plans | Teams | UNVERIFIED |
-| Provider credentials never readable from the DB alone | ✅ env/file references, or stored sealed (AES-256-GCM) under a key that never enters the database ([ADR 0021](adr/0021-provider-credentials-stored-encrypted.md)) | n/a | n/a | n/a | n/a | n/a |
+| Provider credentials never readable from the DB alone | ✅ env/file references, or stored sealed (AES-256-GCM) under a key that never enters the database | n/a | n/a | n/a | n/a | n/a |
 
 Honest positioning: a self-hosted, open-source sandbox runtime is **not**
 unique (OpenSandbox, Tencent CubeSandbox and E2B's runtime exist), so
-Differently no longer ships one. OpenSandbox is its default private runtime
-([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)). The rows nobody
+Differently no longer ships one. OpenSandbox is its default private runtime. The rows nobody
 else fills are the policy, classification, placement-explanation and
 trust-report rows: that is what Differently adds on top of the runtimes it
 places work on.
@@ -101,7 +100,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 | SSH | `POST /sshkey` | — | 📋 | SSH gateway in backlog. |
 | Desktop / browser stream | `POST /desktop` | — | 📋 (Phase 4) | |
 | Egress policy | No API | Pool `egress: none`, `public` or `allowlist` | ✅ live (Kubernetes runtime) | OpenSandbox enforces it per sandbox with its egress sidecar (deny-all and a host allowlist checked live); Freestyle firewall 🧪. Per-request allowlists 📋. |
-| Sandbox-to-node and sandbox-to-sandbox isolation | Platform-managed | Provided by the backend runtime; each pool declares its isolation and the trust report shows it | — | Differently does not enforce isolation itself ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)). |
+| Sandbox-to-node and sandbox-to-sandbox isolation | Platform-managed | Provided by the backend runtime; each pool declares its isolation and the trust report shows it | — | Differently does not enforce isolation itself. |
 
 ### 2.5 Lifecycle, persistence and snapshots
 

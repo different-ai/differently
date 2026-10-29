@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | **Almost no measurements exist.** The only one: OpenSandbox's Docker runtime reached running in 0.5–0.9 s per sandbox in the adapter's live test (one arm64 Colima VM, server `release-1.2.0`, `execd` v1.1.0; [spike](research/opensandbox-spike.md)). Every other number below is a proposal or a hypothesis, labelled as such. Nothing has run on KVM through OpenSandbox or against live provider accounts. |
-| Runtime change | Since [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md), private sandboxes run on OpenSandbox; boot time, density and isolation are properties of the runtime the operator deploys. Differently's own numbers are the control-plane ones. |
+| Runtime change | Since the move to OpenSandbox, private sandboxes run on OpenSandbox; boot time, density and isolation are properties of the runtime the operator deploys. Differently's own numbers are the control-plane ones. |
 | Related | [Architecture](architecture/README.md) · [Proofs of concept](proof-of-concepts.md) · [Backlog](backlog.md) |
 
 ## 1. Service level objectives (proposed)
@@ -140,8 +140,7 @@ hypotheses; the purpose is to replace them with measurements.
 Each test states the expected behaviour **according to the current code**.
 Where the code is expected to misbehave, the test is still worth running so
 the fix can be verified. C4–C6, C8 and C12 were rewritten for OpenSandbox
-pools; the agent-specific versions left with the agent
-([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)).
+pools; the agent-specific versions left with the agent.
 
 | # | Inject | Expected today | Pass criterion |
 |---|---|---|---|
@@ -192,7 +191,7 @@ Checks that the capacity model matches reality before relying on it:
 
 ## 7. Release gates (proposal)
 
-For a release candidate (`vX.Y.Z-rc.N`, [ADR 0012](adr/0012-pre-release-integration-branch-model.md)):
+For a release candidate (`vX.Y.Z-rc.N`):
 
 1. `go test ./...` with `DIFFERENTLY_TEST_POSTGRES_URL` set, so the Postgres
    conformance suite actually runs.

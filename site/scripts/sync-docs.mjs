@@ -100,9 +100,7 @@ for (const abs of walk(path.join(repo, 'docs')).filter((f) => f.endsWith('.md'))
   let route = routeFor(rel);
   const extra = {};
   if (route === '' || route.endsWith('/') || rel.endsWith('README.md')) route = route ? `${route}/index` : '';
-  // ADRs sort by number in the sidebar; section indexes go first.
-  const adr = rel.match(/^docs\/adr\/(\d{4})-/);
-  if (adr) extra.sidebar = { order: Number(adr[1]) };
+  // Section indexes go first in the sidebar.
   if (rel.endsWith('README.md')) extra.sidebar = { order: 0, label: 'Overview' };
   write(route, page(rel, fs.readFileSync(abs, 'utf8'), extra));
 }

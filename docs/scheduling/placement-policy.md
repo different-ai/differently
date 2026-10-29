@@ -4,7 +4,6 @@
 |---|---|
 | Status | Describes the code as of 2026-10-28 |
 | Code | `internal/policy/policy.go` (merge, filter, rank), `internal/scheduler/scheduler.go` (dispatch, retries), `internal/store/store.go` (quota checks, fair order) |
-| Decision record | [ADR 0006](../adr/0006-filter-then-rank-placement-fail-closed-external.md) |
 | Tests | `internal/policy/policy_test.go`, `internal/server/server_test.go` |
 
 ## 1. Model
@@ -227,7 +226,7 @@ Zero means unlimited. Organization and project quotas are both checked.
 | `maxSnapshots` | Checked when a snapshot is created, organization level only, outside a transaction | |
 | `poolBudgetsPerHour` | Present in the API type, **not enforced anywhere** | |
 
-Usage is derived from sandbox states ([ADR 0005](../adr/0005-quota-derived-from-state-atomic-activation.md)):
+Usage is derived from sandbox states:
 stopped sandboxes keep their disk and active-sandbox count but release CPU and
 memory; paused sandboxes keep everything. Known issue: `start` re-reserves CPU
 and memory without a quota check.

@@ -3,9 +3,8 @@
 Question: can [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox)
 serve as Differently's sandbox/VM foundation, with Differently focused on
 orchestration across providers (adapters, policy-gated placement, quotas,
-audit, trust report)? This records what was read and what was run. It was an
-input to [ADR 0019](../adr/0019-opensandbox-backend-first.md); the decision is
-[ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md).
+audit, trust report)? This records what was read and what was run. It was the
+main input to the decision to make OpenSandbox Differently's runtime.
 
 Legend: **Observed** = run on our Colima setup today; **Read** = from the
 published specs or source at release 1.2.0; **Unverified** = neither.
@@ -94,7 +93,7 @@ versions per pool and run the live test on every upgrade.
 ## Fast Sandbox (Read, not attempted)
 
 Fast Sandbox runs Firecracker microVMs through a per-node runtime agent (the
-job Differently's own node agent did before ADR 0020), and adds memory-preserving pause and
+job Differently's own node agent did before the move to OpenSandbox), and adds memory-preserving pause and
 resume, templates, and OCI-published snapshots. Its documented host
 requirements: Linux ≥ 5.10, `/dev/kvm`, `/dev/net/tun`, cgroup v2, an XFS
 filesystem with reflink for images, and an enlarged `/dev/shm`. Our Colima
@@ -110,8 +109,7 @@ under Fast Sandbox.
   contract like Daytona and Freestyle. The difference is that operators
   declare its trust, because it can be self-hosted.
 - **As the foundation** (replacing Differently's own Firecracker node agent):
-  decided in [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md),
-  ahead of the evidence below. OpenSandbox already solves per-node sandbox
+  decided ahead of the evidence below. OpenSandbox already solves per-node sandbox
   management with more lifecycle features. The evidence still owed:
   - Fast Sandbox on our supported KVM targets;
   - memory snapshot restore;
@@ -119,8 +117,8 @@ under Fast Sandbox.
   - multi-node operation;
   - its operational footprint, including which services its features need.
 
-  [ADR 0019](../adr/0019-opensandbox-backend-first.md) set these as the
-  criteria; they are now follow-up verification, not a gate.
+  These were the adoption criteria; they are now follow-up verification,
+  not a gate.
 
 ## Next spike steps
 

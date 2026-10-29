@@ -5,8 +5,8 @@
 | Status date | 2026-10-28 |
 | Scope | Implementation-ready epics for Phase 3 (solidification) and the P2 items after it. Phase 4 themes are listed in [roadmap.md](roadmap.md). |
 | Priorities | **P0** gates any production recommendation · **P1** next, user-facing or operational · **P2** after P0/P1, or needs a decision first |
-| Conventions | Branches `<type>/<short-outcome>` into `pre-release` ([ADR 0012](adr/0012-pre-release-integration-branch-model.md)). Every behavioural change ships with a test; changes to the public API update `api/openapi.yaml` and the SDKs. |
-| Runtime change | [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md) removed Differently's Firecracker node agent; OpenSandbox is the default private runtime. Epics that only concerned the agent are marked **obsolete** and kept as history. |
+| Conventions | Branches `<type>/<short-outcome>` into `pre-release`. Every behavioural change ships with a test; changes to the public API update `api/openapi.yaml` and the SDKs. |
+| Runtime change | The move to OpenSandbox removed Differently's Firecracker node agent; OpenSandbox is the default private runtime. Epics that only concerned the agent are marked **obsolete** and kept as history. |
 
 ## Dependency overview
 
@@ -27,7 +27,7 @@ flowchart LR
   E17["E17 retention"]
 ```
 
-Obsolete since ADR 0020, kept below as history: E1 (Firecracker on real
+Obsolete since the move to OpenSandbox, kept below as history: E1 (Firecracker on real
 KVM), E3 (authenticated agent channel), E4 (Firecracker jailer), E6 (preview
 URLs for Firecracker pools), E9 (memory snapshots on Firecracker). E12
 (per-sandbox egress) is superseded by E19.
@@ -40,8 +40,7 @@ Run OpenSandbox's Firecracker runtime (Fast Sandbox) on KVM targets through
 the `opensandbox` adapter.
 
 **Priority** P0, first. **Depends on** nothing. **Why**
-[ADR 0020](adr/0020-opensandbox-replaces-node-agent.md) made OpenSandbox the
-runtime before [ADR 0019](adr/0019-opensandbox-backend-first.md)'s criteria
+OpenSandbox became the runtime before its adoption criteria
 were met. Only the Docker runtime has run through Differently
 ([spike](research/opensandbox-spike.md)); containers share the host kernel.
 Until this epic is done, microVM isolation through Differently is unverified.
@@ -125,7 +124,7 @@ storing them; it has not been reviewed.
   leave the server, and how it relates to the single server-wide API key.
 - **E20.2 Prototype.** Resolve E13's `secretRefs` into vault entries on
   OpenSandbox pools instead of plain `env`.
-- **E20.3 Decision.** Record the result in E13 (or an ADR) with a short threat
+- **E20.3 Decision.** Record the result in E13 with a short threat
   analysis. *Acceptance:* if adopted, a database dump contains no secret values
   for sandboxes on OpenSandbox pools.
 
@@ -134,7 +133,7 @@ storing them; it has not been reviewed.
 **Priority** P1. **Depends on** nothing. **Why** the published OpenSandbox
 specs run ahead of the images its server deploys by default; the spike found
 four differences that would each have broken a spec-only adapter
-([spike](research/opensandbox-spike.md)). ADR 0019 requires the live test on
+([spike](research/opensandbox-spike.md)). The adoption criteria require the live test on
 every OpenSandbox upgrade, and no CI job runs it today.
 
 - **E21.1 Pin.** State the OpenSandbox server and `execd` versions each
@@ -156,8 +155,7 @@ every OpenSandbox upgrade, and no CI job runs it today.
 ## E23. Provider credential follow-ups
 
 **Priority** P2. **Depends on** nothing. **Why** provider credentials can
-be stored in Differently, sealed under one key-encryption key
-([ADR 0021](adr/0021-provider-credentials-stored-encrypted.md)), and that
+be stored in Differently, sealed under one key-encryption key, and that
 first version has known limits.
 
 - **E23.1 External vault behind `secret:`.** Resolve `secret:` names from
@@ -223,7 +221,7 @@ its Differently provider bridges the gaps below on the client side today
 
 **Status (2026-10-28):** items marked ✅ were fixed before the initial import,
 with tests; the rest are open. Items that only concerned the removed node
-agent are marked obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md));
+agent are marked obsolete;
 their tests left with the agent.
 
 **Priority** P0 (security and data-loss items), P1/P2 per task. **Depends on**
@@ -239,14 +237,14 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   `putPolicy`. *Acceptance:* an organization key with `policies:write`
   receives `404` for `DELETE /v1/policies/project:<other org's project>`; a
   cross-tenant test covers `PUT` and `DELETE` for `org:` and `project:` scopes.
-- **E0.2 Pin agent identity until mTLS lands.** *Obsolete (ADR 0020): there
+- **E0.2 Pin agent identity until mTLS lands.** *Obsolete: there
   are no node agents.* It was implemented as trust-on-first-use per-agent
-  secrets ([ADR 0018](adr/0018-per-agent-secrets-until-mtls.md)); the code
+  secrets; the code
   and `TestAgentIdentityIsPinned` were removed with the agent.
-- **E0.3 Bound responses from the guest.** *Obsolete (ADR 0020): the guest
+- **E0.3 Bound responses from the guest.** *Obsolete: the guest
   agent and its client were removed.* The same concern for backends is open
   as E0.35.
-- **E0.4 PID reuse safety.** *Obsolete (ADR 0020): Differently no longer
+- **E0.4 PID reuse safety.** *Obsolete: Differently no longer
   supervises VMM processes.*
 - ✅ **E0.5 Audit fail-closed option** (P1). `audit.failClosed`; when set,
   mutating requests fail with `503` if the audit append fails;
@@ -255,7 +253,7 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
 - ✅ **E0.6 Complete the trust report limitations** (P1). The trust report's
   limitations (`limitations` in `internal/server/admin.go`) list what
   Differently cannot control; conditional entries (fail-open audit, `/metrics`
-  on the API listener) disappear when their fix is configured. Since ADR 0020
+  on the API listener) disappear when their fix is configured. Since the move to OpenSandbox
   the entries about the jailer, the agent channel and IPv6 egress rules are
   gone, replaced by the statement that isolation and egress come from each
   pool's backend runtime. *Covered by* `TestAuditFailClosed`,
@@ -296,7 +294,7 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   runs `CheckActivation`. *Covered by* store conformance
   `ConcurrentStartRespectsCPUQuota`. (OpenSandbox pools have no start; this
   applies to backends that do.)
-- **E0.12 Tolerate agent partitions.** *Obsolete (ADR 0020): the Firecracker
+- **E0.12 Tolerate agent partitions.** *Obsolete: the Firecracker
   pool and its 10-minute partition grace were removed.* The general rule that
   remains: when a pool's `List` fails, the reconciler skips that pool for the
   pass instead of failing its sandboxes (`Scheduler.Reconcile`). Behaviour
@@ -308,9 +306,9 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   grace that keeps it from racing a lifecycle call. *Covered by*
   `TestFailureRecoveryAndReconcile`. The `opensandbox` adapter never reports
   `stopped`; an OpenSandbox `Failed` state fails the sandbox.
-- **E0.14 Recreate networking on start.** *Obsolete (ADR 0020): Differently
+- **E0.14 Recreate networking on start.** *Obsolete: Differently
   no longer creates per-VM networking.*
-- **E0.15 Clean up `pending` VMs after an agent crash.** *Obsolete (ADR 0020):
+- **E0.15 Clean up `pending` VMs after an agent crash.** *Obsolete:
   there is no agent.*
 - ✅ **E0.16 Set TTL on adoption** (P1). The reconciler's adoption path sets
   `expiresAt` like the provisioning path.
@@ -361,7 +359,7 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
 
 ### Consistency and hygiene
 
-- **E0.24 Make the jailer switch honest.** *Obsolete (ADR 0020): the agent and
+- **E0.24 Make the jailer switch honest.** *Obsolete: the agent and
   its `--jailer` flag were removed.*
 - **E0.25 Adapter protocol version check** (P1). `adapterhttp.Client` checks
   `Differently-Adapter-Protocol` and `info.protocol` on discovery and marks the
@@ -413,7 +411,7 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
 
 ## E1. Firecracker on real KVM
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): the node
+> Obsolete: the node
 > agent, guest agent and image scripts were removed. Running microVMs on real
 > KVM is now [E18](#e18-fast-sandbox-spike), through OpenSandbox's Fast
 > Sandbox runtime. History kept.
@@ -452,7 +450,7 @@ E0.20.
 
 ## E3. Authenticated agent channel
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): there is
+> Obsolete: there is
 > no agent channel. The control plane reaches OpenSandbox with the pool's API
 > key; transport security for that link is the operator's (HTTPS `apiURL` or
 > cluster networking). History kept.
@@ -465,7 +463,7 @@ E0.20.
 
 ## E4. Firecracker jailer
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)):
+> Obsolete:
 > Differently no longer launches Firecracker. How Fast Sandbox runs its VMM
 > (jailer, user, seccomp) is recorded as part of
 > [POC 11](proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter).
@@ -502,7 +500,7 @@ E0.20.
 
 ## E6. Preview URLs for Firecracker pools
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): there
+> Obsolete: there
 > are no Firecracker pools. OpenSandbox pools advertise `ports.expose` and
 > return OpenSandbox's endpoint URL, but only when OpenSandbox serves the port
 > directly without request headers; endpoints that need the server's API key
@@ -536,7 +534,7 @@ ephemeral batch work, not interactive sandboxes
 
 - **E8.1 Design record.** API shape (a `jobs` resource or a `kueue` adapter),
   isolation (Kata or gVisor RuntimeClass), how Kueue quota relates to
-  Differently quota, how results and logs return. *Acceptance:* ADR accepted.
+  Differently quota, how results and logs return. *Acceptance:* the design is accepted and documented.
 - **E8.2 Prototype.** Submit suspended Kubernetes Jobs to a `LocalQueue`; map
   admission, running, completion and preemption to Differently states; record
   usage and audit. *Acceptance:* 1 000 eval jobs run under Kueue quota and fair
@@ -546,8 +544,7 @@ ephemeral batch work, not interactive sandboxes
 
 ## E9. Memory snapshots on Firecracker
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md); ADR 0014
-> is obsolete with it): Differently no longer captures snapshots itself.
+> Obsolete since the move to OpenSandbox: Differently no longer captures snapshots itself.
 > Memory snapshots depend on the runtime; an OpenSandbox pool advertises
 > `snapshots.memory` only when the operator adds it to `config.features`.
 > Verifying Fast Sandbox's memory restore is
@@ -590,7 +587,7 @@ ephemeral batch work, not interactive sandboxes
 ## E12. Per-sandbox egress allow-lists
 
 > Superseded by [E19](#e19-opensandbox-network-policy-and-egress)
-> ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): Differently no
+>: Differently no
 > longer programs node networking, so per-sandbox egress becomes a request
 > field mapped onto each backend's own controls. E12.1 and E12.3 moved to E19;
 > the Firecracker parts are history.
@@ -603,12 +600,11 @@ ephemeral batch work, not interactive sandboxes
 ## E13. Sandbox secrets by reference
 
 **Priority** P1. **Depends on** none; E20 may change the design. **Why**
-sandbox environment values are stored in plaintext
-([ADR 0008](adr/0008-secrets-by-reference-only.md)).
+sandbox environment values are stored in plaintext.
 
 - **E13.1 Encryption at rest.** Encrypt `env` values in the store with a key
   from a file or KMS reference; the API still returns keys only.
-  `internal/secrets` (AES-256-GCM under the secrets key, ADR 0021) can seal
+  `internal/secrets` (AES-256-GCM under the secrets key) can seal
   them; E23.3's key rotation then applies to both.
 - **E13.2 References.** `secretRefs: {NAME: "project-secret:<name>" | "env:..." }`
   resolved at provisioning time; project-level secret objects with their own
@@ -644,12 +640,12 @@ sandbox environment values are stored in plaintext
 
 ## E16. Boat-compatible facade evaluation
 
-**Priority** P2. **Depends on** a demand signal ([ADR 0013](adr/0013-no-boat-compatible-facade-in-mvp.md)).
+**Priority** P2. **Depends on** a demand signal.
 
 - **E16.1 Licence check** of Boat's published OpenAPI document.
 - **E16.2 Prototype** of the portable core at `/compat/boat/v1` behind a flag,
   on top of existing handlers; `501` for product-specific routes.
-- **E16.3 Decision.** A new ADR that supersedes or reaffirms ADR 0013 with
+- **E16.3 Decision.** A documented decision that reaffirms or reverses the decision not to build a Boat-compatible facade, with
   measured effort and a named migration user. *Acceptance:* Boat SDK examples
   for the portable core run unchanged against the prototype, or the decision
   records why not.
