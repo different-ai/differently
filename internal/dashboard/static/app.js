@@ -37,6 +37,11 @@ const kinds = {
   remote: ["Remote plugin", "", [["endpoint", "plugin endpoint URL", null, true]]],
   vercel: ["Vercel Sandbox", "external", [["project", "project ID or name", null, true], ["team", "team ID"], ["region", "region (default iad1)"], ["image", "image"], ["architecture", "architecture", ["amd64", "arm64"]], ["ports", "ports (comma separated)"], ["maxTimeoutSeconds", "max session seconds (default 2700)"]]],
   fly: ["Fly.io Machines", "external", [["app", "Fly app name", null, true], ["region", "region"], ["image", "image"], ["cpuKind", "CPU kind", ["shared", "performance"]], ["suspend", "suspend for pause", ["true", "false"]]]],
+  "aws-agentcore": ["AWS AgentCore Code Interpreter", "", [["region", "AWS region", null, true], ["codeInterpreter", "code interpreter (default aws.codeinterpreter.v1)"]]],
+  "azure-sandboxes": ["Azure Container Apps Sandboxes", "", [["endpoint", "data-plane endpoint", null, true], ["subscriptionId", "subscription ID", null, true], ["resourceGroup", "resource group", null, true], ["sandboxGroup", "sandbox group", null, true], ["diskImage", "public disk image"], ["egress", "egress", ["none", "public"]]]],
+  "azure-sessions": ["Azure dynamic sessions (Python)", "", [["endpoint", "pool management endpoint", null, true], ["outputLimit", "output limit (default 1048576)"]]],
+  "gcp-sandboxes": ["Google Cloud Agent Platform sandboxes", "", [["project", "project ID", null, true], ["location", "location", null, true], ["reasoningEngine", "engine ID", null, true], ["template", "shell template ID", null, true]]],
+  northflank: ["Northflank", "", [["projectId", "project ID", null, true], ["teamId", "team ID (organization tokens)"], ["image", "image (default ubuntu:24.04)"], ["plan", "plan (default nf-compute-200)"]]],
 };
 function pickKind() {
   const [, trust, fields] = kinds[$("#pk-kind").value], t = $("#pk-trust");

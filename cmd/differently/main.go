@@ -614,7 +614,7 @@ func poolAddCmd() *cobra.Command {
 		return raw("POST", "/v1/admin/pools", body)
 	}}
 	f := cmd.Flags()
-	f.StringVar(&adapterKind, "adapter", "", "daytona, freestyle, opensandbox, remote, vercel or fly")
+	f.StringVar(&adapterKind, "adapter", "", "daytona, freestyle, opensandbox, remote, vercel, fly, aws-agentcore, azure-sandboxes, azure-sessions, gcp-sandboxes or northflank")
 	f.StringVar(&trust, "trust", "", "external (someone else runs it) or private (you do); daytona, freestyle, vercel and fly are external")
 	f.StringArrayVar(&settings, "config", nil, "adapter setting key=value (repeatable), e.g. apiURL=https://app.daytona.io/api")
 	f.StringVar(&region, "region", "", "region label")

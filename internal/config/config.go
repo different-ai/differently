@@ -201,7 +201,7 @@ func (d DashboardConfig) On() bool { return d.Enabled == nil || *d.Enabled }
 var externalKinds = []string{"daytona", "freestyle", "vercel", "fly"}
 
 // KnownAdapters lists adapter kinds the server can build.
-var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "vercel", "fly"}
+var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "vercel", "fly", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank"}
 
 // Adapter kinds that run where the operator put them (a plugin they deploy,
 // the dev host, the test fake), so they are private unless declared.
@@ -210,7 +210,7 @@ var privateByDefaultKinds = []string{"remote", "devhost", "fake"}
 // Adapter kinds whose trust boundary depends on who operates the backend, so
 // the operator must declare it. Any kind in none of these lists is treated the
 // same way: a new adapter never becomes private by omission.
-var declaredTrustKinds = []string{"opensandbox"}
+var declaredTrustKinds = []string{"opensandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank"}
 
 // Default returns a configuration with every default applied.
 func Default() Config {
