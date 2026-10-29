@@ -90,8 +90,8 @@ OpenWork computers:
 
 ## Templates: route one image name to every provider
 
-Workbot boots a prepared image (`HEADLESS_COMPUTER_SNAPSHOT`), and each
-provider names its own copy differently. A Differently template maps one
+Workbot boots a prepared image, and each provider names its own copy
+differently (the runner's `SANDBOX_GATEWAY_TEMPLATE` names the template). A Differently template maps one
 name to each pool's image, so the same computer can be placed on any of them:
 
 ```yaml
@@ -122,7 +122,7 @@ The key holds the default `sandboxes:read`, `sandboxes:write` and
 
 To replace the runner's key without downtime, rotate it with a grace period
 (`differently key rotate <key-id> --grace 1h`), set the new token as the
-runner's `DIFFERENTLY_API_KEY`, and let the old key lapse
+runner's `SANDBOX_GATEWAY_API_KEY`, and let the old key lapse
 ([rotating API keys](keys-and-providers.md#rotate-differently-api-keys-without-downtime)).
 Provider keys can be stored in Differently, and which provider new computers
 use can be switched there (`differently admin pool use NAME`), with no change
@@ -130,19 +130,37 @@ to OpenWork ([keys and providers](keys-and-providers.md)).
 
 ## 3. Turn it on in OpenWork
 
-The Workbot runner selects its computer provider with `HEADLESS_COMPUTER`,
-which is off by default. To test Differently on one runner:
+Differently is a **sandbox gateway** for Workbot, configured on the runner
+apart from its own provider (`HEADLESS_COMPUTER`, which stays Freestyle or
+Daytona). This describes OpenWork's
+[pull request #6649](https://github.com/different-ai/openwork/pull/6649);
+check it for the current state before relying on the details.
 
 ```bash
-HEADLESS_COMPUTER=differently
-DIFFERENTLY_URL=https://differently.example.com
-DIFFERENTLY_API_KEY=<the project key>
-HEADLESS_COMPUTER_SNAPSHOT=workbot-computer   # the Differently template
+SANDBOX_GATEWAY=differently
+SANDBOX_GATEWAY_URL=https://differently.example.com   # HTTPS only
+SANDBOX_GATEWAY_API_KEY=<the project key>
+SANDBOX_GATEWAY_TEMPLATE=workbot-computer             # the Differently template
 ```
 
-Switching back is the same variable. Computers already created on the
-previous provider are not moved; each runner finds only its own provider's
-computers.
+Then turn on the `sandboxGateway` feature flag for the organizations that
+should use it; every other organization keeps the runner's own provider.
+
+- **Health decides, per new computer.** A flagged conversation's computer
+  goes through Differently when `GET /v1/capabilities` answers with an
+  enabled, healthy pool (checked at most every 30 s). If Differently is
+  unreachable, times out, answers 5xx or cannot start the sandbox, the
+  computer is made on the runner's own provider instead.
+- **Refusals are not routed around.** `quota_exceeded`, `no_eligible_pool`,
+  permission and invalid or unsupported requests fail the call, so the
+  policies in this project still hold.
+- **Computers stay where they were made.** One made through Differently
+  errors while Differently is down; one made on the fallback is kept until it
+  is gone, and the next computer goes through Differently again. The runner
+  records which side made each computer.
+- **Size and pause.** Computers ask for their own size, so the project's
+  quotas must allow it. Give the pool pause and snapshots (on the Kubernetes
+  runtime, a snapshot registry), or idle computers cannot be paused.
 
 ## Limits to know
 
