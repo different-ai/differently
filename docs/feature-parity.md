@@ -97,7 +97,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 
 | Capability | Boat | Differently | Status | Notes |
 |---|---|---|---|---|
-| HTTPS port URLs | `POST /host` (token or public) | `POST /v1/sandboxes/{id}/ports` | ✅ e2e | OpenSandbox with `ports: signed`: signed, time-limited URLs through its ingress gateway (route mode `uri`, Secure Access), with no header or key; checked through a tunnel, public DNS and TLS not set up yet. Daytona (signed URL) and Freestyle (public `*.style.dev` host) 🧪. |
+| HTTPS port URLs | `POST /host` (token or public) | `POST /v1/sandboxes/{id}/ports` | ✅ e2e | OpenSandbox with `ports: signed`: signed, time-limited URLs through its ingress gateway (route mode `uri`, Secure Access), with no header or key. Checked over public DNS and TLS on Azure, including WebSocket upgrades (wss) with the path after the signed prefix and the Origin header passed through. Daytona (signed URL) and Freestyle (public `*.style.dev` host) 🧪. |
 | SSH | `POST /sshkey` | — | 📋 | SSH gateway in backlog. |
 | Desktop / browser stream | `POST /desktop` | — | 📋 (Phase 4) | |
 | Egress policy | No API | Pool `egress: none`, `public` or `allowlist` | ✅ live (Kubernetes runtime) | OpenSandbox enforces it per sandbox with its egress sidecar (deny-all and a host allowlist checked live); Freestyle firewall 🧪. Per-request allowlists 📋. |

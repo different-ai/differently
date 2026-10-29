@@ -100,7 +100,7 @@ them precisely instead.
 | 2026-10-28 | same | server 1.2.0, `execd` release-1.2.0, `lineEndings: kept` | 10/10 passed, including byte-exact output |
 | 2026-10-28 | same | server 1.2.0, `execd` release-1.2.0, `lineEndings: kept` | 11/11 passed, including stored provider keys and switching |
 | 2026-10-28 | same | same | 12/12 passed (the combined suite); an unpullable image fails after one attempt in about 1 s |
-| 2026-10-29 | same Azure k3s; snapshot registry (`registry:2` on the node), ingress gateway in route mode `uri` with Secure Access; pool `runtime: kubernetes`, `ports: signed` | same | 13/13 passed with stop/start (about 3.7 s / 2.7 s), snapshot and fork, signed port URLs and stdin all exercised |
+| 2026-10-29 | same Azure k3s; snapshot registry (`registry:2` on the node), ingress gateway in route mode `uri` with Secure Access; pool `runtime: kubernetes`, `ports: signed` | same | 13/13 passed with stop/start (about 3.7 s / 2.7 s), snapshot and fork, signed port URLs and stdin all exercised. Signed URLs also checked over public TLS (Caddy in front of the gateway): wss upgrades to `/vnc/<token>` and `/screencast/<token>` reach the sandbox with path and Origin intact |
 | 2026-10-29 | Apple M4 Max, Colima, arm64 | server 1.2.0, `execd` release-1.2.0, Docker runtime | 13/13 passed |
 | 2026-10-28 | k3s v1.36.5 on an Azure `Standard_D8s_v6`, x86_64; Differently from its Helm chart with embedded PostgreSQL | server, controller and `execd` release-1.2.0, Kubernetes runtime, no snapshot registry | 12/12 passed (pause and snapshots checked as refusals); sandboxes running in about 1.4–2.7 s; an unpullable image retries after OpenSandbox's 60 s pod-ready timeout with the pool healthy |
 
@@ -108,5 +108,4 @@ Not covered yet:
 
 - OpenSandbox's Fast Sandbox (Firecracker microVM) runtime;
 - several nodes and a node drain on the Kubernetes runtime;
-- signed port URLs over public DNS and TLS (checked through a tunnel);
 - external providers.
