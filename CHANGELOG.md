@@ -22,6 +22,14 @@ class has not run.
   snapshot delete sent the name where Daytona needs the id; and a snapshot
   was returned before it could be used.
 
+### Fixed (lifecycle)
+
+- A stop, start, pause or resume now finishes on the backend and is recorded
+  even when the caller stops waiting. A Fast Sandbox pause writes a full
+  checkpoint (about three minutes for a 4 GiB desktop), so a client with a
+  shorter timeout used to cancel it halfway: the backend went on pausing
+  while Differently still showed the sandbox running.
+
 ## [0.1.0-alpha.2] — 2026-10-29
 
 Second alpha, published as a GitHub pre-release. Not for production.

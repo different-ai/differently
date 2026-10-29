@@ -699,6 +699,9 @@ func (s *Server) writeFile(w http.ResponseWriter, r *http.Request, p auth.Princi
 	return nil
 }
 
+// transitionTimeout bounds one stop, start, pause or resume on a backend.
+const transitionTimeout = 15 * time.Minute
+
 // lifecycle handles stop/start/pause/resume.
 var lifecycleSteps = map[string]struct {
 	from, to api.SandboxStatus
@@ -738,6 +741,11 @@ func (s *Server) lifecycle(action string) handlerFunc {
 // so the sandbox is not woken by the next call; a start or resume counts as
 // activity.
 func (s *Server) transition(ctx context.Context, rec store.SandboxRecord, action string) (store.SandboxRecord, error) {
+	// The change outlives the request: a Fast Sandbox pause writes a full
+	// checkpoint and can take minutes, and a client that stops waiting must
+	// not leave the backend paused while the record still says running.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), transitionTimeout)
+	defer cancel()
 	st := lifecycleSteps[action]
 	if rec.Status != st.from {
 		return rec, api.Errorf(api.CodeInvalidState, "cannot %s a %s sandbox", action, rec.Status).With("status", string(rec.Status))
