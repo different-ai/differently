@@ -684,3 +684,109 @@ func TestStoredProviderKeyAndSwitching(t *testing.T) {
 		return err == nil && s.Status == api.StatusTerminated
 	})
 }
+
+// On a pool that pauses with memory kept (Fast Sandbox microVMs, or the
+// Docker runtime), a paused sandbox resumes with its processes intact: a
+// background process keeps its PID and /dev/shm keeps its content.
+func TestPauseKeepsMemory(t *testing.T) {
+	if !advertises(t, "lifecycle.pause-resume") {
+		t.Skip("the pool does not pause; TestPauseResumeAndUnsupportedStop checks the refusal")
+	}
+	c := tenant(t, "memory", api.Quota{})
+	sb := create(t, c, api.CreateSandboxRequest{})
+	sh(t, c, sb.ID, "head -c 1048576 /dev/urandom > /dev/shm/blob && md5sum /dev/shm/blob | cut -d' ' -f1 > /root/blob.md5")
+	pid := strings.TrimSpace(sh(t, c, sb.ID, "nohup sleep 100000 >/dev/null 2>&1 & echo $!").Stdout)
+	if pid == "" {
+		t.Fatal("background process did not start")
+	}
+	start := time.Now()
+	if _, err := c.Action(ctx(t), sb.ID, "pause"); err != nil {
+		t.Fatal(err)
+	}
+	paused := time.Since(start)
+	start = time.Now()
+	if _, err := c.Action(ctx(t), sb.ID, "resume"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.WaitSandbox(ctx(t), sb.ID, api.StatusRunning, 2*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("pause took %s, resume %s", paused.Round(10*time.Millisecond), time.Since(start).Round(10*time.Millisecond))
+	if got := sh(t, c, sb.ID, "tr '\\0' ' ' < /proc/"+pid+"/cmdline"); !strings.Contains(got.Stdout, "sleep 100000") {
+		t.Fatalf("background process %s lost across pause/resume: %+v", pid, got)
+	}
+	if got := sh(t, c, sb.ID, "md5sum /dev/shm/blob | cut -d' ' -f1 | cmp - /root/blob.md5 && echo same"); strings.TrimSpace(got.Stdout) != "same" {
+		t.Fatalf("/dev/shm content changed across pause/resume: %+v", got)
+	}
+}
+
+// On a microVM pool that pauses, an idle sandbox is paused (not stopped) and
+// asking for a port URL wakes it: the server it was running answers again
+// without being restarted, because its memory was kept.
+func TestIdlePauseAndWakeThroughPortURL(t *testing.T) {
+	if !advertises(t, "isolation.microvm") || !advertises(t, "lifecycle.pause-resume") || !advertises(t, "ports.expose") {
+		t.Skip("needs a microVM pool that pauses and exposes ports")
+	}
+	c := tenant(t, "idlevm", api.Quota{})
+	sb := create(t, c, api.CreateSandboxRequest{Template: "python:3.12-slim", IdleTimeoutSeconds: 60})
+	sh(t, c, sb.ID, "mkdir -p /srv && cd /srv && (nohup python3 -c 'import http.server,os\nclass H(http.server.BaseHTTPRequestHandler):\n def do_GET(s):\n  s.send_response(200);s.end_headers();s.wfile.write(str(os.getpid()).encode())\nhttp.server.HTTPServer((\"\",8080),H).serve_forever()' >/dev/null 2>&1 &) && sleep 1")
+	get := func(u string) (int, string) {
+		resp, err := http.Get(u + "/")
+		if err != nil {
+			return 0, ""
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	port, err := c.ExposePort(ctx(t), sb.ID, 8080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before string
+	eventually(t, 30*time.Second, "the port URL to answer", func() bool {
+		code, body := get(port.URL)
+		before = body
+		return code == http.StatusOK
+	})
+	eventually(t, 3*time.Minute, "the idle microVM to be paused", func() bool {
+		got, err := c.GetSandbox(context.Background(), sb.ID)
+		return err == nil && got.IdledAt != nil && got.Status == api.StatusPaused
+	})
+	start := time.Now()
+	if port, err = c.ExposePort(ctx(t), sb.ID, 8080); err != nil {
+		t.Fatal(err)
+	}
+	var after string
+	eventually(t, 30*time.Second, "the woken port URL to answer", func() bool {
+		code, body := get(port.URL)
+		after = body
+		return code == http.StatusOK
+	})
+	t.Logf("port URL woke it and answered in %s", time.Since(start).Round(10*time.Millisecond))
+	if after != before {
+		t.Fatalf("the server was restarted, not resumed: pid %q before, %q after", before, after)
+	}
+}
+
+// A memory snapshot, where the pool offers one, is taken and becomes ready.
+func TestMemorySnapshot(t *testing.T) {
+	c := tenant(t, "memsnap", api.Quota{})
+	sb := create(t, c, api.CreateSandboxRequest{})
+	if !advertises(t, "snapshots.memory") {
+		if _, err := c.Snapshot(ctx(t), sb.ID, "memory"); !api.IsCode(err, api.CodeUnsupportedOperation) && !api.IsCode(err, api.CodeUnsupportedCapability) {
+			t.Fatalf("memory snapshot on a pool without snapshots.memory: want a precise refusal, got %v", err)
+		}
+		t.Log("pool does not advertise snapshots.memory: checked the refusal")
+		return
+	}
+	start := time.Now()
+	snap, err := c.Snapshot(ctx(t), sb.ID, "memory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Kind != "memory" {
+		t.Fatalf("asked for a memory snapshot, got %+v", snap)
+	}
+	t.Logf("memory snapshot %s in %s", snap.ID, time.Since(start).Round(10*time.Millisecond))
+}
