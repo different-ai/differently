@@ -29,6 +29,9 @@ class has not run.
   values schema refused it.
 - An external pool declared under `config.pools` now opens server egress to
   `providerCIDRs` on 443, like `providers.*` does.
+- The `preflight` init container gets `server.extraVolumeMounts` too, so a
+  `file:` credential on a mounted volume (such as a Key Vault CSI mount)
+  resolves there as it does in the server.
 
 ## [0.1.0-alpha.2] — 2026-10-29
 
