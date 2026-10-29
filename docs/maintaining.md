@@ -43,7 +43,7 @@ the one before; repeating a rung for reassurance adds nothing.
 | CI locally | `make verify` | Before every push: gofmt, vet, tests with `-race`, SDK tests, Helm lint |
 | Postgres store | `make test-postgres` (needs Docker) | Changes in `internal/store` |
 | Recorded runtimes | part of `go test` (`TestReplayRecordings`) | Any OpenSandbox adapter change: real responses from the Docker and Kubernetes runtimes, no server |
-| Live adapter | `OPENSANDBOX_URL=… go test -tags live -run TestLiveOpenSandbox ./internal/adapters/opensandbox/` | A new OpenSandbox call or version; re-recording |
+| Live adapter | `OPENSANDBOX_URL=… go test -tags live -run TestLiveOpenSandbox ./internal/adapters/opensandbox/`; for the managed providers `DAYTONA_API_KEY=… go test -tags live -run TestLiveDaytona ./internal/adapters/daytona/` and `FREESTYLE_API_KEY=… go test -tags live -run TestLiveFreestyle ./internal/adapters/freestyle/` (a few small sandboxes, all deleted) | A new OpenSandbox call or version; re-recording; any Daytona or Freestyle adapter change |
 | Real stack, local | `make e2e-prepare e2e-up e2e` | Behaviour across the API, scheduler, store and a real OpenSandbox server |
 | Real stack, a real cluster | the e2e suite pointed at an install ([test/e2e](../test/e2e/README.md#run-against-another-deployment)) | Helm, NetworkPolicy, the Kubernetes runtime, upgrades |
 
@@ -82,9 +82,11 @@ Kubernetes runtime never starts, a sandbox being deleted).
   polling counts may differ from the recording. Fixed IDs
   (`sbx_rec_main`, `inst_rec`) keep paths stable.
 
-The same pattern fits the Daytona and Freestyle adapters once someone has
-accounts to record against
+The Daytona and Freestyle adapters have live tests but no recordings yet:
+their fake servers were changed by hand to match what the live APIs did
 ([POC 7](proof-of-concepts.md#poc-7-external-provider-live-account-verification)).
+Recording them the same way is
+[E2.3](backlog.md#e2-external-adapters-on-live-accounts).
 
 ## Changing the adapter contract
 

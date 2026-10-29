@@ -6,6 +6,22 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Fixed (Daytona and Freestyle, run live)
+
+The `daytona` and `freestyle` adapters ran against live accounts for the
+first time (`go test -tags live`, and a Differently server). Daytona's VM
+class has not run.
+
+- Freestyle: the env file was written with a mode Freestyle reads as
+  decimal, and rewriting a file left it owned by root, so commands could not
+  read the sandbox env; stop's `poweroff` ran as a user who may not power
+  off; and a stopped VM was booted again by Freestyle's automatic restart.
+- Daytona: stop and start returned while still in progress; a command
+  timeout was reported as `provider_unavailable` (now exit code 124); a
+  repeated delete, or one during a stop, failed with `invalid_state`;
+  snapshot delete sent the name where Daytona needs the id; and a snapshot
+  was returned before it could be used.
+
 ## [0.1.0-alpha.2] — 2026-10-29
 
 Second alpha, published as a GitHub pre-release. Not for production.

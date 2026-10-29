@@ -163,6 +163,29 @@ Items to resolve:
 | Freestyle | `POST /v5/tls` conflict behaviour on repeated port exposure; firewall default deny |
 | Both | 429 mapping to `insufficient_capacity` at plan limits; 401/403 messages |
 
+**Result (2026-10-29).** Both adapters ran live through their live tests
+and a Differently server; details are on the
+[Daytona](providers/daytona.md) and [Freestyle](providers/freestyle.md)
+pages. Answered:
+
+| Provider | Answer |
+|---|---|
+| Daytona | Resources with a snapshot are refused (400, "Cannot specify Sandbox resources when using a snapshot"); the snapshot sets the size |
+| Daytona | A command past its `timeout` is a 408 with code `PROCESS_EXECUTION_TIMEOUT` and no output; now exit code 124. The default timeout was not checked |
+| Daytona | Toolbox errors carry `code` and `source`; control-plane errors carry `statusCode`, `error` and `message`, no `code` |
+| Daytona | The JSON-object `labels` filter works for `find` and `List`; `states` and `snapshots` filters are not used |
+| Daytona | `ttlMinutes` sets Daytona's delete deadline; `autoStopInterval: 0` is kept. `archived` was not seen |
+| Daytona | Snapshots from a sandbox are asynchronous (9–22 s until `active`) and restore by name; delete needs the id. Stop, start and delete answer while still in progress, and a delete during a change is a 409. `linux-vm` did not run: no VM snapshot in the account's only region |
+| Daytona | Signed preview URLs served a page without headers; expiry was not checked |
+| Freestyle | Pause and resume complete in about 0.5 s together; an exec boots a stopped VM (a paused one was not checked) |
+| Freestyle | `poweroff` needs root; with automatic restart on, a powered-off VM boots again about 5 s later, so VMs are created with it off; `/tmp` is emptied at boot |
+| Freestyle | The file mode is read as decimal, and rewriting a file makes it root-owned; both broke the env file and are fixed |
+| Freestyle | Repeated port exposure is accepted; with no firewall rules a VM has no outbound traffic, and ports still work |
+
+Open: Daytona's `linux-vm` class, Freestyle `/resize`, plan limits and
+429s, rejected-key messages, and recorded fixtures
+([E2.3](backlog.md#e2-external-adapters-on-live-accounts)).
+
 **Success criteria.** Every item answered and recorded; adapter fixes merged;
 fake servers updated to match observed behaviour; the backend matrix in
 [feature-parity.md](feature-parity.md) updated from 🧪 to ✅ where verified.
