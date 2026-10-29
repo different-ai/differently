@@ -80,11 +80,22 @@ var KubernetesFeatures = []string{
 	adapter.FeatureStopStart, adapter.FeaturePersistDisk, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
 }
 
+// FastSandboxFeatures are the defaults with runtime: fastsandbox. Fast Sandbox
+// runs each sandbox in a Firecracker microVM, and its pause checkpoints the VM,
+// so memory and processes survive a pause and resume. snapshots.memory is not
+// advertised: restoring a new sandbox from a memory snapshot is not verified.
+var FastSandboxFeatures = []string{
+	adapter.FeatureExec, adapter.FeatureExecStream, adapter.FeatureFiles,
+	adapter.FeaturePauseResume, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
+}
+
 // Options configures the adapter. Pool config keys: apiURL (required, the
 // lifecycle base URL ending in /v1), image (default image URI), templateId,
 // isolation (microvm|container), features (comma list), useServerProxy
 // (true|false, default true), lineEndings (kept|stripped, default stripped),
-// runtime (docker|kubernetes, default docker), egress (none|public|allowlist,
+// runtime (docker|kubernetes|fastsandbox, default docker), timeoutSeconds
+// (fastsandbox: the expiry sent when a sandbox has no TTL, default 86400),
+// egress (none|public|allowlist,
 // with egressAllow a comma list of hosts), ports (signed: tenant URLs
 // through OpenSandbox's ingress gateway), portScheme (https|http, default
 // https) and portURLSeconds (default 3600).
@@ -119,7 +130,12 @@ type Options struct {
 	// runtimes accept a pause they cannot perform (the Kubernetes runtime
 	// without a snapshot registry) and leave the sandbox running.
 	PauseStartTimeout time.Duration
+	// DefaultTimeout is sent as the sandbox timeout when a sandbox has no
+	// TTL, for runtimes that require one (Fast Sandbox's template mode).
+	DefaultTimeout int
 }
+
+const runtimeFastSandbox = "fastsandbox"
 
 // FromConfig maps pool config to options.
 func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
@@ -173,8 +189,38 @@ func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
 	case "docker":
 	case "kubernetes":
 		o.Features = slices.Clone(KubernetesFeatures)
+	case runtimeFastSandbox:
+		// Template mode: the golden image fixes the workload, so there is no
+		// default image, and secure access (signed ports) is rejected.
+		o.Features = slices.Clone(FastSandboxFeatures)
+		if o.TemplateID == "" {
+			return o, errors.New("opensandbox config.runtime=fastsandbox needs config.templateId, a Fast Sandbox template (Succeeded, in the server's tenant)")
+		}
+		if o.SignedPorts {
+			return o, errors.New("opensandbox config.ports=signed needs secure access, which Fast Sandbox templates reject; leave ports unset")
+		}
+		switch o.Isolation {
+		case "":
+			o.Isolation = "microvm"
+		case "microvm":
+		default:
+			return o, fmt.Errorf("opensandbox config.isolation must be microvm with runtime fastsandbox, not %q", o.Isolation)
+		}
+		// Only traffic through the ingress gateway counts as activity and
+		// wakes a paused sandbox, so execd is reached directly by default:
+		// through the server proxy, Differently's own calls would neither
+		// keep a sandbox awake nor wake it.
+		o.UseServerProxy = cfg["useServerProxy"] == "true"
+		o.DefaultTimeout = 86400
+		if v := cfg["timeoutSeconds"]; v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 60 {
+				return o, fmt.Errorf("opensandbox config.timeoutSeconds must be a number of seconds, at least 60, not %q", v)
+			}
+			o.DefaultTimeout = n
+		}
 	default:
-		return o, fmt.Errorf("opensandbox config.runtime must be docker or kubernetes, not %q", o.Runtime)
+		return o, fmt.Errorf("opensandbox config.runtime must be docker, kubernetes or fastsandbox, not %q", o.Runtime)
 	}
 	if le := cfg["lineEndings"]; le != "" && le != "kept" && le != "stripped" {
 		return o, fmt.Errorf("opensandbox config.lineEndings must be kept (execd release-1.2.0 or later) or stripped (execd 1.1), not %q", le)
@@ -288,6 +334,9 @@ func (a *Adapter) Info() adapter.Info {
 	switch a.opts.Isolation {
 	case "microvm":
 		iso = "Firecracker microVM (OpenSandbox Fast Sandbox)"
+		if a.opts.Runtime != runtimeFastSandbox {
+			iso += ", as declared by the pool"
+		}
 	case "container":
 		iso = "container (OpenSandbox Docker or Kubernetes runtime)"
 	}
@@ -396,6 +445,14 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 	var s sandbox
 	if len(existing) > 0 {
 		s = existing[0]
+	} else if a.opts.Runtime == runtimeFastSandbox {
+		body, err := a.fastSandboxBody(req)
+		if err != nil {
+			return adapter.Instance{}, err
+		}
+		if err := a.call(ctx, http.MethodPost, "/sandboxes", body, &s); err != nil {
+			return adapter.Instance{}, createError(err)
+		}
 	} else {
 		body := map[string]any{
 			"env":      req.Env,
@@ -438,6 +495,48 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 	}
 	return a.inst(s), nil
 }
+
+// fastSandboxBody is a template-mode create. The template's golden image
+// fixes the workload shape, so env, resource limits, entrypoint and secure
+// access are rejected by the server, and a timeout is required. Env is
+// refused here rather than dropped. An idle timeout becomes OpenSandbox's
+// native idle policy: the server pauses the microVM (memory kept) and its
+// ingress gateway wakes it on the next request.
+func (a *Adapter) fastSandboxBody(req adapter.CreateRequest) (map[string]any, error) {
+	if len(req.Env) > 0 {
+		return nil, api.Errorf(api.CodeInvalidRequest, "Fast Sandbox templates fix the workload, so env cannot be set at create; bake it into the template")
+	}
+	body := map[string]any{
+		"metadata": map[string]string{metaSandbox: req.ID, metaInstallation: req.Installation, "name": req.ID},
+		"timeout":  a.opts.DefaultTimeout,
+	}
+	if req.TTLSeconds > 0 {
+		body["timeout"] = max(req.TTLSeconds, 60)
+	}
+	switch {
+	case req.FromSnapshot != "":
+		body["snapshotId"] = req.FromSnapshot
+	case req.Template != "":
+		body["templateId"] = req.Template
+	default:
+		body["templateId"] = a.opts.TemplateID
+	}
+	if a.opts.NetworkPolicy != nil {
+		body["networkPolicy"] = a.opts.NetworkPolicy
+	}
+	if req.IdleTimeoutSeconds > 0 {
+		body["lifecycle"] = map[string]any{"idlePolicy": map[string]any{
+			"idleTimeoutSeconds": max(req.IdleTimeoutSeconds, 30), // OpenSandbox's floor
+			"onIdle":             "pause",
+			"wakeOnAccess":       true,
+		}}
+	}
+	return body, nil
+}
+
+// IdlesNatively reports that OpenSandbox pauses idle sandboxes itself and
+// wakes them on access, which Fast Sandbox does when given an idle policy.
+func (a *Adapter) IdlesNatively() bool { return a.opts.Runtime == runtimeFastSandbox }
 
 // createError reclassifies create failures that concern this one sandbox
 // rather than the server. An image that cannot be pulled is the request's
@@ -558,11 +657,29 @@ func (a *Adapter) execdDo(ctx context.Context, ref, method, path string, body []
 			r = bytes.NewReader(body)
 		}
 		resp, err := a.c.Do(ctx, method, ep.URL+path, r, contentType, h)
+		if err != nil && attempt == 0 && api.IsCode(err, api.CodeProviderUnavailable) && a.woke(ctx, ref) {
+			continue // the sandbox was paused, so the request never ran
+		}
 		if err != nil && attempt == 0 && method == http.MethodGet && (api.IsCode(err, api.CodeNotFound) || api.IsCode(err, api.CodeProviderUnavailable)) {
 			continue
 		}
 		return resp, err
 	}
+}
+
+// woke resumes a Fast Sandbox that its idle policy paused, after a call to
+// it failed: the gateway wakes sandboxes itself but gives up after its park
+// budget, and the server proxy path never wakes them. A paused sandbox runs
+// nothing, so the failed request is safe to send again.
+func (a *Adapter) woke(ctx context.Context, ref string) bool {
+	if a.opts.Runtime != runtimeFastSandbox {
+		return false
+	}
+	s, err := a.get(ctx, ref)
+	if err != nil || s.Status.State != "Paused" && s.Status.State != "Resuming" {
+		return false
+	}
+	return a.Resume(ctx, ref) == nil
 }
 
 type event struct {
@@ -817,9 +934,16 @@ func (a *Adapter) pause(ctx context.Context, ref, feature string) error {
 	})
 }
 
+// Resume tolerates a sandbox that is already running or resuming: with an
+// idle policy, OpenSandbox's gateway may have woken it first.
 func (a *Adapter) Resume(ctx context.Context, ref string) error {
 	if err := a.call(ctx, http.MethodPost, "/sandboxes/"+url.PathEscape(ref)+"/resume", nil, nil); err != nil {
-		return err
+		if !api.IsCode(err, api.CodeInvalidState) {
+			return err
+		}
+		if s, gerr := a.get(ctx, ref); gerr != nil || s.Status.State != "Running" && s.Status.State != "Resuming" {
+			return err
+		}
 	}
 	if _, err := a.waitFor(ctx, ref, "Running"); err != nil {
 		return err
@@ -904,4 +1028,5 @@ var (
 	_ adapter.Lifecycle        = (*Adapter)(nil)
 	_ adapter.Snapshotter      = (*Adapter)(nil)
 	_ adapter.PortExposer      = (*Adapter)(nil)
+	_ adapter.NativeIdler      = (*Adapter)(nil)
 )

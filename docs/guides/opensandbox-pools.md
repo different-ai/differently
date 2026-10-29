@@ -102,7 +102,9 @@ Configuration is rejected when:
 
 - `trust` is missing (Differently cannot tell who operates the server);
 - `config.apiURL` is missing;
-- `isolation` is not `container` or `microvm`.
+- `isolation` is not `container` or `microvm`;
+- `runtime: fastsandbox` has no `templateId`, sets `isolation: container`, or
+  sets `ports: signed`.
 
 An `external` OpenSandbox pool follows the usual rules: it receives work only
 when the global policy allows external placement and lists it in
@@ -127,7 +129,7 @@ other's live sandboxes alone, but it adds no isolation.
 | Stop / start (disk kept) | with `runtime: kubernetes` and the controller's snapshot registry: OpenSandbox's pause commits the root filesystem as an image and frees the pod, and resume recreates it. About 3.7 s and 2.7 s on single-node k3s. The Docker runtime has no stop |
 | Snapshots and fork | disk snapshots on both runtimes; the Kubernetes runtime needs the snapshot registry (otherwise `unsupported_operation`, from OpenSandbox's `RegistryNotConfigured`). Memory snapshots: not on Docker or Kubernetes; add `snapshots.memory` only for a runtime that captures memory (Fast Sandbox, unverified) |
 | Port URLs | with `ports: signed`: OpenSandbox's ingress gateway in route mode `uri` with Secure Access signing keys. Sandboxes are created with secure access, and `ports.expose` returns `https://<gateway>/{sandbox}/{port}/{expires}/{signature}`, valid for `portURLSeconds` (default 3600), with no header or key. Without it there are no port URLs: direct endpoints are runtime-internal. Endpoints that need a header are always refused |
-| Idle auto-stop | yes, in Differently: `idleTimeoutSeconds` on a sandbox (or `defaults.idleTimeoutSeconds`) stops it on the Kubernetes runtime (disk kept) or pauses it on Docker (memory kept) once no exec, file, port or `keepalive` call has come in that long; the next such call wakes it. Requests straight to a port URL do not count, so viewers call `POST /v1/sandboxes/{id}/keepalive` |
+| Idle auto-stop | with `runtime: fastsandbox`, OpenSandbox's native idle policy pauses the microVM and its gateway wakes it (see below). Otherwise, in Differently: `idleTimeoutSeconds` on a sandbox (or `defaults.idleTimeoutSeconds`) stops it on the Kubernetes runtime (disk kept) or pauses it on Docker (memory kept) once no exec, file, port or `keepalive` call has come in that long; the next such call wakes it. Requests straight to a port URL do not count, so viewers call `POST /v1/sandboxes/{id}/keepalive` |
 | Provider-side TTL backstop | yes: OpenSandbox's `timeout` is set from the sandbox's TTL at creation (minimum 60 s), and a TTL change moves it (`renew-expiration`) to five minutes after Differently's own expiry |
 | Capacity | not reported: OpenSandbox's API exposes none, so the pool is limited only by `maxConcurrency` and quotas |
 
@@ -178,6 +180,57 @@ opensandbox:
   egress: allowlist
   egressAllow: pypi.org,files.pythonhosted.org
   lineEndings: kept
+```
+
+## Fast Sandbox runtime: microVMs, pause with memory, native idle
+
+> Status: built against OpenSandbox 1.2.0's published spec and the
+> auto-pause guide, and tested with the adapter's fake server. Not yet run
+> against a real Fast Sandbox deployment; no recording exists yet.
+
+`runtime: fastsandbox` creates each sandbox as a Firecracker microVM from a
+Fast Sandbox template (template mode):
+
+- **`templateId` is required.** The template's golden image fixes the
+  workload, so OpenSandbox rejects env, resource limits, entrypoint and
+  secure access. Differently refuses a sandbox with `env` (bake it into the
+  template) rather than dropping it, and sends no sizing. A sandbox
+  `template` is passed as a Fast Sandbox template ID.
+- **A timeout is required**, so a sandbox without a TTL gets
+  `timeoutSeconds` (default 86400). Differently's TTL still terminates it.
+- **Features**: exec, exec.stream, files, `lifecycle.pause-resume` (the VM
+  is checkpointed, memory and processes kept), `snapshots.disk`, `fork` and
+  `isolation.microvm`. `snapshots.memory` is not advertised until restoring
+  a new sandbox from one is verified.
+- **Native idle auto-pause and wake.** A sandbox with `idleTimeoutSeconds`
+  is created with OpenSandbox's
+  `lifecycle.idlePolicy {idleTimeoutSeconds, onIdle: pause, wakeOnAccess: true}`
+  (at least 30 s, OpenSandbox's floor; it must not exceed the server's
+  `activity_ttl_seconds`, default 1800). OpenSandbox's sweeper pauses the
+  microVM, and its ingress gateway wakes it on the next request, including
+  requests straight to a port URL, which Differently never sees. Differently's
+  own idle sweep stands aside for such pools; the reconciler marks a backend
+  pause as idled (so the next exec, file or `keepalive` call resumes it) and
+  follows a gateway wake back to running. A sandbox paused by a caller stays
+  paused. Changing `idleTimeoutSeconds` after create does not reach
+  OpenSandbox yet.
+- **execd is reached past the server proxy** (`useServerProxy` defaults to
+  false here), because only ingress traffic counts as activity: through the
+  proxy, Differently's own exec calls would neither keep a sandbox awake nor
+  wake it. If a call still meets a paused sandbox (the gateway's park budget
+  ran out), the adapter resumes it and sends the call again; a paused
+  sandbox runs nothing, so nothing runs twice.
+- **No `ports: signed`**: signing needs secure access, which templates reject.
+
+OpenSandbox needs the idle sweeper (`[automation.idle_pause]` with Redis) and
+the ingress flags `--activity-enabled` and `--wake-enabled`; without them
+sandboxes simply never auto-pause.
+
+```yaml
+opensandbox:
+  runtime: fastsandbox
+  isolation: microvm
+  templateId: tpl-ubuntu-2404
 ```
 
 ## Isolation, egress and credentials
