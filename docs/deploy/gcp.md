@@ -1,5 +1,9 @@
 # Google Cloud (GKE)
 
+> **Quickest path:** a single Compute Engine VM with k3s, following
+> [One Linux VM on any cloud](single-vm.md). Use this page when you run a
+> managed Kubernetes cluster.
+
 Status: **unverified**. No step here has been run.
 
 Differently's control plane runs on any GKE node pool. Sandboxes run on an

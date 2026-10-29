@@ -1,121 +1,102 @@
-# Differently
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/differently-splash-dark.svg">
+    <img alt="Differently: your apps and agents call one API; differently-server handles tenancy, quotas, policy and audit, and places each sandbox on OpenSandbox or your own backend inside your infrastructure, or on Daytona or Freestyle only if policy allows" src="docs/assets/differently-splash-light.svg" width="100%">
+  </picture>
+</p>
 
-**Run VMs differently: own them.** Your infrastructure. Your rules. One API.
+<p align="center">
+  <a href="https://github.com/different-ai/differently/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/different-ai/differently?include_prereleases&sort=semver&label=release&color=111"></a>
+  <a href="https://github.com/different-ai/differently/actions/workflows/ci.yml?query=branch%3Apre-release"><img alt="CI on pre-release" src="https://img.shields.io/github/actions/workflow/status/different-ai/differently/ci.yml?branch=pre-release&label=ci"></a>
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <img alt="Go 1.26" src="https://img.shields.io/badge/go-1.26-00ADD8">
+  <a href="https://different-ai.github.io/differently/"><img alt="Documentation" src="https://img.shields.io/badge/docs-different--ai.github.io-111"></a>
+</p>
 
-Differently is an open-source, fully self-hosted control plane for sandboxes.
-It does not run sandboxes itself. It decides where they run and keeps
-account of them. Your developers get one sandbox API (create, exec, files,
-snapshots, fork). Differently places each sandbox on a runtime you choose:
+<p align="center">
+  <b><a href="https://different-ai.github.io/differently/">Website</a></b> ·
+  <b><a href="https://different-ai.github.io/differently/docs/guides/quickstart/">Get started</a></b> ·
+  <b><a href="docs/deploy/README.md">Deploy anywhere</a></b> ·
+  <b><a href="https://different-ai.github.io/differently/docs/">Docs</a></b> ·
+  <b><a href="https://github.com/different-ai/differently/releases">Releases</a></b> ·
+  <b><a href="CONTRIBUTING.md">Contribute</a></b>
+</p>
 
-- [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) on your
-  own Docker hosts, Kubernetes clusters or Firecracker nodes, by default;
-- Daytona, Freestyle or any service that speaks the adapter protocol, and
-  only where your policies explicitly allow it.
+**Differently is the open-source control plane for sandboxes.** Install it on
+infrastructure you already run (any cloud, your own Kubernetes or bare
+metal), and your developers and agents get one sandbox API: create, exec,
+files, snapshots, fork. Differently decides where each sandbox runs and keeps
+account of it:
 
-Built by the [OpenWork](https://github.com/different-ai) team, Apache-2.0.
+- by default on [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox)
+  on your own Docker hosts, Kubernetes clusters or microVM nodes;
+- on Daytona, Freestyle or your own backend, only where your policies allow it.
 
-> **Status: pre-release (`0.1.0-dev`).** The control plane, scheduler, policy
-> engine, adapters, CLI, SDKs, Helm chart and docs are implemented. Unit and
-> in-process integration tests cover them. An
-> [end-to-end suite](test/e2e/README.md) runs the real stack, verified on
-> arm64 (Colima on Apple Silicon): Postgres, the server, and an OpenSandbox
-> server (Docker runtime) as the private pool. Not verified yet: OpenSandbox's
-> Kubernetes and Fast Sandbox (microVM) runtimes, real clusters, and live
-> Daytona/Freestyle accounts ([docs/roadmap.md](docs/roadmap.md)). Do not
-> run production workloads on it yet.
+Apache-2.0, fully self-hosted, no telemetry. Built by the
+[OpenWork](https://github.com/different-ai) team.
 
-## Why it exists
+<p align="center">
+  <a href="https://different-ai.github.io/differently/#video"><img alt="Watch: Differently in 36 seconds" src="docs/assets/differently-intro-poster.jpg" width="640"></a>
+  <br><sub>▶ <a href="https://different-ai.github.io/differently/#video">Watch the 36-second intro</a></sub>
+</p>
 
-Organizations adopting AI agents and automated code execution often already run
-serious infrastructure: Kubernetes clusters, cloud accounts, bare metal, their
-own IAM, networking and observability. Most sandbox products still ask them to
-add another vendor-run environment, with another trust boundary, another API
-and another place where code, credentials and data end up.
+> **Pre-release ([`v0.1.0-alpha.1`](https://github.com/different-ai/differently/releases)).**
+> The whole platform is implemented and tested end to end against real
+> OpenSandbox servers (Docker and Kubernetes runtimes). It isn't ready for
+> production workloads yet: see [what is verified](#status).
 
-Good open-source sandbox runtimes exist (OpenSandbox, CubeSandbox, E2B's
-runtime), and they run sandboxes well. Turning one or more of them into a
-multi-tenant platform is a project in itself: quotas, fair queueing,
-deciding which runtime or provider each sandbox may use, and showing
-operators where work ran. Differently is that layer, packaged so that:
+## Why
 
-- **Everything is self-hostable**: API, dashboard, auth, keys, scheduler,
-  queue, quotas, audit, metering. No OpenWork-hosted service, license server or
-  telemetry. There is no phone-home code path.
-- **External providers are opt-in and fail-closed.** Registering a provider
-  authorizes nothing. Work leaves your private pools only when the global
-  policy, the tenant's policy, the data classification and the request all
-  allow it, and the provider is explicitly approved.
-- **Applications never name a backend.** Operators change placement policy;
-  application code keeps calling the same API.
-- **Operators can see and prove where work ran**: every placement records the
-  pools considered and why; the trust report lists external endpoints,
-  credentials (by reference), external placements, admin actions, the audit
-  chain status and the limits of what Differently can prove.
+Teams adopting AI agents and automated code execution already run serious
+infrastructure, with their own IAM, networking and observability. Most sandbox
+products still ask them to add another vendor-run environment: another trust
+boundary, another API, another place where code, credentials and data end up.
 
-## How it works
+Good open-source sandbox *runtimes* exist. Turning them into a multi-tenant
+platform is the hard part: quotas, fair queueing, deciding which runtime or
+provider each sandbox may use, and proving where work ran. Differently is
+that layer.
 
-```mermaid
-flowchart LR
-  app[App / SDK / CLI] -->|one API| api[differently-server<br/>API + auth + quotas]
-  api --> pg[(Postgres<br/>state, queue, audit)]
-  api --> sched[Scheduler<br/>policy placement]
-  sched -->|opensandbox adapter| osb[OpenSandbox server<br/>you run it]
-  osb --> rt[Docker / Kubernetes /<br/>Fast Sandbox microVMs]
-  sched -->|remote adapter| plugin[Your own backend<br/>adapter protocol]
-  sched -.->|only if policy allows| ext[Daytona / Freestyle<br/>external pools]
-```
+| | |
+|---|---|
+| **One API, any backend** | REST, CLI and SDKs for TypeScript, Python and Go. Applications never name a backend; operators change placement, code doesn't. |
+| **Policy decides where work runs** | Private-first placement, data classifications, and external providers that are opt-in and fail-closed. |
+| **Multi-tenant from day one** | Organizations, projects, scoped API keys with rotation, quotas and fair queueing. |
+| **Provable** | A tamper-evident audit chain, a placement explanation for every sandbox, and an operator trust report. |
+| **Keys stay with you** | Provider keys are stored sealed or by reference. Switch where new sandboxes go with one command. |
+| **Self-hosted, all of it** | API, dashboard, scheduler, queue, audit and metrics run on your infrastructure. No phone-home. |
 
-- `differently-server` runs as stateless API replicas plus one elected
-  scheduler leader. Postgres is its only production dependency. It owns:
-  - tenancy (organizations, projects, scoped keys);
-  - quotas and fair queueing;
-  - placement policy;
-  - reconciliation against each backend;
-  - the audit chain;
-  - placement explanations and the trust report.
-- Pools are backends registered with a declared trust (`private` or
-  `external`) and isolation. Adapters:
-  - `opensandbox`, the default private runtime;
-  - `daytona`;
-  - `freestyle`;
-  - `remote`, for any service speaking the
-    [adapter protocol](docs/adapters/specification.md);
-  - `devhost`, for local development only.
-- Isolation, network egress and node security belong to the runtime behind
-  each pool. Differently records what each pool declares and says so in the
-  trust report. It does not enforce isolation itself.
+## Get started
 
-Read the [architecture RFC](docs/architecture/README.md) and the
-[decision records](docs/adr/), in particular
-[ADR 0020](docs/adr/0020-opensandbox-replaces-node-agent.md) on why
-Differently stopped running its own Firecracker node agent.
-
-## Try it locally in two minutes
-
-Requires Go 1.26+. Dev mode uses an in-memory store and a `devhost` pool that
-runs commands **directly on your machine with no isolation** — it exists so you
-can exercise the whole API, CLI and SDKs on a laptop.
+**1. Try it on your laptop (2 minutes).** Needs Go 1.26+. Dev mode keeps
+state in memory and runs commands **on your machine with no isolation**, to
+explore the API, CLI and SDKs:
 
 ```bash
 make build
-./bin/differently-server --dev
+./bin/differently-server --dev                      # writes an operator token to ~/.differently/dev/token
+./bin/differently sandbox create --profile small --wait   # in another terminal
+./bin/differently sandbox exec <sandbox-id> -- 'echo hello from $(uname -s)'
+./bin/differently sandbox placement <sandbox-id>    # why it ran where it ran
 ```
 
-In another terminal (the dev server writes an operator token to
-`~/.differently/dev/token`, which the CLI picks up for localhost):
+The dashboard is at <http://localhost:8080/dashboard/>.
+
+**2. Run the real stack on any Docker host (10 minutes).** Postgres,
+Differently and a real OpenSandbox server, as the end-to-end suite runs it:
 
 ```bash
-./bin/differently doctor
-./bin/differently sandbox create --profile small --wait
-./bin/differently sandbox exec <sandbox-id> -- 'echo hello from $(uname -s)'
-./bin/differently sandbox files put <sandbox-id> ./README.md /work/README.md
-./bin/differently sandbox placement <sandbox-id>
-./bin/differently sandbox delete <sandbox-id>
+make e2e-prepare e2e-up    # API on :18090, OpenSandbox on :18091
+make e2e                   # optional: the 12 end-to-end tests
 ```
 
-The dashboard is at <http://localhost:8080/dashboard/> (sign in with the token).
+**3. Deploy it for your team.** On [one Linux VM on any cloud](docs/deploy/single-vm.md)
+(k3s, OpenSandbox and Differently, about 30 minutes), or with Helm on
+[your Kubernetes cluster](docs/deploy/kubernetes.md) using the chart and
+images from the [latest release](https://github.com/different-ai/differently/releases).
 
-From TypeScript ([`sdk/typescript`](sdk/typescript)):
+Then call it from code ([TypeScript](sdk/typescript), [Python](sdk/python),
+[Go](pkg/client)):
 
 ```ts
 import { Differently } from "@differently/sdk";
@@ -125,66 +106,105 @@ const sandbox = await differently.sandboxes.create({
   profile: "small",
   placement: { strategy: "private-first", external: "never" },
 });
-const result = await sandbox.exec("node --version");
-console.log(result.stdout);
+console.log((await sandbox.exec("uname -sm")).stdout);
 await sandbox.delete();
 ```
 
-Python ([`sdk/python`](sdk/python)) and Go ([`pkg/client`](pkg/client)) SDKs
-follow the same shape. The HTTP contract is [api/openapi.yaml](api/openapi.yaml).
+## Deploy anywhere
 
-## Deploy into your organization
+| Where | How | Status |
+|---|---|---|
+| Laptop | `differently-server --dev` | Verified (no isolation; for trying it) |
+| Any Docker host | [`test/e2e`](test/e2e/README.md) Compose stack | Verified: end-to-end suite 12/12 |
+| One Linux VM: Azure, AWS, Google Cloud, bare metal | [k3s + Helm](docs/deploy/single-vm.md) | Verified on Azure; same steps elsewhere, not yet run |
+| Existing Kubernetes: EKS, GKE, AKS, k3s, RKE2 | [Helm chart](docs/deploy/kubernetes.md) | Helm install verified on k3s; managed clusters documented |
+| Cloud notes | [AWS](docs/deploy/aws.md) · [Google Cloud](docs/deploy/gcp.md) · [Azure](docs/deploy/azure.md) · [Bare metal](docs/deploy/bare-metal.md) | Documented |
+| No internet | [Air-gapped](docs/deploy/air-gapped.md) | Documented |
 
-- [Deployment overview and support matrix](docs/deploy/README.md)
-- [Existing Kubernetes cluster with Helm](docs/deploy/kubernetes.md) —
-  `helm install differently deploy/helm/differently`
-- [AWS](docs/deploy/aws.md), [GCP](docs/deploy/gcp.md), [Azure](docs/deploy/azure.md),
-  [bare metal](docs/deploy/bare-metal.md), [air-gapped](docs/deploy/air-gapped.md)
-- [OpenSandbox pools](docs/guides/opensandbox-pools.md), the default private
-  runtime, installed with OpenSandbox's own tooling
-- [Onboarding organizations, projects and keys](docs/guides/organization-onboarding.md)
-- [Hybrid overflow to Daytona or Freestyle](docs/guides/hybrid-overflow.md)
-- [Keys and providers](docs/guides/keys-and-providers.md): store Daytona or
-  Freestyle keys in Differently, switch where new sandboxes go, and rotate
-  provider and API keys without restarts
-- [Day-2 operations](docs/deploy/day-2.md)
+The [deployment overview](docs/deploy/README.md) has the support matrix,
+prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
+[hardening checklist](docs/security/hardening-checklist.md).
+
+## Status
+
+**Verified** (2026-10-28):
+- the end-to-end suite passes 12/12 on OpenSandbox's Docker runtime and on its
+  Kubernetes runtime (k3s on Azure, both installed with Helm);
+- the published `v0.1.0-alpha.1` chart and images install from public
+  artifacts alone;
+- real OpenSandbox responses are recorded and replayed in every `go test`;
+- [OpenWork](https://github.com/different-ai/openwork)'s Workbot computers run
+  through Differently as a sandbox gateway (in review).
+
+**Not verified yet:**
+- Fast Sandbox microVMs;
+- multi-node clusters;
+- managed EKS, GKE and AKS;
+- live Daytona and Freestyle accounts through Differently.
+
+**In progress:** stop/start, snapshots, fork and port URLs on OpenSandbox's
+Kubernetes runtime, through a snapshot registry and OpenSandbox's signed
+gateway.
+
+The [roadmap](docs/roadmap.md) and [feature parity](docs/feature-parity.md)
+pages track the details. Releases follow [semantic versioning](https://semver.org/):
+pre-releases are tagged `vX.Y.Z-alpha.N` or `-rc.N`, and images are
+`ghcr.io/different-ai/differently-{server,cli}:X.Y.Z`.
+
+## How it works
+
+`differently-server` runs as stateless API replicas plus one elected scheduler
+leader, with Postgres as its only dependency. Each request is admitted against
+quota, queued fairly, then placed: the scheduler filters every registered pool
+against global, organization and project policy, ranks what is left, and
+records why. Adapters talk to the backends:
+
+- `opensandbox`, the default private runtime;
+- `daytona` and `freestyle`, external providers;
+- `remote`, any service speaking the [adapter protocol](docs/adapters/specification.md).
+
+Isolation and egress belong to each backend's runtime. Differently records
+what each pool declares and says so in the trust report.
+
+Read the [architecture](docs/architecture/README.md), the
+[decision records](docs/adr/) and the [security model](docs/security/trust-model.md).
 
 ## How it compares
 
-[docs/feature-parity.md](docs/feature-parity.md) is the feature-by-feature
-matrix against Boat, Daytona, Freestyle and others, including what each
-backend supports and what Differently does not do yet.
-[docs/competitive-landscape.md](docs/competitive-landscape.md) explains where
-Differently fits. In short: self-hosted sandbox runtimes are not unique, and
-Differently builds on one rather than competing with it. The gap Differently
-targets is policy-driven placement across your own runtimes *and* external
-providers, under a control plane you run.
+Self-hosted sandbox runtimes exist (OpenSandbox, CubeSandbox, E2B's runtime).
+Differently builds on them rather than competing with them. What it adds is
+policy-driven placement across your own runtimes *and* external providers,
+under a control plane you run. See the
+[feature parity matrix](docs/feature-parity.md) and the
+[competitive landscape](docs/competitive-landscape.md).
 
-## Repository layout
+## Community
+
+- **Contribute:** [CONTRIBUTING.md](CONTRIBUTING.md) covers the branch model
+  (PRs target `pre-release`), DCO sign-off and releases.
+  [AGENTS.md](AGENTS.md) is the entry point for coding agents and
+  maintainers.
+- **Get help:** [SUPPORT.md](SUPPORT.md).
+- **Report a vulnerability:** [SECURITY.md](SECURITY.md), privately.
+- **Conduct and decisions:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
+  [GOVERNANCE.md](GOVERNANCE.md).
+
+<details>
+<summary>Repository layout</summary>
 
 | Path | What |
 |---|---|
-| `cmd/` | `differently-server` and `differently` (CLI) |
-| `pkg/api`, `pkg/adapter`, `pkg/client` | Public wire types, the versioned adapter contract and plugin protocol, the Go SDK |
-| `internal/` | Server, scheduler, reconciler, policy, store (memory + Postgres), auth, audit, adapters |
+| `cmd/` | `differently-server` and the `differently` CLI |
+| `pkg/api`, `pkg/adapter`, `pkg/client` | Wire types, the versioned adapter contract and plugin protocol, the Go SDK |
+| `internal/` | Server, scheduler, reconciler, policy, store (memory and Postgres), auth, audit, secrets, adapters |
 | `api/openapi.yaml` | The HTTP API contract (a test keeps it in sync with the router) |
 | `sdk/typescript`, `sdk/python` | Official SDKs |
 | `deploy/` | Helm chart (control plane only), Terraform (AWS) |
-| `docs/` | Architecture, ADRs, security model, guides, roadmap, backlog |
-| `test/e2e`, `test/opensandbox` | The real-stack end-to-end suite and the live OpenSandbox adapter check |
+| `docs/` | Guides, deployment, architecture, ADRs, security, roadmap |
+| `site/` | The website and docs site |
+| `test/e2e`, `test/opensandbox` | The real-stack end-to-end suite and the live OpenSandbox checks |
 
-## Development and branches
-
-```bash
-make verify   # gofmt, go vet, unit + integration tests with -race, SDK tests, helm lint
-```
-
-All work merges into **`pre-release`**; open PRs with
-`gh pr create --base pre-release`. `main` is the default branch and holds
-released code only: it moves when a release is cut from `pre-release`. See [CONTRIBUTING.md](CONTRIBUTING.md)
-for the branch model, DCO sign-off and release process, [AGENTS.md](AGENTS.md)
-for coding-agent guidance, and [SECURITY.md](SECURITY.md) to report a
-vulnerability.
+</details>
 
 ## License
 

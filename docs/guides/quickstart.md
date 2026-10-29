@@ -49,8 +49,10 @@ sandbox that never starts:
 Differently does not run sandboxes itself. Install an
 [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) server first,
 with its own chart or manifests, and choose its runtime: Docker or
-Kubernetes containers, or Fast Sandbox microVMs on KVM nodes. Only the Docker
-runtime has been run with Differently so far. Then follow
+Kubernetes containers, or Fast Sandbox microVMs on KVM nodes. The Docker and
+Kubernetes runtimes have run with Differently; Fast Sandbox hasn't yet. On a
+fresh Linux VM, [One Linux VM on any cloud](../deploy/single-vm.md) does all
+of this with release artifacts. On an existing cluster, follow
 [deploy/kubernetes.md](../deploy/kubernetes.md). In short:
 
 ```bash
@@ -88,5 +90,5 @@ await sandbox.delete();
 ```python
 from differently import Differently
 with Differently().sandboxes.create(profile="small") as sandbox:
-    print(sandbox.exec("python3 --version").stdout)
+    print(sandbox.exec("uname -sm").stdout)
 ```
