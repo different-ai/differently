@@ -120,13 +120,13 @@ other's live sandboxes alone, but it adds no isolation.
 |---|---|
 | Create, delete, list, idempotent create | yes (Differently's IDs are kept in OpenSandbox metadata) |
 | Exec, streamed exec, env, cwd, timeouts, exit codes | yes. With `execd` release-1.2.0 or later and `lineEndings: kept`, output is byte-exact. With `execd` 1.1 (`lineEndings: stripped`, the default) a newline is restored after each line, so a final fragment without one gains one |
-| Exec stdin | **no**: `unsupported_operation`. OpenSandbox's command API takes no stdin |
+| Exec stdin | yes: OpenSandbox's command API takes no stdin, so the adapter writes it to a file the command reads and removes the file afterwards |
 | Files (upload, download, list) | yes |
 | Image that cannot be pulled | the sandbox fails or is retried with a reason naming the image, and the pool stays healthy for other tenants. The Docker runtime reports the failed pull at once (the sandbox fails after one attempt); the Kubernetes runtime only reports that the pod did not become ready within 60 s (`POD_READY_TIMEOUT`), which is also what a slow first pull looks like, so it is retried up to `scheduler.maxAttempts` |
-| Pause / resume | yes on the Docker runtime. On the Kubernetes runtime only with OpenSandbox's snapshot registry (`controller.snapshot.registry`): without one OpenSandbox accepts the pause and never starts it, which the adapter reports as `unsupported_operation` after 30 s. List only `exec`, `exec.stream` and `files` in `features` for such a pool |
-| Stop / start | **no**: OpenSandbox has pause/resume and delete only, so stop returns `unsupported_operation` and the pool never offers `lifecycle.stop-start` or `persistence.disk` |
-| Snapshots and fork | disk snapshots by default; on the Kubernetes runtime they need the snapshot registry too (otherwise `unsupported_operation`, from OpenSandbox's `RegistryNotConfigured`). Memory snapshots depend on the runtime: add `snapshots.memory` to `features` only when it captures memory (Fast Sandbox is documented to; unverified). Differently reports the kind the pool declares and cannot check it |
-| Port URLs | **off by default**. OpenSandbox's direct endpoints are addresses only the runtime host can use: `host.docker.internal:<port>` on the Docker runtime and the pod IP on the Kubernetes runtime (both recorded). Add `ports.expose` to `features` only if tenants can reach them. Endpoints that need the server's API key are always refused, because that key must never reach tenants |
+| Pause / resume (memory kept) | the Docker runtime only. The Kubernetes runtime keeps no memory, so with `runtime: kubernetes` the pool offers stop/start instead and refuses pause |
+| Stop / start (disk kept) | with `runtime: kubernetes` and the controller's snapshot registry: OpenSandbox's pause commits the root filesystem as an image and frees the pod, and resume recreates it. About 3.7 s and 2.7 s on single-node k3s. The Docker runtime has no stop |
+| Snapshots and fork | disk snapshots on both runtimes; the Kubernetes runtime needs the snapshot registry (otherwise `unsupported_operation`, from OpenSandbox's `RegistryNotConfigured`). Memory snapshots: not on Docker or Kubernetes; add `snapshots.memory` only for a runtime that captures memory (Fast Sandbox, unverified) |
+| Port URLs | with `ports: signed`: OpenSandbox's ingress gateway in route mode `uri` with Secure Access signing keys. Sandboxes are created with secure access, and `ports.expose` returns `https://<gateway>/{sandbox}/{port}/{expires}/{signature}`, valid for `portURLSeconds` (default 3600), with no header or key. Without it there are no port URLs: direct endpoints are runtime-internal. Endpoints that need a header are always refused |
 | Provider-side TTL backstop | yes: OpenSandbox's `timeout` is set from the sandbox's TTL at creation (minimum 60 s), and a TTL change moves it (`renew-expiration`) to five minutes after Differently's own expiry |
 | Capacity | not reported: OpenSandbox's API exposes none, so the pool is limited only by `maxConcurrency` and quotas |
 
@@ -139,17 +139,59 @@ features with no adapter method behind them (such as
 `network.egress-control` or `gpu`) are advertised as declared, so declare
 them only if the runtime really provides them.
 
+## Kubernetes runtime: snapshot registry, signed ports and egress
+
+Verified on single-node k3s with OpenSandbox 1.2.0 from its own charts: the
+end-to-end suite passes 13/13, and the run is recorded as
+`internal/adapters/opensandbox/testdata/recordings/kubernetes-registry-1.2.0.json`.
+
+1. **A snapshot registry** for stop/start, snapshots and fork: any OCI
+   registry the node's container runtime can push to and pull from. For a
+   single-node test, a `registry:2` with `hostNetwork` on the node's private
+   address works. Point `controller.snapshot.registry` at
+   `<node-ip>:5000/opensandbox-snapshots` with
+   `controller.snapshot.registryInsecure: true`, set
+   `controller.snapshot.containerdSocketPath` to
+   `/run/k3s/containerd/containerd.sock` on k3s, and trust the registry over
+   HTTP in `/etc/rancher/k3s/registries.yaml`. In production, use a real
+   registry (Azure Container Registry, Harbor) with push and pull secrets.
+2. **Signed port URLs.** Install OpenSandbox's `ingress-gateway` chart with
+   `gateway.gatewayRouteMode: uri` and Secure Access keys, and set the server
+   chart's `server.gateway` (`enabled`, `host`, `gatewayRouteMode: uri` and
+   the same keys). Expose the gateway Service with a DNS name and TLS, then
+   set the pool's `ports: signed` (and `portScheme: http` only behind a test
+   tunnel). The gateway also offers activity tracking and wake-on-access
+   (`gateway.activity`, `gateway.wake`, with Redis), not yet used by
+   Differently.
+3. **Egress.** `egress: none` denies all outbound traffic, and
+   `egress: allowlist` with `egressAllow: pypi.org,github.com` allows only
+   those hosts. OpenSandbox's egress sidecar enforces it, and the pool then
+   advertises `network.egress-control`.
+
+Pool values with all three:
+
+```yaml
+opensandbox:
+  runtime: kubernetes
+  ports: signed
+  egress: allowlist
+  egressAllow: pypi.org,files.pythonhosted.org
+  lineEndings: kept
+```
+
 ## Isolation, egress and credentials
 
 - **Isolation is the runtime's.** Differently reports each pool's declared
   isolation in the trust report but does not enforce or detect it. The Docker
   and Kubernetes runtimes run containers that share the host kernel; only
   Fast Sandbox gives each sandbox a microVM. Declare what you deployed.
-- **Egress is not wired.** Differently does not configure OpenSandbox's
-  network policy, and the pool does not offer `network.egress-control`.
-  Restrict sandbox egress in OpenSandbox's own configuration, with
-  NetworkPolicy in its namespace, or with host and VPC firewalls, and block
-  cloud metadata endpoints. Wiring it is
+- **Egress is a pool setting.** `egress: none` or `allowlist` (with
+  `egressAllow`) sends OpenSandbox's network policy with every sandbox, and
+  the pool advertises `network.egress-control`. It is checked live on the
+  Kubernetes runtime only. With `egress` empty or `public`, outbound traffic
+  is open: restrict it in OpenSandbox's own configuration, with NetworkPolicy
+  in its namespace, or with host and VPC firewalls, and block cloud metadata
+  endpoints. Per-request allowlists are
   [backlog E19](../backlog.md#e19-opensandbox-network-policy-and-egress).
 - **The API key stays in the control plane.** It is sent only to the
   OpenSandbox server (as `OPEN-SANDBOX-API-KEY`, including through its

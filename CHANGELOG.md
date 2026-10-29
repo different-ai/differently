@@ -6,6 +6,21 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added (OpenSandbox parity with Freestyle)
+
+- `runtime: kubernetes` for OpenSandbox pools. With the controller's snapshot
+  registry, the pool offers stop/start with the disk kept (OpenSandbox's
+  pause commits the root filesystem and frees the pod), disk snapshots and
+  fork, and refuses a memory pause it cannot keep.
+- `ports: signed`: port URLs through OpenSandbox's ingress gateway (route
+  mode `uri`, Secure Access), signed and time-limited, with no header or key.
+- `egress: none` or `allowlist` (`egressAllow`), enforced by OpenSandbox's
+  egress sidecar; the pool advertises `network.egress-control`.
+- Exec stdin on OpenSandbox pools, staged in a file the command reads.
+- Helm values `opensandbox.runtime`, `ports`, `portScheme`,
+  `portURLSeconds`, `egress` and `egressAllow`; the e2e test `TestPortURL`;
+  the recording `kubernetes-registry-1.2.0`.
+
 ### Fixed (found against real OpenSandbox runtimes)
 
 - A sandbox whose image cannot be pulled no longer marks its pool unhealthy

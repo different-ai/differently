@@ -95,7 +95,11 @@
                 "properties": {
                   "isolation": {"enum": ["", "container", "microvm"]},
                   "useServerProxy": {"enum": ["true", "false"]},
-                  "lineEndings": {"enum": ["kept", "stripped"]}
+                  "lineEndings": {"enum": ["kept", "stripped"]},
+                  "runtime": {"enum": ["docker", "kubernetes"]},
+                  "ports": {"enum": ["signed"]},
+                  "egress": {"enum": ["none", "public", "allowlist"]},
+                  "portScheme": {"enum": ["https", "http"]}
                 }
               }
             }
@@ -169,6 +173,12 @@
         "features": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9.-]*$"}},
         "useServerProxy": {"type": "boolean"},
         "lineEndings": {"type": "string", "enum": ["", "kept", "stripped"]},
+        "runtime": {"type": "string", "enum": ["", "docker", "kubernetes"]},
+        "ports": {"type": "string", "enum": ["", "signed"]},
+        "egress": {"type": "string", "enum": ["", "none", "public", "allowlist"]},
+        "egressAllow": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "portScheme": {"type": "string", "enum": ["", "https", "http"]},
+        "portURLSeconds": {"type": ["integer", "null"], "minimum": 60},
         "existingSecret": {"type": "string"},
         "existingSecretKey": {"type": "string", "minLength": 1},
         "apiKey": {"type": "string"},

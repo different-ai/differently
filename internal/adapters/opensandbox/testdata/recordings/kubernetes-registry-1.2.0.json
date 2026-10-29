@@ -1,0 +1,576 @@
+{
+  "recorded": "2026-10-29",
+  "server": "opensandbox/server:release-1.2.0",
+  "execd": "opensandbox/execd:release-1.2.0",
+  "runtime": "kubernetes-registry",
+  "host": "k3s v1.36.5 on an Azure Standard_D8s_v6 (x86_64); registry:2 on the node as the snapshot registry; ingress gateway in route mode uri with secure access",
+  "config": {
+    "egress": "allowlist",
+    "egressAllow": "pypi.org",
+    "image": "debian:bookworm-slim",
+    "isolation": "container",
+    "lineEndings": "kept",
+    "portScheme": "http",
+    "ports": "signed",
+    "runtime": "kubernetes"
+  },
+  "exchanges": [
+    {
+      "step": "health",
+      "method": "GET",
+      "path": "/v1/sandboxes?page=1\u0026pageSize=1",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[],\"pagination\":{\"page\":1,\"pageSize\":1,\"totalItems\":0,\"totalPages\":0,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "create",
+      "method": "GET",
+      "path": "/v1/sandboxes?metadata=differently-sandbox-id%3Dsbx_rec_main\u0026page=1\u0026pageSize=100",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[],\"pagination\":{\"page\":1,\"pageSize\":100,\"totalItems\":0,\"totalPages\":0,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "create",
+      "method": "POST",
+      "path": "/v1/sandboxes",
+      "request": "{\"entrypoint\":[\"tail\",\"-f\",\"/dev/null\"],\"env\":{\"GREETING\":\"hello\"},\"image\":{\"uri\":\"debian:bookworm-slim\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"networkPolicy\":{\"defaultAction\":\"deny\",\"egress\":[{\"action\":\"allow\",\"target\":\"pypi.org\"}]},\"resourceLimits\":{\"cpu\":\"1\",\"memory\":\"512Mi\"},\"secureAccess\":true,\"timeout\":900}",
+      "status": 202,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14.846522Z\",\"entrypoint\":[\"tail\",\"-f\",\"/dev/null\"]}"
+    },
+    {
+      "step": "create",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "create",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/endpoints/44772?use_server_proxy=true",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"endpoint\":\"{{host}}/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772\",\"headers\":{\"OpenSandbox-Secure-Access\":\"LI-k6RaTCGV8jRJkAVF5cFAHFuK1zvOd\"}}"
+    },
+    {
+      "step": "create",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/ping",
+      "status": 200
+    },
+    {
+      "step": "create-again",
+      "method": "GET",
+      "path": "/v1/sandboxes?metadata=differently-sandbox-id%3Dsbx_rec_main\u0026page=1\u0026pageSize=100",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}],\"pagination\":{\"page\":1,\"pageSize\":100,\"totalItems\":1,\"totalPages\":1,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "create-again",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "create-again",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/ping",
+      "status": 200
+    },
+    {
+      "step": "get-list",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "get-list",
+      "method": "GET",
+      "path": "/v1/sandboxes?metadata=differently-installation%3Dinst_rec\u0026page=1\u0026pageSize=100",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}],\"pagination\":{\"page\":1,\"pageSize\":100,\"totalItems\":1,\"totalPages\":1,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "exec",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/command",
+      "request": "{\"command\":\"echo \\\"$GREETING $WHO\\\"; printf 'a\\\\nb'; printf err \\u003e\\u00262; exit 7\",\"envs\":{\"WHO\":\"world\"}}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"f1547538aac14edc83126ee5d2ad0489\",\"timestamp\":1793238379375}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793238379375}\n\n{\"type\":\"stdout\",\"text\":\"hello world\\n\",\"timestamp\":1793238379376}\n\n{\"type\":\"stderr\",\"text\":\"err\",\"timestamp\":1793238379376}\n\n{\"type\":\"stdout\",\"text\":\"a\\n\",\"timestamp\":1793238379376}\n\n{\"type\":\"stdout\",\"text\":\"b\",\"timestamp\":1793238379376}\n\n{\"type\":\"error\",\"timestamp\":1793238379376,\"error\":{\"ename\":\"CommandExecError\",\"evalue\":\"7\",\"traceback\":[\"exit status 7\"],\"exit_code\":7}}\n\n"
+    },
+    {
+      "step": "exec-argv",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/command",
+      "request": "{\"command\":\"sh -c 'pwd; echo \\\"$1\\\"' sh 'it'\\\\''s quoted'\",\"cwd\":\"/tmp\"}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"a4671ad36b96481a81d2bbe68760ed4b\",\"timestamp\":1793238379659}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793238379659}\n\n{\"type\":\"stdout\",\"text\":\"/tmp\\n\",\"timestamp\":1793238379660}\n\n{\"type\":\"stdout\",\"text\":\"it's quoted\\n\",\"timestamp\":1793238379660}\n\n{\"type\":\"execution_complete\",\"exit_code\":0,\"execution_time\":2,\"timestamp\":1793238379661}\n\n"
+    },
+    {
+      "step": "exec-stdin",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/files/upload",
+      "status": 200
+    },
+    {
+      "step": "exec-stdin",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/command",
+      "request": "{\"command\":\"(tr a-z A-Z) \\u003c /tmp/.differently-stdin-in_01m62ncbcreeawyr1vjybvd684; rc=$?; rm -f /tmp/.differently-stdin-in_01m62ncbcreeawyr1vjybvd684; exit $rc\"}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"58a9d095959c43d9b7e62f58bd9d2a6e\",\"timestamp\":1793238380099}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793238380099}\n\n{\"type\":\"stdout\",\"text\":\"HELLO\\n\",\"timestamp\":1793238380102}\n\n{\"type\":\"stdout\",\"text\":\"WORLD\\n\",\"timestamp\":1793238380102}\n\n{\"type\":\"execution_complete\",\"exit_code\":0,\"execution_time\":3,\"timestamp\":1793238380102}\n\n"
+    },
+    {
+      "step": "exec-stdin",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/command",
+      "request": "{\"command\":\"ls /tmp/.differently-stdin-* 2\\u003e/dev/null | wc -l\"}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"de9ea06c8f414439b16de79c3f31fdc0\",\"timestamp\":1793238380424}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793238380425}\n\n{\"type\":\"stdout\",\"text\":\"0\\n\",\"timestamp\":1793238380427}\n\n{\"type\":\"execution_complete\",\"exit_code\":0,\"execution_time\":2,\"timestamp\":1793238380427}\n\n"
+    },
+    {
+      "step": "egress",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/command",
+      "request": "{\"command\":\"timeout 8 bash -c 'exec 3\\u003c\\u003e/dev/tcp/pypi.org/443' 2\\u003e/dev/null \\u0026\\u0026 echo open || echo blocked\"}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"d91c084ee2ec4ca78349d33ea0e1b71f\",\"timestamp\":1793238380708}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793238380708}\n\n{\"type\":\"stdout\",\"text\":\"open\\n\",\"timestamp\":1793238380795}\n\n{\"type\":\"execution_complete\",\"exit_code\":0,\"execution_time\":88,\"timestamp\":1793238380795}\n\n"
+    },
+    {
+      "step": "egress",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/command",
+      "request": "{\"command\":\"timeout 8 bash -c 'exec 3\\u003c\\u003e/dev/tcp/example.com/443' 2\\u003e/dev/null \\u0026\\u0026 echo open || echo blocked\"}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"a94d079a977a4153a1b239d0978c75f7\",\"timestamp\":1793238381143}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793238381143}\n\n{\"type\":\"stdout\",\"text\":\"blocked\\n\",\"timestamp\":1793238381147}\n\n{\"type\":\"execution_complete\",\"exit_code\":0,\"execution_time\":4,\"timestamp\":1793238381147}\n\n"
+    },
+    {
+      "step": "exec-timeout",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/command",
+      "request": "{\"command\":\"sleep 30\",\"timeout\":1000}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"cd13232919ae4f758de3a9f2c046ac0b\",\"timestamp\":1793238381467}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793238381467}\n\n{\"type\":\"error\",\"timestamp\":1793238382467,\"error\":{\"ename\":\"CommandExecError\",\"evalue\":\"-1\",\"traceback\":[\"signal: killed\"],\"exit_code\":-1}}\n\n"
+    },
+    {
+      "step": "exec-stream",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/command",
+      "request": "{\"command\":\"for i in 1 2 3; do echo line$i; done; echo e \\u003e\\u00262; exit 3\"}",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "body": "{\"type\":\"init\",\"text\":\"d05db92e222f4ec5b7c1895a89d08a8b\",\"timestamp\":1793238382749}\n\n{\"type\":\"ping\",\"text\":\"pong\",\"timestamp\":1793238382749}\n\n{\"type\":\"stdout\",\"text\":\"line1\\n\",\"timestamp\":1793238382750}\n\n{\"type\":\"stdout\",\"text\":\"line2\\n\",\"timestamp\":1793238382750}\n\n{\"type\":\"stdout\",\"text\":\"line3\\n\",\"timestamp\":1793238382750}\n\n{\"type\":\"stderr\",\"text\":\"e\\n\",\"timestamp\":1793238382750}\n\n{\"type\":\"error\",\"timestamp\":1793238382750,\"error\":{\"ename\":\"CommandExecError\",\"evalue\":\"3\",\"traceback\":[\"exit status 3\"],\"exit_code\":3}}\n\n"
+    },
+    {
+      "step": "files",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/files/upload",
+      "status": 200
+    },
+    {
+      "step": "files",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/files/download?path=%2Ftmp%2Frec.bin",
+      "status": 200,
+      "contentType": "application/octet-stream",
+      "bodyBase64": "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"
+    },
+    {
+      "step": "files",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/directories/list?depth=1\u0026path=%2Ftmp",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "[{\"path\":\"/tmp/opensandbox-execd\",\"type\":\"directory\",\"size\":4096,\"modified_at\":\"2026-10-29T01:46:22.750371787Z\",\"created_at\":\"2026-10-29T01:46:22.750371787Z\",\"owner\":\"root\",\"group\":\"root\",\"mode\":700},{\"path\":\"/tmp/rec.bin\",\"type\":\"file\",\"size\":8192,\"modified_at\":\"2026-10-29T01:46:23.045358843Z\",\"created_at\":\"2026-10-29T01:46:23.05135858Z\",\"owner\":\"root\",\"group\":\"root\",\"mode\":644}]"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/pause",
+      "status": 202
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Pausing\",\"reason\":\"PAUSING\",\"message\":\"Pausing sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Pausing\",\"reason\":\"PAUSING\",\"message\":\"Pausing sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Pausing\",\"reason\":\"PAUSING\",\"message\":\"Pausing sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Pausing\",\"reason\":\"PAUSING\",\"message\":\"Pausing sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Pausing\",\"reason\":\"PAUSING\",\"message\":\"Pausing sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Pausing\",\"reason\":\"PAUSING\",\"message\":\"Pausing sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Pausing\",\"reason\":\"PAUSING\",\"message\":\"Pausing sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Pausing\",\"reason\":\"PAUSING\",\"message\":\"Pausing sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Pausing\",\"reason\":\"PAUSING\",\"message\":\"Pausing sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Paused\",\"reason\":\"PAUSED\",\"message\":\"Sandbox is paused\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"debian:bookworm-slim\"},\"status\":{\"state\":\"Paused\",\"reason\":\"PAUSED\",\"message\":\"Sandbox is paused\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "start",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/resume",
+      "status": 202
+    },
+    {
+      "step": "start",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"10.0.0.4:5000/opensandbox-snapshots/b91d08d8-ebd9-4132-acd3-a35e0190c216-sandbox@sha256:b73df43861881e5afb2c831319986c1bf5f4da867a34ac9a9ec019318178feae\"},\"status\":{\"state\":\"Resuming\",\"reason\":\"RESUMING\",\"message\":\"Resuming sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "start",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"10.0.0.4:5000/opensandbox-snapshots/b91d08d8-ebd9-4132-acd3-a35e0190c216-sandbox@sha256:b73df43861881e5afb2c831319986c1bf5f4da867a34ac9a9ec019318178feae\"},\"status\":{\"state\":\"Resuming\",\"reason\":\"RESUMING\",\"message\":\"Resuming sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "start",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"10.0.0.4:5000/opensandbox-snapshots/b91d08d8-ebd9-4132-acd3-a35e0190c216-sandbox@sha256:b73df43861881e5afb2c831319986c1bf5f4da867a34ac9a9ec019318178feae\"},\"status\":{\"state\":\"Resuming\",\"reason\":\"RESUMING\",\"message\":\"Resuming sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "start",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"10.0.0.4:5000/opensandbox-snapshots/b91d08d8-ebd9-4132-acd3-a35e0190c216-sandbox@sha256:b73df43861881e5afb2c831319986c1bf5f4da867a34ac9a9ec019318178feae\"},\"status\":{\"state\":\"Resuming\",\"reason\":\"RESUMING\",\"message\":\"Resuming sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "start",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"10.0.0.4:5000/opensandbox-snapshots/b91d08d8-ebd9-4132-acd3-a35e0190c216-sandbox@sha256:b73df43861881e5afb2c831319986c1bf5f4da867a34ac9a9ec019318178feae\"},\"status\":{\"state\":\"Resuming\",\"reason\":\"RESUMING\",\"message\":\"Resuming sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "start",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"10.0.0.4:5000/opensandbox-snapshots/b91d08d8-ebd9-4132-acd3-a35e0190c216-sandbox@sha256:b73df43861881e5afb2c831319986c1bf5f4da867a34ac9a9ec019318178feae\"},\"status\":{\"state\":\"Resuming\",\"reason\":\"RESUMING\",\"message\":\"Resuming sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "start",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"10.0.0.4:5000/opensandbox-snapshots/b91d08d8-ebd9-4132-acd3-a35e0190c216-sandbox@sha256:b73df43861881e5afb2c831319986c1bf5f4da867a34ac9a9ec019318178feae\"},\"status\":{\"state\":\"Resuming\",\"reason\":\"RESUMING\",\"message\":\"Resuming sandbox\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "start",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"10.0.0.4:5000/opensandbox-snapshots/b91d08d8-ebd9-4132-acd3-a35e0190c216-sandbox@sha256:b73df43861881e5afb2c831319986c1bf5f4da867a34ac9a9ec019318178feae\"},\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-29T01:46:14Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:14.846522Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "start",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/ping",
+      "status": 200
+    },
+    {
+      "step": "start",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/proxy/44772/files/download?path=%2Ftmp%2Frec.bin",
+      "status": 200,
+      "contentType": "application/octet-stream",
+      "bodyBase64": "AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vkABw4VHCMqMTg/Rk1UW2JpcHd+hYyTmqGor7a9xMvS2eDn7vX8AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuL/GzdTb4unw9/4FDBMaISgvNj1ES1JZYGdudXyDipGYn6attLvCydDX3uXs8/oBCA8WHSQrMjlAR05VXGNqcXh/ho2Um6KpsLe+xczT2uHo7/b9BAsSGSAnLjU8Q0pRWF9mbXR7gomQl56lrLO6wcjP1t3k6/L5AAcOFRwjKjE4P0ZNVFtiaXB3foWMk5qhqK+2vcTL0tng5+71/AMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbi/xs3U2+Lp8Pf+BQwTGiEoLzY9REtSWWBnbnV8g4qRmJ+mrbS7wsnQ197l7PP6AQgPFh0kKzI5QEdOVVxjanF4f4aNlJuiqbC3vsXM09rh6O/2/QQLEhkgJy41PENKUVhfZm10e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMDc+RUxTWmFob3Z9hIuSmaCnrrW8w8rR2N/m7fT7AgkQFx4lLDM6QUhPVl1ka3J5gIeOlZyjqrG4v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdHuCiZCXnqWss7rByM/W3eTr8vk="
+    },
+    {
+      "step": "snapshot",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/snapshots",
+      "request": "{\"name\":\"differently-b91d08d8-ebd9-4132-acd3-a35e0190c216\"}",
+      "status": 202,
+      "contentType": "application/json",
+      "body": "{\"id\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"sandboxId\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"name\":\"differently-b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"status\":{\"state\":\"Creating\",\"reason\":\"snapshot_accepted\",\"message\":\"Snapshot creation accepted.\",\"lastTransitionAt\":\"2026-10-29T01:46:35.709791Z\"},\"createdAt\":\"2026-10-29T01:46:35.709791Z\"}"
+    },
+    {
+      "step": "snapshot",
+      "method": "GET",
+      "path": "/v1/snapshots/98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"sandboxId\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"name\":\"differently-b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"status\":{\"state\":\"Creating\",\"reason\":\"snapshot_accepted\",\"message\":\"Snapshot creation accepted.\",\"lastTransitionAt\":\"2026-10-29T01:46:35.709791Z\"},\"createdAt\":\"2026-10-29T01:46:35.709791Z\"}"
+    },
+    {
+      "step": "snapshot",
+      "method": "GET",
+      "path": "/v1/snapshots/98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"sandboxId\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"name\":\"differently-b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"status\":{\"state\":\"Creating\",\"reason\":\"snapshot_accepted\",\"message\":\"Snapshot creation accepted.\",\"lastTransitionAt\":\"2026-10-29T01:46:35.709791Z\"},\"createdAt\":\"2026-10-29T01:46:35.709791Z\"}"
+    },
+    {
+      "step": "snapshot",
+      "method": "GET",
+      "path": "/v1/snapshots/98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"sandboxId\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"name\":\"differently-b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"status\":{\"state\":\"Creating\",\"reason\":\"snapshot_accepted\",\"message\":\"Snapshot creation accepted.\",\"lastTransitionAt\":\"2026-10-29T01:46:35.709791Z\"},\"createdAt\":\"2026-10-29T01:46:35.709791Z\"}"
+    },
+    {
+      "step": "snapshot",
+      "method": "GET",
+      "path": "/v1/snapshots/98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"sandboxId\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"name\":\"differently-b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"status\":{\"state\":\"Creating\",\"reason\":\"snapshot_accepted\",\"message\":\"Snapshot creation accepted.\",\"lastTransitionAt\":\"2026-10-29T01:46:35.709791Z\"},\"createdAt\":\"2026-10-29T01:46:35.709791Z\"}"
+    },
+    {
+      "step": "snapshot",
+      "method": "GET",
+      "path": "/v1/snapshots/98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"sandboxId\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"name\":\"differently-b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"status\":{\"state\":\"Creating\",\"reason\":\"snapshot_accepted\",\"message\":\"Snapshot creation accepted.\",\"lastTransitionAt\":\"2026-10-29T01:46:35.709791Z\"},\"createdAt\":\"2026-10-29T01:46:35.709791Z\"}"
+    },
+    {
+      "step": "snapshot",
+      "method": "GET",
+      "path": "/v1/snapshots/98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"sandboxId\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"name\":\"differently-b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"status\":{\"state\":\"Creating\",\"reason\":\"snapshot_accepted\",\"message\":\"Snapshot creation accepted.\",\"lastTransitionAt\":\"2026-10-29T01:46:35.709791Z\"},\"createdAt\":\"2026-10-29T01:46:35.709791Z\"}"
+    },
+    {
+      "step": "snapshot",
+      "method": "GET",
+      "path": "/v1/snapshots/98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"sandboxId\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"name\":\"differently-b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"status\":{\"state\":\"Creating\",\"reason\":\"snapshot_accepted\",\"message\":\"Snapshot creation accepted.\",\"lastTransitionAt\":\"2026-10-29T01:46:35.709791Z\"},\"createdAt\":\"2026-10-29T01:46:35.709791Z\"}"
+    },
+    {
+      "step": "snapshot",
+      "method": "GET",
+      "path": "/v1/snapshots/98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"sandboxId\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"name\":\"differently-b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"status\":{\"state\":\"Ready\",\"reason\":\"snapshot_runtime_ready\",\"message\":\"Kubernetes snapshot image created successfully.\",\"lastTransitionAt\":\"2026-10-29T01:46:40.024488Z\"},\"createdAt\":\"2026-10-29T01:46:35.709791Z\"}"
+    },
+    {
+      "step": "fork",
+      "method": "GET",
+      "path": "/v1/sandboxes?metadata=differently-sandbox-id%3Dsbx_rec_main_fork\u0026page=1\u0026pageSize=100",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[],\"pagination\":{\"page\":1,\"pageSize\":100,\"totalItems\":0,\"totalPages\":0,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "fork",
+      "method": "POST",
+      "path": "/v1/sandboxes",
+      "request": "{\"env\":null,\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main_fork\",\"name\":\"sbx_rec_main_fork\"},\"networkPolicy\":{\"defaultAction\":\"deny\",\"egress\":[{\"action\":\"allow\",\"target\":\"pypi.org\"}]},\"resourceLimits\":{\"cpu\":\"1\",\"memory\":\"512Mi\"},\"secureAccess\":true,\"snapshotId\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"timeout\":900}",
+      "status": 202,
+      "contentType": "application/json",
+      "body": "{\"id\":\"3436f52e-5f52-4e0d-9c25-2fb00080f69b\",\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-29T01:46:41Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main_fork\",\"name\":\"sbx_rec_main_fork\"},\"expiresAt\":\"2026-10-29T02:01:41.199564Z\",\"createdAt\":\"2026-10-29T01:46:41.199564Z\",\"entrypoint\":[\"tail\",\"-f\",\"/dev/null\"]}"
+    },
+    {
+      "step": "fork",
+      "method": "GET",
+      "path": "/v1/sandboxes/3436f52e-5f52-4e0d-9c25-2fb00080f69b",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"3436f52e-5f52-4e0d-9c25-2fb00080f69b\",\"snapshotId\":\"98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54\",\"status\":{\"state\":\"Running\",\"reason\":\"RUNNING\",\"message\":\"Sandbox is running\",\"lastTransitionAt\":\"2026-10-29T01:46:41Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main_fork\",\"name\":\"sbx_rec_main_fork\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:01:41.199564Z\",\"createdAt\":\"2026-10-29T01:46:41Z\"}"
+    },
+    {
+      "step": "fork",
+      "method": "GET",
+      "path": "/v1/sandboxes/3436f52e-5f52-4e0d-9c25-2fb00080f69b/endpoints/44772?use_server_proxy=true",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"endpoint\":\"{{host}}/v1/sandboxes/3436f52e-5f52-4e0d-9c25-2fb00080f69b/proxy/44772\",\"headers\":{\"OpenSandbox-Secure-Access\":\"M5d1_ogSXZ6NNjpCqEdqHPe3RkYceCWD\"}}"
+    },
+    {
+      "step": "fork",
+      "method": "GET",
+      "path": "/v1/sandboxes/3436f52e-5f52-4e0d-9c25-2fb00080f69b/proxy/44772/ping",
+      "status": 200
+    },
+    {
+      "step": "fork",
+      "method": "GET",
+      "path": "/v1/sandboxes/3436f52e-5f52-4e0d-9c25-2fb00080f69b/proxy/44772/files/download?path=%2Ftmp%2Frec.bin",
+      "status": 200,
+      "contentType": "application/octet-stream",
+      "bodyBase64": "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"
+    },
+    {
+      "step": "fork",
+      "method": "DELETE",
+      "path": "/v1/sandboxes/3436f52e-5f52-4e0d-9c25-2fb00080f69b",
+      "status": 204
+    },
+    {
+      "step": "delete-snapshot",
+      "method": "DELETE",
+      "path": "/v1/snapshots/98f4eeea-2c74-4bb8-9bc8-9ae64fb48c54",
+      "status": 204
+    },
+    {
+      "step": "port",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/endpoints/8080?use_server_proxy=false\u0026expires=1793242005",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"endpoint\":\"localhost:28092/b91d08d8-ebd9-4132-acd3-a35e0190c216/8080/tnnedx/761bfe7aa\"}"
+    },
+    {
+      "step": "expiry",
+      "method": "POST",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216/renew-expiration",
+      "request": "{\"expiresAt\":\"2026-10-29T02:06:46Z\"}",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"expiresAt\":\"2026-10-29T02:06:46Z\"}"
+    },
+    {
+      "step": "delete",
+      "method": "DELETE",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 204
+    },
+    {
+      "step": "after-delete",
+      "method": "GET",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"id\":\"b91d08d8-ebd9-4132-acd3-a35e0190c216\",\"image\":{\"uri\":\"10.0.0.4:5000/opensandbox-snapshots/b91d08d8-ebd9-4132-acd3-a35e0190c216-sandbox@sha256:b73df43861881e5afb2c831319986c1bf5f4da867a34ac9a9ec019318178feae\"},\"status\":{\"state\":\"Stopping\",\"reason\":\"DELETING\",\"message\":\"Sandbox is being deleted\",\"lastTransitionAt\":\"2026-10-29T01:46:46Z\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_main\",\"name\":\"sbx_rec_main\"},\"entrypoint\":[\"/opt/opensandbox/bootstrap.sh\",\"tail\",\"-f\",\"/dev/null\"],\"expiresAt\":\"2026-10-29T02:06:46Z\",\"createdAt\":\"2026-10-29T01:46:14Z\"}"
+    },
+    {
+      "step": "after-delete",
+      "method": "DELETE",
+      "path": "/v1/sandboxes/b91d08d8-ebd9-4132-acd3-a35e0190c216",
+      "status": 204
+    },
+    {
+      "step": "bad-image",
+      "method": "GET",
+      "path": "/v1/sandboxes?metadata=differently-sandbox-id%3Dsbx_rec_badimage\u0026page=1\u0026pageSize=100",
+      "status": 200,
+      "contentType": "application/json",
+      "body": "{\"items\":[],\"pagination\":{\"page\":1,\"pageSize\":100,\"totalItems\":0,\"totalPages\":0,\"hasNextPage\":false}}"
+    },
+    {
+      "step": "bad-image",
+      "method": "POST",
+      "path": "/v1/sandboxes",
+      "request": "{\"entrypoint\":[\"tail\",\"-f\",\"/dev/null\"],\"env\":null,\"image\":{\"uri\":\"docker.io/library/ubuntu:no-such-tag-differently\"},\"metadata\":{\"differently-installation\":\"inst_rec\",\"differently-sandbox-id\":\"sbx_rec_badimage\",\"name\":\"sbx_rec_badimage\"},\"networkPolicy\":{\"defaultAction\":\"deny\",\"egress\":[{\"action\":\"allow\",\"target\":\"pypi.org\"}]},\"resourceLimits\":{\"cpu\":\"1\",\"memory\":\"256Mi\"},\"secureAccess\":true,\"timeout\":300}",
+      "status": 504,
+      "contentType": "application/json",
+      "body": "{\"code\":\"KUBERNETES::POD_READY_TIMEOUT\",\"message\":\"Timeout waiting for sandbox 63de6fee-23f2-4047-903f-907a46e58222 to be Running with IP. Elapsed: 60.0s, Last state: Pending\"}"
+    }
+  ]
+}

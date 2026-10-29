@@ -308,8 +308,9 @@ func TestOpenSandboxLifecycleExecFiles(t *testing.T) {
 	if _, err := a.Exec(ctx, inst.Ref, api.ExecRequest{Args: []string{"ls", "-l", "my file"}}); err != nil || f.lastCmd["command"] != "ls -l 'my file'" {
 		t.Fatalf("argv mode: %v %v", f.lastCmd, err)
 	}
-	if _, err := a.Exec(ctx, inst.Ref, api.ExecRequest{Command: "cat", Stdin: "x"}); !api.IsCode(err, api.CodeUnsupportedOperation) {
-		t.Fatalf("stdin should be unsupported: %v", err)
+	// stdin is staged in a file the command reads, then removed.
+	if _, err := a.Exec(ctx, inst.Ref, api.ExecRequest{Args: []string{"cat"}, Stdin: "x"}); err != nil || !strings.HasPrefix(fmt.Sprint(f.lastCmd["command"]), "(cat) < /tmp/.differently-stdin-") || !strings.Contains(fmt.Sprint(f.lastCmd["command"]), "; rm -f ") {
+		t.Fatalf("stdin: %v %v", f.lastCmd, err)
 	}
 	var streamed []string
 	code, err := a.ExecStream(ctx, inst.Ref, api.ExecRequest{Command: "echo hello"}, func(ev api.ExecEvent) error {

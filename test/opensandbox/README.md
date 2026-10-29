@@ -14,8 +14,11 @@ OPENSANDBOX_URL=http://localhost:8090/v1 go test -tags live -v -run TestLiveOpen
 docker compose -f test/opensandbox/compose.yaml down
 ```
 
-For a server with the Kubernetes runtime, set
-`OPENSANDBOX_RUNTIME=kubernetes` and its `OPENSANDBOX_API_KEY`.
+For a server with the Kubernetes runtime, set its `OPENSANDBOX_API_KEY` and
+`OPENSANDBOX_RUNTIME=kubernetes`, or `kubernetes-registry` when the
+controller has a snapshot registry. `OPENSANDBOX_PORTS=signed` (with
+`OPENSANDBOX_PORT_SCHEME`) checks signed gateway URLs, fetching one for real,
+and `OPENSANDBOX_EGRESS_ALLOW=pypi.org` checks an egress allowlist.
 
 ## Recordings, replayed without a server
 
@@ -36,7 +39,8 @@ OPENSANDBOX_URL=http://localhost:8090/v1 OPENSANDBOX_RECORD=docker-1.2.0 \
 | Recording | Runtime | Recorded on |
 |---|---|---|
 | `docker-1.2.0` | Docker, `execd` release-1.2.0 | Colima 0.10.3, arm64, 2026-10-28 |
-| `kubernetes-1.2.0` | Kubernetes (BatchSandbox), `execd` release-1.2.0, no snapshot registry | k3s v1.36.5 on Azure, x86_64, 2026-10-28 |
+| `kubernetes-1.2.0` | Kubernetes (BatchSandbox), `execd` release-1.2.0, no snapshot registry | k3s v1.36.5 on Azure, x86_64, 2026-10-29 |
+| `kubernetes-registry-1.2.0` | Kubernetes with a snapshot registry (`runtime: kubernetes`: stop/start, snapshots, fork), signed gateway port URLs and an egress allowlist | k3s v1.36.5 on Azure, x86_64, 2026-10-29 |
 
 The API key in `config.toml` is a test value. Sandboxes are Docker
 containers on the same host, so this checks the API contract, not
