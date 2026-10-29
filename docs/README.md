@@ -39,6 +39,7 @@ two-minute local quickstart.
 | [Decision records](adr/) | Why each major choice was made and what was rejected ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md): OpenSandbox replaces the node agent; [ADR 0021](adr/0021-provider-credentials-stored-encrypted.md): provider credentials stored encrypted) |
 | [Security and trust model](security/trust-model.md) | Threats, boundaries, enforced controls, residual risks |
 | [Adapter specification](adapters/specification.md) | The backend contract and the HTTP plugin protocol |
+| [Maintaining and improving Differently](maintaining.md) | For agents and maintainers: where to change what, the verification ladder, recorded runtimes, performance, traps |
 | [Placement policy](scheduling/placement-policy.md) | Merge rules, strategies, overflow, quotas, fairness |
 | [Storage and lifecycle](storage-and-lifecycle.md) | Persistence, snapshots, fork, portability limits |
 | [Reliability and performance](reliability-and-performance.md) | SLOs, benchmarks to run, chaos tests |
