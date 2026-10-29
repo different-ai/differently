@@ -11,7 +11,9 @@ for humans).
 - Never push to or open feature PRs against `main`; releases reach `main` only
   through a release PR (see CONTRIBUTING.md).
 - When CI is green you may merge your own PR into `pre-release`
-  (`gh pr merge --squash`), or queue it with `--auto`.
+  (`gh pr merge --squash`), or queue it with `--auto`. CI's `approve when CI
+  passes` job approves same-repository PRs once every job is green; that
+  approval is what `main`'s ruleset needs for release PRs.
 - One focused outcome per PR, Conventional Commit title, `git commit -s`.
 
 ## Before you push
@@ -20,8 +22,12 @@ for humans).
 make verify
 ```
 
-It runs gofmt, go vet, Go tests with `-race`, the SDK tests and the Helm lint.
-For changes touching `internal/store/postgres`, also run `make test-postgres`.
+It runs gofmt, go vet, Go tests with `-race`, the SDK tests and the Helm lint,
+including the replay of recorded OpenSandbox runtimes. For changes touching
+`internal/store/postgres`, also run `make test-postgres`. For anything a real
+backend or cluster could break, pick the cheapest rung of the verification
+ladder in [docs/maintaining.md](docs/maintaining.md#prove-a-change-at-the-right-cost)
+that covers it, and say in the PR what did not run.
 
 ## Map
 
@@ -34,7 +40,13 @@ For changes touching `internal/store/postgres`, also run `make test-postgres`.
 - Backends: `internal/adapters/*` (`opensandbox` is the default private
   runtime; Differently runs no sandboxes itself), `internal/wiring` (adapter
   factories), `internal/pools`. The real-stack suite is `test/e2e`
-  (`make e2e-prepare e2e-up e2e`).
+  (`make e2e-prepare e2e-up e2e`, or against any install).
+- Recorded runtimes: `internal/adapters/opensandbox/testdata/recordings`,
+  replayed by `TestReplayRecordings`; re-record with the live test after an
+  OpenSandbox upgrade or a new adapter call.
+- Stored credentials: `internal/secrets` (sealed values, `secret:` refs).
+- How to change, prove, re-record, optimise and release:
+  [docs/maintaining.md](docs/maintaining.md).
 - Docs that must stay truthful: `docs/feature-parity.md`, `docs/roadmap.md`,
   `docs/acceptance-scenarios.md`.
 
@@ -46,3 +58,5 @@ For changes touching `internal/store/postgres`, also run `make test-postgres`.
   stored value through the API.
 - Do not claim verification you did not do; mark gaps in docs.
 - Prefer the standard library and existing patterns over new dependencies.
+- Classify backend failures by what the backend said: one sandbox's failure
+  must never mark a shared pool unhealthy.

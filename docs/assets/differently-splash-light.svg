@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-labelledby="t d">
+<title id="t">Differently: the control plane for your sandboxes</title>
+<desc id="d">Apps and agents call one Differently API. Differently handles tenancy, quotas, policy placement and audit, and places each sandbox on OpenSandbox or your own plugin inside your infrastructure, or on Daytona or Freestyle only when policy allows.</desc>
+<defs><marker id="arrow-light" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5b6270"/></marker></defs>
+<rect width="1280" height="640" fill="#ffffff"/>
+<g transform="translate(64 52) scale(1.6)"><rect x="10" y="3" width="19" height="19" rx="4" fill="none" stroke="#0a0a0a" stroke-width="2.5"/><rect x="3" y="10" width="19" height="19" rx="4" fill="#0a0a0a"/></g>
+<text x="128" y="96" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="46" font-weight="700" fill="#0a0a0a" letter-spacing="-1">differently</text>
+<text x="64" y="152" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="27" font-weight="600" fill="#0a0a0a">Run sandboxes differently: own them.</text>
+<text x="64" y="186" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" fill="#5b6270">Open-source, self-hosted control plane · one API · your infrastructure, your rules</text>
+<rect x="384" y="222" width="852" height="300" rx="18" fill="#f4f6f8" stroke="#c9ced6" stroke-dasharray="6 6"/>
+<text x="408" y="252" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="2" fill="#5b6270">YOUR INFRASTRUCTURE · ANY CLOUD OR BARE METAL</text>
+<rect x="64" y="318" width="250" height="112" rx="14" fill="#ffffff" stroke="#c9ced6" stroke-width="1.5"/>
+<text x="189" y="364" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="#0a0a0a">Your apps &amp; agents</text>
+<text x="189" y="394" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#5b6270">REST · CLI · TS · Python · Go</text>
+<rect x="420" y="272" width="330" height="218" rx="16" fill="#0a0a0a"/>
+<text x="585" y="314" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff">differently-server</text>
+<text x="585" y="352" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" fill="#ffffff" opacity="0.82">tenancy &amp; scoped keys</text>
+<text x="585" y="382" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" fill="#ffffff" opacity="0.82">quotas &amp; fair queueing</text>
+<text x="585" y="412" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" fill="#ffffff" opacity="0.82">policy-gated placement</text>
+<text x="585" y="442" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" fill="#ffffff" opacity="0.82">audit chain &amp; trust report</text>
+<path d="M314 374H414" stroke="#5b6270" stroke-width="2" marker-end="url(#arrow-light)"/>
+<text x="364" y="362" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5b6270">one API</text>
+<rect x="842" y="282" width="360" height="84" rx="14" fill="#ffffff" stroke="#c9ced6" stroke-width="1.5"/>
+<text x="866" y="318" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#0a0a0a">OpenSandbox</text>
+<text x="866" y="344" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#5b6270">Docker · Kubernetes · microVMs</text>
+<rect x="1110" y="298" width="72" height="24" rx="12" fill="#e8f5ec"/><text x="1146" y="315" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#15803d">private</text>
+<rect x="842" y="392" width="360" height="84" rx="14" fill="#ffffff" stroke="#c9ced6" stroke-width="1.5"/>
+<text x="866" y="428" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#0a0a0a">Your own backend</text>
+<text x="866" y="454" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#5b6270">HTTP adapter protocol</text>
+<rect x="1110" y="408" width="72" height="24" rx="12" fill="#e8f5ec"/><text x="1146" y="425" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#15803d">private</text>
+<path d="M750 340C800 340 800 324 836 324" fill="none" stroke="#5b6270" stroke-width="2" marker-end="url(#arrow-light)"/>
+<path d="M750 420C800 420 800 434 836 434" fill="none" stroke="#5b6270" stroke-width="2" marker-end="url(#arrow-light)"/>
+<rect x="842" y="546" width="360" height="70" rx="14" fill="#ffffff" stroke="#c9ced6" stroke-width="1.5" stroke-dasharray="7 6"/>
+<text x="866" y="577" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0a0a0a">Daytona · Freestyle</text>
+<text x="866" y="602" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#5b6270">external providers</text>
+<rect x="1070" y="562" width="112" height="24" rx="12" fill="#fdf3e4"/><text x="1126" y="579" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#b45309">only if allowed</text>
+<path d="M640 490C640 560 760 581 836 581" fill="none" stroke="#5b6270" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow-light)"/>
+<text x="560" y="560" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#5b6270">fail-closed, by policy</text>
+</svg>

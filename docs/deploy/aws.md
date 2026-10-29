@@ -1,5 +1,9 @@
 # AWS (EKS)
 
+> **Quickest path:** a single EC2 VM with k3s, following
+> [One Linux VM on any cloud](single-vm.md). Use this page when you run a
+> managed Kubernetes cluster.
+
 Status: **documented**. The Terraform module is **unvalidated**: it has not
 been through `terraform validate`, `plan` or `apply`. Nested virtualization
 on EKS is **unverified**, and so is OpenSandbox's Fast Sandbox runtime.

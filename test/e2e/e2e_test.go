@@ -265,8 +265,8 @@ func TestExecSemantics(t *testing.T) {
 	if err == nil && res.ExitCode == 0 || time.Since(start) > 15*time.Second {
 		t.Fatalf("timeout not enforced: %+v %v after %s", res, err, time.Since(start))
 	}
-	if _, err := c.Exec(ctx, sb.ID, api.ExecRequest{Command: "cat", Stdin: "x"}); !api.IsCode(err, api.CodeUnsupportedOperation) {
-		t.Fatalf("stdin should be reported unsupported, got %v", err)
+	if res, err := c.Exec(ctx, sb.ID, api.ExecRequest{Command: "wc -l", Stdin: "a\nb\nc\n"}); err != nil || strings.TrimSpace(res.Stdout) != "3" {
+		t.Fatalf("stdin: %+v %v", res, err)
 	}
 	var chunks []string
 	code, err := c.ExecStream(ctx, sb.ID, api.ExecRequest{Command: "for i in 1 2 3; do echo line$i; sleep 0.2; done; echo err >&2; exit 3"}, func(ev api.ExecEvent) {
@@ -301,8 +301,28 @@ func TestFiles(t *testing.T) {
 func TestPauseResumeAndUnsupportedStop(t *testing.T) {
 	c := tenant(t, "pause", api.Quota{})
 	sb := create(t, c, api.CreateSandboxRequest{})
-	// OpenSandbox has no stop; Differently says so precisely.
-	if _, err := c.Action(ctx(t), sb.ID, "stop"); !api.IsCode(err, api.CodeUnsupportedOperation) {
+	if advertises(t, "lifecycle.stop-start") {
+		// OpenSandbox's Kubernetes runtime: stop commits the disk and frees
+		// the pod, start brings it back from that image.
+		sh(t, c, sb.ID, "echo kept > /root/disk-state && sync")
+		start := time.Now()
+		if _, err := c.Action(ctx(t), sb.ID, "stop"); err != nil {
+			t.Fatal(err)
+		}
+		stopped := time.Since(start)
+		start = time.Now()
+		if _, err := c.Action(ctx(t), sb.ID, "start"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.WaitSandbox(ctx(t), sb.ID, api.StatusRunning, 3*time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("stop took %s, start %s", stopped.Round(100*time.Millisecond), time.Since(start).Round(100*time.Millisecond))
+		if got := strings.TrimSpace(sh(t, c, sb.ID, "cat /root/disk-state").Stdout); got != "kept" {
+			t.Fatalf("disk not kept across stop/start: %q", got)
+		}
+	} else if _, err := c.Action(ctx(t), sb.ID, "stop"); !api.IsCode(err, api.CodeUnsupportedOperation) {
+		// OpenSandbox's Docker runtime has no stop; Differently says so precisely.
 		t.Fatalf("stop should be unsupported_operation, got %v", err)
 	}
 	if !advertises(t, "lifecycle.pause-resume") {
@@ -396,9 +416,75 @@ func TestUnpullableImageKeepsPoolHealthy(t *testing.T) {
 	}
 }
 
+// Where the pool offers port URLs (OpenSandbox's ingress gateway with signed
+// URLs), a tenant opens a service in its sandbox with the returned URL alone:
+// no header, no key. Otherwise the request is refused precisely.
+func TestPortURL(t *testing.T) {
+	c := tenant(t, "ports", api.Quota{})
+	if !advertises(t, "ports.expose") {
+		sb := create(t, c, api.CreateSandboxRequest{})
+		if _, err := c.ExposePort(ctx(t), sb.ID, 8080); !api.IsCode(err, api.CodeUnsupportedOperation) && !api.IsCode(err, api.CodeUnsupportedCapability) {
+			t.Fatalf("ports on a pool without ports.expose: want a precise refusal, got %v", err)
+		}
+		t.Log("pool does not advertise ports.expose: checked the refusal")
+		return
+	}
+	sb := create(t, c, api.CreateSandboxRequest{Template: "python:3.12-slim"})
+	sh(t, c, sb.ID, "mkdir -p /srv && echo served-by-sandbox > /srv/index.html && cd /srv && (nohup python3 -m http.server 8080 >/dev/null 2>&1 &) && sleep 1")
+	port, err := c.ExposePort(ctx(t), sb.ID, 8080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body string
+	eventually(t, 30*time.Second, "the port URL to serve the sandbox's page", func() bool {
+		resp, err := http.Get(port.URL + "/")
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		body = string(b)
+		return resp.StatusCode == http.StatusOK
+	})
+	if !strings.Contains(body, "served-by-sandbox") {
+		t.Fatalf("port URL served %q", body)
+	}
+	if strings.Contains(port.URL, osbKey) {
+		t.Fatal("the port URL carries the OpenSandbox key")
+	}
+}
+
+// Idle auto-stop: after its idle timeout with no calls, the sandbox is
+// stopped (Kubernetes runtime, disk kept) or paused (Docker runtime, memory
+// kept), and the next exec wakes it with its files intact.
+func TestIdleAutoStopAndWake(t *testing.T) {
+	if !advertises(t, "lifecycle.stop-start") && !advertises(t, "lifecycle.pause-resume") {
+		t.Skip("the pool can neither stop nor pause, so idle sandboxes stay running")
+	}
+	c := tenant(t, "idle", api.Quota{})
+	sb := create(t, c, api.CreateSandboxRequest{IdleTimeoutSeconds: 60})
+	sh(t, c, sb.ID, "echo before-idle > /root/idle-state && sync")
+	var idled api.Sandbox
+	eventually(t, 3*time.Minute, "the idle sandbox to be stopped or paused", func() bool {
+		got, err := c.GetSandbox(context.Background(), sb.ID)
+		idled = got
+		return err == nil && got.IdledAt != nil && (got.Status == api.StatusStopped || got.Status == api.StatusPaused)
+	})
+	t.Logf("%s after idling: %s", idled.Status, idled.StatusReason)
+	start := time.Now()
+	res := sh(t, c, sb.ID, "cat /root/idle-state")
+	t.Logf("exec woke it in %s", time.Since(start).Round(100*time.Millisecond))
+	if strings.TrimSpace(res.Stdout) != "before-idle" {
+		t.Fatalf("files lost across idle and wake: %q", res.Stdout)
+	}
+	if got, _ := c.GetSandbox(ctx(t), sb.ID); got.Status != api.StatusRunning || got.IdledAt != nil {
+		t.Fatalf("after waking: %+v", got)
+	}
+}
+
 func TestCapabilityMismatchIsPrecise(t *testing.T) {
 	c := tenant(t, "caps", api.Quota{})
-	_, err := c.CreateSandbox(ctx(t), api.CreateSandboxRequest{Capabilities: []string{"lifecycle.stop-start"}}, false)
+	_, err := c.CreateSandbox(ctx(t), api.CreateSandboxRequest{Capabilities: []string{"gpu"}}, false)
 	if !api.IsCode(err, api.CodeUnsupportedCapability) {
 		t.Fatalf("want unsupported_capability, got %v", err)
 	}
@@ -449,11 +535,19 @@ func TestReconcilesDriftInTheBackend(t *testing.T) {
 	var orphan struct {
 		ID string `json:"id"`
 	}
-	code := osb(t, "POST", "/sandboxes", map[string]any{
-		"image": map[string]string{"uri": "debian:bookworm-slim"}, "entrypoint": []string{"tail", "-f", "/dev/null"},
-		"timeout": 600, "resourceLimits": map[string]string{"cpu": "1", "memory": "256Mi"},
-		"metadata": map[string]string{"differently-sandbox-id": "sbx_orphan_e2e", "differently-installation": v.Installation},
-	}, &orphan)
+	// OpenSandbox's Kubernetes runtime can still be busy with an earlier
+	// test's slow create (504 POD_READY_TIMEOUT); retry the plant itself.
+	var code int
+	for try := 0; try < 3; try++ {
+		code = osb(t, "POST", "/sandboxes", map[string]any{
+			"image": map[string]string{"uri": "debian:bookworm-slim"}, "entrypoint": []string{"tail", "-f", "/dev/null"},
+			"timeout": 600, "resourceLimits": map[string]string{"cpu": "1", "memory": "256Mi"},
+			"metadata": map[string]string{"differently-sandbox-id": "sbx_orphan_e2e", "differently-installation": v.Installation},
+		}, &orphan)
+		if code != http.StatusGatewayTimeout {
+			break
+		}
+	}
 	if code != 202 || orphan.ID == "" {
 		t.Fatalf("could not plant an orphan: %d", code)
 	}

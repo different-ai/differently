@@ -177,6 +177,16 @@ paths:
       summary: Expose a service port (backend-dependent)
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [port], properties: { port: { type: integer, minimum: 1, maximum: 65535 } } } } } }
       responses: { "200": { description: URL, content: { application/json: { schema: { $ref: "#/components/schemas/PortURL" } } } }, "501": { $ref: "#/components/responses/Error" } }
+  /v1/sandboxes/{id}/keepalive:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    post:
+      tags: [Lifecycle]
+      summary: Record activity so idle auto-stop leaves the sandbox running; wakes an idled sandbox
+      description: >-
+        Exec, file and port calls already count as activity. Call this when the
+        sandbox is in use in ways the control plane does not see, such as a
+        desktop viewer connected to a port URL.
+      responses: { "200": { description: The sandbox, content: { application/json: { schema: { $ref: "#/components/schemas/Sandbox" } } } }, "409": { $ref: "#/components/responses/Error" } }
   /v1/snapshots:
     get:
       tags: [Lifecycle]
@@ -395,9 +405,10 @@ components:
         labels: { type: object, additionalProperties: { type: string } }
         priority: { type: integer }
         fromSnapshot: { type: string }
+        idleTimeoutSeconds: { type: integer, description: "Stop or pause after this many seconds with no exec, file, port or keepalive call (at least 60); the next such call wakes it. 0 uses the operator default, -1 turns it off" }
     UpdateSandboxRequest:
       type: object
-      properties: { labels: { type: object, additionalProperties: { type: string } }, ttlSeconds: { type: integer } }
+      properties: { labels: { type: object, additionalProperties: { type: string } }, ttlSeconds: { type: integer }, idleTimeoutSeconds: { type: integer } }
     Sandbox:
       type: object
       required: [id, orgId, projectId, status, resources, classification, createdAt]
@@ -422,6 +433,9 @@ components:
         priority: { type: integer }
         ttlSeconds: { type: integer }
         expiresAt: { type: string, format: date-time }
+        idleTimeoutSeconds: { type: integer }
+        lastActivityAt: { type: string, format: date-time }
+        idledAt: { type: string, format: date-time, description: Set while stopped or paused for being idle; the next exec, file, port or keepalive call wakes it }
         fromSnapshot: { type: string }
         attempts: { type: integer }
         createdBy: { type: string }

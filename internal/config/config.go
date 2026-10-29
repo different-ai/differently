@@ -67,6 +67,9 @@ type Defaults struct {
 	Template       string        `json:"template,omitempty"`
 	Resources      api.Resources `json:"resources"`
 	TTLSeconds     int           `json:"ttlSeconds"`
+	// IdleTimeoutSeconds stops or pauses sandboxes left idle this long
+	// (0: off unless a request asks). At least 60 when set.
+	IdleTimeoutSeconds int `json:"idleTimeoutSeconds"`
 }
 
 // CredentialRef points at a secret without containing it.
@@ -195,14 +198,19 @@ type DashboardConfig struct {
 func (d DashboardConfig) On() bool { return d.Enabled == nil || *d.Enabled }
 
 // Adapter kinds that always run on third-party infrastructure.
-var externalKinds = []string{"daytona", "freestyle"}
+var externalKinds = []string{"daytona", "freestyle", "vercel", "fly", "boat", "morph", "blaxel"}
 
 // KnownAdapters lists adapter kinds the server can build.
-var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake"}
+var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "vercel", "fly", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel"}
+
+// Adapter kinds that run where the operator put them (a plugin they deploy,
+// the dev host, the test fake), so they are private unless declared.
+var privateByDefaultKinds = []string{"remote", "devhost", "fake"}
 
 // Adapter kinds whose trust boundary depends on who operates the backend, so
-// the operator must declare it.
-var declaredTrustKinds = []string{"opensandbox"}
+// the operator must declare it. Any kind in none of these lists is treated the
+// same way: a new adapter never becomes private by omission.
+var declaredTrustKinds = []string{"opensandbox", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "e2b"}
 
 // Default returns a configuration with every default applied.
 func Default() Config {
@@ -282,7 +290,7 @@ func (c *Config) applyDefaults() {
 		if slices.Contains(externalKinds, p.Adapter) {
 			p.Trust = api.TrustExternal
 		}
-		if p.Trust == "" && !slices.Contains(declaredTrustKinds, p.Adapter) {
+		if p.Trust == "" && slices.Contains(privateByDefaultKinds, p.Adapter) {
 			p.Trust = api.TrustPrivate
 		}
 	}
@@ -328,6 +336,9 @@ func Parse(b []byte) (Config, error) {
 
 // Validate reports every configuration problem at once.
 func (c Config) Validate() error {
+	if d := c.Defaults.IdleTimeoutSeconds; d != 0 && d < 60 {
+		return fmt.Errorf("defaults.idleTimeoutSeconds must be 0 (off) or at least 60, not %d", d)
+	}
 	var errs []error
 	bad := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
 	if c.Store.Driver != "memory" && c.Store.Driver != "postgres" {
@@ -366,13 +377,16 @@ func (c Config) Validate() error {
 			bad("pool %s: unknown adapter %q (known: %s)", p.Name, p.Adapter, strings.Join(KnownAdapters, ", "))
 		}
 		switch {
-		case p.Trust == "" && slices.Contains(declaredTrustKinds, p.Adapter):
+		case p.Trust == "":
 			bad("pool %s: set trust explicitly for the %s adapter: private if you operate it, external if someone else does", p.Name, p.Adapter)
 		case p.Trust != api.TrustPrivate && p.Trust != api.TrustExternal:
 			bad("pool %s: trust must be private or external", p.Name)
 		}
 		if p.Adapter == "opensandbox" && p.Config["apiURL"] == "" {
 			bad("pool %s: the opensandbox adapter needs config.apiURL", p.Name)
+		}
+		if p.Adapter == "cubesandbox" && p.Config["apiURL"] == "" {
+			bad("pool %s: the cubesandbox adapter needs config.apiURL (CubeAPI, e.g. http://cube-api:3000)", p.Name)
 		}
 		if p.Adapter == "devhost" && !c.Dev {
 			bad("pool %s: the devhost adapter has no isolation and is only allowed with dev: true", p.Name)

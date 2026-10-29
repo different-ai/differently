@@ -220,11 +220,13 @@ capacity available through Differently.
   be deleted through the API.
 
 **Code path.** `internal/server/admin.go` (`createPool`, `validatePool`),
-`internal/config/config.go` (`Validate`, `declaredTrustKinds`),
+`internal/config/config.go` (`Validate`, `privateByDefaultKinds`),
 `internal/wiring/wiring.go` (`opensandbox`, `remote`),
 `internal/adapters/opensandbox`, `pkg/adapter/adapterhttp`.
 
-**Tests.** `TestOpenSandboxCredentialsAndConfig` (missing `trust` and
+**Tests.** `TestNewAdapterKindsMustDeclareTrust` (an adapter kind not
+listed as external or private by default is rejected until its pool declares
+trust); `TestOpenSandboxCredentialsAndConfig` (missing `trust` and
 `apiURL` rejected, unknown isolation rejected, features from config, a
 rejected API key reported as `provider_unavailable` without echoing it);
 `TestOpenSandboxLifecycleExecFiles` (the adapter against a fake OpenSandbox

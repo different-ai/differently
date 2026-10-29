@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,6 +31,22 @@ pools:
 	}
 	if got := c.Pools[1].ToPool().CredentialRef; got != "env:DAYTONA_API_KEY" {
 		t.Fatalf("credential ref %q", got)
+	}
+}
+
+func TestManagedProvidersAreAlwaysExternal(t *testing.T) {
+	c, err := Parse([]byte(`
+pools:
+  - {name: bl, adapter: blaxel, trust: private, config: {workspace: ws}, credentials: {env: BL_API_KEY}}
+  - {name: bl2, adapter: blaxel, config: {workspace: ws}}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range c.Pools {
+		if p.Trust != api.TrustExternal {
+			t.Fatalf("pool %s on adapter %s came out %q", p.Name, p.Adapter, p.Trust)
+		}
 	}
 }
 
@@ -65,5 +82,65 @@ func TestCredentialRef(t *testing.T) {
 	}
 	if _, err := ParseCredentialRef("env:MISSING_TOKEN_XYZ").Resolve(); err == nil {
 		t.Fatal("empty env should error")
+	}
+}
+
+// A new adapter kind never becomes private by omission: unless it is listed
+// as external or private by default, its pools must declare their trust.
+func TestNewAdapterKindsMustDeclareTrust(t *testing.T) {
+	saved := KnownAdapters
+	KnownAdapters = append(slices.Clone(KnownAdapters), "newcloud")
+	t.Cleanup(func() { KnownAdapters = saved })
+	cfg := func(trust string) []byte {
+		return []byte("pools:\n  - name: p\n    adapter: newcloud\n" + trust + "    credentials: {env: NEWCLOUD_KEY}\n")
+	}
+	if _, err := Parse(cfg("")); err == nil || !strings.Contains(err.Error(), "set trust explicitly") {
+		t.Fatalf("an undeclared new kind must be rejected, got %v", err)
+	}
+	c, err := Parse(cfg("    trust: external\n"))
+	if err != nil || c.Pools[0].Trust != api.TrustExternal {
+		t.Fatalf("declared external: %+v %v", c.Pools, err)
+	}
+}
+
+// Every adapter kind the server can build sits in exactly one trust list, so
+// adding a kind means deciding who operates it.
+func TestEveryAdapterKindHasATrustRule(t *testing.T) {
+	for _, kind := range KnownAdapters {
+		n := 0
+		for _, list := range [][]string{externalKinds, privateByDefaultKinds, declaredTrustKinds} {
+			if slices.Contains(list, kind) {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("adapter %s is in %d trust lists; put it in exactly one of externalKinds, privateByDefaultKinds or declaredTrustKinds", kind, n)
+		}
+	}
+}
+
+// Managed providers are external whatever a pool says; E2B, which can also
+// be self-hosted, must declare who operates it and is private only when it
+// says so.
+func TestProviderKindsTrust(t *testing.T) {
+	pool := func(kind, trust string) []byte {
+		return []byte("pools:\n  - name: p\n    adapter: " + kind + "\n" + trust + "    credentials: {env: KEY}\n")
+	}
+	for _, kind := range []string{"boat", "morph"} {
+		for _, trust := range []string{"", "    trust: private\n"} {
+			c, err := Parse(pool(kind, trust))
+			if err != nil || c.Pools[0].Trust != api.TrustExternal {
+				t.Errorf("%s with %q: %+v %v", kind, trust, c.Pools, err)
+			}
+		}
+	}
+	if _, err := Parse(pool("e2b", "")); err == nil || !strings.Contains(err.Error(), "set trust explicitly") {
+		t.Fatalf("e2b without trust must be rejected, got %v", err)
+	}
+	for _, trust := range []string{api.TrustExternal, api.TrustPrivate} {
+		c, err := Parse(pool("e2b", "    trust: "+trust+"\n"))
+		if err != nil || c.Pools[0].Trust != trust {
+			t.Errorf("e2b declared %s: %+v %v", trust, c.Pools, err)
+		}
 	}
 }

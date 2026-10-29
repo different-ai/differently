@@ -3,3 +3,6 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/different-ai/differently/security/advisories/new
     about: Please report vulnerabilities privately.
+  - name: Documentation and guides
+    url: https://different-ai.github.io/differently/docs/
+    about: Quickstart, deployment on any cloud or Kubernetes, and how Differently works.

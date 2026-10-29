@@ -63,7 +63,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 | Get / list with labels, cursor | Yes | `GET /v1/sandboxes`, `?label=k=v`, `cursor`, `status` | ✅ | |
 | Update (rename, TTL, subdomain) | `PATCH` | `PATCH /v1/sandboxes/{id}` (labels, TTL) | 🟡 | No rename or subdomain. |
 | Delete | `DELETE` with confirm header, async | `DELETE /v1/sandboxes/{id}` (202, idempotent) | ✅ | No confirm header; SDK/CLI are explicit. |
-| TTL / auto-stop | `ttlSeconds` (default 1 h, max 30 d) | `ttlSeconds` (operator default, max via quota) | ✅ | Expiry terminates; idle-based stop 📋. |
+| TTL / auto-stop | `ttlSeconds` (default 1 h, max 30 d) | `ttlSeconds`, and `idleTimeoutSeconds` (operator default `defaults.idleTimeoutSeconds`) | ✅ e2e | Expiry terminates. Idle auto-stop pauses (pools that keep memory) or stops (disk kept) a sandbox after its idle timeout with no exec, file, port or `keepalive` call, and the next such call wakes it: about 1.7 s on OpenSandbox's Kubernetes runtime, under 0.1 s on Docker. Traffic straight to a port URL is not seen; viewers call `keepalive`. |
 | Sizes | 4 fixed types | Operator-defined profiles + explicit `resources` | ✅ | |
 | Recover (power-cycle) | `POST /recover` | — | 📋 | Stop/start or pause/resume, where the backend has them. |
 | Share with org members | `POST /share` | Project-scoped keys | — | Different tenancy model. |
@@ -76,7 +76,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 | Synchronous exec | `POST /commands` (≤600 s) | `POST /v1/sandboxes/{id}/exec` | ✅ e2e | Shell string or argv (OpenSandbox receives argv as a quoted shell command); `timeoutSeconds` is enforced by the backend. |
 | Streamed output | NDJSON | Server-sent events (`stdout`, `stderr`, `exit`, `error`) | ✅ e2e | |
 | Per-command env | No | `env` on exec | ✅ e2e | |
-| stdin | No | `stdin` on exec | 🟡 | Freestyle only (🧪); OpenSandbox and Daytona return `unsupported_operation`. |
+| stdin | No | `stdin` on exec | ✅ e2e | OpenSandbox (both runtimes; staged in a file the command reads, since `execd` takes no stdin) and Freestyle (🧪); Daytona returns `unsupported_operation`. |
 | Detached processes, attach by offset, kill | Yes | — | 📋 | Backlog: process sessions. |
 | Command history | Yes | Audit log records each exec (program name by default) | 🟡 | Output is not retained by design. |
 | PTY / interactive shell | SSH only | — | 📋 | SSH gateway / PTY over WebSocket in backlog. |
@@ -97,20 +97,20 @@ Boat is the developer-experience reference. Boat paths are relative to
 
 | Capability | Boat | Differently | Status | Notes |
 |---|---|---|---|---|
-| HTTPS port URLs | `POST /host` (token or public) | `POST /v1/sandboxes/{id}/ports` | 🟡 | Works on Daytona (signed URL) and Freestyle (public `*.style.dev` host). OpenSandbox only when its endpoints need no server key (not yet checked live). |
+| HTTPS port URLs | `POST /host` (token or public) | `POST /v1/sandboxes/{id}/ports` | ✅ e2e | OpenSandbox with `ports: signed`: signed, time-limited URLs through its ingress gateway (route mode `uri`, Secure Access), with no header or key. Checked over public DNS and TLS on Azure, including WebSocket upgrades (wss) with the path after the signed prefix and the Origin header passed through. Daytona (signed URL) and Freestyle (public `*.style.dev` host) 🧪. |
 | SSH | `POST /sshkey` | — | 📋 | SSH gateway in backlog. |
 | Desktop / browser stream | `POST /desktop` | — | 📋 (Phase 4) | |
-| Egress policy | No API | Left to the backend runtime | 🟡 | Freestyle firewall only; wiring OpenSandbox's network policy and per-sandbox allow-lists 📋. |
+| Egress policy | No API | Pool `egress: none`, `public` or `allowlist` | ✅ live (Kubernetes runtime) | OpenSandbox enforces it per sandbox with its egress sidecar (deny-all and a host allowlist checked live); Freestyle firewall 🧪. Per-request allowlists 📋. |
 | Sandbox-to-node and sandbox-to-sandbox isolation | Platform-managed | Provided by the backend runtime; each pool declares its isolation and the trust report shows it | — | Differently does not enforce isolation itself ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)). |
 
 ### 2.5 Lifecycle, persistence and snapshots
 
 | Capability | Boat | Differently | Status | Notes |
 |---|---|---|---|---|
-| Stop keeping disk / start | Stop then resume on a new machine | `POST …/stop`, `POST …/start` | 🟡 | Daytona and Freestyle (🧪). OpenSandbox has no stop: it returns `unsupported_operation`; use pause/resume. |
-| Pause / resume (memory kept) | No | `POST …/pause`, `POST …/resume` | ✅ e2e | OpenSandbox; Freestyle and Daytona VM class 🧪. |
-| Disk snapshot | Automatic every minute | `POST …/snapshots {kind: disk}` | ✅ e2e | Consistency depends on the backend runtime; not yet characterized for OpenSandbox. |
-| Memory snapshot | No | `kind: memory` | 🟡 | Freestyle (always memory+disk), Daytona VM class; OpenSandbox opt-in per pool when its runtime captures memory (Fast Sandbox, unverified). |
+| Stop keeping disk / start | Stop then resume on a new machine | `POST …/stop`, `POST …/start` | ✅ e2e | OpenSandbox's Kubernetes runtime with a snapshot registry: the root filesystem is committed and the pod freed (stop about 3.7 s, start about 2.7 s on Azure). Daytona and Freestyle 🧪. OpenSandbox's Docker runtime has no stop. |
+| Pause / resume (memory kept) | No | `POST …/pause`, `POST …/resume` | ✅ e2e | OpenSandbox's Docker runtime; Freestyle and Daytona VM class 🧪. OpenSandbox's Kubernetes runtime keeps no memory, so it offers stop/start instead. |
+| Disk snapshot | Automatic every minute | `POST …/snapshots {kind: disk}` | ✅ e2e | OpenSandbox on both runtimes (Kubernetes: an OCI image in the snapshot registry, ready in about 7 s). |
+| Memory snapshot | No | `kind: memory` | 🟡 | Freestyle (always memory+disk), Daytona VM class. OpenSandbox: not on the Docker or Kubernetes runtime (root filesystem only); Fast Sandbox and its QEMU VMState mode are documented to capture memory, unverified. |
 | Fork | Disk copy | `POST …/fork` | ✅ e2e | Same pool as the source: snapshots are not portable. |
 | Saved / named snapshots, restore by name | Yes | `fromSnapshot` on create; `GET /v1/snapshots` | ✅ | |
 | Point-in-time restore | No | No | — | |
@@ -148,24 +148,26 @@ operation a backend lacks returns `unsupported_operation` (501).
 |---|---|---|---|---|---|
 | Trust | **declared by the operator**: `private` when you run it | external | external | declared | private |
 | Isolation | The OpenSandbox runtime's: containers (Docker, Kubernetes; shared host kernel) or Firecracker microVMs (Fast Sandbox); the pool declares which | Container, or VM with `class: linux-vm` | Hardware-virtualized microVM | Declared by the plugin | **None** |
-| `exec` | ✅ e2e; no stdin | 🧪 combined stdout/stderr, no stdin | 🧪 separate streams, ≤5 min inline | As advertised | ✅ |
+| `exec` | ✅ e2e; stdin staged in a file | 🧪 combined stdout/stderr, no stdin | 🧪 separate streams, ≤5 min inline | As advertised | ✅ |
 | `exec.stream` | ✅ e2e | — (falls back to buffered) | — (falls back to buffered) | As advertised | ✅ |
 | `files` | ✅ e2e | 🧪 | 🧪 | As advertised | ✅ |
-| `lifecycle.stop-start` / `persistence.disk` | — (OpenSandbox has no stop) | 🧪 | 🧪 (stop = in-guest poweroff) | As advertised | ✅ |
-| `lifecycle.pause-resume` | ✅ e2e (Docker runtime); Kubernetes runtime only with a snapshot registry | 🧪 VM class only | 🧪 | As advertised | — |
-| `snapshots.disk` / `fork` | ✅ e2e (Docker runtime); Kubernetes runtime only with a snapshot registry | 🧪 | 🧪 | As advertised | ✅ |
+| `lifecycle.stop-start` / `persistence.disk` | ✅ e2e with `runtime: kubernetes` and a snapshot registry (root filesystem kept); not on Docker | 🧪 | 🧪 (stop = in-guest poweroff) | As advertised | ✅ |
+| `lifecycle.pause-resume` | ✅ e2e (Docker runtime; memory kept); not on Kubernetes, which keeps no memory | 🧪 VM class only | 🧪 | As advertised | — |
+| `snapshots.disk` / `fork` | ✅ e2e (Docker; Kubernetes with a snapshot registry) | 🧪 | 🧪 | As advertised | ✅ |
 | `snapshots.memory` | 🧪 opt-in per pool (Fast Sandbox) | 🧪 VM class only | 🧪 always memory+disk | As advertised | — |
-| `ports.expose` | opt-in: direct endpoints are runtime-internal (`host.docker.internal`, pod IPs); never ones needing the server key | 🧪 signed preview URL | 🧪 public TLS host | As advertised | — |
-| `network.egress-control` | — (OpenSandbox network policy not wired yet) | — | 🧪 firewall (deny by default; `egress: public` to allow) | As advertised | — |
+| `ports.expose` | ✅ e2e with `ports: signed` (ingress gateway, signed time-limited URLs, no header); off otherwise | 🧪 signed preview URL | 🧪 public TLS host | As advertised | — |
+| `network.egress-control` | ✅ live with `egress: none` or `allowlist` (Kubernetes runtime) | — | 🧪 firewall (deny by default; `egress: public` to allow) | As advertised | — |
 | Max size | Server and runtime limits | 4 vCPU / 8 GiB / 10 GiB (provider default) | 32 vCPU / 64 GiB / 256 GiB (plan-dependent) | Plugin limits | Host |
 | Idempotent create | Metadata lookup | Label lookup | Slug derived from sandbox ID | Required by the contract (sandbox ID is the key) | Directory per sandbox ID |
 | Provider-side TTL backstop | `timeout` (≥ 60 s) | `ttlMinutes` | `ttlSeconds` | `ttlSeconds` is passed; plugin's choice | n/a |
 
 "e2e" for `opensandbox` means the [end-to-end suite](../test/e2e/README.md)
-and the [live adapter check](../test/opensandbox/README.md) pass against a
-real OpenSandbox 1.2.0 server with the Docker runtime. Its Kubernetes and Fast
-Sandbox runtimes are not verified yet, so microVM isolation through
-Differently is unverified.
+(14/14) and the [live adapter check](../test/opensandbox/README.md) pass
+against a real OpenSandbox 1.2.0 server on its Docker runtime and on its
+Kubernetes runtime (single-node k3s). Its Fast Sandbox runtime is not
+verified yet, so microVM isolation through Differently is unverified. Each
+backend's page in the [provider catalog](providers/README.md) has its status
+and configuration.
 
 The reconciler works through each adapter's `List` and the sandbox-ID label,
 so it applies to every backend: orphans in the backend are deleted and
@@ -178,7 +180,21 @@ Known unverified provider details (default exec timeouts, pause semantics,
 rate limits) are listed in [proof-of-concepts.md](proof-of-concepts.md) for
 live-account verification.
 
-## 4. Boat-compatible facade: decision
+## 4. Remaining OpenSandbox gaps: limitation or not built yet
+
+Against what Freestyle gives Workbot computers, as of 2026-10-29:
+
+| Gap | Kind | Why, and what would close it |
+|---|---|---|
+| Pause that keeps memory, on the Kubernetes runtime | **Limitation** of OpenSandbox's Kubernetes runtime | Its pause commits the root filesystem and frees the pod; memory and processes are gone. Differently offers stop/start there. Fast Sandbox (Firecracker) and OpenSandbox's QEMU VMState mode are documented to keep memory: not built or run with Differently yet. |
+| Memory snapshots | **Limitation** on Docker and Kubernetes; **not run** on Fast Sandbox | Same reason. Running Fast Sandbox needs KVM nodes ([E18](backlog.md#e18-fast-sandbox-spike)). |
+| Idle auto-stop seeing port traffic | **Not built yet** | Differently sees exec, file and port calls, not requests sent straight to a port URL, so viewers call `keepalive`. OpenSandbox's gateway records that traffic in Redis (`gateway.activity`) and could feed Differently's idle clock. |
+| Wake on a port request | **Limitation** for the Kubernetes and Docker runtimes in OpenSandbox 1.2.0 | OpenSandbox's gateway wake-on-access covers Fast Sandbox only. A stopped sandbox wakes on the next API call (or `keepalive`), not on a hit to its URL. |
+| Per-request port URL lifetime | **Not built yet** | URLs last the pool's `portURLSeconds`; the ports API takes no `ttlSeconds`. |
+| Egress on the Docker runtime | **Not checked** | The setting is sent on both runtimes; enforcement was checked on Kubernetes only. |
+| Detached processes, PTY, SSH | **Not built yet** | OpenSandbox's execd offers background commands; not wired into the adapter. |
+
+## 5. Boat-compatible facade: decision
 
 **Not in the MVP.** Differently's own vendor-neutral API is the contract.
 Reasons:
@@ -207,15 +223,13 @@ portable core only, and document every semantic difference. Mapping sketch:
 | `POST /sandboxes/{id}/host` | `…/ports` | Availability depends on the backend. |
 | `X-Ascii-Confirm-Delete` | not required | Facade would accept and ignore it. |
 
-## 5. Biggest gaps, in priority order
+## 6. Biggest gaps, in priority order
 
-1. Run OpenSandbox's Kubernetes and Fast Sandbox runtimes under
-   Differently on real infrastructure, so microVM isolation through
-   Differently is verified. Verify the Daytona and Freestyle adapters
-   against live accounts.
-2. Wire OpenSandbox's network policy into placement, then per-sandbox egress
-   allow-lists.
-3. Port URLs on OpenSandbox pools and an SSH gateway.
+1. Run OpenSandbox's Fast Sandbox runtime and a multi-node Kubernetes
+   cluster under Differently, so microVM isolation through Differently is
+   verified. Verify the Daytona and Freestyle adapters against live accounts.
+2. Use pool egress policy in placement, then per-request egress allow-lists.
+3. An SSH gateway.
 4. Detached processes and PTY sessions.
 5. Webhooks and OpenTelemetry traces.
 6. Memory snapshots with restore through OpenSandbox (Fast Sandbox).

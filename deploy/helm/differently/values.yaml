@@ -67,6 +67,10 @@ config:
     classification: internal
     profile: small
     ttlSeconds: 3600
+    # Stop (or pause) sandboxes after this many seconds with no exec, file,
+    # port or keepalive call; the next call wakes them. 0 is off unless a
+    # request sets idleTimeoutSeconds. At least 60 when set.
+    idleTimeoutSeconds: 0
 
   # Data sensitivity levels. `external` is the most permissive external
   # placement mode a class allows: never | overflow | allowed. The global
@@ -223,6 +227,28 @@ opensandbox:
   # adapter default when empty) suits execd 1.1, which drops line endings; a
   # newline is restored after each line.
   lineEndings: ""
+  # The OpenSandbox runtime: docker (the adapter default when empty) or
+  # kubernetes. On Kubernetes, OpenSandbox's pause commits the root
+  # filesystem to the controller's snapshot registry and frees the pod, so the
+  # pool offers stop/start (disk kept) instead of pause/resume (memory kept),
+  # plus disk snapshots and fork. Without controller.snapshot.registry, set
+  # features to [exec, exec.stream, files].
+  runtime: ""
+  # Port URLs tenants can open: signed uses OpenSandbox's ingress gateway in
+  # route mode uri with secure-access signing keys. Sandboxes are created
+  # with secure access, and ports.expose returns a signed, time-limited URL
+  # (/{sandbox}/{port}/{expires}/{signature}) that needs no header. Empty
+  # offers no port URLs: direct endpoints are runtime-internal addresses.
+  ports: ""
+  # Scheme of the gateway address OpenSandbox announces (https in production).
+  portScheme: ""
+  # How long a signed port URL stays valid (default 3600).
+  portURLSeconds: null
+  # Outbound traffic from each sandbox, enforced by OpenSandbox's egress
+  # sidecar: none (deny all) or allowlist (only egressAllow's hosts). Empty
+  # or public leaves it open. Checked on the Kubernetes runtime.
+  egress: ""
+  egressAllow: []
   # Secret holding the OpenSandbox server's API key. When empty, the server
   # reads key api-key of the Secret <fullname>-opensandbox: the chart creates
   # it from apiKey, or you create it before installing (see NOTES).
@@ -250,8 +276,9 @@ providers:
       labels: {}
       maxConcurrency: 0
       costModel: {}
-      # Adapter keys: apiURL, target, snapshot, class (container|linux-vm),
-      # autoStopMinutes. Values must be strings.
+      # Adapter keys: apiURL, target, snapshot, class (container|linux-vm).
+      # Values must be strings. Daytona's auto-stop is always off: Differently
+      # owns TTL and lifecycle.
       config:
         apiURL: https://app.daytona.io/api
     # Secret holding the API key (recommended). Created by you.

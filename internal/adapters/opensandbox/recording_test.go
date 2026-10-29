@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -122,12 +123,12 @@ func replay(t *testing.T, rec recording) (*httptest.Server, func(step string)) {
 	)
 	queues := map[string][]exchange{}
 	for _, e := range rec.Exchanges {
-		k := e.Step + " " + e.Method + " " + e.Path
+		k := e.Step + " " + e.Method + " " + timeless(e.Path)
 		queues[k] = append(queues[k], e)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		k := step + " " + r.Method + " " + r.URL.RequestURI()
+		k := step + " " + r.Method + " " + timeless(r.URL.RequestURI())
 		q := queues[k]
 		i := min(served[k], len(q)-1)
 		served[k]++
@@ -156,6 +157,16 @@ func replay(t *testing.T, rec recording) (*httptest.Server, func(step string)) {
 		step = s
 	}
 }
+
+// livePortCheck, set by the live test, fetches a signed port URL for real;
+// a replay cannot, since the gateway is not part of the recording.
+var livePortCheck func(t *testing.T, url string)
+
+// timeless drops the one time-dependent request value, a signed port URL's
+// expires=<unix seconds>, so a replay matches whenever it runs.
+func timeless(path string) string { return expiresParam.ReplaceAllString(path, "expires=*") }
+
+var expiresParam = regexp.MustCompile(`expires=\d+`)
 
 // Fixed IDs keep the recorded paths and metadata queries stable.
 const (
@@ -213,6 +224,32 @@ func scenario(t *testing.T, a *Adapter, runtime string, step func(string)) {
 	if err != nil || res.Stdout != "/tmp\nit's quoted\n" {
 		t.Fatalf("exec argv %+v %v", res, err)
 	}
+	step("exec-stdin")
+	res, err = a.Exec(ctx, in.Ref, api.ExecRequest{Command: "tr a-z A-Z", Stdin: "hello\nworld\n"})
+	if err != nil || res.Stdout != "HELLO\nWORLD\n" {
+		t.Fatalf("stdin %+v %v", res, err)
+	}
+	res, err = a.Exec(ctx, in.Ref, api.ExecRequest{Command: "ls /tmp/.differently-stdin-* 2>/dev/null | wc -l"})
+	if err != nil || strings.TrimSpace(res.Stdout) != "0" {
+		t.Fatalf("the staged stdin file was not removed: %+v %v", res, err)
+	}
+	if a.opts.NetworkPolicy != nil {
+		// egress: allowlist with egressAllow=pypi.org: only that host is reachable.
+		step("egress")
+		probe := func(host string) string {
+			res, err := a.Exec(ctx, in.Ref, api.ExecRequest{Command: "timeout 8 bash -c 'exec 3<>/dev/tcp/" + host + "/443' 2>/dev/null && echo open || echo blocked"})
+			if err != nil {
+				t.Fatalf("egress probe %s: %v", host, err)
+			}
+			return strings.TrimSpace(res.Stdout)
+		}
+		if got := probe("pypi.org"); got != "open" {
+			t.Fatalf("allowed host pypi.org: %s", got)
+		}
+		if got := probe("example.com"); got != "blocked" {
+			t.Fatalf("host outside the allowlist example.com: %s", got)
+		}
+	}
 	step("exec-timeout")
 	start := time.Now()
 	res, err = a.Exec(ctx, in.Ref, api.ExecRequest{Command: "sleep 30", TimeoutSeconds: 1})
@@ -248,6 +285,20 @@ func scenario(t *testing.T, a *Adapter, runtime string, step func(string)) {
 	step("pause")
 	err = a.Pause(ctx, in.Ref)
 	switch runtime {
+	case "kubernetes-registry": // pause keeps no memory there: stop/start instead
+		if !api.IsCode(err, api.CodeUnsupportedOperation) {
+			t.Fatalf("pause on the Kubernetes runtime: want unsupported_operation, got %v", err)
+		}
+		step("stop")
+		fatal("stop", a.Stop(ctx, in.Ref))
+		if got, err := a.Get(ctx, in.Ref); err != nil || got.State != adapter.StateStopped {
+			t.Fatalf("after stop: %+v %v", got, err)
+		}
+		step("start")
+		fatal("start", a.Start(ctx, in.Ref))
+		if back, err := a.ReadFile(ctx, in.Ref, "/tmp/rec.bin"); err != nil || !bytes.Equal(back, data) {
+			t.Fatalf("file lost across stop/start: %v", err)
+		}
 	case "kubernetes": // no snapshot registry: accepted, never started
 		if !api.IsCode(err, api.CodeUnsupportedOperation) {
 			t.Fatalf("pause on the Kubernetes runtime without a registry: want unsupported_operation, got %v", err)
@@ -264,7 +315,7 @@ func scenario(t *testing.T, a *Adapter, runtime string, step func(string)) {
 	step("snapshot")
 	snap, err := a.Snapshot(ctx, in.Ref, "disk")
 	switch runtime {
-	case "kubernetes":
+	case "kubernetes": // no snapshot registry
 		if !api.IsCode(err, api.CodeUnsupportedOperation) || !strings.Contains(err.Error(), "snapshot") {
 			t.Fatalf("snapshot without a registry: want unsupported_operation, got %v", err)
 		}
@@ -285,7 +336,18 @@ func scenario(t *testing.T, a *Adapter, runtime string, step func(string)) {
 	// Direct endpoints are addresses only the runtime host can use, which is
 	// why ports.expose is not a default feature.
 	url, err := a.ExposePort(ctx, in.Ref, 8080)
-	if err != nil || !strings.HasPrefix(url, "http://") || !strings.HasSuffix(url, ":8080") && runtime == "kubernetes" {
+	switch {
+	case a.opts.SignedPorts:
+		// A signed gateway URL: /{sandbox}/{port}/{expires}/{signature}.
+		if err != nil || !strings.Contains(url, "/"+in.Ref+"/8080/") {
+			t.Fatalf("signed port URL %q %v", url, err)
+		}
+		if livePortCheck != nil {
+			livePortCheck(t, url)
+		}
+	// Otherwise a pod IP (host:8080), or a gateway path (/{sandbox}/8080)
+	// when OpenSandbox announces its ingress gateway.
+	case err != nil || !strings.HasPrefix(url, "http://") || !strings.HasSuffix(url, ":8080") && !strings.HasSuffix(url, "/8080") && strings.HasPrefix(runtime, "kubernetes"):
 		t.Fatalf("port endpoint %q %v", url, err)
 	}
 
@@ -303,7 +365,7 @@ func scenario(t *testing.T, a *Adapter, runtime string, step func(string)) {
 	step("bad-image")
 	_, err = a.Create(ctx, adapter.CreateRequest{ID: "sbx_rec_badimage", Installation: recInstallation, Template: recBadImage, Resources: api.Resources{CPU: 1, MemoryMiB: 256}, TTLSeconds: 300})
 	want := api.CodeInvalidRequest // the Docker runtime reports the failed pull at once
-	if runtime == "kubernetes" {
+	if strings.HasPrefix(runtime, "kubernetes") {
 		want = adapter.CodeSandboxFailed // the pod just never becomes ready
 	}
 	if !api.IsCode(err, want) {

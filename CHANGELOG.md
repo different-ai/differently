@@ -6,6 +6,87 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added (provider catalog)
+
+- `docs/providers/`: 26 providers, each with a tested status (verified live,
+  tested with a fake server, documented, or not supported), capabilities,
+  configuration and exactly what was tested, and a guide to adding one.
+- A new adapter kind can no longer become private by omission: only
+  `remote`, `devhost` and `fake` default to private, and a test fails until
+  every kind is in exactly one trust list.
+- `vercel` (Vercel Sandbox) and `fly` (Fly.io Machines) adapters, always
+  external; pages for Modal, Cloudflare and Sprites (documented: a `remote`
+  plugin). Tested with fake servers, not live accounts.
+- `boat`, `morph` (always external) and `e2b` (declared trust: it is
+  self-hostable) adapters; a page for CodeSandbox (documented). Tested with
+  fake servers, not live accounts.
+
+### Added (self-hosted runtimes)
+
+- `agent-sandbox` pools: Sandboxes from kubernetes-sigs/agent-sandbox, or
+  SandboxClaims on a warm pool, through the Kubernetes API with no client-go
+  dependency; exec and files over WebSocket `pods/exec` (stdin and
+  streaming included); stop/start with a per-sandbox volume. Checked live on
+  kind with agent-sandbox v1.0.8.
+- `cubesandbox` pools: CubeSandbox's KVM microVMs through its E2B-compatible
+  CubeAPI and envd: exec (streamed), files, pause/resume, memory snapshots
+  and fork. Tested with a fake server; not run against CubeSandbox yet.
+- Provider pages `docs/providers/agent-sandbox.md`, `cubesandbox.md` and
+  `microsandbox.md` (not supported: no self-hosted server API since its
+  rewrite).
+
+### Added (idle auto-stop)
+
+- `idleTimeoutSeconds` on sandboxes (create and `PATCH`) and
+  `defaults.idleTimeoutSeconds`: the scheduler leader pauses (pools that keep
+  memory) or stops (disk kept) a sandbox with no exec, file, port or
+  keepalive call for that long, and the next such call wakes it. A sandbox a
+  caller stopped or paused is never woken this way. New
+  `POST /v1/sandboxes/{id}/keepalive`, sandbox fields `lastActivityAt` and
+  `idledAt`, SDK and CLI (`--idle-timeout`) support, and audit event
+  `sandbox.idled` / `sandbox.woke`.
+
+### Added (Blaxel provider)
+
+- `blaxel` adapter for Blaxel sandboxes (always `trust: external`): exec
+  and streamed exec, files, stdin, token-protected port previews and a TTL
+  backstop. Tested against a fake server built from Blaxel's published
+  specs, not a live account.
+- Provider pages for Blaxel, Runloop (not supported: the service is
+  winding down), Beam and Koyeb (documented: a `remote` plugin on their
+  SDKs) under `docs/providers/`.
+
+### Added (cloud providers' own sandboxes)
+
+- Adapters for the cloud providers' sandbox services, each tested against a
+  fake server built from the provider's published API (not yet live):
+  `aws-agentcore` (Amazon Bedrock AgentCore Code Interpreter),
+  `azure-sandboxes` (Azure Container Apps Sandboxes), `azure-sessions`
+  (Azure Container Apps dynamic sessions, Python code-interpreter pools),
+  `gcp-sandboxes` (Google Cloud Agent Platform shell sandboxes) and
+  `northflank`. Pools of these kinds must declare `trust` (external, or
+  private if the operator's policy treats their own cloud account so).
+- Cloud IAM credentials without SDKs: Microsoft Entra ID (client secret or
+  workload identity federation), Google service-account keys, and AWS
+  Signature Version 4, in `internal/adapters/cloudhttp`.
+- Provider pages in `docs/providers/` for these, plus AgentCore Runtime and
+  GKE Agent Sandbox (documented, no adapter).
+
+### Added (OpenSandbox parity with Freestyle)
+
+- `runtime: kubernetes` for OpenSandbox pools. With the controller's snapshot
+  registry, the pool offers stop/start with the disk kept (OpenSandbox's
+  pause commits the root filesystem and frees the pod), disk snapshots and
+  fork, and refuses a memory pause it cannot keep.
+- `ports: signed`: port URLs through OpenSandbox's ingress gateway (route
+  mode `uri`, Secure Access), signed and time-limited, with no header or key.
+- `egress: none` or `allowlist` (`egressAllow`), enforced by OpenSandbox's
+  egress sidecar; the pool advertises `network.egress-control`.
+- Exec stdin on OpenSandbox pools, staged in a file the command reads.
+- Helm values `opensandbox.runtime`, `ports`, `portScheme`,
+  `portURLSeconds`, `egress` and `egressAllow`; the e2e test `TestPortURL`;
+  the recording `kubernetes-registry-1.2.0`.
+
 ### Fixed (found against real OpenSandbox runtimes)
 
 - A sandbox whose image cannot be pulled no longer marks its pool unhealthy

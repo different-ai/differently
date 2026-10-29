@@ -18,10 +18,12 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/different-ai/differently/internal/auditlog"
@@ -39,6 +41,8 @@ const RetryDelay = 2 * time.Second
 
 // Scheduler runs dispatch, provisioning, termination and reconciliation.
 type Scheduler struct {
+	sweeping atomic.Bool // an idle sweep is running
+
 	Store        store.Store
 	Pools        *pools.Manager
 	Config       config.Config
@@ -93,6 +97,13 @@ func (s *Scheduler) Run(ctx context.Context) {
 		case <-reconcile.C:
 			if s.leader(ctx) {
 				s.Reconcile(ctx)
+				if s.sweeping.CompareAndSwap(false, true) {
+					// Stops can take seconds each: never hold up the loop.
+					go func() {
+						defer s.sweeping.Store(false)
+						s.SweepIdle(ctx)
+					}()
+				}
 			}
 			continue
 		case <-tick.C:
@@ -469,6 +480,73 @@ func (s *Scheduler) expire(ctx context.Context) {
 		})
 		s.Audit.Record(ctx, api.AuditEvent{Actor: "scheduler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.expired", Resource: rec.ID})
 	}
+}
+
+// SweepIdle stops or pauses running sandboxes with an idle timeout that have
+// had no exec, file, port or keepalive call for that long, and marks them
+// idled so the next such call wakes them. Pools that keep memory pause
+// (cheaper to wake); others stop with the disk kept. Pools that can do
+// neither are left alone.
+func (s *Scheduler) SweepIdle(ctx context.Context) {
+	now := s.Now()
+	recs, err := s.Store.ListSandboxes(ctx, store.SandboxFilter{Statuses: []api.SandboxStatus{api.StatusRunning}})
+	if err != nil {
+		return
+	}
+	for _, rec := range recs {
+		if rec.IdleTimeoutSeconds <= 0 || rec.BackendRef == "" || s.recentlyChanged(rec) {
+			continue
+		}
+		last := rec.UpdatedAt
+		if rec.LastActivityAt != nil && rec.LastActivityAt.After(last) {
+			last = *rec.LastActivityAt
+		}
+		if now.Sub(last) < time.Duration(rec.IdleTimeoutSeconds)*time.Second || !s.claim(rec.ID) {
+			continue
+		}
+		s.idle(ctx, rec)
+		s.release(rec.ID)
+	}
+}
+
+func (s *Scheduler) idle(ctx context.Context, rec store.SandboxRecord) {
+	a, err := s.Pools.Adapter(rec.Pool)
+	if err != nil {
+		return
+	}
+	to, action := api.StatusPaused, "pause"
+	switch pz, pausable := a.(adapter.Pauser); {
+	case pausable && s.Pools.Supports(ctx, rec.Pool, adapter.FeaturePauseResume):
+		err = pz.Pause(ctx, rec.BackendRef)
+	case s.Pools.Supports(ctx, rec.Pool, adapter.FeatureStopStart):
+		l, ok := a.(adapter.Lifecycle)
+		if !ok {
+			return
+		}
+		to, action = api.StatusStopped, "stop"
+		err = l.Stop(ctx, rec.BackendRef)
+	default:
+		return
+	}
+	if err != nil {
+		s.Log.Warn("idle "+action+" failed", "sandbox", rec.ID, "pool", rec.Pool, "err", err)
+		return
+	}
+	now := s.Now()
+	out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+		if r.Status != api.StatusRunning {
+			return api.Errorf(api.CodeConflict, "sandbox changed to %s during the idle %s", r.Status, action)
+		}
+		stopClock(r, now)
+		r.Status, r.UpdatedAt, r.IdledAt = to, now, &now
+		r.StatusReason = fmt.Sprintf("%s after %d s idle; the next exec, file, port or keepalive call wakes it", action, rec.IdleTimeoutSeconds)
+		return nil
+	})
+	if err != nil {
+		return
+	}
+	metrics.Reconciled.WithLabelValues("idle_"+action, rec.Pool).Inc()
+	s.Audit.Record(ctx, api.AuditEvent{Actor: "scheduler", OrgID: out.OrgID, ProjectID: out.ProjectID, Action: "sandbox.idled", Resource: out.ID, Details: map[string]string{"pool": out.Pool, "action": action}})
 }
 
 // nudge makes waiting sandboxes eligible for the next tick after quota or
