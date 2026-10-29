@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-10-28, after [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md) removed Differently's Firecracker node agent. Differently stores records; sandbox filesystems, memory and snapshots live in the backend. OpenSandbox behaviour below is checked live with its Docker runtime unless marked otherwise; its Kubernetes and Fast Sandbox runtimes are unverified. |
+| Status | Describes the code as of 2026-10-28, after the move to OpenSandbox removed Differently's Firecracker node agent. Differently stores records; sandbox filesystems, memory and snapshots live in the backend. OpenSandbox behaviour below is checked live with its Docker runtime unless marked otherwise; its Kubernetes and Fast Sandbox runtimes are unverified. |
 | Code | `internal/adapters/opensandbox/opensandbox.go`, `internal/server/sandboxes.go` (`lifecycle`, `snapshot`, `forkSandbox`), `internal/scheduler/scheduler.go` (`provision`, `expire`, `reconcilePool`) |
 | Related | [OpenSandbox pools](guides/opensandbox-pools.md) · [Adapter specification §9](adapters/specification.md#9-built-in-adapters) · [Placement policy](scheduling/placement-policy.md) · [OpenSandbox spike](research/opensandbox-spike.md) |
 
@@ -184,8 +184,7 @@ sequenceDiagram
 ## 9. Memory snapshot plan
 
 Differently no longer implements memory snapshots itself. The Firecracker
-capture-and-restore plan ([ADR 0014](adr/0014-defer-memory-snapshots-until-restore-proven.md),
-now obsolete) left with the node agent; it is in git history.
+capture-and-restore plan left with the node agent; it is in git history.
 
 An OpenSandbox pool advertises `snapshots.memory` only when the operator adds
 it to `config.features`. Add it only after checking, on the runtime actually
@@ -260,6 +259,6 @@ unless noted. Items marked **Fixed** were resolved before the initial import.
    overloaded runtime shows up as `Create` failures.
 8. A terminating sandbox whose backend is gone retries `Delete` forever
    (E0.22).
-9. Removed with the node agent (ADR 0020), no longer applicable: networking
+9. Removed with the node agent, no longer applicable: networking
    not recreated on `start` after a host reboot, the heartbeat-partition grace,
    `pending` VMs left by an agent crash.

@@ -165,8 +165,7 @@ OpenSandbox server on its Docker runtime.
   contract mapped onto this API.
 - Documentation: architecture RFC, ADRs, security model, adapter spec,
   placement policy, feature parity, deployment guides, roadmap and backlog.
-- Provider credentials stored in Differently
-  ([ADR 0021](docs/adr/0021-provider-credentials-stored-encrypted.md)):
+- Provider credentials stored in Differently:
   - `PUT /v1/admin/secrets/{name}` stores a Daytona, Freestyle, OpenSandbox
     or plugin key sealed in Postgres (migration `0004_secrets.sql`);
     `GET /v1/admin/secrets` lists and `DELETE /v1/admin/secrets/{name}`
@@ -203,7 +202,7 @@ OpenSandbox server on its Docker runtime.
 ### Changed
 
 - OpenSandbox replaces Differently's own Firecracker node agent as the
-  private runtime ([ADR 0020](docs/adr/0020-opensandbox-replaces-node-agent.md)).
+  private runtime.
   The following were removed before any release:
   - `differently-agent`, `differently-guest` and the `firecracker` adapter;
   - agent registration, heartbeats and per-agent secrets;

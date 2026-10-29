@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Status | As built, documented from the code on 2026-10-28, after [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) removed Differently's own Firecracker node agent |
+| Status | As built, documented from the code on 2026-10-28, after the move to OpenSandbox removed Differently's own Firecracker node agent |
 | Scope | Control plane (`differently-server`), CLI, built-in adapters (16 provider adapters in the [provider catalog](../providers/README.md), `remote`, and the development-only `devhost` and `fake`), storage, HA, networking |
-| Related | [ADRs](../adr/README.md) · [Trust model](../security/trust-model.md) · [Adapter specification](../adapters/specification.md) · [Placement policy](../scheduling/placement-policy.md) · [Storage and lifecycle](../storage-and-lifecycle.md) · [OpenSandbox pools](../guides/opensandbox-pools.md) |
+| Related | [Trust model](../security/trust-model.md) · [Adapter specification](../adapters/specification.md) · [Placement policy](../scheduling/placement-policy.md) · [Storage and lifecycle](../storage-and-lifecycle.md) · [OpenSandbox pools](../guides/opensandbox-pools.md) |
 
 ## 1. Summary
 
@@ -68,11 +68,11 @@ proven in production".
 **Non-goals for the MVP**
 
 - Running sandboxes, building images or managing hosts. That is the backend
-  runtime's job ([ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md)).
-- A Kubernetes-native sandbox API (CRDs, operators). See [ADR 0003](../adr/0003-kubernetes-as-substrate-not-api.md).
+  runtime's job.
+- A Kubernetes-native sandbox API (CRDs, operators).
 - Live migration or moving running state between backends.
 - GPU sandboxes. No built-in adapter offers `gpu`.
-- A Boat-compatible facade. See [ADR 0013](../adr/0013-no-boat-compatible-facade-in-mvp.md).
+- A Boat-compatible facade.
 
 ## 4. The three layers
 
@@ -147,7 +147,7 @@ and sends `POST /command` (`internal/server/sandboxes.go` `exec`,
 `internal/adapters/opensandbox/opensandbox.go` `run`). This keeps
 authentication, tenancy checks and audit in one place, and keeps backend
 credentials out of tenants' hands, at the cost of control-plane bandwidth.
-See [ADR 0017](../adr/0017-exec-and-files-proxied-through-control-plane.md).
+
 
 Lifecycle operations (stop, start, pause, resume), snapshots and port exposure
 are also performed synchronously by the API replica that receives the request.
@@ -362,7 +362,7 @@ transition into the current state returns `200` with no backend call.
 
 ## 9. Storage and queue design
 
-PostgreSQL is the only production dependency ([ADR 0004](../adr/0004-postgres-only-production-dependency.md)).
+PostgreSQL is the only production dependency.
 The memory store (`internal/store/memory.go`) implements the same contract with
 one mutex and is used for `--dev` and tests. Both run the same conformance
 suite (`internal/store/storetest/storetest.go`).
@@ -381,7 +381,7 @@ suite (`internal/store/storetest/storetest.go`).
 | `sandboxes` | `id` | `org_id`, `project_id`, `pool`, `status`, `idempotency_key`, `next_attempt_at`; partial index on queued rows by `next_attempt_at`; unique `(project_id, idempotency_key)` where the key is set |
 | `snapshots` | `id` | `org_id`, `project_id` |
 | `audit_events` | `seq` | `org_id`, `resource`, `action` |
-| `secrets` | `name` | `doc` holds a provider credential sealed with AES-256-GCM, its fingerprint and who changed it; never the value ([ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md)) |
+| `secrets` | `name` | `doc` holds a provider credential sealed with AES-256-GCM, its fingerprint and who changed it; never the value |
 | `schema_migrations` | `version` | Applied migration files |
 
 `0001_init.sql` creates the schema; `0002_drop_agents.sql` drops the
@@ -402,7 +402,7 @@ per tick:
 
 **Quota usage is derived, never counted.** Every admission and activation
 recomputes usage from the sandbox rows inside the same transaction, so a crash
-cannot leave a counter out of step ([ADR 0005](../adr/0005-quota-derived-from-state-atomic-activation.md)).
+cannot leave a counter out of step.
 
 **Lock order is fixed**: organization row, then pool row, then sandbox row
 (`ActivateSandbox`). `AdmitSandbox` and `DeleteProject` lock the organization;
@@ -473,14 +473,11 @@ flowchart LR
   so run exactly one replica (the Helm chart switches the Deployment to
   `Recreate` for the memory driver).
 
-[ADR 0016](../adr/0016-single-leader-scheduler-advisory-lock.md) records the
-decision.
-
 ## 11. Networking and egress
 
-Differently configures no sandbox networking. Before
-[ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) its node agent
-created a tap device and iptables chain per microVM; that code was removed
+Differently configures no sandbox networking. Before the move to
+OpenSandbox, its node agent created a tap device and iptables chain per
+microVM; that code was removed
 and its design remains only in git history.
 
 **Paths the control plane needs**
@@ -529,8 +526,7 @@ has not been checked against a real server.
 
 ## 12. What Kubernetes is and is not used for
 
-Kubernetes is a **substrate** for deploying Differently, not the sandbox API
-([ADR 0003](../adr/0003-kubernetes-as-substrate-not-api.md)).
+Kubernetes is a **substrate** for deploying Differently, not the sandbox API.
 
 **Used for** (the Helm chart in `deploy/helm/differently`, version 0.2.0,
 which deploys the control plane only):
@@ -608,7 +604,7 @@ isolation without checking it. Containers from the Docker and Kubernetes
 runtimes share the host kernel; microVM isolation through Differently is
 unverified until the Fast Sandbox spike. Control-plane secrets are
 referenced, not stored. Backend credentials are referenced too, or stored
-sealed under a key that never enters the database (ADR 0021). Either way,
+sealed under a key that never enters the database. Either way,
 backend credentials such as the OpenSandbox API key stay in the control
 plane. The audit log is a hash chain. Sandbox
 environment values are stored in plaintext. Details, residual risks and known

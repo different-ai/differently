@@ -44,10 +44,9 @@ managers sharing one store; a multi-replica cluster has not been tried yet.
 | **Provider credentials** | Daytona and Freestyle API keys, an OpenSandbox server's `api_key`, a `remote` plugin's bearer token | Only the control plane. Tenants never see them: `GET /v1/capabilities` omits them and the trust report shows references only | One of three references on the pool: `env:NAME` (an environment variable on the server), `file:/path` (a mounted file), or `secret:name` (a value stored in Differently, sealed) | `secret:` and `file:` are picked up live; `env:` needs a restart ([Rotate a provider key live](#rotate-a-provider-key-live)) |
 | **The secrets key** | The 32-byte key-encryption key that seals `secret:` values | Only the server process, and your backup | Never in the database: an environment variable (`DIFFERENTLY_SECRETS_KEY` by default) or a file | It cannot be rotated yet ([Back up the secrets key](#back-up-the-secrets-key)) |
 
-The design is [ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md).
-It amends [ADR 0008](../adr/0008-secrets-by-reference-only.md), which kept
-every credential as a reference. References still work, and you can mix
-the three forms across pools.
+Stored secrets extend the original design, which kept every credential as a
+reference. References still work, and the three forms can be mixed across
+pools.
 
 ## The secrets key
 

@@ -18,7 +18,7 @@ This root module creates:
 
 Differently itself does not read that label or taint. Its chart deploys the
 control plane only, and sandboxes run on an OpenSandbox server you install
-separately ([ADR 0020](../../../docs/adr/0020-opensandbox-replaces-node-agent.md)).
+separately.
 Configure OpenSandbox's Fast Sandbox components to select and tolerate the
 label and taint (the `kvm_node_selector` and `kvm_node_taint` outputs).
 

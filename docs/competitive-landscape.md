@@ -18,9 +18,8 @@ marked UNVERIFIED. Re-check before quoting any of this externally.
    - E2B's [runtime](https://github.com/e2b-dev/runtime) open-sources its
      control plane (officially single-node).
 
-   Differently ran its own Firecracker node agent until
-   [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md); OpenSandbox is
-   now its default private runtime.
+   Differently ran its own Firecracker node agent until it moved to
+   OpenSandbox, which is now its default private runtime.
 2. **Nobody routes sandboxes across your own runtimes and other vendors by
    policy, under a control plane you run.**
    - Vendors route only among their own backends.
@@ -96,7 +95,7 @@ vendor running or managing the control plane.
 
 | Option | Outcome |
 |---|---|
-| Differently's own Firecracker node agent | Built and verified end to end on arm64, then removed ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)). It duplicated what OpenSandbox maintains (per-node sandbox management, pause/resume, templates, snapshots) and pulled engineering away from orchestration. |
+| Differently's own Firecracker node agent | Built and verified end to end on arm64, then removed. It duplicated what OpenSandbox maintains (per-node sandbox management, pause/resume, templates, snapshots) and pulled engineering away from orchestration. |
 | OpenSandbox | Default private runtime. Self-hostable, Apache-2.0, published lifecycle and execd specs, and a choice of Docker, Kubernetes or Fast Sandbox (Firecracker) runtimes behind one API. |
 | CubeSandbox | Candidate second private-runtime adapter; Kubernetes deployment in preview. |
 | Kata Containers + Firecracker | Needs a hand-configured devmapper thin-pool, has no filesystem sharing, its Firecracker profile is amd64-only, and Kata offers no checkpoint/restore, so pause, snapshot and fork would be lost. |
