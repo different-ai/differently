@@ -37,6 +37,8 @@ const kinds = {
   remote: ["Remote plugin", "", [["endpoint", "plugin endpoint URL", null, true]]],
   vercel: ["Vercel Sandbox", "external", [["project", "project ID or name", null, true], ["team", "team ID"], ["region", "region (default iad1)"], ["image", "image"], ["architecture", "architecture", ["amd64", "arm64"]], ["ports", "ports (comma separated)"], ["maxTimeoutSeconds", "max session seconds (default 2700)"]]],
   fly: ["Fly.io Machines", "external", [["app", "Fly app name", null, true], ["region", "region"], ["image", "image"], ["cpuKind", "CPU kind", ["shared", "performance"]], ["suspend", "suspend for pause", ["true", "false"]]]],
+  "agent-sandbox": ["agent-sandbox (Kubernetes)", "", [["namespace", "namespace (default default)"], ["apiServer", "API server URL (default: in-cluster)"], ["caFile", "API server CA file on the server"], ["image", "image (default ubuntu:24.04)"], ["warmPool", "warm pool (SandboxWarmPool name)"], ["runtimeClassName", "RuntimeClass (e.g. gvisor)"], ["isolation", "isolation", ["container", "microvm"]], ["volumeSize", "volume size, e.g. 10Gi (enables stop/start)"]]],
+  cubesandbox: ["CubeSandbox", "", [["apiURL", "CubeAPI URL", null, true], ["templateId", "template id"], ["sandboxURL", "CubeProxy URL (header routing)"], ["domain", "sandbox domain (default: CubeAPI's)"], ["proxyScheme", "proxy scheme", ["https", "http"]]]],
 };
 function pickKind() {
   const [, trust, fields] = kinds[$("#pk-kind").value], t = $("#pk-trust");
