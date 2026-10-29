@@ -243,6 +243,11 @@ export class Sandbox {
     return this.#lifecycle("pause");
   }
 
+  /** Counts as activity for idle auto-stop, and wakes an idled sandbox. */
+  keepalive(): Promise<this> {
+    return this.#lifecycle("keepalive");
+  }
+
   resume(): Promise<this> {
     return this.#lifecycle("resume");
   }
@@ -272,7 +277,7 @@ export class Sandbox {
     return this.info;
   }
 
-  async #lifecycle(action: "stop" | "start" | "pause" | "resume"): Promise<this> {
+  async #lifecycle(action: "stop" | "start" | "pause" | "resume" | "keepalive"): Promise<this> {
     return this.#set(await this.#http.json<SandboxInfo>({ method: "POST", path: `${this.#path}/${action}` }));
   }
 

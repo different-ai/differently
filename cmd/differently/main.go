@@ -201,14 +201,14 @@ func sandboxCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "sandbox", Aliases: []string{"sb", "sandboxes"}, Short: "Create, use and delete sandboxes"}
 	var (
 		profile, template, class, strategy, external string
-		cpu, mem, disk, ttl                          int
+		cpu, mem, disk, ttl, idle                    int
 		wait                                         bool
 		envs, labels, caps, pools                    []string
 	)
 	create := &cobra.Command{
 		Use: "create", Short: "Create a sandbox",
 		RunE: func(*cobra.Command, []string) error {
-			req := api.CreateSandboxRequest{ProjectID: load().Project, Profile: profile, Template: template, Classification: class, TTLSeconds: ttl, Capabilities: caps}
+			req := api.CreateSandboxRequest{ProjectID: load().Project, Profile: profile, Template: template, Classification: class, TTLSeconds: ttl, Capabilities: caps, IdleTimeoutSeconds: idle}
 			if cpu > 0 || mem > 0 || disk > 0 {
 				req.Resources = &api.Resources{CPU: cpu, MemoryMiB: mem, DiskGiB: disk}
 			}
@@ -237,6 +237,7 @@ func sandboxCmd() *cobra.Command {
 	f.IntVar(&mem, "memory", 0, "memory in MiB")
 	f.IntVar(&disk, "disk", 0, "disk in GiB")
 	f.IntVar(&ttl, "ttl", 0, "lifetime in seconds")
+	f.IntVar(&idle, "idle-timeout", 0, "stop or pause after this many seconds unused (at least 60; -1 off); the next call wakes it")
 	f.StringVar(&strategy, "strategy", "", "placement strategy: private-first, cost or spread")
 	f.StringVar(&external, "external", "", "narrow external placement: never or overflow")
 	f.StringSliceVar(&pools, "pool", nil, "restrict to these pools")

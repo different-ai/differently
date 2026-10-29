@@ -85,6 +85,7 @@ them precisely instead.
 | `TestPortURL` | Where the pool offers port URLs (signed gateway URLs), a page served in the sandbox opens with the URL alone, which carries no key; otherwise the request is refused precisely |
 | `TestSnapshotAndFork` | A fork starts from the parent's snapshot and is independent of it, or is refused precisely if the pool has no snapshots |
 | `TestUnpullableImageKeepsPoolHealthy` | A sandbox whose image cannot be pulled fails or retries with a reason naming the image, never as a provider outage, and the pool stays healthy throughout |
+| `TestIdleAutoStopAndWake` | A sandbox with a 60 s idle timeout is stopped (Kubernetes) or paused (Docker) after a minute unused, and the next exec wakes it with its files intact |
 | `TestCapabilityMismatchIsPrecise` | A request needing a capability no pool has (`gpu`) is rejected up front (422) with the missing capability named |
 | `TestQuotaQueuesAndReleases` | A tenant at its limit queues; the queued sandbox starts when capacity frees |
 | `TestDeleteCleansUpBackend` | Deleting a sandbox removes it from OpenSandbox |
@@ -102,6 +103,7 @@ them precisely instead.
 | 2026-10-28 | same | same | 12/12 passed (the combined suite); an unpullable image fails after one attempt in about 1 s |
 | 2026-10-29 | same Azure k3s; snapshot registry (`registry:2` on the node), ingress gateway in route mode `uri` with Secure Access; pool `runtime: kubernetes`, `ports: signed` | same | 13/13 passed with stop/start (about 3.7 s / 2.7 s), snapshot and fork, signed port URLs and stdin all exercised. Signed URLs also checked over public TLS (Caddy in front of the gateway): wss upgrades to `/vnc/<token>` and `/screencast/<token>` reach the sandbox with path and Origin intact |
 | 2026-10-29 | Apple M4 Max, Colima, arm64 | server 1.2.0, `execd` release-1.2.0, Docker runtime | 13/13 passed |
+| 2026-10-29 | Azure k3s and Colima, as above | same | 14/14 on both; an idle sandbox is stopped (Kubernetes) or paused (Docker) after 60 s and woken by the next exec in about 1.7 s (Kubernetes) or under 0.1 s (Docker) |
 | 2026-10-28 | k3s v1.36.5 on an Azure `Standard_D8s_v6`, x86_64; Differently from its Helm chart with embedded PostgreSQL | server, controller and `execd` release-1.2.0, Kubernetes runtime, no snapshot registry | 12/12 passed (pause and snapshots checked as refusals); sandboxes running in about 1.4–2.7 s; an unpullable image retries after OpenSandbox's 60 s pod-ready timeout with the pool healthy |
 
 Not covered yet:

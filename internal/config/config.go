@@ -67,6 +67,9 @@ type Defaults struct {
 	Template       string        `json:"template,omitempty"`
 	Resources      api.Resources `json:"resources"`
 	TTLSeconds     int           `json:"ttlSeconds"`
+	// IdleTimeoutSeconds stops or pauses sandboxes left idle this long
+	// (0: off unless a request asks). At least 60 when set.
+	IdleTimeoutSeconds int `json:"idleTimeoutSeconds"`
 }
 
 // CredentialRef points at a secret without containing it.
@@ -328,6 +331,9 @@ func Parse(b []byte) (Config, error) {
 
 // Validate reports every configuration problem at once.
 func (c Config) Validate() error {
+	if d := c.Defaults.IdleTimeoutSeconds; d != 0 && d < 60 {
+		return fmt.Errorf("defaults.idleTimeoutSeconds must be 0 (off) or at least 60, not %d", d)
+	}
 	var errs []error
 	bad := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
 	if c.Store.Driver != "memory" && c.Store.Driver != "postgres" {

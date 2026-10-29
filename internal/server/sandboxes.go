@@ -45,6 +45,7 @@ func (s *Server) sandboxRoutes(authed func(string, handlerFunc)) {
 	authed("POST /v1/sandboxes/{id}/snapshots", s.createSnapshot)
 	authed("POST /v1/sandboxes/{id}/fork", s.forkSandbox)
 	authed("POST /v1/sandboxes/{id}/ports", s.exposePort)
+	authed("POST /v1/sandboxes/{id}/keepalive", s.keepalive)
 	authed("GET /v1/snapshots", s.listSnapshots)
 	authed("GET /v1/snapshots/{id}", s.getSnapshot)
 	authed("DELETE /v1/snapshots/{id}", s.deleteSnapshot)
@@ -208,6 +209,10 @@ func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.Cre
 	if ttl == 0 {
 		ttl = s.Config.Defaults.TTLSeconds
 	}
+	idle, err := idleTimeout(req.IdleTimeoutSeconds, s.Config.Defaults.IdleTimeoutSeconds)
+	if err != nil {
+		return store.SandboxRecord{}, err
+	}
 	for k := range req.Labels {
 		if strings.HasPrefix(k, "differently.dev/") {
 			return store.SandboxRecord{}, api.Errorf(api.CodeInvalidRequest, "label prefix differently.dev/ is reserved")
@@ -219,6 +224,7 @@ func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.Cre
 			ID: id.New("sbx"), OrgID: org.ID, ProjectID: proj.ID, Status: api.StatusQueued, Template: template, Profile: profileName,
 			Resources: resources, Capabilities: caps, Classification: class, Placement: req.Placement, Labels: req.Labels,
 			Priority: req.Priority, TTLSeconds: ttl, CreatedBy: p.Actor(), CreatedAt: now, UpdatedAt: now, FromSnapshot: req.FromSnapshot,
+			IdleTimeoutSeconds: idle, LastActivityAt: &now,
 		},
 		Env: req.Env, NextAttemptAt: now,
 	}
@@ -302,6 +308,14 @@ func (s *Server) updateSandbox(w http.ResponseWriter, r *http.Request, p auth.Pr
 	}
 	org, _ := s.Store.GetOrg(r.Context(), rec.OrgID)
 	proj, _ := s.Store.GetProject(r.Context(), rec.ProjectID)
+	var idle *int
+	if req.IdleTimeoutSeconds != nil {
+		v, err := idleTimeout(*req.IdleTimeoutSeconds, s.Config.Defaults.IdleTimeoutSeconds)
+		if err != nil {
+			return err
+		}
+		idle = &v
+	}
 	if req.TTLSeconds != nil {
 		for _, q := range []api.Quota{org.Quota, proj.Quota} {
 			if q.MaxTTLSeconds > 0 && *req.TTLSeconds > q.MaxTTLSeconds {
@@ -325,6 +339,9 @@ func (s *Server) updateSandbox(w http.ResponseWriter, r *http.Request, p auth.Pr
 			} else {
 				x.Labels[k] = v
 			}
+		}
+		if idle != nil {
+			x.IdleTimeoutSeconds = *idle
 		}
 		if req.TTLSeconds != nil {
 			x.TTLSeconds = *req.TTLSeconds
@@ -460,11 +477,73 @@ func (s *Server) running(r *http.Request, p auth.Principal, scope string) (store
 	if err != nil {
 		return rec, nil, err
 	}
+	if rec.IdledAt != nil && (rec.Status == api.StatusStopped || rec.Status == api.StatusPaused) {
+		// Wake on access: the sandbox was stopped or paused for being idle,
+		// not by a caller, so the next call brings it back.
+		action := "start"
+		if rec.Status == api.StatusPaused {
+			action = "resume"
+		}
+		woken, err := s.transition(r.Context(), rec, action)
+		if err != nil && !api.IsCode(err, api.CodeConflict) {
+			return rec, nil, err
+		}
+		if err == nil {
+			s.audit(r, p, "sandbox.woke", woken.ID, woken.OrgID, woken.ProjectID, map[string]string{"after": action})
+			rec = woken
+		} else if rec, err = s.loadSandbox(r, p); err != nil { // woken concurrently
+			return rec, nil, err
+		}
+	}
 	if rec.Status != api.StatusRunning {
 		return rec, nil, api.Errorf(api.CodeInvalidState, "sandbox %s is %s, not running", rec.ID, rec.Status).With("status", string(rec.Status))
 	}
+	s.touch(r.Context(), rec)
 	a, err := s.Pools.Adapter(rec.Pool)
 	return rec, a, err
+}
+
+// touch records activity for idle auto-stop, at most once per few seconds
+// per sandbox so busy sandboxes do not write on every call.
+func (s *Server) touch(ctx context.Context, rec store.SandboxRecord) {
+	now := s.now()
+	if rec.IdleTimeoutSeconds <= 0 || rec.LastActivityAt != nil && now.Sub(*rec.LastActivityAt) < 5*time.Second {
+		return
+	}
+	_, _ = s.Store.UpdateSandbox(ctx, rec.ID, func(x *store.SandboxRecord) error {
+		x.LastActivityAt = &now
+		return nil
+	})
+}
+
+// keepalive counts as activity, and wakes an idled sandbox. Clients that use
+// a sandbox in ways the control plane does not see (a desktop viewer on a
+// port URL) call it to keep the sandbox from being stopped.
+func (s *Server) keepalive(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
+	rec, _, err := s.running(r, p, auth.ScopeSandboxesExec)
+	if err != nil {
+		return err
+	}
+	out, err := s.Store.GetSandbox(r.Context(), rec.ID)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, 200, out.Sandbox)
+	return nil
+}
+
+// idleTimeout resolves a requested idle timeout: 0 takes the default, -1
+// turns it off, otherwise at least 60 seconds.
+func idleTimeout(requested, def int) (int, error) {
+	switch {
+	case requested == 0:
+		return def, nil
+	case requested == -1:
+		return 0, nil
+	case requested < 60:
+		return 0, api.Errorf(api.CodeInvalidRequest, "idleTimeoutSeconds must be at least 60, or -1 to turn it off")
+	}
+	return requested, nil
 }
 
 func unsupported(rec store.SandboxRecord, op string) error {
@@ -477,6 +556,7 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request, p auth.Principal) 
 	if err != nil {
 		return err
 	}
+	defer s.touch(context.WithoutCancel(r.Context()), rec) // a long command was activity throughout
 	var req api.ExecRequest
 	if err := decode(r, &req); err != nil {
 		return err
@@ -620,20 +700,18 @@ func (s *Server) writeFile(w http.ResponseWriter, r *http.Request, p auth.Princi
 }
 
 // lifecycle handles stop/start/pause/resume.
+var lifecycleSteps = map[string]struct {
+	from, to api.SandboxStatus
+	feature  string
+}{
+	"stop":   {api.StatusRunning, api.StatusStopped, adapter.FeatureStopStart},
+	"start":  {api.StatusStopped, api.StatusRunning, adapter.FeatureStopStart},
+	"pause":  {api.StatusRunning, api.StatusPaused, adapter.FeaturePauseResume},
+	"resume": {api.StatusPaused, api.StatusRunning, adapter.FeaturePauseResume},
+}
+
 func (s *Server) lifecycle(action string) handlerFunc {
-	type step struct {
-		from, to api.SandboxStatus
-		feature  string
-	}
-	steps := map[string]step{
-		"stop":   {api.StatusRunning, api.StatusStopped, adapter.FeatureStopStart},
-		"start":  {api.StatusStopped, api.StatusRunning, adapter.FeatureStopStart},
-		"pause":  {api.StatusRunning, api.StatusPaused, adapter.FeaturePauseResume},
-		"resume": {api.StatusPaused, api.StatusRunning, adapter.FeaturePauseResume},
-	}
-	base := steps[action]
 	return func(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
-		st := base // per request: start below adjusts it
 		if err := p.Require(auth.ScopeSandboxesWrite); err != nil {
 			return err
 		}
@@ -641,81 +719,11 @@ func (s *Server) lifecycle(action string) handlerFunc {
 		if err != nil {
 			return err
 		}
-		if rec.Status == st.to {
+		if rec.Status == lifecycleSteps[action].to {
 			writeJSON(w, 200, rec.Sandbox) // idempotent
 			return nil
 		}
-		if rec.Status != st.from {
-			return api.Errorf(api.CodeInvalidState, "cannot %s a %s sandbox", action, rec.Status).With("status", string(rec.Status))
-		}
-		a, err := s.Pools.Adapter(rec.Pool)
-		if err != nil {
-			return err
-		}
-		if !s.Pools.Supports(r.Context(), rec.Pool, st.feature) {
-			return unsupported(rec, st.feature)
-		}
-		if action == "start" {
-			// Starting re-reserves CPU and memory: check quota atomically
-			// first, and release the reservation if the backend fails.
-			org, _ := s.Store.GetOrg(r.Context(), rec.OrgID)
-			proj, _ := s.Store.GetProject(r.Context(), rec.ProjectID)
-			// The reservation marks it running (not provisioning, which the
-			// scheduler would pick up) until the backend confirms.
-			if _, err := s.Store.ReserveCompute(r.Context(), rec.ID, api.StatusStopped, api.StatusRunning, org.Quota, proj.Quota, s.now()); err != nil {
-				return err
-			}
-			st.from = api.StatusRunning
-		}
-		switch action {
-		case "stop", "start":
-			l, ok := a.(adapter.Lifecycle)
-			if !ok {
-				return unsupported(rec, st.feature)
-			}
-			if action == "stop" {
-				err = l.Stop(r.Context(), rec.BackendRef)
-			} else {
-				err = l.Start(r.Context(), rec.BackendRef)
-			}
-		default:
-			pz, ok := a.(adapter.Pauser)
-			if !ok {
-				return unsupported(rec, st.feature)
-			}
-			if action == "pause" {
-				err = pz.Pause(r.Context(), rec.BackendRef)
-			} else {
-				err = pz.Resume(r.Context(), rec.BackendRef)
-			}
-		}
-		if err != nil {
-			if action == "start" {
-				_, _ = s.Store.UpdateSandbox(r.Context(), rec.ID, func(x *store.SandboxRecord) error {
-					if x.Status == api.StatusRunning {
-						x.Status = api.StatusStopped
-					}
-					return nil
-				})
-			}
-			return err
-		}
-		out, err := s.Store.UpdateSandbox(r.Context(), rec.ID, func(x *store.SandboxRecord) error {
-			if x.Status == st.to && st.to == api.StatusStopped {
-				return nil // the reconciler saw the backend stop first
-			}
-			if x.Status != st.from {
-				return api.Errorf(api.CodeConflict, "sandbox changed to %s concurrently", x.Status)
-			}
-			now := s.now()
-			if st.to == api.StatusRunning {
-				x.RunningSince = &now
-			} else {
-				scheduler.StopClock(x, now)
-			}
-			x.Status, x.UpdatedAt = st.to, now
-			return nil
-		})
+		out, err := s.transition(r.Context(), rec, action)
 		if err != nil {
 			return err
 		}
@@ -723,6 +731,85 @@ func (s *Server) lifecycle(action string) handlerFunc {
 		writeJSON(w, 200, out.Sandbox)
 		return nil
 	}
+}
+
+// transition stops, starts, pauses or resumes a sandbox on its backend and
+// records the new status. A caller's stop or pause clears any idle marker,
+// so the sandbox is not woken by the next call; a start or resume counts as
+// activity.
+func (s *Server) transition(ctx context.Context, rec store.SandboxRecord, action string) (store.SandboxRecord, error) {
+	st := lifecycleSteps[action]
+	if rec.Status != st.from {
+		return rec, api.Errorf(api.CodeInvalidState, "cannot %s a %s sandbox", action, rec.Status).With("status", string(rec.Status))
+	}
+	a, err := s.Pools.Adapter(rec.Pool)
+	if err != nil {
+		return rec, err
+	}
+	if !s.Pools.Supports(ctx, rec.Pool, st.feature) {
+		return rec, unsupported(rec, st.feature)
+	}
+	if action == "start" {
+		// Starting re-reserves CPU and memory: check quota atomically
+		// first, and release the reservation if the backend fails.
+		org, _ := s.Store.GetOrg(ctx, rec.OrgID)
+		proj, _ := s.Store.GetProject(ctx, rec.ProjectID)
+		// The reservation marks it running (not provisioning, which the
+		// scheduler would pick up) until the backend confirms.
+		if _, err := s.Store.ReserveCompute(ctx, rec.ID, api.StatusStopped, api.StatusRunning, org.Quota, proj.Quota, s.now()); err != nil {
+			return rec, err
+		}
+		st.from = api.StatusRunning
+	}
+	switch action {
+	case "stop", "start":
+		l, ok := a.(adapter.Lifecycle)
+		if !ok {
+			return rec, unsupported(rec, st.feature)
+		}
+		if action == "stop" {
+			err = l.Stop(ctx, rec.BackendRef)
+		} else {
+			err = l.Start(ctx, rec.BackendRef)
+		}
+	default:
+		pz, ok := a.(adapter.Pauser)
+		if !ok {
+			return rec, unsupported(rec, st.feature)
+		}
+		if action == "pause" {
+			err = pz.Pause(ctx, rec.BackendRef)
+		} else {
+			err = pz.Resume(ctx, rec.BackendRef)
+		}
+	}
+	if err != nil {
+		if action == "start" {
+			_, _ = s.Store.UpdateSandbox(ctx, rec.ID, func(x *store.SandboxRecord) error {
+				if x.Status == api.StatusRunning {
+					x.Status = api.StatusStopped
+				}
+				return nil
+			})
+		}
+		return rec, err
+	}
+	return s.Store.UpdateSandbox(ctx, rec.ID, func(x *store.SandboxRecord) error {
+		if x.Status == st.to && st.to == api.StatusStopped {
+			return nil // the reconciler saw the backend stop first
+		}
+		if x.Status != st.from {
+			return api.Errorf(api.CodeConflict, "sandbox changed to %s concurrently", x.Status)
+		}
+		now := s.now()
+		if st.to == api.StatusRunning {
+			x.RunningSince, x.LastActivityAt = &now, &now
+		} else {
+			scheduler.StopClock(x, now)
+		}
+		x.Status, x.UpdatedAt, x.IdledAt, x.StatusReason = st.to, now, nil, ""
+		return nil
+	})
 }
 
 func (s *Server) snapshot(r *http.Request, p auth.Principal, rec store.SandboxRecord, kind string) (store.SnapshotRecord, error) {
