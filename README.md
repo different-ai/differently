@@ -142,6 +142,9 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
   artifacts alone;
 - real OpenSandbox responses are recorded and replayed in every `go test`;
 - the `agent-sandbox` adapter against a Kubernetes cluster (kind);
+- the Daytona (container class) and Freestyle adapters against live
+  accounts: exec, files, port URLs, stop/start and snapshots on both, and
+  egress policy, pause/resume, memory snapshots and fork on Freestyle;
 - [OpenWork](https://github.com/different-ai/openwork)'s Workbot computers run
   through Differently as a sandbox gateway, behind a flag;
 - Fast Sandbox microVMs on one node: the adapter scenario (recorded), and
@@ -152,8 +155,8 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 - the end-to-end suite on Fast Sandbox microVMs;
 - multi-node clusters;
 - managed EKS, GKE and AKS;
-- live accounts on the managed providers: their adapters are tested
-  against fakes of each provider's published API.
+- the other 12 provider adapters against live accounts: each is tested
+  against a fake of its provider's published API.
 
 Each of the 26 providers has a page with its tested status, capabilities and
 configuration in the [provider catalog](docs/providers/README.md). The

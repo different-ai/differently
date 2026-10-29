@@ -6,8 +6,18 @@ config:
     driver: postgres
   policy:
     external: overflow
-    externalPools: [daytona]
+    externalPools: [daytona, freestyle]
     strategy: private-first
+  # A second provider whose key is stored in Differently
+  # (differently admin secret put freestyle-key ...), as a config pool.
+  pools:
+    - name: freestyle
+      adapter: freestyle
+      trust: external
+      maxConcurrency: 10
+      credentials: {secret: freestyle-key}
+      config:
+        egress: none
 
 postgresql:
   embedded:

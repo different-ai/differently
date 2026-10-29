@@ -71,6 +71,10 @@ spec:
             - {name: config, mountPath: /etc/differently, readOnly: true}
             - {name: data, mountPath: /var/lib/differently}
             - {name: tmp, mountPath: /tmp}
+            {{- /* file: credentials resolve against the same mounts as the server. */}}
+            {{- with .Values.server.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
         {{- end }}
         {{- if eq $migrationMode "initContainer" }}
         - name: migrate
