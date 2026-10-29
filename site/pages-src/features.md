@@ -6,7 +6,7 @@ description: What OpenSandbox provides, what Differently adds on top, and how th
 Differently is an orchestration and resource-management layer. It does not run sandboxes itself: it decides where each one runs and keeps account of it. Its default private runtime is [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox), run by the operator; other pools can be any of the [built-in provider adapters](/differently/docs/providers/), from E2B and Daytona to the cloud providers' sandbox services, or any service that speaks the [adapter protocol](/differently/docs/adapters/specification/).
 
 :::caution[Pre-release]
-The end-to-end suite passes 14/14 against real OpenSandbox servers on the Docker runtime and on the Kubernetes runtime (single-node k3s). Fast Sandbox (microVM), multi-node and managed clusters, and live accounts on managed providers are not verified yet. See the [roadmap](/differently/docs/roadmap/).
+The end-to-end suite passes 14/14 against real OpenSandbox servers on the Docker runtime and on the Kubernetes runtime (single-node k3s). Fast Sandbox (microVM) ran live on one node, without the end-to-end suite yet; multi-node and managed clusters, and live accounts on managed providers, are not verified yet. See the [roadmap](/differently/docs/roadmap/).
 :::
 
 ## What OpenSandbox provides
@@ -16,10 +16,10 @@ These come from the runtime. Differently exposes them through its own API when t
 | Feature | Notes |
 |---|---|
 | Runtimes | Docker, Kubernetes, and Fast Sandbox (Firecracker microVMs managed by a per-node agent) |
-| Lifecycle | Create and delete everywhere. Pause and resume keep memory on Docker (and Fast Sandbox); stop and start keep the disk on Kubernetes, through a snapshot registry |
+| Lifecycle | Create and delete everywhere. Pause and resume keep memory on Docker and Fast Sandbox (a Fast Sandbox pause uploads a full checkpoint and takes minutes); stop and start keep the disk on Kubernetes, through a snapshot registry |
 | Exec | Commands with env, cwd, timeouts, exit codes and streamed output; stdin is staged in a file the command reads |
 | Files | Upload, download and list |
-| Snapshots and fork | Disk snapshots and fork on Docker, and on Kubernetes through a snapshot registry; memory snapshots on Fast Sandbox are documented upstream but not yet verified |
+| Snapshots and fork | Disk snapshots and fork on Docker, on Fast Sandbox, and on Kubernetes through a snapshot registry; memory snapshots are not exposed yet |
 | Port URLs and egress | Signed, time-limited port URLs through its ingress gateway, and per-pool egress (`none` or an allowlist) through its egress sidecar, both checked on Kubernetes |
 | TTL backstop | OpenSandbox's own timeout is set from the sandbox TTL at creation |
 | Isolation | Containers on Docker and Kubernetes (shared kernel); a microVM per sandbox only on Fast Sandbox |

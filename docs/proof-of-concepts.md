@@ -25,7 +25,7 @@ Kubernetes distribution and CNI.
 | 8 | Agent liveness and partition tolerance | A network blip may destroy VMs | Production use of private pools | ⛔ obsolete, see 13 |
 | 9 | VM networking under real CNIs | Isolation rules untested; DNS undefined | Network isolation claims | ⛔ obsolete, see 12 and E19 |
 | 10 | Control-plane throughput on Postgres | Unknown scheduling limits | Capacity guidance | 📋 |
-| 11 | Fast Sandbox through the adapter | MicroVM isolation through Differently is unverified | Any microVM claim; `snapshots.memory` on OpenSandbox pools | 📋 next |
+| 11 | Fast Sandbox through the adapter | MicroVM isolation through Differently is unverified | Any microVM claim; `snapshots.memory` on OpenSandbox pools | 🟡 partial: ran on one nested-KVM host |
 | 12 | OpenSandbox Kubernetes runtime | The Kubernetes runtime and in-cluster networking are unverified | Kubernetes deploy guidance | 📋 |
 | 13 | OpenSandbox outage and recovery | Unknown behaviour when the OpenSandbox server is down, restarted or upgraded | Upgrade procedure, Scenario J and K claims | 📋 |
 
@@ -260,6 +260,16 @@ virtualization on a supported family), and restores memory snapshots so that
 8. Benchmarks B1 and B2, compared with the Docker runtime on the same host.
 9. Record how Fast Sandbox runs Firecracker (jailer or not, user, seccomp,
    chroot) for the trust model.
+
+**Result (2026-10-29, partial).** Target (b) only: single-node k3s on an
+Azure Standard_D8s_v6 under nested KVM, OpenSandbox 1.2.0. Steps 1 to 3 done
+(a 64 GiB XFS reflink state root). Step 4: `TestLiveOpenSandbox` passes and
+is recorded as `fastsandbox-1.2.0`; the end-to-end suite and the 100-cycle
+loop have not run. The guest runs its own kernel (6.18, host 7.0), and
+OpenWork's Workbot desktop kept its processes and unsaved work across pause
+and resume, and across an idle pause woken by a port request. Steps 5 to 9
+and target (a) are not done. Timings and gaps:
+[pools guide](guides/opensandbox-pools.md#measured-on-a-workbot-desktop).
 
 **Success criteria.**
 
