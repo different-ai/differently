@@ -165,6 +165,9 @@ type CreateRequest struct {
 	Labels       map[string]string `json:"labels,omitempty"`
 	TTLSeconds   int               `json:"ttlSeconds,omitempty"`
 	FromSnapshot string            `json:"fromSnapshot,omitempty"`
+	// IdleTimeoutSeconds is the sandbox's idle auto-stop threshold (0: off).
+	// Only adapters that idle natively (NativeIdler) act on it.
+	IdleTimeoutSeconds int `json:"idleTimeoutSeconds,omitempty"`
 }
 
 // Instance is a backend resource backing a sandbox.
@@ -227,6 +230,14 @@ type Expirer interface {
 type Pauser interface {
 	Pause(ctx context.Context, ref string) error
 	Resume(ctx context.Context, ref string) error
+}
+
+// NativeIdler is implemented by adapters whose backend pauses idle instances
+// itself (from CreateRequest.IdleTimeoutSeconds) and wakes them on access.
+// The scheduler then leaves idling to the backend instead of sweeping, and
+// follows the backend's pauses and wakes when it reconciles.
+type NativeIdler interface {
+	IdlesNatively() bool
 }
 
 // Snapshotter captures instance state. Restoring happens through

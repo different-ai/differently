@@ -638,4 +638,50 @@ func TestIdleAutoStopAndWake(t *testing.T) {
 	}
 }
 
+// Native idling: on a pool whose backend pauses idle sandboxes itself
+// (OpenSandbox Fast Sandbox), Differently's sweep stands aside, the
+// reconciler marks a backend pause as idled, the next exec wakes it, and a
+// wake by the backend's gateway is followed back to running.
+func TestNativeIdlePools(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	h.fc.NativeIdle = true
+	_, _, token := h.tenant("a", api.Quota{})
+	sb := h.create(token, api.CreateSandboxRequest{IdleTimeoutSeconds: 60})
+	h.tick()
+	ctx := context.Background()
+	h.sched.Now = func() time.Time { return time.Now().UTC().Add(time.Hour) }
+	h.sched.SweepIdle(ctx)
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning {
+		t.Fatalf("Differently's sweep should leave a natively idling pool alone: %s", got.Status)
+	}
+	h.sched.Now = func() time.Time { return time.Now().UTC() }
+
+	ref := h.fc.RefOf(sb.ID)
+	_ = h.fc.Pause(ctx, ref) // the backend's idle policy fires
+	h.sched.Reconcile(ctx)
+	got := h.get(token, sb.ID)
+	if got.Status != api.StatusPaused || got.IdledAt == nil {
+		t.Fatalf("a backend idle pause should mark the sandbox idled: %s %v", got.Status, got.IdledAt)
+	}
+	h.must(200, "POST", "/v1/sandboxes/"+sb.ID+"/exec", token, api.ExecRequest{Command: "echo hi"}, nil)
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning || got.IdledAt != nil {
+		t.Fatalf("exec should wake it: %s", got.Status)
+	}
+
+	_ = h.fc.Pause(ctx, ref)
+	h.sched.Reconcile(ctx)
+	_ = h.fc.Resume(ctx, ref) // traffic through the backend's gateway wakes it
+	h.sched.Reconcile(ctx)
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning || got.IdledAt != nil {
+		t.Fatalf("a backend wake should be followed: %s %v", got.Status, got.IdledAt)
+	}
+
+	// A caller's pause is not reinterpreted when the backend reports it.
+	h.must(200, "POST", "/v1/sandboxes/"+sb.ID+"/pause", token, nil, nil)
+	h.sched.Reconcile(ctx)
+	if got := h.get(token, sb.ID); got.Status != api.StatusPaused || got.IdledAt != nil {
+		t.Fatalf("a caller's pause must stay a caller's pause: %s %v", got.Status, got.IdledAt)
+	}
+}
+
 func ptr[T any](v T) *T { return &v }

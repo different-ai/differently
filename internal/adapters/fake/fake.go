@@ -55,6 +55,19 @@ type Adapter struct {
 	FailCreates int
 	FailWith    error
 	creates     int
+	// NativeIdle makes the fake claim its backend idles instances itself
+	// (adapter.NativeIdler); tests pause and resume instances to act for it.
+	NativeIdle bool
+}
+
+// IdlesNatively implements adapter.NativeIdler.
+func (a *Adapter) IdlesNatively() bool { return a.NativeIdle }
+
+// RefOf returns the instance ref backing a sandbox.
+func (a *Adapter) RefOf(sandboxID string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.byID[sandboxID]
 }
 
 // New returns a fake adapter.
