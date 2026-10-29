@@ -62,7 +62,7 @@
       "required": ["name", "adapter"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
-        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "vercel", "fly"]},
+        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "vercel", "fly", "blaxel"]},
         "trust": {"type": "string", "enum": ["private", "external"]},
         "region": {"type": "string"},
         "labels": {"$ref": "#/definitions/stringMap"},

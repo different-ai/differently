@@ -34,6 +34,22 @@ pools:
 	}
 }
 
+func TestManagedProvidersAreAlwaysExternal(t *testing.T) {
+	c, err := Parse([]byte(`
+pools:
+  - {name: bl, adapter: blaxel, trust: private, config: {workspace: ws}, credentials: {env: BL_API_KEY}}
+  - {name: bl2, adapter: blaxel, config: {workspace: ws}}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range c.Pools {
+		if p.Trust != api.TrustExternal {
+			t.Fatalf("pool %s on adapter %s came out %q", p.Name, p.Adapter, p.Trust)
+		}
+	}
+}
+
 func TestValidateReportsProblems(t *testing.T) {
 	_, err := Parse([]byte(`
 store: {driver: sqlite}
