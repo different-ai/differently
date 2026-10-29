@@ -28,32 +28,61 @@ keeps memory; "Snapshots" are disk unless marked memory.
 
 ### Built-in adapters
 
-| Provider | Adapter | Status | Trust | Isolation | Persists | Snapshots · fork | Port URLs |
-|---|---|---|---|---|---|---|---|
-| [OpenSandbox](opensandbox.md) | `opensandbox` | **Verified live** (Docker and Kubernetes, 2026-10-29) | declared | containers; Firecracker with Fast Sandbox (not verified) | stop/start (Kubernetes), pause (Docker) | yes · yes | signed (Kubernetes) |
-| [agent-sandbox](agent-sandbox.md) (Kubernetes SIG) | `agent-sandbox` | **Verified live** (kind cluster, runc, 2026-10-28) | declared | the pod's RuntimeClass: runc, gVisor or Kata | stop/start with a volume | no · no | in-cluster only |
-| [Daytona](daytona.md) | `daytona` | Tested with a fake server | external | containers, or VMs | stop/start; pause on VMs | yes (memory on VMs) · no | signed |
-| [Freestyle](freestyle.md) | `freestyle` | Tested with a fake server | external | microVMs | stop/start, pause | memory · yes | public |
-| [E2B](e2b.md) | `e2b` | Tested with a fake server | declared (self-hostable) | Firecracker microVMs | pause | memory · yes | public, opt-in |
-| [Boat](boat.md) | `boat` | Tested with a fake server | external | VMs | stop/start | yes · yes | token, or public |
-| [Morph Cloud](morph.md) | `morph` | Tested with a fake server | external | VMs | pause | memory · yes | public by default |
-| [Vercel Sandbox](vercel.md) | `vercel` | Tested with a fake server | external | Firecracker microVMs | stop/start | yes · yes | public, ports set at creation |
-| [Fly.io Machines](fly.md) | `fly` | Tested with a fake server | external | Firecracker microVMs | stop/start; suspend opt-in | no · no | no |
-| [Blaxel](blaxel.md) | `blaxel` | Tested with a fake server | external | microVMs | automatic standby only | no · no | token in the URL |
-| [CubeSandbox](cubesandbox.md) | `cubesandbox` | Tested with a fake server | declared (self-hostable) | KVM microVMs | pause | memory · yes | opt-in |
-| [Amazon Bedrock AgentCore Code Interpreter](aws-agentcore.md) | `aws-agentcore` | Tested with a fake server | declared (your AWS account) | microVM per session | no | no · no | no |
-| [Azure Container Apps Sandboxes](azure-sandboxes.md) | `azure-sandboxes` | Tested with a fake server | declared (your subscription) | Microsoft-managed boundary | stop/start | yes · yes | public |
-| [Azure Container Apps dynamic sessions](azure-sessions.md) | `azure-sessions` | Tested with a fake server (Python pools) | declared (your subscription) | Hyper-V | no | no · no | no |
-| [Google Cloud Agent Platform sandboxes](gcp-sandboxes.md) | `gcp-sandboxes` | Tested with a fake server | declared (your project) | Google-managed containers | stop/start | memory · yes | no |
-| [Northflank](northflank.md) | `northflank` | Tested with a fake server | declared (BYOC possible) | microVMs or gVisor | no | no · no | public |
+| Provider | Status | Trust |
+|---|---|---|
+| [OpenSandbox](opensandbox.md) `opensandbox` | **Verified live**: Docker and Kubernetes runtimes, 2026-10-29 | declared |
+| [agent-sandbox](agent-sandbox.md) `agent-sandbox` | **Verified live**: kind cluster, runc, 2026-10-28 | declared |
+| [Daytona](daytona.md) `daytona` | Tested with a fake server | external |
+| [Freestyle](freestyle.md) `freestyle` | Tested with a fake server | external |
+| [E2B](e2b.md) `e2b` | Tested with a fake server | declared |
+| [Boat](boat.md) `boat` | Tested with a fake server | external |
+| [Morph Cloud](morph.md) `morph` | Tested with a fake server | external |
+| [Vercel Sandbox](vercel.md) `vercel` | Tested with a fake server | external |
+| [Fly.io Machines](fly.md) `fly` | Tested with a fake server | external |
+| [Blaxel](blaxel.md) `blaxel` | Tested with a fake server | external |
+| [CubeSandbox](cubesandbox.md) `cubesandbox` | Tested with a fake server | declared |
+| [AWS AgentCore Code Interpreter](aws-agentcore.md) `aws-agentcore` | Tested with a fake server | declared |
+| [Azure Container Apps Sandboxes](azure-sandboxes.md) `azure-sandboxes` | Tested with a fake server | declared |
+| [Azure dynamic sessions](azure-sessions.md) `azure-sessions` | Tested with a fake server (Python pools) | declared |
+| [Google Cloud Agent Platform sandboxes](gcp-sandboxes.md) `gcp-sandboxes` | Tested with a fake server | declared |
+| [Northflank](northflank.md) `northflank` | Tested with a fake server | declared |
+
+**Trust:** *external* pools are always third-party capacity and receive work
+only when policy allows it. *Declared* pools must say `private` or
+`external`: self-hostable runtimes (OpenSandbox, agent-sandbox, CubeSandbox,
+E2B) and cloud services that run in your own account (AWS, Azure, Google
+Cloud, Northflank BYOC).
+
+### What each adapter offers
+
+"Keeps state" is stop/start that keeps the disk, or pause that keeps memory.
+
+| Provider | Isolation | Keeps state | Snapshots | Fork | Port URLs |
+|---|---|---|---|---|---|
+| OpenSandbox | container; microVM (Fast Sandbox) | stop/start (Kubernetes), pause (Docker, Fast Sandbox) | disk | yes | signed (Kubernetes) |
+| agent-sandbox | RuntimeClass | stop/start with a volume | no | no | in-cluster |
+| Daytona | container or VM | stop/start; pause on VMs | disk; memory on VMs | no | signed |
+| Freestyle | microVM | stop/start, pause | memory | yes | public |
+| E2B | microVM | pause | memory | yes | public, opt-in |
+| Boat | VM | stop/start | disk | yes | token or public |
+| Morph Cloud | VM | pause | memory | yes | public by default |
+| Vercel Sandbox | microVM | stop/start | disk | yes | public |
+| Fly.io Machines | microVM | stop/start; suspend opt-in | no | no | no |
+| Blaxel | microVM | automatic standby | no | no | token in URL |
+| CubeSandbox | microVM | pause | memory | yes | opt-in |
+| AWS AgentCore | microVM | no | no | no | no |
+| Azure Sandboxes | managed | stop/start | disk | yes | public |
+| Azure sessions | Hyper-V | no | no | no | no |
+| Google Cloud sandboxes | container | stop/start | memory | yes | no |
+| Northflank | microVM or gVisor | no | no | no | public |
+
+Every adapter offers exec and files. Streamed exec, stdin, egress control and
+size limits differ: each page has the full table.
 
 Two more kinds are not providers: [`remote`](remote.md), for any backend
 behind the HTTP adapter protocol (private unless declared), and `devhost`,
 which runs commands on the server's own machine with **no isolation**, in
 `--dev` mode only.
-
-Egress control (`network.egress-control`) is offered by OpenSandbox on
-Kubernetes, Freestyle and Azure Container Apps Sandboxes; each page says how.
 
 ### Through a remote plugin (documented)
 

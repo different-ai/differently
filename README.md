@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/differently-splash-dark.svg">
-    <img alt="Differently: your apps and agents call one API; differently-server handles tenancy, quotas, policy and audit, and places each sandbox on OpenSandbox or your own backend inside your infrastructure, or on Daytona or Freestyle only if policy allows" src="docs/assets/differently-splash-light.svg" width="100%">
+    <img alt="Differently: your apps and agents call one API; differently-server handles tenancy, quotas, policy and audit, and places each sandbox on OpenSandbox or your own backend inside your infrastructure, or on a managed provider such as E2B or Daytona only if policy allows" src="docs/assets/differently-splash-light.svg" width="100%">
   </picture>
 </p>
 
@@ -30,9 +30,10 @@ account of it:
 
 - by default on [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox)
   on your own Docker hosts, Kubernetes clusters or microVM nodes;
-- on [26 other providers](docs/providers/README.md), from E2B, Daytona and
-  Vercel to the AWS, Azure and Google Cloud sandbox services, or your own
-  backend, only where your policies allow it.
+- on [15 other built-in provider adapters](docs/providers/README.md), from
+  E2B, Daytona and Vercel to the AWS, Azure and Google Cloud sandbox
+  services, or a plugin for any other backend, only where your policies
+  allow it.
 
 Apache-2.0, fully self-hosted, no telemetry. Built by the
 [OpenWork](https://github.com/different-ai) team.
@@ -167,7 +168,9 @@ against global, organization and project policy, ranks what is left, and
 records why. Adapters talk to the backends:
 
 - `opensandbox`, the default private runtime;
-- `daytona` and `freestyle`, external providers;
+- 15 more provider adapters, from `agent-sandbox` and `cubesandbox` you run
+  to `e2b`, `daytona`, `vercel` and the cloud providers' sandbox services
+  ([provider catalog](docs/providers/README.md));
 - `remote`, any service speaking the [adapter protocol](docs/adapters/specification.md).
 
 Isolation and egress belong to each backend's runtime. Differently records

@@ -150,14 +150,14 @@ const features = [
   {
     k: '01',
     title: 'Providers behind adapters',
-    body: 'OpenSandbox, agent-sandbox and CubeSandbox servers you run; E2B, Daytona, Freestyle, Vercel, Fly.io and the AWS, Azure and Google Cloud sandbox services; and any service speaking the adapter protocol plug in behind one contract. Applications keep calling the same API while operators change where work goes.',
-    href: '/docs/adapters/specification/',
-    cta: 'Adapter specification',
+    body: '16 built-in provider adapters, from OpenSandbox servers you run to E2B, Vercel and the AWS, Azure and Google Cloud sandbox services, plus plugins for anything else, sit behind one contract. Applications keep calling the same API while operators change where work goes.',
+    href: '/docs/providers/',
+    cta: 'Provider catalog',
   },
   {
     k: '02',
     title: 'Quotas and policy-gated overflow',
-    body: 'Registering Daytona or Freestyle authorizes nothing. Work leaves your pools only when global, organization and project policy, the data classification and the request all allow it. Quotas are derived from state and enforced at admission. Anything unclear fails closed.',
+    body: 'Registering a managed provider authorizes nothing. Work leaves your pools only when global, organization and project policy, the data classification and the request all allow it. Quotas are derived from state and enforced at admission. Anything unclear fails closed.',
     href: '/docs/guides/hybrid-overflow/',
     cta: 'Hybrid overflow guide',
   },
@@ -179,7 +179,7 @@ const features = [
 
 const fromRuntime = [
   ['Sandbox runtimes', 'Docker, Kubernetes, and Fast Sandbox (Firecracker microVMs on a per-node agent).'],
-  ['Lifecycle', 'Create, delete, pause and resume; a provider-side timeout as a TTL backstop.'],
+  ['Lifecycle', 'Create, delete, pause and resume, stop and start on Kubernetes; a provider-side timeout as a TTL backstop.'],
   ['Exec and files', 'Commands with env, cwd, timeouts and streamed output; upload, download and list files.'],
   ['Snapshots', 'Disk snapshots; memory-preserving pause and OCI snapshots on Fast Sandbox (documented, not yet verified by us).'],
   ['Open source', 'Apache-2.0, self-hostable, with SDKs in several languages.'],
@@ -222,7 +222,7 @@ const compare = [
   </head>
   <body>
     <div class="status" role="note">
-      <strong>Pre-release, not for production.</strong> {version} has run end to end on OpenSandbox's Docker runtime and on a single-node k3s cluster. Fast Sandbox microVMs, multi-node and managed clusters, and live accounts on managed providers are not verified yet.
+      <strong>Pre-release, not for production.</strong> {version} has run end to end on OpenSandbox's Docker and Kubernetes runtimes; Fast Sandbox, managed clusters and live provider accounts are not verified yet.
       <a href="#proven">What is proven</a>
     </div>
 
@@ -298,7 +298,7 @@ const compare = [
             <g class="node"><rect x="260" y="270" width="130" height="56" rx="12" /><text x="325" y="304">Postgres</text></g>
             <g class="node"><rect x="490" y="64" width="230" height="84" rx="12" /><text x="605" y="98">OpenSandbox</text><text x="605" y="122" class="sub">Docker · Kubernetes runtime</text></g>
             <g class="node"><rect x="490" y="176" width="230" height="84" rx="12" /><text x="605" y="210">OpenSandbox</text><text x="605" y="234" class="sub">Fast Sandbox microVMs</text></g>
-            <g class="node ext"><rect x="790" y="140" width="154" height="80" rx="12" /><text x="867" y="174">Daytona</text><text x="867" y="196" class="sub">Freestyle · remote</text></g>
+            <g class="node ext"><rect x="790" y="140" width="154" height="80" rx="12" /><text x="867" y="174">Providers</text><text x="867" y="196" class="sub">E2B · Daytona · cloud</text></g>
 
             <path class="edge" d="M156 180H226" marker-end="url(#arr)" />
             <text class="elabel" x="191" y="166">one API</text>
@@ -367,7 +367,7 @@ const compare = [
             <tbody>{compare.map(([q, a, b]) => (<tr><th scope="row">{q}</th><td>{a}</td><td>{b}</td></tr>))}</tbody>
           </table>
         </div>
-        <p class="note">Full matrix, including what each backend supports today: <a href={`${base}/docs/features/`}>Features</a> and <a href={`${base}/docs/feature-parity/`}>feature parity</a>.</p>
+        <p class="note">What each backend supports today: the <a href={`${base}/docs/providers/`}>provider catalog</a>, <a href={`${base}/docs/features/`}>Features</a> and <a href={`${base}/docs/feature-parity/`}>feature parity</a>.</p>
       </section>
 
       <section class="code wrap" id="code">
