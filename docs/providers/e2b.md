@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Tested with a fake server** (2026-10-28): implemented from E2B's published API specs, not run against E2B |
 | Adapter | `e2b` (`internal/adapters/e2b`) |
-| Trust | external (provider-managed; forced) |
+| Trust | declared (self-hostable): `external` for E2B's hosted service; `private` only for an E2B you operate |
 | Isolation | Firecracker microVM per sandbox |
 | API checked | Control plane: [spec/openapi.yml](https://github.com/e2b-dev/E2B/blob/3b0f0fedde75acb1e6c62f35ff93fe9b812ed2d4/spec/openapi.yml); in-sandbox daemon: [spec/envd](https://github.com/e2b-dev/E2B/tree/3b0f0fedde75acb1e6c62f35ff93fe9b812ed2d4/spec/envd); [docs.e2b.dev](https://docs.e2b.dev/), read 2026-10-28 |
 
@@ -32,7 +32,7 @@
 pools:
   - name: e2b
     adapter: e2b
-    trust: external          # forced; the adapter is always external
+    trust: external          # required: external for E2B's hosted service
     region: us-west-1
     maxConcurrency: 20       # Hobby allows 20 concurrent sandboxes
     config:
@@ -51,9 +51,10 @@ differently admin pool add e2b --adapter e2b --trust external --region us-west-1
   --config maxLifetimeSeconds=3600 --max-concurrency 20 --secret e2b-key
 ```
 
-The Helm chart's pool schema takes `credentials: {env: E2B_API_KEY}` with
-the key in `server.extraEnv`, or register the pool at runtime as above. E2B
-is not placed until policy approves external pools
+A pool without `trust` is refused. The Helm chart's pool schema takes
+`credentials: {env: E2B_API_KEY}` with the key in `server.extraEnv`, or
+register the pool at runtime as above. A `trust: external` pool is not
+placed until policy approves external pools
 ([keys-and-providers.md](../guides/keys-and-providers.md#approve-external-providers-safely)).
 The server needs egress to `api.<domain>` and `sandbox.<domain>` on 443.
 
@@ -87,8 +88,10 @@ The server needs egress to `api.<domain>` and `sandbox.<domain>` on 443.
   or more and 5 a second. Paused sandboxes do not count.
 - **Pricing:** per second while running, per vCPU and per GiB of RAM; disk
   is included; paused sandboxes are free.
-- E2B's infrastructure is open source and can be self-hosted; this adapter
-  is registered as external only.
+- E2B's infrastructure is open source and can be self-hosted. Point
+  `apiURL` and `domain` at your install and declare `trust: private` only if
+  you operate it. The limits above describe E2B's hosted service; a
+  self-hosted install has not been tried.
 
 ## How it was tested
 

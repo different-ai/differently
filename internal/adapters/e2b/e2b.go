@@ -1,4 +1,5 @@
-// Package e2b adapts E2B's hosted sandbox API.
+// Package e2b adapts E2B's sandbox API: the hosted service, or an E2B the
+// operator runs (its infrastructure is open source), so pools declare trust.
 //
 // The control plane (api.<domain>) creates, lists, pauses and snapshots
 // sandboxes. Commands and files go to envd, the daemon inside each sandbox,
@@ -58,10 +59,13 @@ const (
 
 // Options configures the adapter. Pool config keys: apiURL, domain,
 // template (default base), maxLifetimeSeconds (the plan's maximum runtime;
-// default 3600), ports (private|public) and egress (public|none).
+// default 3600), ports (private|public) and egress (public|none). Trust is the
+// pool's declaration: external for E2B's hosted service, private only for an
+// E2B the operator runs.
 type Options struct {
 	APIURL      string
 	APIKey      string
+	Trust       string
 	Domain      string
 	Template    string
 	MaxLifetime int
@@ -72,9 +76,9 @@ type Options struct {
 	ReadyTimeout time.Duration
 }
 
-// FromConfig maps pool config to options.
-func FromConfig(cfg map[string]string, apiKey string) Options {
-	o := Options{APIURL: cfg["apiURL"], APIKey: apiKey, Domain: cfg["domain"], Template: cfg["template"], Ports: cfg["ports"], Egress: cfg["egress"]}
+// FromConfig maps pool config and its declared trust to options.
+func FromConfig(cfg map[string]string, trust, apiKey string) Options {
+	o := Options{APIURL: cfg["apiURL"], APIKey: apiKey, Trust: trust, Domain: cfg["domain"], Template: cfg["template"], Ports: cfg["ports"], Egress: cfg["egress"]}
 	o.MaxLifetime, _ = strconv.Atoi(cfg["maxLifetimeSeconds"])
 	if o.Domain == "" {
 		o.Domain = DefaultDomain
@@ -87,6 +91,9 @@ func FromConfig(cfg map[string]string, apiKey string) Options {
 	}
 	if o.MaxLifetime <= 0 {
 		o.MaxLifetime = 3600
+	}
+	if o.Trust == "" {
+		o.Trust = api.TrustExternal
 	}
 	return o
 }
@@ -107,6 +114,9 @@ type envdInfo struct{ token, domain string }
 func New(o Options) *Adapter {
 	if o.ReadyTimeout == 0 {
 		o.ReadyTimeout = 3 * time.Minute
+	}
+	if o.Trust == "" {
+		o.Trust = api.TrustExternal
 	}
 	cp := httpx.New("e2b", o.APIURL, "")
 	cp.HTTP.Transport = transport{apiKey: o.APIKey, next: http.DefaultTransport}
@@ -207,7 +217,7 @@ type sandbox struct {
 }
 
 func (a *Adapter) Info() adapter.Info {
-	return adapter.Info{Kind: "e2b", Version: "1", Trust: api.TrustExternal, Isolation: "Firecracker microVM (E2B-managed)", Protocol: adapter.ProtocolVersion, Description: "E2B sandboxes at " + a.opts.APIURL + "; sizes come from the template; sandboxes live at most " + strconv.Itoa(a.opts.MaxLifetime) + " s per run"}
+	return adapter.Info{Kind: "e2b", Version: "1", Trust: a.opts.Trust, Isolation: "Firecracker microVM (E2B-managed)", Protocol: adapter.ProtocolVersion, Description: "E2B sandboxes at " + a.opts.APIURL + "; sizes come from the template; sandboxes live at most " + strconv.Itoa(a.opts.MaxLifetime) + " s per run"}
 }
 
 func (a *Adapter) Capabilities(context.Context) (adapter.Capabilities, error) {

@@ -356,7 +356,7 @@ func newAdapter(f *fakeE2B, cfg map[string]string) *Adapter {
 		cfg = map[string]string{}
 	}
 	cfg["apiURL"] = f.srv.URL
-	o := FromConfig(cfg, "e2b_test")
+	o := FromConfig(cfg, "", "e2b_test")
 	o.SandboxURL = f.srv.URL
 	return New(o)
 }
@@ -511,6 +511,9 @@ func TestE2BDefaults(t *testing.T) {
 	caps, _ := a.Capabilities(ctx)
 	if caps.Has(adapter.FeaturePorts) {
 		t.Fatal("private ports must not advertise ports.expose")
+	}
+	if a.Info().Trust != api.TrustExternal || New(FromConfig(nil, api.TrustPrivate, "k")).Info().Trust != api.TrustPrivate {
+		t.Fatal("trust is the pool's declaration, external when unset")
 	}
 	if _, err := a.ExposePort(ctx, inst.Ref, 80); !api.IsCode(err, api.CodeUnsupportedOperation) {
 		t.Fatalf("expose with private ports: %v", err)

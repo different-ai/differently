@@ -55,7 +55,7 @@ func Register() {
 		if err != nil {
 			return nil, err
 		}
-		return e2b.New(e2b.FromConfig(p.Config, key)), nil
+		return e2b.New(e2b.FromConfig(p.Config, p.Trust, key)), nil
 	})
 	pools.Register("morph", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
 		key, err := resolve(p, d)
