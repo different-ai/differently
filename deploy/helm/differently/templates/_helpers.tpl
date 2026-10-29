@@ -208,6 +208,8 @@ api-key
 {{- $c := dict "apiURL" $o.apiURL "isolation" $o.isolation -}}
 {{- if not (kindIs "invalid" $o.useServerProxy) }}{{ $_ := set $c "useServerProxy" (toString $o.useServerProxy) }}{{ end -}}
 {{- with $o.timeoutSeconds }}{{ $_ := set $c "timeoutSeconds" (toString .) }}{{ end -}}
+{{- with $o.poolCPU }}{{ $_ := set $c "poolCPU" (toString .) }}{{ end -}}
+{{- with $o.poolMemory }}{{ $_ := set $c "poolMemory" . }}{{ end -}}
 {{- with $o.image }}{{ $_ := set $c "image" . }}{{ end -}}
 {{- with $o.templateId }}{{ $_ := set $c "templateId" . }}{{ end -}}
 {{- with $o.lineEndings }}{{ $_ := set $c "lineEndings" . }}{{ end -}}

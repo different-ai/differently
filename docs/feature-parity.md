@@ -108,7 +108,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 | Capability | Boat | Differently | Status | Notes |
 |---|---|---|---|---|
 | Stop keeping disk / start | Stop then resume on a new machine | `POST …/stop`, `POST …/start` | ✅ e2e | OpenSandbox's Kubernetes runtime with a snapshot registry: the root filesystem is committed and the pod freed (stop about 3.7 s, start about 2.7 s on Azure). Daytona and Freestyle 🧪. OpenSandbox's Docker runtime has no stop. |
-| Pause / resume (memory kept) | No | `POST …/pause`, `POST …/resume` | ✅ e2e | OpenSandbox's Docker runtime; OpenSandbox Fast Sandbox (`runtime: fastsandbox`, microVM checkpoint) 🧪, built against the spec, not yet run live; Freestyle and Daytona VM class 🧪. OpenSandbox's Kubernetes runtime keeps no memory, so it offers stop/start instead. |
+| Pause / resume (memory kept) | No | `POST …/pause`, `POST …/resume` | ✅ e2e | OpenSandbox's Docker runtime; OpenSandbox Fast Sandbox (`runtime: fastsandbox`, microVM checkpoint), run live: pause about 3 min for a 4 GiB desktop, resume 0.9 s; Freestyle and Daytona VM class 🧪. OpenSandbox's Kubernetes runtime keeps no memory, so it offers stop/start instead. |
 | Disk snapshot | Automatic every minute | `POST …/snapshots {kind: disk}` | ✅ e2e | OpenSandbox on both runtimes (Kubernetes: an OCI image in the snapshot registry, ready in about 7 s). |
 | Memory snapshot | No | `kind: memory` | 🟡 | Freestyle (always memory+disk), Daytona VM class. OpenSandbox: not on the Docker or Kubernetes runtime (root filesystem only); Fast Sandbox and its QEMU VMState mode are documented to capture memory, unverified. |
 | Fork | Disk copy | `POST …/fork` | ✅ e2e | Same pool as the source: snapshots are not portable. |
@@ -164,8 +164,9 @@ operation a backend lacks returns `unsupported_operation` (501).
 "e2e" for `opensandbox` means the [end-to-end suite](../test/e2e/README.md)
 (14/14) and the [live adapter check](../test/opensandbox/README.md) pass
 against a real OpenSandbox 1.2.0 server on its Docker runtime and on its
-Kubernetes runtime (single-node k3s). Its Fast Sandbox runtime is not
-verified yet, so microVM isolation through Differently is unverified. Each
+Kubernetes runtime (single-node k3s). Its Fast Sandbox runtime ran live on
+one node (the recorded adapter scenario and Workbot's desktop), not yet
+through the end-to-end suite. Each
 backend's page in the [provider catalog](providers/README.md) has its status
 and configuration.
 
@@ -186,13 +187,14 @@ Against what Freestyle gives Workbot computers, as of 2026-10-29:
 
 | Gap | Kind | Why, and what would close it |
 |---|---|---|
-| Pause that keeps memory, on the Kubernetes runtime | **Limitation** of OpenSandbox's Kubernetes runtime | Its pause commits the root filesystem and frees the pod; memory and processes are gone. Differently offers stop/start there. Fast Sandbox (Firecracker) and OpenSandbox's QEMU VMState mode are documented to keep memory: not built or run with Differently yet. |
-| Memory snapshots | **Limitation** on Docker and Kubernetes; **not run** on Fast Sandbox | Same reason. Running Fast Sandbox needs KVM nodes ([E18](backlog.md#e18-fast-sandbox-spike)). |
-| Idle auto-stop seeing port traffic | **Built for Fast Sandbox, not run live**; not built for the others | With `runtime: fastsandbox`, OpenSandbox's own idle policy (fed by its gateway) pauses and wakes the sandbox, and Differently follows it. For the other runtimes, Differently sees exec, file and port calls, not requests sent straight to a port URL, so viewers call `keepalive`. OpenSandbox's gateway records that traffic in Redis (`gateway.activity`) and could feed Differently's idle clock. |
-| Wake on a port request | **Limitation** for the Kubernetes and Docker runtimes in OpenSandbox 1.2.0 | OpenSandbox's gateway wake-on-access covers Fast Sandbox only; the adapter passes it through with `runtime: fastsandbox` (not run live yet). A stopped sandbox wakes on the next API call (or `keepalive`), not on a hit to its URL. |
+| Pause that keeps memory, on the Kubernetes runtime | **Limitation** of OpenSandbox's Kubernetes runtime | Its pause commits the root filesystem and frees the pod; memory and processes are gone. Differently offers stop/start there. Fast Sandbox (Firecracker) keeps memory and runs with Differently: pause about 3 min for a 4 GiB desktop, resume 0.9 s. |
+| Memory snapshots | **Limitation** on Docker and Kubernetes; **not built** on Fast Sandbox | Same reason. Fast Sandbox's disk snapshots and fork run live; restoring memory from a snapshot is not exposed or checked. |
+| Idle auto-stop seeing port traffic | **Built for Fast Sandbox and run live**; not built for the others | With `runtime: fastsandbox`, OpenSandbox's own idle policy (fed by its gateway) pauses and wakes the sandbox, and Differently follows it. For the other runtimes, Differently sees exec, file and port calls, not requests sent straight to a port URL, so viewers call `keepalive`. OpenSandbox's gateway records that traffic in Redis (`gateway.activity`) and could feed Differently's idle clock. |
+| Wake on a port request | **Limitation** for the Kubernetes and Docker runtimes in OpenSandbox 1.2.0 | OpenSandbox's gateway wake-on-access covers Fast Sandbox only; the adapter passes it through with `runtime: fastsandbox` (run live: first response 0.67 s). A stopped sandbox wakes on the next API call (or `keepalive`), not on a hit to its URL. |
 | Per-request port URL lifetime | **Not built yet** | URLs last the pool's `portURLSeconds`; the ports API takes no `ttlSeconds`. |
 | Egress on the Docker runtime | **Not checked** | The setting is sent on both runtimes; enforcement was checked on Kubernetes only. |
 | Detached processes, PTY, SSH | **Not built yet** | OpenSandbox's execd offers background commands; not wired into the adapter. |
+| Fast Sandbox: pause speed, guest firewall, guest clock | **Limitation** of OpenSandbox 1.2.0 | Each pause uploads a full checkpoint (minutes for a 4 GiB desktop); the stock guest kernel cannot load per-user firewall rules; the guest clock is not stepped after a restore. Details in the [pools guide](guides/opensandbox-pools.md#measured-on-a-workbot-desktop). |
 
 ## 5. Boat-compatible facade: decision
 
@@ -225,9 +227,9 @@ portable core only, and document every semantic difference. Mapping sketch:
 
 ## 6. Biggest gaps, in priority order
 
-1. Run OpenSandbox's Fast Sandbox runtime and a multi-node Kubernetes
-   cluster under Differently, so microVM isolation through Differently is
-   verified. Verify the Daytona and Freestyle adapters against live accounts.
+1. Run the end-to-end suite on OpenSandbox's Fast Sandbox runtime and on a
+   multi-node Kubernetes cluster under Differently (Fast Sandbox has run
+   live on one node). Verify the Daytona and Freestyle adapters against live accounts.
 2. Use pool egress policy in placement, then per-request egress allow-lists.
 3. An SSH gateway.
 4. Detached processes and PTY sessions.

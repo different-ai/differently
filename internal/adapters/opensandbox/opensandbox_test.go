@@ -447,6 +447,7 @@ func TestOpenSandboxFastSandbox(t *testing.T) {
 		"container isolation": with("isolation", "container"),
 		"short timeout":       with("timeoutSeconds", "10"),
 		"bad port scheme":     with("portScheme", "ftp"),
+		"pool cpu alone":      with("poolCPU", "2"),
 	} {
 		if _, err := FromConfig(cfg, api.TrustPrivate, apiKey); err == nil {
 			t.Errorf("%s accepted", name)
@@ -516,6 +517,22 @@ func TestOpenSandboxFastSandbox(t *testing.T) {
 	f.mu.Unlock()
 	if _, ok := req["lifecycle"]; ok || req["timeout"] != float64(600) || req["templateId"] != "tpl_2" {
 		t.Fatalf("create without idle %v", req)
+	}
+
+	// A restore has no template to size it: it sends the pool's size.
+	o, err = FromConfig(map[string]string{"apiURL": f.srv.URL + "/v1", "runtime": "fastsandbox", "templateId": "tpl_1", "poolCPU": "2", "poolMemory": "4Gi"}, api.TrustPrivate, apiKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fork, err := New(o).Create(ctx, adapter.CreateRequest{ID: "sbx_fork", Installation: "inst", FromSnapshot: "snap_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	req = f.boxes[fork.Ref]["request"].(map[string]any)
+	f.mu.Unlock()
+	if req["snapshotId"] != "snap_1" || mustJSON(req["resourceLimits"]) != `{"cpu":"2","memory":"4Gi"}` {
+		t.Fatalf("restore %v", req)
 	}
 
 	// Behind TLS the gateway's scheme-less endpoints need portScheme, for

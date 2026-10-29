@@ -143,10 +143,13 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 - real OpenSandbox responses are recorded and replayed in every `go test`;
 - the `agent-sandbox` adapter against a Kubernetes cluster (kind);
 - [OpenWork](https://github.com/different-ai/openwork)'s Workbot computers run
-  through Differently as a sandbox gateway, behind a flag.
+  through Differently as a sandbox gateway, behind a flag;
+- Fast Sandbox microVMs on one node: the adapter scenario (recorded), and
+  Workbot's desktop streamed over a port URL, paused and resumed with its
+  memory, idled and woken by a request (pause takes minutes).
 
 **Not verified yet:**
-- Fast Sandbox microVMs;
+- the end-to-end suite on Fast Sandbox microVMs;
 - multi-node clusters;
 - managed EKS, GKE and AKS;
 - live accounts on the managed providers: their adapters are tested

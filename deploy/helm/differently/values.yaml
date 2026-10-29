@@ -246,6 +246,10 @@ opensandbox:
   # fastsandbox only: the timeout sent for sandboxes without a TTL, since
   # template mode requires one (default 86400).
   timeoutSeconds: null
+  # fastsandbox only: the SandboxPool's size (for example "2" and "4Gi"),
+  # which a restore from a snapshot (fork) must send. Set both or neither.
+  poolCPU: ""
+  poolMemory: ""
   # Port URLs tenants can open: signed uses OpenSandbox's ingress gateway in
   # route mode uri with secure-access signing keys. Sandboxes are created
   # with secure access, and ports.expose returns a signed, time-limited URL

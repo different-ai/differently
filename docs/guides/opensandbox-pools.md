@@ -184,9 +184,13 @@ opensandbox:
 
 ## Fast Sandbox runtime: microVMs, pause with memory, native idle
 
-> Status: built against OpenSandbox 1.2.0's published spec and the
-> auto-pause guide, and tested with the adapter's fake server. Not yet run
-> against a real Fast Sandbox deployment; no recording exists yet.
+> Status: run live on 2026-10-29 against OpenSandbox 1.2.0's Fast Sandbox
+> on single-node k3s (Azure Standard_D8s_v6, Firecracker under nested KVM).
+> The adapter scenario is recorded as `fastsandbox-1.2.0` (create, exec,
+> files, pause and resume, snapshot and fork, port URL, delete), and
+> OpenWork's Workbot desktop ran through Differently with its viewer
+> streamed over a port URL. The end-to-end suite has not run on it yet.
+> Timings and gaps are [below](#measured-on-a-workbot-desktop).
 
 `runtime: fastsandbox` creates each sandbox as a Firecracker microVM from a
 Fast Sandbox template (template mode):
@@ -195,7 +199,12 @@ Fast Sandbox template (template mode):
   workload, so OpenSandbox rejects env, resource limits, entrypoint and
   secure access. Differently refuses a sandbox with `env` (bake it into the
   template) rather than dropping it, and sends no sizing. A sandbox
-  `template` is passed as a Fast Sandbox template ID.
+  `template` is passed as a Fast Sandbox template ID, and placement accepts
+  only the pool's own `templateId`, so a pool serves one template.
+- **A restore from a snapshot (fork) sends the pool's size.** It has no
+  template to size it, and OpenSandbox requires `resourceLimits` equal to
+  the SandboxPool's profile: set `poolCPU` and `poolMemory` (for example
+  `2` and `4Gi`).
 - **A timeout is required**, so a sandbox without a TTL gets
   `timeoutSeconds` (default 86400). Differently's TTL still terminates it.
 - **Features**: exec, exec.stream, files, `lifecycle.pause-resume` (the VM
@@ -240,6 +249,49 @@ opensandbox:
   isolation: microvm
   templateId: tpl-ubuntu-2404
 ```
+
+### Measured on a Workbot desktop
+
+OpenWork's Workbot desktop image (4.8 GB) as a template of 2 vCPU, 4 GiB
+memory and an 8 GiB root filesystem, created and driven through
+Differently on the host above:
+
+| Step | Time |
+|---|---|
+| Template build, once per image | about 10 min, mostly writing the 4 GiB memory snapshot (178 s) |
+| Create, template already on the node | 1.2 s to running |
+| Pause, memory kept | 179 s: the whole checkpoint (root filesystem and memory) is written and uploaded to the artifact store |
+| Resume | 0.9 s, with the same processes and unsaved work on screen |
+| Idle pause (`idleTimeoutSeconds: 60`) | 60 s idle, then the same checkpoint |
+| Wake by a request to a port URL | 0.67 s for the first response, 0.27 s once awake |
+
+Slow pause is a limitation of Fast Sandbox on this storage: every pause
+writes and uploads a full checkpoint, so it grows with memory size and disk
+speed (a P6 managed disk here). Resume and wake are fast.
+
+What a template and host need:
+
+- `nc` (netcat-openbsd) in the image: without it guest init fails with
+  `SANDBOX_STARTUP_FAILED nc_missing`. OpenSandbox's golden image also
+  installs procps, curl, ca-certificates, tini and python3.
+- Room on the state root: a template keeps its root filesystem at full
+  size, each pause publishes a checkpoint of root filesystem plus memory,
+  and the node takes no sandboxes below 10 GiB free. A deduplicating,
+  compressing artifact store helps (a 14 GB desktop checkpoint was stored
+  as about 1.3 GiB).
+- The server's template store on a volume: with the default SQLite path
+  inside the server pod, a restart forgets every template.
+
+Gaps found running Workbot's desktop:
+
+| Gap | Kind |
+|---|---|
+| The stock guest kernel has no `nf_tables` inet family, nft reject or iptables owner match, so per-user firewall rules inside the guest (Workbot's desktop guard) cannot load. Pool egress through the egress sidecar still applies | **Limitation** of OpenSandbox 1.2.0's guest kernel; a kernel with those options is not built |
+| Guest init mounts `/run` world-writable (1777), which programs that check their parent directories refuse | **Limitation**; a `chmod 755 /run` in the template's entrypoint is not built |
+| The guest clock is not stepped after a restore: it runs on from the template's build time | **Limitation**; a clock sync in the template is not built |
+| Port URLs (route scopes) never expire | **Limitation**; keep the gateway private or treat URLs as credentials |
+| Pause takes minutes for a 4 GiB desktop | **Limitation** (full checkpoint per pause) |
+| One template per pool; Differently shows the requested size, not the template's | **Not built yet** |
 
 ## Isolation, egress and credentials
 

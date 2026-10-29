@@ -95,6 +95,8 @@ var FastSandboxFeatures = []string{
 // (true|false, default true), lineEndings (kept|stripped, default stripped),
 // runtime (docker|kubernetes|fastsandbox, default docker), timeoutSeconds
 // (fastsandbox: the expiry sent when a sandbox has no TTL, default 86400),
+// poolCPU and poolMemory (fastsandbox: the SandboxPool's fixed size, e.g. 2
+// and 4Gi, which a restore from a snapshot must send),
 // egress (none|public|allowlist,
 // with egressAllow a comma list of hosts), ports (signed: tenant URLs
 // through OpenSandbox's ingress gateway), portScheme (https|http: the scheme
@@ -137,6 +139,10 @@ type Options struct {
 	// DefaultTimeout is sent as the sandbox timeout when a sandbox has no
 	// TTL, for runtimes that require one (Fast Sandbox's template mode).
 	DefaultTimeout int
+	// PoolCPU and PoolMemory are the Fast Sandbox SandboxPool's fixed size.
+	// A restore from a snapshot has no template to size it, so OpenSandbox
+	// requires resourceLimits equal to the pool's.
+	PoolCPU, PoolMemory string
 }
 
 const runtimeFastSandbox = "fastsandbox"
@@ -218,6 +224,10 @@ func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
 		// through the server proxy, Differently's own calls would neither
 		// keep a sandbox awake nor wake it.
 		o.UseServerProxy = cfg["useServerProxy"] == "true"
+		o.PoolCPU, o.PoolMemory = cfg["poolCPU"], cfg["poolMemory"]
+		if (o.PoolCPU == "") != (o.PoolMemory == "") {
+			return o, errors.New("opensandbox config.poolCPU and config.poolMemory go together: the Fast Sandbox pool's size, e.g. 2 and 4Gi")
+		}
 		o.DefaultTimeout = 86400
 		if v := cfg["timeoutSeconds"]; v != "" {
 			n, err := strconv.Atoi(v)
@@ -523,6 +533,9 @@ func (a *Adapter) fastSandboxBody(req adapter.CreateRequest) (map[string]any, er
 	switch {
 	case req.FromSnapshot != "":
 		body["snapshotId"] = req.FromSnapshot
+		if a.opts.PoolCPU != "" {
+			body["resourceLimits"] = map[string]string{"cpu": a.opts.PoolCPU, "memory": a.opts.PoolMemory}
+		}
 	case req.Template != "":
 		body["templateId"] = req.Template
 	default:
