@@ -54,6 +54,9 @@ type Adapter struct {
 	// that is nil, as unavailable.
 	FailCreates int
 	FailWith    error
+	// HangCreates makes the next N Create calls block until their context
+	// ends, like a backend that never answers.
+	HangCreates int
 	creates     int
 }
 
@@ -154,8 +157,14 @@ func (a *Adapter) Inject(sandboxID, installation string) string {
 	return ref
 }
 
-func (a *Adapter) Create(_ context.Context, req adapter.CreateRequest) (adapter.Instance, error) {
+func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapter.Instance, error) {
 	a.mu.Lock()
+	if a.HangCreates > 0 {
+		a.HangCreates--
+		a.mu.Unlock()
+		<-ctx.Done()
+		return adapter.Instance{}, ctx.Err()
+	}
 	defer a.mu.Unlock()
 	if ref, ok := a.byID[req.ID]; ok {
 		return a.instances[ref].Instance, nil

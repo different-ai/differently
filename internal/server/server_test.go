@@ -505,6 +505,33 @@ func TestSandboxFailureKeepsPoolHealthy(t *testing.T) {
 	}
 }
 
+// A backend call that outlives the provision timeout is retried: the
+// requeue is recorded even though the call's own context has expired, so the
+// sandbox does not stay provisioning.
+func TestProvisionTimeoutRequeues(t *testing.T) {
+	h := newHarnessWith(t, api.PlacementPolicy{}, func(c *config.Config) { c.Scheduler.ProvisionTimeoutSeconds = 1 },
+		func(s store.Store) store.Store { return ctxStore{s} })
+	_, _, token := h.tenant("a", api.Quota{})
+	h.fc.HangCreates = 1
+	sb := h.create(token, api.CreateSandboxRequest{})
+	h.sched.Tick(context.Background())
+	h.sched.Drain()
+	got := h.get(token, sb.ID)
+	if got.Status != api.StatusQueued || got.Attempts != 1 || !strings.Contains(got.StatusReason, "deadline exceeded") {
+		t.Fatalf("a timed-out create should requeue with its reason: %+v", got)
+	}
+}
+
+// ctxStore refuses writes on an ended context, as PostgreSQL does.
+type ctxStore struct{ store.Store }
+
+func (s ctxStore) UpdateSandbox(ctx context.Context, id string, fn func(*store.SandboxRecord) error) (store.SandboxRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return store.SandboxRecord{}, err
+	}
+	return s.Store.UpdateSandbox(ctx, id, fn)
+}
+
 // Two pools can front the same backend. Each pool's reconcile sees the
 // other's instances and must not delete them; an instance left behind by an
 // earlier placement is still an orphan.
