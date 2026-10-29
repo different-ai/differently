@@ -185,6 +185,11 @@ flowchart TB
   `audit.recordCommands` is enabled.
 - The dashboard keeps the viewer's key in `sessionStorage` and is served with a
   strict Content-Security-Policy (`internal/dashboard/dashboard.go`).
+- The separate console (`console/`) is served by whoever hosts it, so its
+  headers are theirs. In static mode the viewer's key is in the browser, as
+  with the dashboard; in server mode browsers hold only a Better Auth session
+  and the console server holds the key. Browsers on other origins reach the
+  API only if their exact origin is in `cors.allowedOrigins` (none by default).
 
 **Integrity and accountability**
 

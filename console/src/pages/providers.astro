@@ -1,0 +1,94 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Icon from '../components/Icon.astro';
+import { providerKinds } from '../lib/providers';
+---
+<Console title="Providers" active="providers">
+  <PageHeader title="Providers" description="Pools sandboxes can be placed on: runtimes you run and providers you opt into.">
+    <a class="btn" href="https://different-ai.github.io/differently/docs/providers/" target="_blank" rel="noopener">Provider catalog <Icon name="external" size={14} /></a>
+    <button class="btn primary" type="button" data-open="add"><Icon name="plus" size={15} />Add provider</button>
+  </PageHeader>
+  <div id="list"></div>
+  <p class="table-note">Registering a managed provider does not authorize its use: work reaches it only when placement policy allows external placement.</p>
+
+  <dialog class="modal" id="add">
+    <form>
+      <div class="modal-head"><h2>Add provider</h2><button class="btn ghost icon-btn" type="button" data-close aria-label="Close"><Icon name="x" /></button></div>
+      <div class="grid-2">
+        <label class="field"><span>Provider</span>
+          <select name="kind" id="kind">{providerKinds.map((k) => <option value={k.kind}>{k.label}</option>)}</select>
+        </label>
+        <label class="field"><span>Pool name</span><input type="text" name="name" required pattern="[a-z0-9][a-z0-9-]{0,62}" placeholder="e.g. e2b" /></label>
+      </div>
+      <label class="field"><span>Trust</span>
+        <select name="trust" id="trust"><option value="external">External: someone else runs it</option><option value="private">Private: you run it</option></select>
+        <small id="trust-note"></small>
+      </label>
+      <div id="fields" class="grid-2"></div>
+      <label class="field"><span>API key</span><input type="password" name="key" autocomplete="off" placeholder="Stored sealed in Differently" /><small>Saved as the secret <span class="mono" id="secret-name">name-key</span> and never shown again.</small></label>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Close</button><button class="btn primary" data-save>Add provider</button></div>
+    </form>
+  </dialog>
+</Console>
+<script>
+  import { client } from '../lib/connection';
+  import { badge, confirmAction, dialog, el, empty, field, rowMenu, section, table, toast } from '../lib/ui';
+  import { providerKinds } from '../lib/providers';
+  import type { Pool } from '@differently/sdk';
+
+  const c = client();
+  const kindSel = document.getElementById('kind') as HTMLSelectElement;
+  const trustSel = document.getElementById('trust') as HTMLSelectElement;
+  const nameInput = document.querySelector<HTMLInputElement>('#add input[name=name]')!;
+
+  function renderKind() {
+    const k = providerKinds.find((x) => x.kind === kindSel.value)!;
+    trustSel.disabled = k.trust === 'external';
+    if (k.trust) trustSel.value = 'external';
+    (document.getElementById('trust-note') as HTMLElement).textContent = k.trust ? 'Managed providers are always external.' : 'Self-hostable: say who operates it.';
+    (document.getElementById('fields') as HTMLElement).replaceChildren(...k.fields.map((f) => {
+      // "API URL (default https://…)" becomes the label "API URL" with the default as a placeholder.
+      const m = f.label.match(/^(.*?)\s*\((?:default|e\.g\.)\s*([^)]*)\)\s*$/);
+      const label = (m ? m[1] : f.label).replace(/^./, (ch) => ch.toUpperCase());
+      return el('label', { class: 'field' }, el('span', {}, label),
+        f.choices ? el('select', { name: `cfg.${f.key}` }, el('option', { value: '' }, 'Default'), ...f.choices.map((ch) => el('option', { value: ch }, ch)))
+          : el('input', { type: 'text', name: `cfg.${f.key}`, required: f.required, placeholder: m ? m[2] : f.required ? 'Required' : 'Optional' }));
+    }));
+  }
+  kindSel.addEventListener('change', renderKind);
+  nameInput.addEventListener('input', () => { (document.getElementById('secret-name') as HTMLElement).textContent = `${nameInput.value || 'name'}-key`; });
+
+  async function load() {
+    await section('#list', async () => table<Pool>([
+      { label: 'Pool', cell: (p) => el('span', { style: 'font-weight:500' }, p.name) },
+      { label: 'Adapter', cell: (p) => p.adapter },
+      { label: 'Trust', cell: (p) => p.trust },
+      { label: 'Health', cell: (p) => badge(!p.enabled ? 'disabled' : p.draining ? 'draining' : p.health?.status ?? 'unknown') },
+      { label: 'Active', cell: (p) => p.active },
+      { label: 'Source', cell: (p) => el('span', { class: 'muted' }, p.source === 'config' ? 'Config file' : 'Added here') },
+      { label: '', className: 'actions', cell: (p) => rowMenu([
+        { label: 'Use for new sandboxes', run: async () => { if (await confirmAction(`Use ${p.name}?`, 'Every other pool is drained, so new sandboxes go here. Running sandboxes stay where they are.', 'Use', false)) { await c.admin.pools.use(p.name, { approveExternal: p.trust === 'external' }); toast(`New sandboxes go to ${p.name}`); await load(); } } },
+        { label: 'Drain', hidden: p.draining, run: async () => { await c.admin.pools.drain(p.name); toast('Draining'); await load(); } },
+        { label: 'Undrain', hidden: !p.draining, run: async () => { await c.admin.pools.undrain(p.name); toast('Accepting sandboxes'); await load(); } },
+        { label: 'Remove', danger: true, hidden: p.source === 'config', run: async () => { if (await confirmAction(`Remove ${p.name}?`, 'The pool is unregistered. Sandboxes on it must be deleted first.', 'Remove')) { await c.admin.pools.delete(p.name); toast('Removed'); await load(); } } },
+      ]) },
+    ], await c.admin.pools.list(), empty('No providers yet. Add OpenSandbox, a managed provider, or a plugin.', ['server'])));
+  }
+
+  dialog('add', async (form) => {
+    const data = new FormData(form);
+    const name = field(form, 'name');
+    const kind = field(form, 'kind');
+    const config: Record<string, string> = {};
+    for (const [k, v] of data.entries()) if (k.startsWith('cfg.') && String(v).trim()) config[k.slice(4)] = String(v).trim();
+    const key = String(data.get('key') ?? '');
+    if (key) await c.admin.secrets.put(`${name}-key`, key);
+    const meta = providerKinds.find((x) => x.kind === kind)!;
+    await c.admin.pools.create({ name, adapter: kind, trust: meta.trust ?? trustSel.value, config, credentials: key ? { secret: `${name}-key` } : undefined });
+    toast(`Added ${name}`);
+    await load();
+  });
+  renderKind();
+  void load();
+</script>

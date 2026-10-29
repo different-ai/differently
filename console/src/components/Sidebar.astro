@@ -1,0 +1,28 @@
+---
+import Icon from './Icon.astro';
+import { nav, footerNav } from '../lib/nav';
+import { logo } from '../lib/icons';
+interface Props { active: string }
+const { active } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const href = (h: string) => (h.startsWith('http') ? h : base + h);
+---
+<aside class="sidebar" id="sidebar">
+  <a class="brand" href={base}><Fragment set:html={logo} />Differently</a>
+  <nav class="nav" aria-label="Console">
+    {nav.map((g) => (
+      <div class={g.label ? 'nav-group' : ''}>
+        {g.label && <div class="nav-label">{g.label}</div>}
+        {g.items.map((i) => (
+          <a href={href(i.href)} aria-current={i.id === active ? 'page' : undefined}><Icon name={i.icon} />{i.label}</a>
+        ))}
+      </div>
+    ))}
+  </nav>
+  <div class="sidebar-foot nav">
+    {footerNav.map((i) => (
+      <a href={href(i.href)} aria-current={i.id === active ? 'page' : undefined} target={i.href.startsWith('http') ? '_blank' : undefined} rel={i.href.startsWith('http') ? 'noopener' : undefined}><Icon name={i.icon} />{i.label}</a>
+    ))}
+    <a class="connection" id="connection" href={base + 'settings/'}><span class="dot"></span><span>Connecting…</span></a>
+  </div>
+</aside>

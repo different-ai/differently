@@ -1,0 +1,32 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+---
+<Console title="Snapshots" active="snapshots">
+  <PageHeader title="Snapshots" description="Saved sandbox state. Create a sandbox from one, or fork a running sandbox." />
+  <div id="list"></div>
+</Console>
+<script>
+  import { client } from '../lib/connection';
+  import { badge, confirmAction, el, empty, relTime, rowMenu, section, table, toast } from '../lib/ui';
+  import type { Snapshot } from '@differently/sdk';
+
+  const c = client();
+  const size = (b?: number) => (b ? `${(b / 2 ** 30).toFixed(1)} GiB` : '—');
+  async function load() {
+    await section('#list', async () => table<Snapshot>([
+      { label: 'Snapshot', cell: (s) => el('span', { class: 'mono' }, s.id) },
+      { label: 'Sandbox', cell: (s) => el('span', { class: 'mono muted' }, s.sandboxId) },
+      { label: 'Kind', cell: (s) => s.kind },
+      { label: 'Status', cell: (s) => badge(s.status) },
+      { label: 'Pool', cell: (s) => s.pool },
+      { label: 'Size', cell: (s) => size(s.sizeBytes) },
+      { label: 'Created', cell: (s) => el('span', { class: 'muted' }, relTime(s.createdAt)) },
+      { label: '', className: 'actions', cell: (s) => rowMenu([
+        { label: 'Copy ID', run: () => navigator.clipboard.writeText(s.id).then(() => toast('Copied')) },
+        { label: 'Delete', danger: true, run: async () => { if (await confirmAction('Delete snapshot?', `${s.id} is removed from ${s.pool}.`, 'Delete')) { await c.snapshots.delete(s.id); toast('Deleted'); await load(); } } },
+      ]) },
+    ], await c.snapshots.list(), empty('No snapshots yet. Take one from a sandbox with the API, CLI or SDK.', ['box', 'layers'])));
+  }
+  void load();
+</script>

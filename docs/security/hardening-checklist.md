@@ -51,6 +51,10 @@ OpenSandbox server, and is marked as such.
       Prefer streamed exec for commands with large output.
 - [ ] Leave the dashboard on only if you need it (`dashboard.enabled`). It is
       static and uses the viewer's own key.
+- [ ] If you host the [console](../../console/README.md) on another origin,
+      list only that origin in `cors.allowedOrigins`. In server mode, give
+      the console's key the narrowest scope that covers its users, and keep
+      `CONSOLE_ALLOWED_EMAILS` short.
 
 ## PostgreSQL
 

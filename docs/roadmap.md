@@ -41,7 +41,7 @@ quota and placement policy, runnable on a laptop.
 | CI and release workflows | 🟡 | `.github/workflows/ci.yml`, `release.yml`; encode the branch model |
 | Tamper-evident audit chain, verify endpoint, JSON-lines mirror | ✅ | `internal/audit`, `internal/auditlog` |
 | Dev mode with `devhost` pool | ✅ | `differently-server --dev` |
-| CLI, dashboard | ✅ | `cmd/differently`, `internal/dashboard` |
+| CLI, dashboard, admin console | ✅ | `cmd/differently`, `internal/dashboard`, `console/` |
 | TypeScript and Python SDKs | ✅ | Tested against mock servers (`sdk/*/test*`) |
 | Go client | 🟡 | `pkg/client`, used by the CLI; not yet a polished SDK ([E15](backlog.md#e15-go-sdk-polishing)) |
 | Prometheus metrics, structured logs | ✅ | `internal/metrics` |

@@ -324,6 +324,12 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {"enabled": {"type": "boolean"}}
+        },
+        "cors": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Browser origins allowed to call the API, such as the console's own host.",
+          "properties": {"allowedOrigins": {"type": "array", "items": {"type": "string", "pattern": "^https?://[^/*]+$"}}}
         }
       }
     },

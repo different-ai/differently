@@ -136,6 +136,10 @@ config:
     failClosed: false
   dashboard:
     enabled: true
+  # Origins of browser apps allowed to call the API, such as the console
+  # (console/) served from its own host. Exact origins only, no wildcards.
+  # cors:
+  #   allowedOrigins: ["https://console.example.com"]
 
 # ---------------------------------------------------------------------------
 # Bootstrap token

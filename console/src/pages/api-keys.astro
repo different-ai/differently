@@ -1,0 +1,81 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Icon from '../components/Icon.astro';
+const scopes = [
+  ['sandboxes:read', 'Read sandboxes'], ['sandboxes:write', 'Create and change sandboxes'], ['sandboxes:exec', 'Run commands and files'],
+  ['usage:read', 'Read usage'], ['audit:read', 'Read the audit log'], ['keys:write', 'Manage keys'],
+  ['projects:write', 'Manage projects'], ['policies:write', 'Change policies'], ['org:admin', 'Organization admin'],
+];
+---
+<Console title="API keys" active="api-keys">
+  <PageHeader title="API keys" description="Keys let apps and agents call Differently. Each key has its own scopes.">
+    <button class="btn primary" type="button" data-open="create"><Icon name="plus" size={15} />Create key</button>
+  </PageHeader>
+  <div id="list"></div>
+
+  <dialog class="modal" id="create">
+    <form>
+      <div class="modal-head"><h2>New API key</h2><button class="btn ghost icon-btn" type="button" data-close aria-label="Close"><Icon name="x" /></button></div>
+      <div class="grid-2">
+        <label class="field"><span>Name</span><input type="text" name="name" required placeholder="e.g. ci-runner" /></label>
+        <label class="field"><span>Expires</span>
+          <select name="ttl"><option value="720">In 30 days</option><option value="2160">In 90 days</option><option value="8760">In a year</option><option value="">Never</option></select>
+        </label>
+      </div>
+      <fieldset class="field" style="border:0;padding:0;margin:0"><span>Scopes</span>
+        <div class="checks">{scopes.map(([v, l]) => <label><input type="checkbox" name="scopes" value={v} checked={v.startsWith('sandboxes')} />{l}</label>)}</div>
+      </fieldset>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Close</button><button class="btn primary" data-save>Create key</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="token">
+    <form method="dialog">
+      <div class="modal-head"><h2>Copy your key now</h2></div>
+      <p style="margin:0;color:var(--muted)">It is shown once. Store it somewhere safe; Differently keeps only a hash.</p>
+      <div class="secret-box" id="token-value"></div>
+      <div class="modal-foot"><button class="btn primary">Done</button></div>
+    </form>
+  </dialog>
+</Console>
+<script>
+  import { client } from '../lib/connection';
+  import { badge, confirmAction, copyButton, date, dialog, el, empty, field, relTime, rowMenu, section, table, toast } from '../lib/ui';
+  import type { ApiKey, CreatedApiKey } from '@differently/sdk';
+
+  const c = client();
+  function showToken(k: CreatedApiKey) {
+    const box = document.getElementById('token-value') as HTMLElement;
+    box.replaceChildren(el('span', { style: 'flex:1' }, k.token), copyButton(k.token));
+    (document.getElementById('token') as HTMLDialogElement).showModal();
+  }
+  async function load() {
+    await section('#list', async () => {
+      const keys = (await c.apiKeys.list()).sort((a, b) => Number(a.revoked) - Number(b.revoked) || b.createdAt.localeCompare(a.createdAt));
+      return table<ApiKey>([
+        { label: 'Name', cell: (k) => el('span', { style: 'font-weight:500' }, k.name) },
+        { label: 'Key', cell: (k) => el('span', { class: 'mono muted' }, k.id) },
+        { label: 'Scopes', cell: (k) => el('span', {}, ...k.scopes.slice(0, 3).map((s) => el('span', { class: 'chip' }, s)), k.scopes.length > 3 ? el('span', { class: 'chip' }, `+${k.scopes.length - 3}`) : null) },
+        { label: 'Created', cell: (k) => el('span', { class: 'muted' }, relTime(k.createdAt)) },
+        { label: 'Expires', cell: (k) => el('span', { class: 'muted' }, k.expiresAt ? date(k.expiresAt) : 'Never') },
+        { label: 'Status', cell: (k) => badge(k.revoked ? 'revoked' : 'active') },
+        { label: '', className: 'actions', cell: (k) => rowMenu([
+          { label: 'Rotate', hidden: k.revoked, run: async () => { if (await confirmAction('Rotate key?', `A new key replaces ${k.name}. The old one keeps working for an hour.`, 'Rotate', false)) { showToken(await c.apiKeys.rotate(k.id, { graceSeconds: 3600 })); await load(); } } },
+          { label: 'Revoke', danger: true, hidden: k.revoked, run: async () => { if (await confirmAction('Revoke key?', `${k.name} stops working immediately.`, 'Revoke')) { await c.apiKeys.revoke(k.id); toast('Revoked'); await load(); } } },
+        ]) },
+      ], keys, empty('No API keys yet.', ['key'], el('button', { class: 'btn primary', type: 'button', onclick: () => create.open() }, 'Create key')));
+    });
+  }
+  const create = dialog('create', async (form) => {
+    const scopes = new FormData(form).getAll('scopes').map(String);
+    if (!scopes.length) { toast('Pick at least one scope', 'bad'); return false; }
+    const ttl = field(form, 'ttl');
+    const k = await c.apiKeys.create({ name: field(form, 'name'), scopes, ttlHours: ttl ? Number(ttl) : undefined });
+    create.close();
+    showToken(k);
+    await load();
+    return false;
+  });
+  void load();
+</script>

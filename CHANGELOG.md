@@ -6,6 +6,19 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added (admin console)
+
+- `console/`: an admin app built with Astro, separate from the server. It has
+  a sidebar and pages for sandboxes, snapshots, API keys, providers, secrets,
+  policies, usage, the audit log and the trust report. It builds to static
+  files for any host (the browser holds the API key), or runs on Node with
+  Better Auth sign-in, an email allowlist and optional GitHub, where only the
+  console server holds the key. See [console/README.md](console/README.md).
+- `cors.allowedOrigins` (Helm `config.cors.allowedOrigins`): exact origins
+  that browsers may call the API from. Empty by default, so nothing changes
+  unless you set it.
+- The TypeScript SDK runs in browsers: it no longer imports `node:crypto`.
+
 ### Fixed (Fast Sandbox)
 
 - A Fast Sandbox microVM's clock is set right after create and resume; it
@@ -15,6 +28,7 @@ All notable changes are recorded here. The format follows
   4 GiB desktop's checkpoint could exceed.
 - The `fastsandbox-1.2.0` recording was made again on a two-node cluster
   with Workbot's desktop template.
+
 ### Changed
 
 - `GET /v1/capabilities` answers a tenant key with the pools its placement
