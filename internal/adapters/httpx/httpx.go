@@ -24,6 +24,8 @@ type Client struct {
 	HTTP    *http.Client
 	// Provider names the backend in error messages.
 	Provider string
+	// Header is sent with every request (a workspace selector, say).
+	Header http.Header
 }
 
 // New returns a client with a sane default timeout.
@@ -63,15 +65,19 @@ func (c *Client) Do(ctx context.Context, method, url string, body io.Reader, con
 	if err != nil {
 		return nil, err
 	}
-	for k, vs := range header {
-		for _, v := range vs {
-			req.Header.Add(k, v)
+	for _, h := range []http.Header{c.Header, header} {
+		for k, vs := range h {
+			for _, v := range vs {
+				req.Header.Add(k, v)
+			}
 		}
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	req.Header.Set("Accept", "application/json")
+	if req.Header.Get("Accept") == "" {
+		req.Header.Set("Accept", "application/json") // a caller may ask for a stream
+	}
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}

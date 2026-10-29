@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/different-ai/differently/internal/adapters/blaxel"
 	"github.com/different-ai/differently/internal/adapters/daytona"
 	"github.com/different-ai/differently/internal/adapters/devhost"
 	"github.com/different-ai/differently/internal/adapters/fake"
@@ -39,6 +40,17 @@ func Register() {
 			return nil, err
 		}
 		return freestyle.New(freestyle.FromConfig(p.Config, key)), nil
+	})
+	pools.Register("blaxel", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		key, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := blaxel.FromConfig(p.Config, key)
+		if err != nil {
+			return nil, err
+		}
+		return blaxel.New(opts), nil
 	})
 	pools.Register("opensandbox", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
 		key, err := resolve(p, d)
