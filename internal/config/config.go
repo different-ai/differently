@@ -195,10 +195,10 @@ type DashboardConfig struct {
 func (d DashboardConfig) On() bool { return d.Enabled == nil || *d.Enabled }
 
 // Adapter kinds that always run on third-party infrastructure.
-var externalKinds = []string{"daytona", "freestyle"}
+var externalKinds = []string{"daytona", "freestyle", "vercel", "fly"}
 
 // KnownAdapters lists adapter kinds the server can build.
-var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake"}
+var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "vercel", "fly"}
 
 // Adapter kinds whose trust boundary depends on who operates the backend, so
 // the operator must declare it.
