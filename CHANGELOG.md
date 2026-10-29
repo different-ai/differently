@@ -6,6 +6,19 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Fixed (Fast Sandbox, run live)
+
+- `portScheme` now applies to every gateway endpoint OpenSandbox returns
+  without a scheme, not only signed ones, so a Fast Sandbox gateway behind
+  TLS in route mode `uri` gives `https://` port URLs and execd traffic.
+  Before, those came back as `http://` on a TLS-only port.
+- Fork on Fast Sandbox: a restore from a snapshot sends the pool's size
+  (new pool config `poolCPU` and `poolMemory`), which OpenSandbox requires.
+- Fast Sandbox ran live on one node (nested KVM): a `fastsandbox-1.2.0`
+  recording replays in every `go test`, and the pools guide lists measured
+  timings with Workbot's desktop and the gaps found, each marked as an
+  OpenSandbox limitation or not built yet.
+
 ### Added (provider catalog)
 
 - `docs/providers/`: 26 providers, each with a tested status (verified live,

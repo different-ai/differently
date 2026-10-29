@@ -12,7 +12,7 @@
 |---|---|---|
 | Is there stop/start? | **No.** OpenSandbox has pause/resume and delete only; `stop` returns `501 unsupported_operation` | Yes (Freestyle stops by running `poweroff` in the guest) |
 | How long does the filesystem live? | Until the sandbox is deleted, or OpenSandbox's `timeout` ends it | Until deleted, or the provider's TTL ends it |
-| Does memory survive? | While paused, if the runtime keeps it; pause and resume kept files on the Docker runtime; memory-preserving pause on Fast Sandbox is documented by OpenSandbox, unverified here | Pause on Freestyle and Daytona VM class; Freestyle and Daytona VM snapshots include memory |
+| Does memory survive? | While paused, if the runtime keeps it; pause and resume kept files on the Docker runtime; memory-preserving pause on Fast Sandbox kept a desktop's processes and unsaved work in a live run (a pause takes minutes) | Pause on Freestyle and Daytona VM class; Freestyle and Daytona VM snapshots include memory |
 | Can I snapshot? | Disk by default; memory only if the pool adds `snapshots.memory` to `config.features` | Daytona: disk, or memory for VM class; Freestyle: always memory and disk |
 | Can I fork? | Yes, through a snapshot restored with `snapshotId`; checked against the fake server only | Freestyle yes (memory); Daytona not advertised |
 | Where does a restore or fork run? | Same pool, that is, the same OpenSandbox server | Same pool |

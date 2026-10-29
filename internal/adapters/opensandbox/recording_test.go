@@ -38,7 +38,7 @@ type recording struct {
 	Recorded  string            `json:"recorded"`
 	Server    string            `json:"server"`
 	Execd     string            `json:"execd"`
-	Runtime   string            `json:"runtime"` // docker or kubernetes
+	Runtime   string            `json:"runtime"` // docker, kubernetes or fastsandbox
 	Host      string            `json:"host,omitempty"`
 	Config    map[string]string `json:"config"` // pool config, apiURL omitted
 	Exchanges []exchange        `json:"exchanges"`
@@ -59,9 +59,10 @@ type exchange struct {
 
 // recorder captures exchanges as they happen on the adapter's HTTP client.
 type recorder struct {
-	next   http.RoundTripper
-	host   string // replaced by {{host}}
-	secret string // never written
+	next    http.RoundTripper
+	host    string // replaced by {{host}}
+	gateway string // an ingress gateway reached directly, also {{host}}
+	secret  string // never written
 
 	mu        sync.Mutex
 	step      string
@@ -94,6 +95,9 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		if r.secret != "" {
 			s = strings.ReplaceAll(s, r.secret, "{{redacted}}")
 		}
+		if r.gateway != "" {
+			s = strings.ReplaceAll(s, r.gateway, "{{host}}")
+		}
 		return strings.ReplaceAll(s, r.host, "{{host}}")
 	}
 	r.mu.Lock()
@@ -124,6 +128,11 @@ func replay(t *testing.T, rec recording) (*httptest.Server, func(step string)) {
 	queues := map[string][]exchange{}
 	for _, e := range rec.Exchanges {
 		k := e.Step + " " + e.Method + " " + timeless(e.Path)
+		// Repeated identical polls (a Fast Sandbox pause polls for a minute)
+		// collapse into one, so a replay sees each state change at once.
+		if q := queues[k]; len(q) > 0 && q[len(q)-1] == e {
+			continue
+		}
 		queues[k] = append(queues[k], e)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +182,7 @@ const (
 	recSandbox      = "sbx_rec_main"
 	recInstallation = "inst_rec"
 	recBadImage     = "docker.io/library/ubuntu:no-such-tag-differently"
+	recBadTemplate  = "tpl-no-such-template-differently"
 )
 
 // scenario drives the adapter through what Differently relies on and checks
@@ -192,8 +202,13 @@ func scenario(t *testing.T, a *Adapter, runtime string, step func(string)) {
 	step("health")
 	fatal("health", a.Health(ctx))
 
+	// Fast Sandbox templates fix the workload, so env goes with each exec.
+	createEnv, execEnv := map[string]string{"GREETING": "hello"}, map[string]string{"WHO": "world"}
+	if runtime == runtimeFastSandbox {
+		createEnv, execEnv["GREETING"] = nil, "hello"
+	}
 	step("create")
-	in, err := a.Create(ctx, adapter.CreateRequest{ID: recSandbox, Installation: recInstallation, Resources: api.Resources{CPU: 1, MemoryMiB: 512}, Env: map[string]string{"GREETING": "hello"}, TTLSeconds: 900})
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: recSandbox, Installation: recInstallation, Resources: api.Resources{CPU: 1, MemoryMiB: 512}, Env: createEnv, TTLSeconds: 900})
 	fatal("create", err)
 	if in.State != adapter.StateRunning || in.SandboxID != recSandbox {
 		t.Fatalf("create returned %+v", in)
@@ -215,7 +230,7 @@ func scenario(t *testing.T, a *Adapter, runtime string, step func(string)) {
 	}
 
 	step("exec")
-	res, err := a.Exec(ctx, in.Ref, api.ExecRequest{Command: `echo "$GREETING $WHO"; printf 'a\nb'; printf err >&2; exit 7`, Env: map[string]string{"WHO": "world"}})
+	res, err := a.Exec(ctx, in.Ref, api.ExecRequest{Command: `echo "$GREETING $WHO"; printf 'a\nb'; printf err >&2; exit 7`, Env: execEnv})
 	if err != nil || res.ExitCode != 7 || res.Stdout != "hello world\na\nb" || res.Stderr != "err" {
 		t.Fatalf("exec %+v %v", res, err)
 	}
@@ -345,6 +360,11 @@ func scenario(t *testing.T, a *Adapter, runtime string, step func(string)) {
 		if livePortCheck != nil {
 			livePortCheck(t, url)
 		}
+	case runtime == runtimeFastSandbox:
+		// A route scope: <gateway>/f1.<namespace>.<sandbox>.<port>.<key>.<mac>.
+		if err != nil || !strings.HasPrefix(url, a.opts.PortScheme+"://") || !strings.Contains(url, "/f1.") {
+			t.Fatalf("Fast Sandbox port URL %q %v", url, err)
+		}
 	// Otherwise a pod IP (host:8080), or a gateway path (/{sandbox}/8080)
 	// when OpenSandbox announces its ingress gateway.
 	case err != nil || !strings.HasPrefix(url, "http://") || !strings.HasSuffix(url, ":8080") && !strings.HasSuffix(url, "/8080") && strings.HasPrefix(runtime, "kubernetes"):
@@ -357,17 +377,26 @@ func scenario(t *testing.T, a *Adapter, runtime string, step func(string)) {
 	step("delete")
 	fatal("delete", a.Delete(ctx, in.Ref))
 	step("after-delete")
-	if _, err := a.Get(ctx, in.Ref); !api.IsCode(err, api.CodeNotFound) {
+	// Fast Sandbox finishes a delete after answering it.
+	_, err = a.Get(ctx, in.Ref)
+	for deadline := time.Now().Add(time.Minute); runtime == runtimeFastSandbox && err == nil && time.Now().Before(deadline); {
+		time.Sleep(2 * time.Second)
+		_, err = a.Get(ctx, in.Ref)
+	}
+	if !api.IsCode(err, api.CodeNotFound) {
 		t.Fatalf("get after delete: want not_found, got %v", err)
 	}
 	fatal("delete is idempotent", a.Delete(ctx, in.Ref))
 
 	step("bad-image")
-	_, err = a.Create(ctx, adapter.CreateRequest{ID: "sbx_rec_badimage", Installation: recInstallation, Template: recBadImage, Resources: api.Resources{CPU: 1, MemoryMiB: 256}, TTLSeconds: 300})
-	want := api.CodeInvalidRequest // the Docker runtime reports the failed pull at once
-	if strings.HasPrefix(runtime, "kubernetes") {
+	bad, want := recBadImage, api.CodeInvalidRequest // the Docker runtime reports the failed pull at once
+	switch {
+	case strings.HasPrefix(runtime, "kubernetes"):
 		want = adapter.CodeSandboxFailed // the pod just never becomes ready
+	case runtime == runtimeFastSandbox:
+		bad, want = recBadTemplate, api.CodeNotFound // a template ID, not an image
 	}
+	_, err = a.Create(ctx, adapter.CreateRequest{ID: "sbx_rec_badimage", Installation: recInstallation, Template: bad, Resources: api.Resources{CPU: 1, MemoryMiB: 256}, TTLSeconds: 300})
 	if !api.IsCode(err, want) {
 		t.Fatalf("unpullable image: want %s, got %v", want, err)
 	}
@@ -394,6 +423,9 @@ func TestReplayRecordings(t *testing.T) {
 				cfg[k] = v
 			}
 			cfg["apiURL"] = srv.URL + "/v1"
+			if cfg["portScheme"] != "" {
+				cfg["portScheme"] = "http" // the replay server is plain HTTP
+			}
 			o, err := FromConfig(cfg, api.TrustPrivate, "replay-key")
 			if err != nil {
 				t.Fatal(err)

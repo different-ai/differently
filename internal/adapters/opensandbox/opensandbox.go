@@ -95,10 +95,13 @@ var FastSandboxFeatures = []string{
 // (true|false, default true), lineEndings (kept|stripped, default stripped),
 // runtime (docker|kubernetes|fastsandbox, default docker), timeoutSeconds
 // (fastsandbox: the expiry sent when a sandbox has no TTL, default 86400),
+// poolCPU and poolMemory (fastsandbox: the SandboxPool's fixed size, e.g. 2
+// and 4Gi, which a restore from a snapshot must send),
 // egress (none|public|allowlist,
 // with egressAllow a comma list of hosts), ports (signed: tenant URLs
-// through OpenSandbox's ingress gateway), portScheme (https|http, default
-// https) and portURLSeconds (default 3600).
+// through OpenSandbox's ingress gateway), portScheme (https|http: the scheme
+// for gateway endpoints that come back without one, default https with signed
+// ports, else http) and portURLSeconds (default 3600).
 type Options struct {
 	APIURL         string
 	APIKey         string
@@ -120,8 +123,11 @@ type Options struct {
 	// answers ports.expose with the ingress gateway's signed, time-limited
 	// URLs (route mode uri), which need no header and so carry no secret.
 	SignedPorts bool
-	PortScheme  string
-	PortURLTTL  time.Duration
+	// PortScheme is the scheme for gateway endpoints the server returns
+	// without one: port URLs, and execd reached past the server proxy. A
+	// gateway behind TLS (Fast Sandbox in uri route mode) needs https.
+	PortScheme string
+	PortURLTTL time.Duration
 	// NetworkPolicy is OpenSandbox's per-sandbox egress policy, enforced by
 	// its egress sidecar; nil leaves egress open.
 	NetworkPolicy map[string]any
@@ -133,6 +139,10 @@ type Options struct {
 	// DefaultTimeout is sent as the sandbox timeout when a sandbox has no
 	// TTL, for runtimes that require one (Fast Sandbox's template mode).
 	DefaultTimeout int
+	// PoolCPU and PoolMemory are the Fast Sandbox SandboxPool's fixed size.
+	// A restore from a snapshot has no template to size it, so OpenSandbox
+	// requires resourceLimits equal to the pool's.
+	PoolCPU, PoolMemory string
 }
 
 const runtimeFastSandbox = "fastsandbox"
@@ -163,15 +173,18 @@ func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
 	default:
 		return o, fmt.Errorf("opensandbox config.egress must be none, public or allowlist, not %q", cfg["egress"])
 	}
+	switch s := cfg["portScheme"]; s {
+	case "", "https", "http":
+		o.PortScheme = s
+	default:
+		return o, fmt.Errorf("opensandbox config.portScheme must be https or http, not %q", s)
+	}
 	switch cfg["ports"] {
 	case "":
 	case "signed":
-		o.SignedPorts, o.PortScheme, o.PortURLTTL = true, "https", time.Hour
-		if s := cfg["portScheme"]; s != "" {
-			if s != "https" && s != "http" {
-				return o, fmt.Errorf("opensandbox config.portScheme must be https or http, not %q", s)
-			}
-			o.PortScheme = s
+		o.SignedPorts, o.PortURLTTL = true, time.Hour
+		if o.PortScheme == "" {
+			o.PortScheme = "https"
 		}
 		if v := cfg["portURLSeconds"]; v != "" {
 			n, err := strconv.Atoi(v)
@@ -211,6 +224,10 @@ func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
 		// through the server proxy, Differently's own calls would neither
 		// keep a sandbox awake nor wake it.
 		o.UseServerProxy = cfg["useServerProxy"] == "true"
+		o.PoolCPU, o.PoolMemory = cfg["poolCPU"], cfg["poolMemory"]
+		if (o.PoolCPU == "") != (o.PoolMemory == "") {
+			return o, errors.New("opensandbox config.poolCPU and config.poolMemory go together: the Fast Sandbox pool's size, e.g. 2 and 4Gi")
+		}
 		o.DefaultTimeout = 86400
 		if v := cfg["timeoutSeconds"]; v != "" {
 			n, err := strconv.Atoi(v)
@@ -516,6 +533,9 @@ func (a *Adapter) fastSandboxBody(req adapter.CreateRequest) (map[string]any, er
 	switch {
 	case req.FromSnapshot != "":
 		body["snapshotId"] = req.FromSnapshot
+		if a.opts.PoolCPU != "" {
+			body["resourceLimits"] = map[string]string{"cpu": a.opts.PoolCPU, "memory": a.opts.PoolMemory}
+		}
 	case req.Template != "":
 		body["templateId"] = req.Template
 	default:
@@ -620,7 +640,10 @@ func (a *Adapter) resolve(ctx context.Context, ref string, refresh bool) (endpoi
 	ep = endpoint{URL: out.Endpoint, Headers: out.Headers}
 	if !strings.HasPrefix(ep.URL, "http://") && !strings.HasPrefix(ep.URL, "https://") {
 		scheme := "http"
-		if strings.HasPrefix(a.opts.APIURL, "https://") {
+		switch {
+		case !a.opts.UseServerProxy && a.opts.PortScheme != "":
+			scheme = a.opts.PortScheme // the ingress gateway's scheme
+		case strings.HasPrefix(a.opts.APIURL, "https://"):
 			scheme = "https"
 		}
 		ep.URL = scheme + "://" + ep.URL
@@ -1014,7 +1037,7 @@ func (a *Adapter) ExposePort(ctx context.Context, ref string, port int) (string,
 		return out.Endpoint, nil
 	}
 	scheme := "http"
-	if a.opts.SignedPorts {
+	if a.opts.PortScheme != "" {
 		scheme = a.opts.PortScheme
 	}
 	return scheme + "://" + out.Endpoint, nil

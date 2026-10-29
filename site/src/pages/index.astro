@@ -131,9 +131,10 @@ const verified = [
   ['OpenWork', 'Workbot computers run through Differently as a sandbox gateway, behind a flag: commands with Python tools, files, and stop/start.'],
   ['Failure isolation', 'An image that cannot be pulled fails that sandbox only; the shared pool stays healthy.'],
   ['agent-sandbox', 'The adapter runs against a Kubernetes cluster (kind, runc).'],
+  ['Fast Sandbox', "Firecracker microVMs on one node: Workbot's desktop streamed over a port URL, paused and resumed with its memory (a pause takes minutes), idled and woken by a request."],
 ];
 const notVerified = [
-  'Fast Sandbox microVMs: runtime support is merged, live testing is in progress',
+  'The end-to-end suite on Fast Sandbox microVMs',
   'Multi-node clusters and node drains',
   'Managed EKS, GKE and AKS clusters',
   'Managed-provider adapters against live accounts; each is tested against a fake of its published API',
@@ -181,7 +182,7 @@ const fromRuntime = [
   ['Sandbox runtimes', 'Docker, Kubernetes, and Fast Sandbox (Firecracker microVMs on a per-node agent).'],
   ['Lifecycle', 'Create and delete; pause and resume on Docker; stop and start on Kubernetes; a provider-side timeout as a TTL backstop.'],
   ['Exec and files', 'Commands with env, cwd, timeouts and streamed output; upload, download and list files.'],
-  ['Snapshots', 'Disk snapshots and fork on Docker and Kubernetes; memory snapshots on Fast Sandbox (documented upstream, not yet tested).'],
+  ['Snapshots', 'Disk snapshots and fork on Docker, Kubernetes and Fast Sandbox; memory-preserving pause on Docker and Fast Sandbox (a Fast Sandbox pause takes minutes).'],
   ['Open source', 'Apache-2.0, self-hostable, with SDKs in several languages.'],
 ];
 const added = [

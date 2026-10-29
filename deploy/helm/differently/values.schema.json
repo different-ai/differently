@@ -98,6 +98,8 @@
                   "lineEndings": {"enum": ["kept", "stripped"]},
                   "runtime": {"enum": ["docker", "kubernetes", "fastsandbox"]},
                   "timeoutSeconds": {"type": "string", "pattern": "^[0-9]+$"},
+                  "poolCPU": {"type": "string", "pattern": "^[0-9]+$"},
+                  "poolMemory": {"type": "string", "pattern": "^[0-9]+(Mi|Gi)$"},
                   "ports": {"enum": ["signed"]},
                   "egress": {"enum": ["none", "public", "allowlist"]},
                   "portScheme": {"enum": ["https", "http"]}
@@ -190,6 +192,8 @@
         "lineEndings": {"type": "string", "enum": ["", "kept", "stripped"]},
         "runtime": {"type": "string", "enum": ["", "docker", "kubernetes", "fastsandbox"]},
         "timeoutSeconds": {"type": ["integer", "null"], "minimum": 60},
+        "poolCPU": {"type": ["string", "integer"], "pattern": "^([0-9]+)?$", "minimum": 1},
+        "poolMemory": {"type": "string", "pattern": "^([0-9]+(Mi|Gi))?$"},
         "ports": {"type": "string", "enum": ["", "signed"]},
         "egress": {"type": "string", "enum": ["", "none", "public", "allowlist"]},
         "egressAllow": {"type": "array", "items": {"type": "string", "minLength": 1}},
