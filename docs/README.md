@@ -20,7 +20,8 @@ two-minute local quickstart.
 
 | Guide | For |
 |---|---|
-| [Deployment overview and support matrix](deploy/README.md) | What is tested, documented or unverified |
+| [Deployment overview and support matrix](deploy/README.md) | Where to run it, and what is tested, documented or unverified |
+| [One Linux VM on any cloud](deploy/single-vm.md) | The quickest team setup: k3s, OpenSandbox and Differently on Azure, AWS, Google Cloud or bare metal |
 | [Prerequisites](deploy/prerequisites.md) | Cluster, Postgres and an OpenSandbox server (or another backend) |
 | [Kubernetes (existing cluster)](deploy/kubernetes.md) | Helm install to first sandbox |
 | [AWS](deploy/aws.md) · [GCP](deploy/gcp.md) · [Azure](deploy/azure.md) · [Bare metal](deploy/bare-metal.md) | Environment-specific notes |

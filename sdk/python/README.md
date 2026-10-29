@@ -28,7 +28,7 @@ sandbox = client.sandboxes.create(
     placement={"strategy": "private-first", "external": "never"},
 )
 
-result = sandbox.exec("python3 --version")  # a string runs via /bin/sh -c
+result = sandbox.exec("uname -sm")  # a string runs via /bin/sh -c
 print(result.exit_code, result.stdout)
 sandbox.exec(["ls", "-la", "/work"], cwd="/work", timeout_seconds=30)  # a list runs directly
 

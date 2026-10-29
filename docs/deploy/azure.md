@@ -1,5 +1,9 @@
 # Azure (AKS)
 
+> **Quickest path:** a single Azure VM with k3s, following
+> [One Linux VM on any cloud](single-vm.md). Use this page when you run a
+> managed Kubernetes cluster.
+
 Status: **unverified, experimental**. No step here has been run.
 
 Differently's control plane runs on any AKS node pool. Sandboxes run on an

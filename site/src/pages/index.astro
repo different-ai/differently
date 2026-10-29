@@ -4,6 +4,15 @@ import { Code } from 'astro:components';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const repo = 'https://github.com/different-ai/differently';
+const releases = `${repo}/releases`;
+const version = 'v0.1.0-alpha.1';
+
+// Launch video slot. Set videoSrc to a video URL (and optionally a poster image and a
+// WebVTT captions file) to show it under the hero. While videoSrc is '' nothing renders.
+const videoSrc: string = '';
+const videoPoster: string = '';
+const videoCaptions: string = '';
+const videoTitle = 'Differently in action';
 
 const samples = [
   {
@@ -61,6 +70,81 @@ differently sandbox placement sbx_123
 differently admin trust-report`,
   },
 ];
+
+// Ways to run it, friendliest first. Status comes from what has actually run:
+// 'verified' = ran end to end; 'documented' = written steps, not yet among those runs.
+const ways = [
+  {
+    title: 'Laptop',
+    what: 'Dev mode: an in-memory server whose devhost pool runs commands on your machine with no isolation. For trying the API.',
+    status: 'Verified',
+    kind: 'verified',
+    href: `${base}/docs/guides/quickstart/`,
+    cta: 'Laptop quickstart',
+  },
+  {
+    title: 'Any Docker host',
+    what: 'Postgres, Differently and OpenSandbox as one Docker stack. Sandboxes are containers sharing the host kernel.',
+    cmd: 'make e2e-prepare e2e-up',
+    status: 'Verified',
+    kind: 'verified',
+    href: `${repo}/tree/pre-release/test/e2e`,
+    cta: 'Docker stack on GitHub',
+  },
+  {
+    title: 'One Linux VM',
+    where: 'AWS · Google Cloud · Azure · bare metal',
+    what: "k3s with OpenSandbox's charts and Differently's chart on a single machine.",
+    detail: 'Run on Azure. The same steps apply to AWS EC2, Google Compute Engine and bare metal; not run there yet.',
+    status: 'Verified on Azure',
+    kind: 'verified',
+    href: `${base}/docs/deploy/single-vm/`,
+    cta: 'Single-VM guide',
+  },
+  {
+    title: 'Existing Kubernetes',
+    where: 'EKS · GKE · AKS · k3s · RKE2',
+    what: 'Install the Helm chart on a cluster you already run, next to an OpenSandbox server.',
+    status: 'Documented',
+    kind: 'documented',
+    href: `${base}/docs/deploy/kubernetes/`,
+    cta: 'Kubernetes guide',
+  },
+  {
+    title: 'Air-gapped',
+    what: 'Mirror the images and chart into your own registry. No telemetry, no phone-home.',
+    status: 'Documented',
+    kind: 'documented',
+    href: `${base}/docs/deploy/air-gapped/`,
+    cta: 'Air-gapped guide',
+  },
+];
+
+const verified = [
+  "End-to-end suite, 12 of 12, on OpenSandbox's Docker runtime (arm64) and its Kubernetes runtime (single-node k3s on Azure, both charts installed with Helm).",
+  'The published alpha chart and image installed from public artifacts only; a sandbox ran in about 2 s.',
+  'Real OpenSandbox responses from the Docker and Kubernetes runtimes are recorded and replayed in every go test.',
+  "OpenWork's Workbot computer ran through Differently as a sandbox gateway over HTTPS: commands with Python tools, files, and stop/start that keeps the disk (OpenWork pull request #6649, not merged yet).",
+  'A sandbox whose image cannot be pulled never marks a shared pool unhealthy.',
+];
+const notVerified = [
+  'Fast Sandbox microVMs',
+  'Multi-node clusters and node drains',
+  'Managed EKS, GKE and AKS clusters',
+  'Live Daytona and Freestyle accounts through Differently',
+  'Memory-preserving pause on the Kubernetes runtime',
+  'Port URLs on OpenSandbox pools',
+];
+const inProgress = [
+  'Parity with Freestyle on the Kubernetes runtime: a snapshot registry for stop/start, snapshots and fork.',
+  'OpenWork using Differently as a per-organization sandbox gateway (OpenWork pull request #6649).',
+];
+
+const tryIt = `make build
+./bin/differently-server --dev
+
+# in a second terminal
+./bin/differently sandbox create --profile small --wait`;
 
 const features = [
   {
@@ -124,7 +208,7 @@ const compare = [
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Differently · Orchestrate sandboxes on your terms</title>
-    <meta name="description" content="Open-source, self-hosted orchestration for sandboxes: one API, policy-gated placement across your OpenSandbox pools and external providers, quotas, audit and a trust report." />
+    <meta name="description" content="Open-source, self-hosted control plane for sandboxes. It runs on infrastructure you already have and places each sandbox on OpenSandbox, Daytona, Freestyle or a plugin by your policy, with one API, quotas and audit." />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -138,8 +222,8 @@ const compare = [
   </head>
   <body>
     <div class="status" role="note">
-      <strong>Pre-release.</strong> Unit and integration tests cover it, and an end-to-end suite runs it against a real OpenSandbox server. It has not yet run on OpenSandbox's microVM runtime, real clusters or live Daytona/Freestyle accounts. Not for production workloads yet.
-      <a href={`${base}/docs/roadmap/`}>Roadmap</a>
+      <strong>Pre-release, not for production.</strong> {version} has run end to end on OpenSandbox's Docker runtime and on a single-node k3s cluster. Fast Sandbox microVMs, multi-node and managed clusters, and live Daytona or Freestyle accounts are not verified yet.
+      <a href="#proven">What is proven</a>
     </div>
 
     <header class="nav wrap">
@@ -160,16 +244,17 @@ const compare = [
 
     <main>
       <section class="hero wrap">
+        <a class="pill" href={releases}>{version} · pre-release<span class="sr-only">: release notes on GitHub</span></a>
         <p class="eyebrow">Open source · Apache-2.0 · Self-hosted orchestration</p>
         <h1>Everyone builds sandboxes.<br /><em>We orchestrate them.</em></h1>
         <p class="lede">
-          Differently is the orchestration and resource-management layer for sandboxes. Install it in
-          infrastructure you already run, connect your own OpenSandbox pools and, if you choose, external
-          providers. Your developers get one API; policy decides where each sandbox runs, quotas keep
-          usage in check, and every decision is audited.
+          Differently runs on infrastructure you already have: any cloud or your own hardware. It places
+          each sandbox on OpenSandbox, Daytona, Freestyle or a plugin, as your policy allows. Your developers
+          get one API; quotas keep usage in check, and every decision is audited.
         </p>
         <div class="ctas">
-          <a class="btn primary" href={`${base}/docs/guides/quickstart/`}>Read the quickstart</a>
+          <a class="btn primary" href={`${base}/docs/guides/quickstart/`}>Get started</a>
+          <a class="btn" href={`${base}/docs/deploy/`}>Deploy it</a>
           <a class="btn" href={repo}>View on GitHub</a>
         </div>
         <div class="install">
@@ -180,6 +265,17 @@ const compare = [
           <li><b>Many pools.</b> Your nodes and opt-in providers, behind adapters.</li>
           <li><b>Your rules.</b> Policy, quotas and audit you own.</li>
         </ul>
+
+        {/* Launch video slot. Renders only when videoSrc (top of this file) is non-empty. */}
+        {videoSrc && (
+          <figure class="video">
+            <video controls preload="metadata" playsinline poster={videoPoster || undefined} aria-label={videoTitle}>
+              <source src={videoSrc} />
+              {videoCaptions && <track kind="captions" src={videoCaptions} srclang="en" label="English" default />}
+            </video>
+            <figcaption>{videoTitle}</figcaption>
+          </figure>
+        )}
       </section>
 
       <section class="how wrap" id="how">
@@ -218,6 +314,34 @@ const compare = [
           <li><b>Filter, then rank.</b> Pools that fail any rule are dropped with a reason; the rest are ranked.</li>
           <li><b>Run and record.</b> The sandbox runs; the decision, usage and audit events are stored.</li>
         </ol>
+      </section>
+
+      <section class="deploy wrap" id="deploy">
+        <div class="section-head">
+          <p class="eyebrow">Deploy anywhere</p>
+          <h2>Start on a laptop. Keep it on hardware you already run.</h2>
+          <p>Five ways to run Differently, friendliest first. <b>Verified</b> marks what has run end to end; <b>Documented</b> marks written steps that are not yet among those runs.</p>
+        </div>
+        <div class="ways">
+          {ways.map((w) => (
+            <article>
+              <div class="way-head">
+                <h3>{w.title}</h3>
+                <span class={`chip ${w.kind}`}>{w.status}</span>
+              </div>
+              {w.where && <p class="where">{w.where}</p>}
+              <p>{w.what}</p>
+              {w.cmd && <p><code>{w.cmd}</code></p>}
+              {w.detail && <p class="detail">{w.detail}</p>}
+              <a href={w.href}>{w.cta} →</a>
+            </article>
+          ))}
+          <article class="aside">
+            <h3>What every option needs</h3>
+            <p>Control-plane requirements, the OpenSandbox server, ports, and KVM hosts only if you want Fast Sandbox microVMs.</p>
+            <a href={`${base}/docs/deploy/prerequisites/`}>Prerequisites →</a>
+          </article>
+        </div>
       </section>
 
       <section class="stack wrap" id="stack">
@@ -262,7 +386,7 @@ const compare = [
             <Code code={s.code} lang={s.lang as any} themes={{ light: 'github-light', dark: 'github-dark' }} />
           </div>
         ))}
-        <p class="note">Try it on a laptop with <code>./bin/differently-server --dev</code>. Dev mode runs commands directly on your machine with no isolation; it exists to exercise the API, not to contain untrusted code.</p>
+        <p class="note">Want to run these? <a href="#start">Try it on a laptop</a> in three commands.</p>
       </section>
 
       <section class="features wrap" id="features">
@@ -282,24 +406,47 @@ const compare = [
         </div>
       </section>
 
-      <section class="honest wrap">
+      <section class="honest wrap" id="proven">
         <div>
-          <p class="eyebrow">Where it stands</p>
+          <p class="eyebrow">Where it stands · {version}</p>
           <h2>Honest about what is proven.</h2>
         </div>
         <div class="cols">
           <div>
-            <h3>Built and tested</h3>
-            <p>Control plane, scheduler, policy engine, adapters, CLI, SDKs, Helm chart and docs, covered by fast unit and in-process integration tests. An end-to-end suite runs the real stack against an OpenSandbox server.</p>
+            <h3>Verified</h3>
+            <ul>{verified.map((v) => <li>{v}</li>)}</ul>
           </div>
           <div>
-            <h3>Not yet verified</h3>
-            <p>OpenSandbox's Kubernetes and Fast Sandbox runtimes, real clusters, live Daytona and Freestyle accounts and Postgres failover at scale. Each has a proof of concept and acceptance criteria.</p>
+            <h3>Not verified yet</h3>
+            <ul>{notVerified.map((v) => <li>{v}</li>)}</ul>
           </div>
           <div>
-            <h3>Read before you deploy</h3>
-            <p><a href={`${base}/docs/deploy/`}>Support matrix</a>, <a href={`${base}/docs/security/hardening-checklist/`}>hardening checklist</a>, <a href={`${base}/docs/proof-of-concepts/`}>proofs of concept</a> and the <a href={`${base}/docs/feature-parity/`}>feature parity</a> table.</p>
+            <h3>In progress, not merged</h3>
+            <ul>{inProgress.map((v) => <li>{v}</li>)}</ul>
           </div>
+        </div>
+        <p class="note">Read before you deploy: the <a href={`${base}/docs/deploy/`}>support matrix</a>, <a href={`${base}/docs/security/hardening-checklist/`}>hardening checklist</a>, <a href={`${base}/docs/proof-of-concepts/`}>proofs of concept</a> and the <a href={`${base}/docs/feature-parity/`}>feature parity</a> table.</p>
+      </section>
+
+      <section class="start wrap" id="start">
+        <div class="section-head">
+          <p class="eyebrow">Get started</p>
+          <h2>Try it in three commands.</h2>
+          <p>From a clone of <a href={repo}>the repository</a>:</p>
+        </div>
+        <div class="panel">
+          <Code code={tryIt} lang="sh" themes={{ light: 'github-light', dark: 'github-dark' }} />
+        </div>
+        <p class="warn"><strong>Dev mode has no isolation.</strong> It keeps everything in memory, and its devhost pool runs commands directly on your machine as your user. Use it to try the API, never for untrusted code.</p>
+        <div class="next">
+          <a href={`${base}/docs/deploy/single-vm/`}>
+            <b>Deploy on one Linux VM →</b>
+            <span>k3s, OpenSandbox and Differently on AWS, Google Cloud, Azure or bare metal.</span>
+          </a>
+          <a href={`${base}/docs/deploy/kubernetes/`}>
+            <b>Install with Helm →</b>
+            <span>On a Kubernetes cluster you already run: EKS, GKE, AKS, k3s or RKE2.</span>
+          </a>
         </div>
       </section>
 
@@ -315,7 +462,7 @@ const compare = [
 
     <footer class="wrap">
       <span>Differently · Apache-2.0 · by <a href="https://github.com/different-ai">OpenWork</a></span>
-      <span><a href={`${base}/docs/adr/`}>Decision records</a> · <a href={`${repo}/blob/pre-release/SECURITY.md`}>Security policy</a></span>
+      <span><a href={releases}>Releases</a> · <a href={`${base}/docs/adr/`}>Decision records</a> · <a href={`${repo}/blob/pre-release/SECURITY.md`}>Security policy</a></span>
     </footer>
 
     <script>
