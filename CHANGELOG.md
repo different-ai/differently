@@ -6,6 +6,15 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Fixed (Fast Sandbox)
+
+- A Fast Sandbox microVM's clock is set right after create and resume; it
+  used to start at the time its template or checkpoint was written.
+- Pause and snapshot on Fast Sandbox wait up to `checkpointTimeoutSeconds`
+  (default 900) instead of the general three-minute ready timeout, which a
+  4 GiB desktop's checkpoint could exceed.
+- The `fastsandbox-1.2.0` recording was made again on a two-node cluster
+  with Workbot's desktop template.
 ### Changed
 
 - `GET /v1/capabilities` answers a tenant key with the pools its placement

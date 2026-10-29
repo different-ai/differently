@@ -487,6 +487,13 @@ func TestOpenSandboxFastSandbox(t *testing.T) {
 	if got := mustJSON(req["lifecycle"]); got != `{"idlePolicy":{"idleTimeoutSeconds":30,"onIdle":"pause","wakeOnAccess":true}}` {
 		t.Fatalf("idle policy %s", got)
 	}
+	// A restored microVM keeps the template's clock: create steps it.
+	f.mu.Lock()
+	cmd, _ := f.lastCmd["command"].(string)
+	f.mu.Unlock()
+	if !strings.HasPrefix(cmd, "date -u -s @") {
+		t.Fatalf("create should step the guest clock, last command %q", cmd)
+	}
 
 	// The idle policy pauses the microVM; the next exec wakes it.
 	f.mu.Lock()

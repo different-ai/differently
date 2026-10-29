@@ -96,7 +96,8 @@ var FastSandboxFeatures = []string{
 // runtime (docker|kubernetes|fastsandbox, default docker), timeoutSeconds
 // (fastsandbox: the expiry sent when a sandbox has no TTL, default 86400),
 // poolCPU and poolMemory (fastsandbox: the SandboxPool's fixed size, e.g. 2
-// and 4Gi, which a restore from a snapshot must send),
+// and 4Gi, which a restore from a snapshot must send), checkpointTimeoutSeconds
+// (fastsandbox: how long a pause or snapshot may take, default 900),
 // egress (none|public|allowlist,
 // with egressAllow a comma list of hosts), ports (signed: tenant URLs
 // through OpenSandbox's ingress gateway), portScheme (https|http: the scheme
@@ -132,6 +133,10 @@ type Options struct {
 	// its egress sidecar; nil leaves egress open.
 	NetworkPolicy map[string]any
 	ReadyTimeout  time.Duration
+	// CheckpointTimeout bounds a pause or a snapshot. Fast Sandbox writes a
+	// full checkpoint of disk and memory, about three minutes for a 4 GiB
+	// desktop, so it gets longer than ReadyTimeout.
+	CheckpointTimeout time.Duration
 	// PauseStartTimeout bounds how long a pause may show no progress. Some
 	// runtimes accept a pause they cannot perform (the Kubernetes runtime
 	// without a snapshot registry) and leave the sandbox running.
@@ -236,6 +241,14 @@ func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
 			}
 			o.DefaultTimeout = n
 		}
+		o.CheckpointTimeout = 15 * time.Minute
+		if v := cfg["checkpointTimeoutSeconds"]; v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 30 {
+				return o, fmt.Errorf("opensandbox config.checkpointTimeoutSeconds must be a number of seconds, at least 30, not %q", v)
+			}
+			o.CheckpointTimeout = time.Duration(n) * time.Second
+		}
 	default:
 		return o, fmt.Errorf("opensandbox config.runtime must be docker, kubernetes or fastsandbox, not %q", o.Runtime)
 	}
@@ -295,6 +308,9 @@ func New(o Options) *Adapter {
 	}
 	if o.PauseStartTimeout == 0 {
 		o.PauseStartTimeout = 30 * time.Second
+	}
+	if o.CheckpointTimeout == 0 {
+		o.CheckpointTimeout = o.ReadyTimeout
 	}
 	c := httpx.New("opensandbox", o.APIURL, "")
 	return &Adapter{opts: o, c: c, execd: map[string]endpoint{}}
@@ -510,7 +526,21 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 	if err := a.waitExecd(ctx, s.ID); err != nil {
 		return adapter.Instance{}, err
 	}
+	a.stepClock(ctx, s.ID)
 	return a.inst(s), nil
+}
+
+// stepClock sets a Fast Sandbox microVM's clock to now. Every sandbox is
+// restored from a memory snapshot and starts with the time the template or
+// checkpoint was written; an NTP client in the guest corrects it only at its
+// next poll, so the first commands would see a clock minutes or days behind.
+// Best effort: a guest whose command user cannot set the clock keeps it.
+func (a *Adapter) stepClock(ctx context.Context, ref string) {
+	if a.opts.Runtime != runtimeFastSandbox {
+		return
+	}
+	cmd := fmt.Sprintf("date -u -s @%d >/dev/null 2>&1 || true", time.Now().Unix())
+	_, _ = a.run(ctx, ref, api.ExecRequest{Command: cmd, TimeoutSeconds: 10}, func(api.ExecEvent) error { return nil })
 }
 
 // fastSandboxBody is a template-mode create. The template's golden image
@@ -941,7 +971,7 @@ func (a *Adapter) pause(ctx context.Context, ref, feature string) error {
 		return err
 	}
 	stalled := time.Now().Add(a.opts.PauseStartTimeout)
-	return httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
+	return httpx.Poll(ctx, 500*time.Millisecond, a.opts.CheckpointTimeout, func() (bool, error) {
 		s, err := a.get(ctx, ref)
 		switch {
 		case err != nil:
@@ -971,7 +1001,11 @@ func (a *Adapter) Resume(ctx context.Context, ref string) error {
 	if _, err := a.waitFor(ctx, ref, "Running"); err != nil {
 		return err
 	}
-	return a.waitExecd(ctx, ref)
+	if err := a.waitExecd(ctx, ref); err != nil {
+		return err
+	}
+	a.stepClock(ctx, ref)
+	return nil
 }
 
 // Snapshot captures a sandbox; what is captured (filesystem, or memory too)
@@ -987,7 +1021,7 @@ func (a *Adapter) Snapshot(ctx context.Context, ref, kind string) (adapter.Snaps
 	if err := a.call(ctx, http.MethodPost, "/sandboxes/"+url.PathEscape(ref)+"/snapshots", map[string]string{"name": "differently-" + ref}, &snap); err != nil {
 		return adapter.Snapshot{}, err
 	}
-	err := httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
+	err := httpx.Poll(ctx, 500*time.Millisecond, a.opts.CheckpointTimeout, func() (bool, error) {
 		switch snap.Status.State {
 		case "Ready":
 			return true, nil
