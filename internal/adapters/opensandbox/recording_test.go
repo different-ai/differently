@@ -190,7 +190,9 @@ const (
 // follow, for the recorder or the replay.
 func scenario(t *testing.T, a *Adapter, runtime string, step func(string)) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	// Fast Sandbox writes a full checkpoint for each pause and snapshot
+	// (minutes for a desktop-sized template).
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	fatal := func(what string, err error) {
 		t.Helper()

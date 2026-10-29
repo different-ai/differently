@@ -182,13 +182,14 @@ opensandbox:
 
 ## Fast Sandbox runtime: microVMs, pause with memory, native idle
 
-> Status: run live on 2026-10-29 against OpenSandbox 1.2.0's Fast Sandbox
-> on single-node k3s (Azure Standard_D8s_v6, Firecracker under nested KVM).
-> The adapter scenario is recorded as `fastsandbox-1.2.0` (create, exec,
-> files, pause and resume, snapshot and fork, port URL, delete), and
-> OpenWork's Workbot desktop ran through Differently with its viewer
-> streamed over a port URL. The end-to-end suite has not run on it yet.
-> Timings and gaps are [below](#measured-on-a-workbot-desktop).
+> Status: run live on 2026-10-29 against OpenSandbox 1.2.0's Fast Sandbox,
+> first on single-node k3s (Azure Standard_D8s_v6), then on a two-node k3s
+> cluster with a Standard_D16s_v6 KVM node, both Firecracker under nested
+> KVM. The adapter scenario is recorded as `fastsandbox-1.2.0` (create,
+> exec, files, pause and resume, snapshot and fork, port URL, delete) with
+> OpenWork's Workbot desktop template, and OpenWork's runner drove a Workbot
+> computer and its desktop viewer through Differently. Timings and gaps are
+> [below](#measured-on-a-workbot-desktop).
 
 `runtime: fastsandbox` creates each sandbox as a Firecracker microVM from a
 Fast Sandbox template (template mode):
@@ -201,8 +202,18 @@ Fast Sandbox template (template mode):
   only the pool's own `templateId`, so a pool serves one template.
 - **A restore from a snapshot (fork) sends the pool's size.** It has no
   template to size it, and OpenSandbox requires `resourceLimits` equal to
-  the SandboxPool's profile: set `poolCPU` and `poolMemory` (for example
-  `2` and `4Gi`).
+  the SandboxPool's profile: set `poolCPU` and `poolMemory` to the
+  SandboxPool's `sandboxResources` (for example `2` and `4Gi`). Any other
+  size, smaller included, is refused with a 422.
+- **Pause and snapshot can take minutes.** Each writes a full checkpoint of
+  disk and memory, so the adapter waits up to `checkpointTimeoutSeconds`
+  (default 900) for them, and Differently finishes the change even if the
+  caller stops waiting.
+- **The guest clock is set after every create and resume.** A restored
+  microVM starts with the time its template or checkpoint was written;
+  Differently runs `date -s` through execd right after it answers. A wake
+  by the gateway (a request to a port URL) bypasses Differently, so give
+  the template an NTP client too.
 - **A timeout is required**, so a sandbox without a TTL gets
   `timeoutSeconds` (default 86400). Differently's TTL still terminates it.
 - **Features**: exec, exec.stream, files, `lifecycle.pause-resume` (the VM
@@ -284,9 +295,12 @@ Gaps found running Workbot's desktop:
 
 | Gap | Kind |
 |---|---|
-| The stock guest kernel has no `nf_tables` inet family, nft reject or iptables owner match, so per-user firewall rules inside the guest (Workbot's desktop guard) cannot load. Pool egress through the egress sidecar still applies | **Limitation** of OpenSandbox 1.2.0's guest kernel; a kernel with those options is not built |
-| Guest init mounts `/run` world-writable (1777), which programs that check their parent directories refuse | **Limitation**; a `chmod 755 /run` in the template's entrypoint is not built |
-| The guest clock is not stepped after a restore: it runs on from the template's build time | **Limitation**; a clock sync in the template is not built |
+| The stock guest kernel has no `nf_tables` inet family, nft reject or iptables owner match, so per-user firewall rules inside the guest (Workbot's desktop guard) cannot load. Pool egress through the egress sidecar still applies | **Worked around**: Firecracker CI's 6.18.36 config plus `NF_TABLES_INET`, `NFT_REJECT(_INET)`, `NETFILTER_XT_MATCH_OWNER` and friends, built into a derived template builder image as `vmlinux.bin`; Workbot's guard loads |
+| Guest init mounts `/run` world-writable (1777), which programs that check their parent directories refuse | **Worked around** in the template's entrypoint (`chmod 0755 /run`), passed as the template's `entrypoint` |
+| The guest clock is not stepped after a restore: it runs on from the template's build time | **Fixed** for creates and resumes through Differently (above); chrony with NTP in the template covers gateway wakes within about a minute. The KVM PTP clock does not carry the host's time under Azure's nested virtualization |
+| The image's own `ENTRYPOINT` is not run: template mode runs the template's `entrypoint` (default `tail -f /dev/null`) | **Behaviour**; pass `entrypoint` when creating the template |
+| The template builder pulls the source image anonymously (no pull secrets) | **Limitation**; copy private images to a registry the builder can reach without credentials, such as one on the KVM node's private address |
+| Each KVM node caches converted templates up to a fixed 20 GiB, and evicted templates are not re-pulled (`RuntimeNotReady ... no committed restore set`) | **Limitation** of 1.2.0; keep one desktop-sized template (about 14 GB) per node and delete superseded templates |
 | Port URLs (route scopes) never expire | **Limitation**; keep the gateway private or treat URLs as credentials |
 | Pause takes minutes for a 4 GiB desktop | **Limitation** (full checkpoint per pause) |
 | One template per pool; Differently shows the requested size, not the template's | **Not built yet** |
