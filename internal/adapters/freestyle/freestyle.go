@@ -6,12 +6,13 @@
 //   - create has no resource or env fields: VMs boot at their snapshot's size
 //     and are grown with /resize; sandbox env is written to a 0600 file inside
 //     the VM and sourced by every exec;
-//   - there is no stop endpoint: stop runs poweroff and waits for "stopped";
+//   - there is no stop endpoint: stop runs poweroff as root and waits for
+//     "stopped" (VMs are created with automatic restart off);
 //   - snapshots always capture memory and disk;
 //   - networking is deny-all unless the pool sets config.egress=public.
 //
-// Verified against Freestyle's published OpenAPI spec (2026-10-28), not yet
-// against a live account.
+// Written from Freestyle's published OpenAPI spec and run against a live
+// account on 2026-10-29 (live_test.go).
 package freestyle
 
 import (
@@ -157,6 +158,11 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 			"slug":     slug(req.ID),
 			"firewall": map[string]any{"rules": rules},
 			"metadata": map[string]string{metaSandbox: req.ID, metaInstallation: req.Installation},
+			// Stop is an in-guest poweroff. With automatic restart on (the
+			// default), Freestyle boots the VM again about 5 s later, so a
+			// stopped sandbox would be running and billed. Differently owns
+			// lifecycle; the reconciler sees a VM that stopped on its own.
+			"automaticRestart": false,
 		}
 		snapshot := a.opts.Snapshot
 		if req.Template != "" {
@@ -301,13 +307,30 @@ func (a *Adapter) ReadFile(ctx context.Context, ref, path string) ([]byte, error
 }
 
 func (a *Adapter) WriteFile(ctx context.Context, ref, path string, data []byte) error {
-	dir := absPath(path)
-	if i := strings.LastIndex(dir, "/"); i > 0 {
-		if err := a.c.JSON(ctx, http.MethodPost, "/v5/vms/"+url.PathEscape(ref)+"/fs/mkdir", map[string]string{"path": dir[:i]}, nil); err != nil {
+	p := absPath(path)
+	vmPath := "/v5/vms/" + url.PathEscape(ref)
+	if i := strings.LastIndex(p, "/"); i > 0 {
+		if err := a.c.JSON(ctx, http.MethodPost, vmPath+"/fs/mkdir", map[string]string{"path": p[:i]}, nil); err != nil {
 			return err
 		}
 	}
-	resp, err := a.c.Do(ctx, http.MethodPut, "/v5/vms/"+url.PathEscape(ref)+"/fs/write?mode=0600&path="+url.QueryEscape(absPath(path)), bytes.NewReader(data), "application/octet-stream", nil)
+	// A write creates a new file owned by the guest's default user, who runs
+	// exec, but replaces an existing one with a file owned by root, which that
+	// user cannot read at 0600. Remove an existing regular file first so the
+	// write always creates it.
+	var st struct {
+		IsFile bool `json:"isFile"`
+	}
+	switch err := a.c.JSON(ctx, http.MethodGet, vmPath+"/fs/stat?path="+url.QueryEscape(p), nil, &st); {
+	case err == nil && st.IsFile:
+		if err := a.c.JSON(ctx, http.MethodDelete, vmPath+"/fs/remove?path="+url.QueryEscape(p), nil, nil); err != nil && !api.IsCode(err, api.CodeNotFound) {
+			return err
+		}
+	case err != nil && !api.IsCode(err, api.CodeNotFound):
+		return err
+	}
+	// Freestyle reads mode as a decimal number: 384 is 0600.
+	resp, err := a.c.Do(ctx, http.MethodPut, vmPath+"/fs/write?mode=384&path="+url.QueryEscape(p), bytes.NewReader(data), "application/octet-stream", nil)
 	if err != nil {
 		return err
 	}
@@ -332,10 +355,13 @@ func (a *Adapter) ListFiles(ctx context.Context, ref, path string) ([]api.FileIn
 	return items, nil
 }
 
-// Stop powers the VM off from inside (Freestyle has no stop endpoint).
+// Stop powers the VM off from inside (Freestyle has no stop endpoint). Exec
+// runs as the guest's default user (uid 1000 when the image has one), who
+// may not power off, so poweroff runs as root.
 func (a *Adapter) Stop(ctx context.Context, ref string) error {
 	// The exec usually fails when the guest disconnects; the state poll decides.
-	_, _ = a.Exec(ctx, ref, api.ExecRequest{Command: "poweroff", TimeoutSeconds: 10})
+	body := map[string]any{"command": "poweroff", "linuxUser": "root", "timeoutMs": 10_000}
+	_ = a.c.JSON(ctx, http.MethodPost, "/v5/vms/"+url.PathEscape(ref)+"/exec-await", body, nil)
 	_, err := a.waitState(ctx, ref, "stopped")
 	return err
 }

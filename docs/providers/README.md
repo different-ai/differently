@@ -21,7 +21,7 @@ code and published documentation.
 ## Providers
 
 26 providers are covered: 16 with a built-in adapter, 8 reachable through a
-[remote plugin](remote.md), and 2 that cannot be supported. Two of the 16
+[remote plugin](remote.md), and 2 that cannot be supported. Four of the 16
 have run live; the rest are implemented from published APIs and tested
 against fakes of them. "Persists" means stop/start keeps the disk or pause
 keeps memory; "Snapshots" are disk unless marked memory.
@@ -32,8 +32,8 @@ keeps memory; "Snapshots" are disk unless marked memory.
 |---|---|---|
 | [OpenSandbox](opensandbox.md) `opensandbox` | **Verified live**: Docker and Kubernetes runtimes, 2026-10-29 | declared |
 | [agent-sandbox](agent-sandbox.md) `agent-sandbox` | **Verified live**: kind cluster, runc, 2026-10-28 | declared |
-| [Daytona](daytona.md) `daytona` | Tested with a fake server | external |
-| [Freestyle](freestyle.md) `freestyle` | Tested with a fake server | external |
+| [Daytona](daytona.md) `daytona` | **Verified live**: container class, 2026-10-29 (VM class not run) | external |
+| [Freestyle](freestyle.md) `freestyle` | **Verified live**: default snapshot, 2026-10-29 | external |
 | [E2B](e2b.md) `e2b` | Tested with a fake server | declared |
 | [Boat](boat.md) `boat` | Tested with a fake server | external |
 | [Morph Cloud](morph.md) `morph` | Tested with a fake server | external |
@@ -63,7 +63,7 @@ start from one.
 |---|---|---|---|---|
 | OpenSandbox | container or microVM | stop/start or pause, by runtime | disk + fork | signed |
 | agent-sandbox | RuntimeClass | stop/start (volume) | — | in-cluster |
-| Daytona | container or VM | stop/start; pause on VMs | disk (memory on VMs) | signed |
+| Daytona | container or VM | stop/start; pause on VMs | disk + fork (memory on VMs) | signed |
 | Freestyle | microVM | stop/start, pause | memory + fork | public |
 | E2B | microVM | pause | memory + fork | public, opt-in |
 | Boat | VM | stop/start | disk + fork | token or public |
@@ -146,9 +146,11 @@ would wrap.
      without a config file.
 3. Write `docs/providers/<kind>.md` from the template below, and add a row
    here.
-4. When you have an account or a running install, run the
-   [end-to-end suite](../../test/e2e/README.md) against a pool on it and
-   record what ran on the page. Until then, the status stays
+4. When you have an account or a running install, run the adapter's live
+   test (`go test -tags live`, as `agent-sandbox`, `daytona` and `freestyle`
+   have) and drive a pool on it through a Differently server, or run the
+   [end-to-end suite](../../test/e2e/README.md) against it where it fits.
+   Record what ran on the page. Until then, the status stays
    **Tested with a fake server**.
 
 ## Configure any provider

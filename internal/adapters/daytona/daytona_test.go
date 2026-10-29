@@ -14,18 +14,80 @@ import (
 	"github.com/different-ai/differently/pkg/api"
 )
 
-// fakeDaytona mimics the documented control-plane and toolbox shapes.
+// fakeDaytona mimics the control-plane and toolbox shapes, and what the live
+// API was seen to do (2026-10-29): stop, start and delete answer while the
+// change is still in progress, a repeated delete during it is a 409, a
+// command timeout is a 408, and snapshots are deleted by id only.
 type fakeDaytona struct {
-	mu      sync.Mutex
-	creates int
-	boxes   map[string]map[string]any
-	files   map[string][]byte
-	srv     *httptest.Server
+	mu        sync.Mutex
+	creates   int
+	boxes     map[string]map[string]any
+	files     map[string][]byte
+	snapshots map[string]map[string]any // by name
+	srv       *httptest.Server
 }
 
+// settle is what one GET later finds for a state in progress.
+var settle = map[string]string{"creating": "started", "starting": "started", "stopping": "stopped", "snapshotting": "started"}
+
 func newFake(t *testing.T) *fakeDaytona {
-	f := &fakeDaytona{boxes: map[string]map[string]any{}, files: map[string][]byte{}}
+	f := &fakeDaytona{boxes: map[string]map[string]any{}, files: map[string][]byte{}, snapshots: map[string]map[string]any{}}
 	mux := http.NewServeMux()
+	fail := func(w http.ResponseWriter, status int, msg string) {
+		w.WriteHeader(status)
+		json.NewEncoder(w).Encode(map[string]any{"statusCode": status, "message": msg})
+	}
+	mux.HandleFunc("POST /api/sandbox/{id}/{action}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		b, ok := f.boxes[r.PathValue("id")]
+		if !ok {
+			fail(w, 404, "Sandbox not found")
+			return
+		}
+		switch r.PathValue("action") {
+		case "stop":
+			b["state"] = "stopping"
+		case "start":
+			b["state"] = "starting"
+		case "pause":
+			fail(w, 422, "Pausing is not supported for this sandbox")
+			return
+		case "snapshot":
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			name := body["name"].(string)
+			f.snapshots[name] = map[string]any{"id": "0d6c7c6e-1f0a-4c55-9e43-" + strings.Repeat("a", 12), "name": name, "state": "pending"}
+			b["state"] = "snapshotting"
+		}
+		json.NewEncoder(w).Encode(b)
+	})
+	mux.HandleFunc("GET /api/snapshots/{ref}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		s, ok := f.snapshots[r.PathValue("ref")]
+		if !ok {
+			fail(w, 404, "Snapshot not found")
+			return
+		}
+		json.NewEncoder(w).Encode(s)
+		s["state"] = "active"
+	})
+	mux.HandleFunc("DELETE /api/snapshots/{id}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		for name, s := range f.snapshots {
+			if s["id"] == r.PathValue("id") {
+				delete(f.snapshots, name)
+				return
+			}
+		}
+		if !strings.Contains(r.PathValue("id"), "-4c55-") {
+			fail(w, 400, "Validation failed (uuid is expected)")
+			return
+		}
+		fail(w, 404, "Snapshot not found")
+	})
 	mux.HandleFunc("POST /api/sandbox", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -66,24 +128,41 @@ func newFake(t *testing.T) *fakeDaytona {
 			json.NewEncoder(w).Encode(map[string]any{"statusCode": 404, "error": "Not Found", "message": "Sandbox not found"})
 			return
 		}
-		b["state"] = "started" // becomes ready on first poll
+		// A change in progress is over by the first poll; a destroyed
+		// sandbox is still readable once, as "destroying".
+		if next, ok := settle[b["state"].(string)]; ok {
+			b["state"] = next
+		}
 		json.NewEncoder(w).Encode(b)
+		if b["state"] == "destroying" {
+			delete(f.boxes, r.PathValue("id"))
+		}
 	})
 	mux.HandleFunc("DELETE /api/sandbox/{id}", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		if _, ok := f.boxes[r.PathValue("id")]; !ok {
-			w.WriteHeader(404)
+		b, ok := f.boxes[r.PathValue("id")]
+		if !ok {
+			fail(w, 404, "Sandbox not found")
 			return
 		}
-		delete(f.boxes, r.PathValue("id"))
-		w.Write([]byte(`{}`))
+		if b["state"] == "destroying" || b["state"] == "stopping" {
+			fail(w, 409, "Sandbox state change in progress")
+			return
+		}
+		b["state"] = "destroying"
+		json.NewEncoder(w).Encode(b)
 	})
 	mux.HandleFunc("POST /toolbox/{id}/process/execute", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		if body["timeout"] == nil {
 			t.Error("timeout must always be sent")
+		}
+		if strings.HasPrefix(body["command"].(string), "sleep") {
+			w.WriteHeader(408)
+			json.NewEncoder(w).Encode(map[string]any{"statusCode": 408, "message": "command execution timeout", "code": "PROCESS_EXECUTION_TIMEOUT"})
+			return
 		}
 		json.NewEncoder(w).Encode(map[string]any{"exitCode": 0, "result": "ran: " + body["command"].(string)})
 	})
@@ -102,6 +181,13 @@ func newFake(t *testing.T) *fakeDaytona {
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
+}
+
+func (f *fakeDaytona) state(id string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, _ := f.boxes[id]["state"].(string)
+	return s
 }
 
 func TestDaytonaAdapter(t *testing.T) {
@@ -132,15 +218,45 @@ func TestDaytonaAdapter(t *testing.T) {
 	if b, err := a.ReadFile(ctx, inst.Ref, "/home/a.txt"); err != nil || string(b) != "v" {
 		t.Fatalf("read %q %v", b, err)
 	}
+	if res, err := a.Exec(ctx, inst.Ref, api.ExecRequest{Command: "sleep 30", TimeoutSeconds: 1}); err != nil || res.ExitCode != 124 {
+		t.Fatalf("a command timeout is exit 124, not an error: %+v %v", res, err)
+	}
+	// Stop and start return once the sandbox has settled.
+	if err := a.Stop(ctx, inst.Ref); err != nil || f.state(inst.Ref) != "stopped" {
+		t.Fatalf("stop: %v, state %s", err, f.state(inst.Ref))
+	}
+	if err := a.Start(ctx, inst.Ref); err != nil || f.state(inst.Ref) != "started" {
+		t.Fatalf("start: %v, state %s", err, f.state(inst.Ref))
+	}
+	if err := a.Pause(ctx, inst.Ref); !api.IsCode(err, api.CodeInvalidRequest) {
+		t.Fatalf("a container cannot pause: %v", err)
+	}
+	snap, err := a.Snapshot(ctx, inst.Ref, "disk")
+	if err != nil || snap.Kind != "disk" || f.snapshots[snap.Ref]["state"] != "active" {
+		t.Fatalf("snapshot %+v %v (%v)", snap, err, f.snapshots)
+	}
+	for i := 0; i < 2; i++ {
+		if err := a.DeleteSnapshot(ctx, snap.Ref); err != nil || len(f.snapshots) != 0 {
+			t.Fatalf("delete snapshot #%d: %v", i+1, err)
+		}
+	}
 	list, err := a.List(ctx, "inst_1")
 	if err != nil || len(list) != 1 {
 		t.Fatalf("list %v %v", list, err)
 	}
-	if err := a.Delete(ctx, inst.Ref); err != nil {
-		t.Fatal(err)
+	// A delete during a state change waits for it; a repeated delete while
+	// the first is in progress succeeds.
+	f.mu.Lock()
+	f.boxes[inst.Ref]["state"] = "stopping"
+	f.mu.Unlock()
+	if err := a.Delete(ctx, inst.Ref); err != nil || f.state(inst.Ref) != "destroying" {
+		t.Fatalf("delete while stopping: %v, state %s", err, f.state(inst.Ref))
 	}
 	if err := a.Delete(ctx, inst.Ref); err != nil {
 		t.Fatalf("second delete must succeed: %v", err)
+	}
+	if err := a.Delete(ctx, inst.Ref); err != nil || f.state(inst.Ref) != "" {
+		t.Fatalf("delete after it is gone: %v, state %s", err, f.state(inst.Ref))
 	}
 	caps, _ := a.Capabilities(ctx)
 	if caps.Has(adapter.FeaturePauseResume) {

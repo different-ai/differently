@@ -4,9 +4,11 @@ Differently can place eligible sandboxes on Daytona or Freestyle when private
 capacity runs out, for special hardware, or for regions you do not operate.
 This is off by default and stays off until you change three things on purpose.
 
-> The Daytona and Freestyle adapters are implemented against the providers'
-> published API specifications (2026-10-28) and tested with fake servers.
-> They have not been run against live accounts yet; verify in a staging
+> The Daytona and Freestyle adapters ran against live accounts on
+> 2026-10-29, through their live tests and a Differently server: Daytona's
+> container class and Freestyle's default snapshot. Daytona's VM class has
+> not run. See [Daytona](../providers/daytona.md) and
+> [Freestyle](../providers/freestyle.md) for what ran; verify in a staging
 > installation first.
 
 ## What has to be true for work to leave your pools
@@ -96,7 +98,7 @@ pools:
     config:
       target: us
       snapshot: daytona-small
-      class: container        # or linux-vm for pause/memory snapshots
+      class: container        # or linux-vm, with a VM snapshot, for pause/memory snapshots
 ```
 
 Freestyle is similar (`adapter: freestyle`, `config.snapshot`,
@@ -179,17 +181,17 @@ See
 
 | | OpenSandbox (yours) | Daytona | Freestyle |
 |---|---|---|---|
-| Exec output | separate stdout/stderr, streaming, line-based | combined into stdout | separate, buffered, ≤5 min inline |
+| Exec output | separate stdout/stderr, streaming, line-based | combined into stdout; a timeout is exit 124 without output | separate, buffered, ≤5 min inline |
 | stdin on exec | no (`unsupported_operation`) | no (`unsupported_operation`) | yes |
 | Pause | yes; state kept (checked on the Docker runtime) | VM class only | memory kept |
 | Snapshots | disk; memory only if the runtime captures it and the pool declares `snapshots.memory` (Fast Sandbox, unverified) | filesystem (memory with VM class) | always memory + disk |
-| Stop | no (`unsupported_operation`); pause or delete instead | provider stop | in-guest `poweroff` |
+| Stop | no (`unsupported_operation`); pause or delete instead | provider stop | in-guest `poweroff` as root; `/tmp` is emptied at the next boot |
 | Port URLs | only when OpenSandbox serves the port directly without request headers | signed preview URL (1 h) | public `*.style.dev` hostname |
 
 For OpenSandbox, exec, pause and resume, disk snapshots and the stop
 refusal were checked live against release 1.2.0 with the Docker runtime; port
 URLs, restoring or forking from a snapshot, and memory snapshots were not. The Daytona and Freestyle columns
-are checked only against fake servers.
+were checked live on 2026-10-29, except Daytona's VM class.
 
 Snapshots and forks stay on the pool that took them. A running sandbox is
 never moved between providers.

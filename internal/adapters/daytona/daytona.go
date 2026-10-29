@@ -6,16 +6,18 @@
 // and moves files. Ownership is tracked with Differently labels, which also
 // makes Create idempotent.
 //
-// Verified against Daytona's published OpenAPI specs (2026-10-28), not yet
-// against a live account. Known semantic differences: exec output combines
-// stdout and stderr; stdin is not supported; snapshots are filesystem-only
-// unless the sandbox is a VM class.
+// Written from Daytona's published OpenAPI specs and run against a live
+// account on 2026-10-29 (live_test.go; the container class only). Known
+// semantic differences: exec output combines stdout and stderr; stdin is not
+// supported; snapshots are filesystem-only unless the sandbox is a VM class,
+// which comes from the snapshot.
 package daytona
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -239,7 +241,24 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 }
 
 func (a *Adapter) Delete(ctx context.Context, ref string) error {
-	err := a.c.JSON(ctx, http.MethodDelete, "/sandbox/"+url.PathEscape(ref), nil, nil)
+	del := func() error { return a.c.JSON(ctx, http.MethodDelete, "/sandbox/"+url.PathEscape(ref), nil, nil) }
+	err := del()
+	if api.IsCode(err, api.CodeInvalidState) {
+		// Daytona answers 409 while a state change is in progress: the
+		// sandbox is already being destroyed (a repeated delete), or it is
+		// starting or stopping. Get reports a destroying sandbox as not found;
+		// otherwise wait for the change to settle and delete again.
+		err = httpx.Poll(ctx, time.Second, a.opts.ReadyTimeout, func() (bool, error) {
+			in, err := a.Get(ctx, ref)
+			if err != nil || in.State == adapter.StatePending {
+				return false, err
+			}
+			if err := del(); !api.IsCode(err, api.CodeInvalidState) {
+				return true, err
+			}
+			return false, nil
+		})
+	}
 	if api.IsCode(err, api.CodeNotFound) {
 		return nil
 	}
@@ -289,6 +308,12 @@ func (a *Adapter) Exec(ctx context.Context, ref string, req api.ExecRequest) (ap
 	}
 	start := time.Now()
 	if err := a.c.JSON(ctx, http.MethodPost, base+"/process/execute", body, &out); err != nil {
+		// A command that outlives its timeout is a 408 without its output,
+		// not a provider failure: report it the way a shell's timeout does.
+		var e *api.Error
+		if errors.As(err, &e) && e.Details["providerCode"] == "PROCESS_EXECUTION_TIMEOUT" {
+			return api.ExecResult{ExitCode: 124, Stderr: fmt.Sprintf("command timed out after %ds\n", timeout), DurationMs: time.Since(start).Milliseconds()}, nil
+		}
 		return api.ExecResult{}, err
 	}
 	// Daytona combines stdout and stderr into one buffer.
@@ -344,17 +369,40 @@ func (a *Adapter) ListFiles(ctx context.Context, ref, path string) ([]api.FileIn
 	return out, nil
 }
 
-func (a *Adapter) action(ctx context.Context, ref, action string) error {
-	return a.c.JSON(ctx, http.MethodPost, "/sandbox/"+url.PathEscape(ref)+"/"+action, nil, nil)
+// action asks for a state change and waits for it: Daytona answers while the
+// sandbox is still stopping or starting.
+func (a *Adapter) action(ctx context.Context, ref, action, want string) error {
+	if err := a.c.JSON(ctx, http.MethodPost, "/sandbox/"+url.PathEscape(ref)+"/"+action, nil, nil); err != nil {
+		return err
+	}
+	return httpx.Poll(ctx, time.Second, a.opts.ReadyTimeout, func() (bool, error) {
+		var s sandbox
+		if err := a.c.JSON(ctx, http.MethodGet, "/sandbox/"+url.PathEscape(ref), nil, &s); err != nil {
+			return false, err
+		}
+		if state(s) == adapter.StateError {
+			return false, adapter.SandboxFailed(fmt.Errorf("daytona sandbox %s failed to %s: %s", ref, action, s.ErrorReason))
+		}
+		return s.State == want, nil
+	})
 }
 
-func (a *Adapter) Stop(ctx context.Context, ref string) error  { return a.action(ctx, ref, "stop") }
-func (a *Adapter) Start(ctx context.Context, ref string) error { return a.action(ctx, ref, "start") }
+func (a *Adapter) Stop(ctx context.Context, ref string) error {
+	return a.action(ctx, ref, "stop", "stopped")
+}
+func (a *Adapter) Start(ctx context.Context, ref string) error {
+	return a.action(ctx, ref, "start", "started")
+}
 
-// Pause is only meaningful for VM-class sandboxes; Capabilities hides it for
-// containers so placement never routes pause-requiring work here.
-func (a *Adapter) Pause(ctx context.Context, ref string) error  { return a.action(ctx, ref, "pause") }
-func (a *Adapter) Resume(ctx context.Context, ref string) error { return a.action(ctx, ref, "start") }
+// Pause is only meaningful for VM-class sandboxes (containers answer 422);
+// Capabilities hides it for containers so placement never routes
+// pause-requiring work here.
+func (a *Adapter) Pause(ctx context.Context, ref string) error {
+	return a.action(ctx, ref, "pause", "paused")
+}
+func (a *Adapter) Resume(ctx context.Context, ref string) error {
+	return a.action(ctx, ref, "start", "started")
+}
 
 func (a *Adapter) Snapshot(ctx context.Context, ref, kind string) (adapter.Snapshot, error) {
 	if kind == "memory" && a.opts.Class != "linux-vm" {
@@ -366,12 +414,20 @@ func (a *Adapter) Snapshot(ctx context.Context, ref, kind string) (adapter.Snaps
 	if err := a.c.JSON(ctx, http.MethodPost, "/sandbox/"+url.PathEscape(ref)+"/snapshot", body, &s); err != nil {
 		return adapter.Snapshot{}, err
 	}
-	// Snapshotting is asynchronous; wait until the source settles.
+	// Snapshotting is asynchronous; wait until the source settles and the
+	// snapshot can be created from.
 	err := httpx.Poll(ctx, time.Second, a.opts.ReadyTimeout, func() (bool, error) {
-		if s.State != "snapshotting" {
-			return true, nil
+		if s.State == "snapshotting" {
+			return false, a.c.JSON(ctx, http.MethodGet, "/sandbox/"+url.PathEscape(ref), nil, &s)
 		}
-		return false, a.c.JSON(ctx, http.MethodGet, "/sandbox/"+url.PathEscape(ref), nil, &s)
+		snap, err := a.snapshot(ctx, name)
+		switch {
+		case err != nil:
+			return false, err
+		case snap.State == "error" || snap.State == "build_failed":
+			return false, adapter.SandboxFailed(fmt.Errorf("daytona snapshot %s failed: %s", name, snap.ErrorReason))
+		}
+		return snap.State == "active", nil
 	})
 	if kind == "" {
 		kind = "disk"
@@ -379,8 +435,25 @@ func (a *Adapter) Snapshot(ctx context.Context, ref, kind string) (adapter.Snaps
 	return adapter.Snapshot{Ref: name, Kind: kind}, err
 }
 
+type snapshotInfo struct {
+	ID          string `json:"id"`
+	State       string `json:"state"`
+	ErrorReason string `json:"errorReason"`
+}
+
+// snapshot looks a snapshot up by name (or id).
+func (a *Adapter) snapshot(ctx context.Context, ref string) (snapshotInfo, error) {
+	var s snapshotInfo
+	return s, a.c.JSON(ctx, http.MethodGet, "/snapshots/"+url.PathEscape(ref), nil, &s)
+}
+
+// DeleteSnapshot deletes by id, which Daytona requires; the ref is the name.
+// A snapshot already being removed answers 200 again.
 func (a *Adapter) DeleteSnapshot(ctx context.Context, ref string) error {
-	err := a.c.JSON(ctx, http.MethodDelete, "/snapshots/"+url.PathEscape(ref), nil, nil)
+	s, err := a.snapshot(ctx, ref)
+	if err == nil {
+		err = a.c.JSON(ctx, http.MethodDelete, "/snapshots/"+url.PathEscape(s.ID), nil, nil)
+	}
 	if api.IsCode(err, api.CodeNotFound) {
 		return nil
 	}
