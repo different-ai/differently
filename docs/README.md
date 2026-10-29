@@ -38,7 +38,6 @@ two-minute local quickstart.
 | [Competitive landscape](competitive-landscape.md) | Ownership models and where Differently fits |
 | [OpenSandbox spike](research/opensandbox-spike.md) | What OpenSandbox offers as a backend or foundation, observed and read |
 | [Architecture RFC](architecture/README.md) | Layers, components, request lifecycle, state machine, HA |
-| [Decision records](adr/) | Why each major choice was made and what was rejected ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md): OpenSandbox replaces the node agent; [ADR 0021](adr/0021-provider-credentials-stored-encrypted.md): provider credentials stored encrypted) |
 | [Security and trust model](security/trust-model.md) | Threats, boundaries, enforced controls, residual risks |
 | [Adapter specification](adapters/specification.md) | The backend contract and the HTTP plugin protocol |
 | [Maintaining and improving Differently](maintaining.md) | For agents and maintainers: where to change what, the verification ladder, recorded runtimes, performance, traps |

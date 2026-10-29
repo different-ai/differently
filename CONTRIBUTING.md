@@ -113,8 +113,8 @@ make dev              # run the server in dev mode (no isolation!)
 
 ## Reporting bugs and proposing features
 
-Use the issue templates. For substantial designs, open a PR adding an ADR under
-`docs/adr/` first.
+Use the issue templates. For a substantial design, open an issue or a draft
+PR that describes the change in `docs/architecture/` first.
 
 ## Security issues
 

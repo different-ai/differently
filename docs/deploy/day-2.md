@@ -51,8 +51,7 @@ across beforehand: drain the `firecracker` pool, let its sandboxes end (or
 delete them), remove the pool and those values, and upgrade with an
 `opensandbox` block. The upgrade removes the agent DaemonSet; afterwards,
 remove any systemd agents by hand and wipe `/var/lib/differently` on the
-former KVM nodes (it held guest images and sandbox disks); see
-[ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md).
+former KVM nodes (it held guest images and sandbox disks).
 
 ### OpenSandbox
 

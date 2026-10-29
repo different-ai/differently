@@ -13,7 +13,7 @@ const version = 'v0.1.0-alpha.1';
 const videoSrc: string = `${base}/media/differently-intro.mp4`;
 const videoPoster: string = `${base}/media/differently-intro-poster.jpg`;
 const videoCaptions: string = '';
-const videoTitle = 'Differently in 36 seconds: sensitive work stays on OpenSandbox in your cluster and VMs, and bursts out to Daytona or Freestyle only when your policy says overflow.';
+const videoTitle = 'A 36-second overview: private work stays on OpenSandbox, and overflows to an external provider only when policy allows it.';
 
 const samples = [
   {
@@ -24,7 +24,7 @@ const samples = [
 
 const differently = new Differently({ apiKey: process.env.DIFFERENTLY_API_KEY });
 
-// Ask for a shape and a policy. Never a backend.
+// Request a size and a placement policy, not a backend.
 const sandbox = await differently.sandboxes.create({
   profile: "small",
   placement: { strategy: "private-first", external: "never" },
@@ -64,10 +64,10 @@ differently sandbox create --profile small --wait
 differently sandbox exec sbx_123 -- 'echo hello from $(uname -s)'
 differently sandbox files put sbx_123 ./README.md /work/README.md
 
-# Where did it run, and why?
+# Why a sandbox was placed where it runs
 differently sandbox placement sbx_123
 
-# Operators: where can work go, and what can't be proven?
+# Operator view: endpoints, credentials and external placements
 differently admin trust-report`,
   },
 ];
@@ -77,7 +77,7 @@ differently admin trust-report`,
 const ways = [
   {
     title: 'Laptop',
-    what: 'Dev mode: an in-memory server whose devhost pool runs commands on your machine with no isolation. For trying the API.',
+    what: 'Dev mode: an in-memory server with a devhost pool that runs commands directly on the host, with no isolation. For trying the API.',
     status: 'Verified',
     kind: 'verified',
     href: `${base}/docs/guides/quickstart/`,
@@ -96,7 +96,7 @@ const ways = [
     title: 'One Linux VM',
     where: 'AWS · Google Cloud · Azure · bare metal',
     what: "k3s with OpenSandbox's charts and Differently's chart on a single machine.",
-    detail: 'Run on Azure. The same steps apply to AWS EC2, Google Compute Engine and bare metal; not run there yet.',
+    detail: 'Tested on Azure. The steps for AWS EC2, Google Compute Engine and bare metal are the same and have not been run yet.',
     status: 'Verified on Azure',
     kind: 'verified',
     href: `${base}/docs/deploy/single-vm/`,
@@ -105,7 +105,7 @@ const ways = [
   {
     title: 'Existing Kubernetes',
     where: 'EKS · GKE · AKS · k3s · RKE2',
-    what: 'Install the Helm chart on a cluster you already run, next to an OpenSandbox server.',
+    what: 'Install the Helm chart on an existing cluster, next to an OpenSandbox server.',
     status: 'Documented',
     kind: 'documented',
     href: `${base}/docs/deploy/kubernetes/`,
@@ -113,7 +113,7 @@ const ways = [
   },
   {
     title: 'Air-gapped',
-    what: 'Mirror the images and chart into your own registry. No telemetry, no phone-home.',
+    what: 'Mirror the images and chart into a private registry. No telemetry, no phone-home.',
     status: 'Documented',
     kind: 'documented',
     href: `${base}/docs/deploy/air-gapped/`,
@@ -121,23 +121,23 @@ const ways = [
   },
 ];
 
+// Project status. verified: ran against real infrastructure. notVerified: not run yet.
 const verified = [
-  "End-to-end suite, 14 of 14, on OpenSandbox's Docker runtime (arm64) and its Kubernetes runtime (single-node k3s on Azure, both charts installed with Helm).",
-  'On the Kubernetes runtime: stop/start that keeps the disk, snapshots and fork through a snapshot registry, signed port URLs (WebSockets included) and egress policy.',
-  'Idle sandboxes stop (Kubernetes) or pause (Docker) after their idle timeout and wake on the next call.',
-  'The published alpha chart and image installed from public artifacts only; a sandbox ran in about 2 s.',
-  'Real OpenSandbox responses from the Docker and Kubernetes runtimes are recorded and replayed in every go test.',
-  "OpenWork's Workbot computer ran through Differently as a sandbox gateway over HTTPS: commands with Python tools, files, and stop/start that keeps the disk (behind a flag in OpenWork).",
-  'A sandbox whose image cannot be pulled never marks a shared pool unhealthy.',
-  'The agent-sandbox adapter against a Kubernetes cluster (kind, runc).',
-  "Fast Sandbox microVMs on one node: Workbot's desktop streamed over a port URL, paused and resumed with its memory (pause takes minutes), idled and woken by a request.",
+  ['End-to-end suite', "14 of 14 tests pass on OpenSandbox's Docker runtime (arm64) and its Kubernetes runtime (single-node k3s on Azure, installed with Helm)."],
+  ['Kubernetes runtime', 'Stop/start with the disk kept, snapshots and fork through a snapshot registry, signed port URLs including WebSockets, and egress policy.'],
+  ['Idle auto-stop', 'Idle sandboxes stop (Kubernetes) or pause (Docker) and wake on the next call.'],
+  ['Release artifacts', 'The published chart and images install from public registries; the first sandbox runs in about 2 s.'],
+  ['Recorded runtimes', 'Real OpenSandbox responses from both runtimes are replayed in every go test.'],
+  ['OpenWork', 'Workbot computers run through Differently as a sandbox gateway, behind a flag: commands with Python tools, files, and stop/start.'],
+  ['Failure isolation', 'An image that cannot be pulled fails that sandbox only; the shared pool stays healthy.'],
+  ['agent-sandbox', 'The adapter runs against a Kubernetes cluster (kind, runc).'],
+  ['Fast Sandbox', "Firecracker microVMs on one node: Workbot's desktop streamed over a port URL, paused and resumed with its memory (a pause takes minutes), idled and woken by a request."],
 ];
 const notVerified = [
   'The end-to-end suite on Fast Sandbox microVMs',
   'Multi-node clusters and node drains',
   'Managed EKS, GKE and AKS clusters',
-  'Live accounts on the managed providers (their adapters are tested against fakes of each published API)',
-  'Memory-preserving pause on the Kubernetes runtime',
+  'Managed-provider adapters against live accounts; each is tested against a fake of its published API',
 ];
 const inProgress: string[] = [];
 
@@ -150,29 +150,29 @@ const tryIt = `make build
 const features = [
   {
     k: '01',
-    title: 'Providers behind adapters',
-    body: '16 built-in provider adapters, from OpenSandbox servers you run to E2B, Vercel and the AWS, Azure and Google Cloud sandbox services, plus plugins for anything else, sit behind one contract. Applications keep calling the same API while operators change where work goes.',
+    title: 'Provider adapters',
+    body: '16 built-in adapters, from self-hosted OpenSandbox to E2B, Vercel and the AWS, Azure and Google Cloud sandbox services, plus a plugin protocol for any other backend. Operators change where work goes; applications keep the same API.',
     href: '/docs/providers/',
     cta: 'Provider catalog',
   },
   {
     k: '02',
     title: 'Quotas and policy-gated overflow',
-    body: 'Registering a managed provider authorizes nothing. Work leaves your pools only when global, organization and project policy, the data classification and the request all allow it. Quotas are derived from state and enforced at admission. Anything unclear fails closed.',
+    body: 'Registering a managed provider does not authorize its use. Work goes to an external pool only when global, organization and project policy, the data classification and the request all allow it. Quotas are derived from state and enforced at admission; ambiguous cases are denied.',
     href: '/docs/guides/hybrid-overflow/',
     cta: 'Hybrid overflow guide',
   },
   {
     k: '03',
-    title: 'Placement you can read',
-    body: 'Every placement records the pools considered, the ones filtered out and the reason, then ranks what is left. Ask any sandbox why it runs where it does with one call.',
+    title: 'Placement explanations',
+    body: 'Each placement records the pools considered, the ones excluded and why, and how the rest were ranked. One API call returns the explanation for any sandbox.',
     href: '/docs/scheduling/placement-policy/',
     cta: 'Placement policy',
   },
   {
     k: '04',
-    title: 'A trust report, not a promise',
-    body: 'Operators get one view of external endpoints, credentials by reference, external placements, admin actions, the tamper-evident audit chain status, and an explicit list of what Differently cannot prove.',
+    title: 'Trust report',
+    body: 'One report of external endpoints, credentials by reference, external placements, admin actions, audit chain status, and the properties Differently cannot verify itself.',
     href: '/docs/security/trust-model/',
     cta: 'Security and trust model',
   },
@@ -180,22 +180,22 @@ const features = [
 
 const fromRuntime = [
   ['Sandbox runtimes', 'Docker, Kubernetes, and Fast Sandbox (Firecracker microVMs on a per-node agent).'],
-  ['Lifecycle', 'Create, delete, pause and resume, stop and start on Kubernetes; a provider-side timeout as a TTL backstop.'],
+  ['Lifecycle', 'Create and delete; pause and resume on Docker; stop and start on Kubernetes; a provider-side timeout as a TTL backstop.'],
   ['Exec and files', 'Commands with env, cwd, timeouts and streamed output; upload, download and list files.'],
-  ['Snapshots', 'Disk snapshots and fork; memory-preserving pause on Docker and Fast Sandbox (checked live; a Fast Sandbox pause takes minutes).'],
+  ['Snapshots', 'Disk snapshots and fork on Docker, Kubernetes and Fast Sandbox; memory-preserving pause on Docker and Fast Sandbox (a Fast Sandbox pause takes minutes).'],
   ['Open source', 'Apache-2.0, self-hostable, with SDKs in several languages.'],
 ];
 const added = [
   ['Multi-tenancy', 'Organizations, projects and scoped API keys. OpenSandbox has one server-wide key.'],
   ['Quotas and fair queueing', 'Usage derived from state, enforced at admission, queued fairly across tenants.'],
   ['Policy-gated placement', 'Global, org and project policy plus data classification decide which pool may run each sandbox. External pools fail closed.'],
-  ['Many backends, one API', '16 built-in provider adapters and your own plugins behind one contract and one SDK.'],
+  ['Many backends, one API', '16 built-in provider adapters and plugins behind one contract and one SDK.'],
   ['Placement explanations', 'Every decision records the pools considered, the ones rejected and why.'],
   ['Audit and trust report', 'A tamper-evident audit chain and one report of endpoints, credentials by reference, external placements and limits.'],
 ];
 const compare = [
-  ['Where sandboxes can run', 'One runtime or one vendor', 'Every pool you register, chosen per request'],
-  ['When a pool is full or down', 'Wait, fail, or rewrite your app', 'Queue, or overflow to a pool policy allows'],
+  ['Where sandboxes can run', 'One runtime or one vendor', 'Every registered pool, chosen per request'],
+  ['When a pool is full or down', 'Wait, fail, or change application code', 'Queue, or overflow to a pool policy allows'],
   ['Switching providers', 'Change SDKs and application code', 'Change placement policy; code stays the same'],
   ['Who may use external capacity', 'Whoever holds the key', 'Only tenants, classifications and requests policy allows'],
   ['Tenancy and quotas', 'Per vendor account, or none', 'Orgs, projects, scoped keys and quotas across all pools'],
@@ -208,8 +208,8 @@ const compare = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Differently · Orchestrate sandboxes on your terms</title>
-    <meta name="description" content="Open-source, self-hosted control plane for sandboxes. It runs on infrastructure you already have and places each sandbox on OpenSandbox, E2B, Daytona, the cloud providers' sandbox services or a plugin by your policy, with one API, quotas and audit." />
+    <title>Differently · Open-source sandbox orchestration</title>
+    <meta name="description" content="Open-source, self-hosted control plane for sandboxes: one API, quotas, policy-based placement and audit across OpenSandbox, 15 more provider adapters and plugins." />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -223,8 +223,8 @@ const compare = [
   </head>
   <body>
     <div class="status" role="note">
-      <strong>Pre-release, not for production.</strong> {version} has run end to end on OpenSandbox's Docker and Kubernetes runtimes, and on Fast Sandbox microVMs on one node; managed clusters and live provider accounts are not verified yet.
-      <a href="#proven">What is proven</a>
+      <strong>Pre-release.</strong> {version} is an alpha release, not intended for production use.
+      <a href="#status">Project status</a>
     </div>
 
     <header class="nav wrap">
@@ -249,9 +249,9 @@ const compare = [
         <p class="eyebrow">Open source · Apache-2.0 · Self-hosted orchestration</p>
         <h1>Everyone builds sandboxes.<br /><em>We orchestrate them.</em></h1>
         <p class="lede">
-          Differently runs on infrastructure you already have: any cloud or your own hardware. It places
-          each sandbox on OpenSandbox, E2B, Daytona, a cloud provider's sandbox service or a plugin, as your policy allows. Your developers
-          get one API; quotas keep usage in check, and every decision is audited.
+          Differently is an open-source control plane for sandboxes. It runs on any cloud or on bare metal
+          and places each sandbox on OpenSandbox, E2B, Daytona, a cloud provider's sandbox service or a plugin,
+          according to placement policy. Applications use one API; quotas, placement decisions and audit live in the control plane.
         </p>
         <div class="ctas">
           <a class="btn primary" href={`${base}/docs/guides/quickstart/`}>Get started</a>
@@ -262,9 +262,9 @@ const compare = [
           <span>$</span><code>helm install differently deploy/helm/differently</code>
         </div>
         <ul class="pillars">
-          <li><b>One API.</b> Applications never name a backend.</li>
-          <li><b>Many pools.</b> Your nodes and opt-in providers, behind adapters.</li>
-          <li><b>Your rules.</b> Policy, quotas and audit you own.</li>
+          <li><b>One API.</b> Applications request resources and capabilities, not a backend.</li>
+          <li><b>Many backends.</b> Self-hosted runtimes and managed providers behind one adapter contract.</li>
+          <li><b>Policy and audit.</b> Quotas, placement rules and a tamper-evident audit log.</li>
         </ul>
 
         {/* Launch video slot. Renders only when videoSrc (top of this file) is non-empty. */}
@@ -282,17 +282,17 @@ const compare = [
       <section class="how wrap" id="how">
         <div class="section-head">
           <p class="eyebrow">How it works</p>
-          <h2>One API in. Policy decides where it runs.</h2>
-          <p>Requests are admitted against quota and queued. A single elected scheduler filters every registered pool against global, organization and project policy, ranks what is left and records why. Adapters run the sandbox on an OpenSandbox server you operate or, only where policy allows, on an external provider.</p>
+          <h2>Policy-based placement</h2>
+          <p>Requests are admitted against quota and queued. One elected scheduler checks every registered pool against global, organization and project policy, ranks the eligible pools and records the decision. Adapters then create the sandbox on a self-hosted OpenSandbox server or, where policy allows, on an external provider.</p>
         </div>
         <figure class="diagram">
           <svg viewBox="0 0 960 360" role="img" aria-labelledby="dtitle">
-            <title id="dtitle">Apps call differently-server, which stores state in Postgres and lets the scheduler place sandboxes on your OpenSandbox servers, or on external pools only if policy allows.</title>
+            <title id="dtitle">Applications call differently-server, which stores state in Postgres and places sandboxes on self-hosted OpenSandbox servers, or on external providers only when policy allows.</title>
             <defs>
               <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah" /></marker>
             </defs>
             <rect class="zone" x="190" y="16" width="560" height="328" rx="18" />
-            <text class="zone-label" x="210" y="44">YOUR CLUSTER · YOUR KEYS</text>
+            <text class="zone-label" x="210" y="44">SELF-HOSTED · OPERATOR-HELD KEYS</text>
 
             <g class="node"><rect x="16" y="140" width="140" height="80" rx="12" /><text x="86" y="174">App · SDK</text><text x="86" y="196" class="sub">CLI · dashboard</text></g>
             <g class="node strong"><rect x="230" y="120" width="190" height="120" rx="12" /><text x="325" y="160">differently-server</text><text x="325" y="184" class="sub">API · auth · quotas</text><text x="325" y="204" class="sub">audit · scheduler leader</text></g>
@@ -311,17 +311,17 @@ const compare = [
           </svg>
         </figure>
         <ol class="steps">
-          <li><b>Request.</b> Your code asks for a profile, capabilities and a placement policy.</li>
-          <li><b>Filter, then rank.</b> Pools that fail any rule are dropped with a reason; the rest are ranked.</li>
-          <li><b>Run and record.</b> The sandbox runs; the decision, usage and audit events are stored.</li>
+          <li><b>Request.</b> A client asks for a profile, capabilities and a placement policy.</li>
+          <li><b>Filter and rank.</b> Pools that fail a rule are excluded with a reason; the rest are ranked.</li>
+          <li><b>Run and record.</b> The sandbox is created; the decision, usage and audit events are stored.</li>
         </ol>
       </section>
 
       <section class="deploy wrap" id="deploy">
         <div class="section-head">
-          <p class="eyebrow">Deploy anywhere</p>
-          <h2>Start on a laptop. Keep it on hardware you already run.</h2>
-          <p>Five ways to run Differently, friendliest first. <b>Verified</b> marks what has run end to end; <b>Documented</b> marks written steps that are not yet among those runs.</p>
+          <p class="eyebrow">Deployment</p>
+          <h2>Deployment options</h2>
+          <p>From a laptop to an air-gapped cluster. <b>Verified</b> options have run end to end; <b>Documented</b> options have written steps that have not been run end to end yet.</p>
         </div>
         <div class="ways">
           {ways.map((w) => (
@@ -338,8 +338,8 @@ const compare = [
             </article>
           ))}
           <article class="aside">
-            <h3>What every option needs</h3>
-            <p>Control-plane requirements, the OpenSandbox server, ports, and KVM hosts only if you want Fast Sandbox microVMs.</p>
+            <h3>Requirements</h3>
+            <p>Control-plane requirements, the OpenSandbox server, network ports, and KVM hosts for Fast Sandbox microVMs.</p>
             <a href={`${base}/docs/deploy/prerequisites/`}>Prerequisites →</a>
           </article>
         </div>
@@ -348,8 +348,8 @@ const compare = [
       <section class="stack wrap" id="stack">
         <div class="section-head">
           <p class="eyebrow">Features</p>
-          <h2>OpenSandbox runs the sandboxes. Differently runs the fleet.</h2>
-          <p>Differently does not ship its own runtime. Its default private pool is <a href="https://github.com/opensandbox-group/OpenSandbox">OpenSandbox</a>, which you run yourself; Differently adds the multi-tenant orchestration and resource management on top, across every pool you connect.</p>
+          <h2>Built on OpenSandbox</h2>
+          <p>Differently does not include a sandbox runtime. Its default private runtime is <a href="https://github.com/opensandbox-group/OpenSandbox">OpenSandbox</a>, run by the operator. Differently adds multi-tenancy, quotas, placement policy and audit across every connected pool.</p>
         </div>
         <div class="split">
           <div>
@@ -361,21 +361,21 @@ const compare = [
             <dl>{added.map(([t, d]) => (<><dt>{t}</dt><dd>{d}</dd></>))}</dl>
           </div>
         </div>
-        <h3 class="compare-title">Versus a single provider</h3>
+        <h3 class="compare-title">Compared with a single provider</h3>
         <div class="compare">
           <table>
             <thead><tr><th></th><th>Single provider</th><th>Differently</th></tr></thead>
             <tbody>{compare.map(([q, a, b]) => (<tr><th scope="row">{q}</th><td>{a}</td><td>{b}</td></tr>))}</tbody>
           </table>
         </div>
-        <p class="note">What each backend supports today: the <a href={`${base}/docs/providers/`}>provider catalog</a>, <a href={`${base}/docs/features/`}>Features</a> and <a href={`${base}/docs/feature-parity/`}>feature parity</a>.</p>
+        <p class="note">Support per backend: the <a href={`${base}/docs/providers/`}>provider catalog</a>, <a href={`${base}/docs/features/`}>Features</a> and <a href={`${base}/docs/feature-parity/`}>feature parity</a>.</p>
       </section>
 
       <section class="code wrap" id="code">
         <div class="section-head">
-          <p class="eyebrow">Developer experience</p>
-          <h2>Same shape in every language.</h2>
-          <p>TypeScript, Python and Go SDKs and a CLI, all thin clients of one <a href={`${base}/docs/reference/api/`}>OpenAPI contract</a>. Exec, streaming output, files, snapshots, fork and ports where the placed backend supports them.</p>
+          <p class="eyebrow">SDKs and CLI</p>
+          <h2>TypeScript, Python, Go and a CLI</h2>
+          <p>Thin clients of one <a href={`${base}/docs/reference/api/`}>OpenAPI contract</a>: exec, streamed output, files, snapshots, fork and ports, where the placed backend supports them.</p>
         </div>
         <div class="tabs" role="tablist">
           {samples.map((s, i) => (
@@ -387,13 +387,13 @@ const compare = [
             <Code code={s.code} lang={s.lang as any} themes={{ light: 'github-light', dark: 'github-dark' }} />
           </div>
         ))}
-        <p class="note">Want to run these? <a href="#start">Try it on a laptop</a> in three commands.</p>
+        <p class="note">To run these locally, see <a href="#start">Get started</a>.</p>
       </section>
 
       <section class="features wrap" id="features">
         <div class="section-head">
-          <p class="eyebrow">What you get</p>
-          <h2>Orchestration you own.</h2>
+          <p class="eyebrow">Capabilities</p>
+          <h2>Control plane capabilities</h2>
         </div>
         <div class="grid">
           {features.map((f) => (
@@ -407,18 +407,18 @@ const compare = [
         </div>
       </section>
 
-      <section class="honest wrap" id="proven">
+      <section class="honest wrap" id="status">
         <div>
-          <p class="eyebrow">Where it stands · {version}</p>
-          <h2>Honest about what is proven.</h2>
+          <p class="eyebrow">Project status · {version}</p>
+          <h2>Tested on real infrastructure</h2>
         </div>
         <div class="cols">
           <div>
             <h3>Verified</h3>
-            <ul>{verified.map((v) => <li>{v}</li>)}</ul>
+            <ul>{verified.map(([t, d]) => <li><b>{t}.</b> {d}</li>)}</ul>
           </div>
           <div>
-            <h3>Not verified yet</h3>
+            <h3>Not yet verified</h3>
             <ul>{notVerified.map((v) => <li>{v}</li>)}</ul>
           </div>
           {inProgress.length > 0 && (
@@ -428,19 +428,19 @@ const compare = [
             </div>
           )}
         </div>
-        <p class="note">Read before you deploy: the <a href={`${base}/docs/deploy/`}>support matrix</a>, <a href={`${base}/docs/providers/`}>provider catalog</a>, <a href={`${base}/docs/security/hardening-checklist/`}>hardening checklist</a>, <a href={`${base}/docs/proof-of-concepts/`}>proofs of concept</a> and the <a href={`${base}/docs/feature-parity/`}>feature parity</a> table.</p>
+        <p class="note">Details: the <a href={`${base}/docs/deploy/`}>support matrix</a>, <a href={`${base}/docs/providers/`}>provider catalog</a>, <a href={`${base}/docs/security/hardening-checklist/`}>hardening checklist</a>, <a href={`${base}/docs/proof-of-concepts/`}>proofs of concept</a> and the <a href={`${base}/docs/feature-parity/`}>feature parity</a> table.</p>
       </section>
 
       <section class="start wrap" id="start">
         <div class="section-head">
           <p class="eyebrow">Get started</p>
-          <h2>Try it in three commands.</h2>
+          <h2>Run it locally</h2>
           <p>From a clone of <a href={repo}>the repository</a>:</p>
         </div>
         <div class="panel">
           <Code code={tryIt} lang="sh" themes={{ light: 'github-light', dark: 'github-dark' }} />
         </div>
-        <p class="warn"><strong>Dev mode has no isolation.</strong> It keeps everything in memory, and its devhost pool runs commands directly on your machine as your user. Use it to try the API, never for untrusted code.</p>
+        <p class="warn"><strong>Dev mode has no isolation.</strong> State is kept in memory and the devhost pool runs commands directly on the host as the current user. Use it to try the API, not for untrusted code.</p>
         <div class="next">
           <a href={`${base}/docs/deploy/single-vm/`}>
             <b>Deploy on one Linux VM →</b>
@@ -448,14 +448,14 @@ const compare = [
           </a>
           <a href={`${base}/docs/deploy/kubernetes/`}>
             <b>Install with Helm →</b>
-            <span>On a Kubernetes cluster you already run: EKS, GKE, AKS, k3s or RKE2.</span>
+            <span>On an existing Kubernetes cluster: EKS, GKE, AKS, k3s or RKE2.</span>
           </a>
         </div>
       </section>
 
       <section class="cta wrap">
         <h2>Run sandboxes differently.</h2>
-        <p>Built in the open by the OpenWork team. Issues, ideas and pull requests welcome.</p>
+        <p>Apache-2.0, developed in the open by the OpenWork team. Issues and pull requests are welcome.</p>
         <div class="ctas">
           <a class="btn primary" href={`${base}/docs/`}>Browse the docs</a>
           <a class="btn" href={repo}>Star on GitHub</a>
@@ -465,7 +465,7 @@ const compare = [
 
     <footer class="wrap">
       <span>Differently · Apache-2.0 · by <a href="https://github.com/different-ai">OpenWork</a></span>
-      <span><a href={releases}>Releases</a> · <a href={`${base}/docs/adr/`}>Decision records</a> · <a href={`${repo}/blob/pre-release/SECURITY.md`}>Security policy</a></span>
+      <span><a href={releases}>Releases</a> · <a href={`${repo}/blob/pre-release/SECURITY.md`}>Security policy</a></span>
     </footer>
 
     <script>

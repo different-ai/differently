@@ -4,7 +4,7 @@
 |---|---|
 | Status | Planned. None of the open experiments below has been run as of 2026-10-28. The [OpenSandbox spike](research/opensandbox-spike.md) ran OpenSandbox's Docker runtime live; it is recorded there, not here. |
 | Why | Most of the implementation is tested in-process with fakes; only the `opensandbox` adapter has run against a real backend (Docker runtime). These experiments retire the risks that unit tests cannot. |
-| Runtime change | [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md) removed Differently's Firecracker node agent. POCs about the agent are obsolete and kept as history; POC 11–13 cover OpenSandbox. |
+| Runtime change | The move to OpenSandbox removed Differently's Firecracker node agent. POCs about the agent are obsolete and kept as history; POC 11–13 cover OpenSandbox. |
 | Related | [Roadmap](roadmap.md) · [Backlog E2, E5, E18–E21](backlog.md) · [Reliability and performance](reliability-and-performance.md) |
 
 Each POC states the risk, a falsifiable hypothesis, the method, success
@@ -25,7 +25,7 @@ Kubernetes distribution and CNI.
 | 8 | Agent liveness and partition tolerance | A network blip may destroy VMs | Production use of private pools | ⛔ obsolete, see 13 |
 | 9 | VM networking under real CNIs | Isolation rules untested; DNS undefined | Network isolation claims | ⛔ obsolete, see 12 and E19 |
 | 10 | Control-plane throughput on Postgres | Unknown scheduling limits | Capacity guidance | 📋 |
-| 11 | Fast Sandbox through the adapter | MicroVM isolation through Differently is unverified | Any microVM claim; `snapshots.memory` on OpenSandbox pools | 📋 next |
+| 11 | Fast Sandbox through the adapter | MicroVM isolation through Differently is unverified | Any microVM claim; `snapshots.memory` on OpenSandbox pools | 🟡 partial: ran on one nested-KVM host |
 | 12 | OpenSandbox Kubernetes runtime | The Kubernetes runtime and in-cluster networking are unverified | Kubernetes deploy guidance | 📋 |
 | 13 | OpenSandbox outage and recovery | Unknown behaviour when the OpenSandbox server is down, restarted or upgraded | Upgrade procedure, Scenario J and K claims | 📋 |
 
@@ -33,7 +33,7 @@ Kubernetes distribution and CNI.
 
 ## POC 1. Firecracker on real KVM
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): the
+> Obsolete: the
 > agent was removed. MicroVMs on real KVM through Differently are now
 > [POC 11](#poc-11-fast-sandbox-through-the-adapter). History kept.
 
@@ -51,7 +51,7 @@ still matter as host prerequisites for Fast Sandbox.
 
 ## POC 2. Agent restart semantics in Kubernetes
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): there is
+> Obsolete: there is
 > no node agent. Restarts of the OpenSandbox server are
 > [POC 13](#poc-13-opensandbox-outage-and-recovery). History kept.
 
@@ -63,35 +63,33 @@ outside the container, a separate supervisor, or reporting VMs as `stopped`.
 
 ## POC 3. Jailer integration
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)):
+> Obsolete:
 > Differently no longer launches Firecracker. How Fast Sandbox runs its VMM
 > (jailer, user, seccomp, chroot) is recorded in
 > [POC 11](#poc-11-fast-sandbox-through-the-adapter). History kept.
 
 **Risk (historical).** Firecracker ran as root in the agent's privileged
-container with no chroot ([ADR 0015](adr/0015-defer-jailer-integration.md)).
+container with no chroot.
 The plan was a `JailerLauncher` with a per-VM chroot, an unprivileged UID/GID
 and cgroup v2 limits, wired to the agent's unused `--jailer` flag.
 
 ## POC 4. Memory snapshot restore with network overrides
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md); ADR 0014
-> is obsolete with it): memory snapshots now depend on the runtime. Its
+> Obsolete since the move to OpenSandbox: memory snapshots now depend on the runtime. Its
 > questions (process survival, clone uniqueness, trusted snapshot files,
 > memory-file lifetime) carry over to
 > [POC 11](#poc-11-fast-sandbox-through-the-adapter). History kept.
 
 **Risk (historical).** Firecracker restores lose network and vsock
 connections; clones need new network identity and uniqueness; snapshot files
-are trusted input; the memory file must outlive restored VMs
-([ADR 0014](adr/0014-defer-memory-snapshots-until-restore-proven.md)). The
+are trusted input; the memory file must outlive restored VMs. The
 plan followed the Firecracker capture-and-restore steps that
 [storage-and-lifecycle.md §9](storage-and-lifecycle.md#9-memory-snapshot-plan)
 used to describe.
 
 ## POC 5. Rootfs copy-on-write
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)):
+> Obsolete:
 > Differently no longer copies root filesystems. Fast Sandbox itself requires
 > XFS with reflink for images ([POC 11](#poc-11-fast-sandbox-through-the-adapter)).
 > History kept.
@@ -174,7 +172,7 @@ Scenario D on real providers.
 
 ## POC 8. Agent liveness and partition tolerance
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)): there
+> Obsolete: there
 > are no agent heartbeats. A partition between the control plane and an
 > OpenSandbox server is part of
 > [POC 13](#poc-13-opensandbox-outage-and-recovery). History kept.
@@ -186,7 +184,7 @@ partition grace was added before the agent was removed.
 
 ## POC 9. VM networking under real CNIs
 
-> Obsolete ([ADR 0020](adr/0020-opensandbox-replaces-node-agent.md)):
+> Obsolete:
 > Differently no longer creates taps or iptables rules. Sandbox networking
 > under real CNIs is part of
 > [POC 12](#poc-12-opensandbox-kubernetes-runtime); per-sandbox egress is
@@ -221,7 +219,7 @@ fix chosen (aggregate tally query or summary rows, batched audit appends,
 
 ## POC 11. Fast Sandbox through the adapter
 
-**Risk.** ADR 0020 made OpenSandbox the runtime before Fast Sandbox, its
+**Risk.** OpenSandbox became the runtime before Fast Sandbox, its
 Firecracker runtime, had run on our targets. Through Differently, microVM
 isolation, memory snapshot restore, egress control under Fast Sandbox and
 multi-node behaviour are all unverified. Fast Sandbox's host requirements
@@ -263,6 +261,16 @@ virtualization on a supported family), and restores memory snapshots so that
 9. Record how Fast Sandbox runs Firecracker (jailer or not, user, seccomp,
    chroot) for the trust model.
 
+**Result (2026-10-29, partial).** Target (b) only: single-node k3s on an
+Azure Standard_D8s_v6 under nested KVM, OpenSandbox 1.2.0. Steps 1 to 3 done
+(a 64 GiB XFS reflink state root). Step 4: `TestLiveOpenSandbox` passes and
+is recorded as `fastsandbox-1.2.0`; the end-to-end suite and the 100-cycle
+loop have not run. The guest runs its own kernel (6.18, host 7.0), and
+OpenWork's Workbot desktop kept its processes and unsaved work across pause
+and resume, and across an idle pause woken by a port request. Steps 5 to 9
+and target (a) are not done. Timings and gaps:
+[pools guide](guides/opensandbox-pools.md#measured-on-a-workbot-desktop).
+
 **Success criteria.**
 
 - Every advertised feature works through Differently on both hosts; 100
@@ -275,8 +283,8 @@ virtualization on a supported family), and restores memory snapshots so that
 - Results recorded in the [spike](research/opensandbox-spike.md).
 
 **Unblocks.** [Backlog E18](backlog.md#e18-fast-sandbox-spike); microVM
-isolation claims in the trust model; the remaining
-[ADR 0019](adr/0019-opensandbox-backend-first.md) criteria.
+isolation claims in the trust model; the remaining OpenSandbox adoption
+criteria.
 
 ## POC 12. OpenSandbox Kubernetes runtime
 

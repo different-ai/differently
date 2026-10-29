@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-10-28, after [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md) removed Differently's Firecracker node agent. Differently stores records; sandbox filesystems, memory and snapshots live in the backend. OpenSandbox behaviour below is checked live with its Docker runtime unless marked otherwise; its Kubernetes and Fast Sandbox runtimes are unverified. |
+| Status | Describes the code as of 2026-10-28, after the move to OpenSandbox removed Differently's Firecracker node agent. Differently stores records; sandbox filesystems, memory and snapshots live in the backend. OpenSandbox behaviour below is checked live with its Docker runtime unless marked otherwise; its Kubernetes and Fast Sandbox runtimes are unverified. |
 | Code | `internal/adapters/opensandbox/opensandbox.go`, `internal/server/sandboxes.go` (`lifecycle`, `snapshot`, `forkSandbox`), `internal/scheduler/scheduler.go` (`provision`, `expire`, `reconcilePool`) |
 | Related | [OpenSandbox pools](guides/opensandbox-pools.md) · [Adapter specification §9](adapters/specification.md#9-built-in-adapters) · [Placement policy](scheduling/placement-policy.md) · [OpenSandbox spike](research/opensandbox-spike.md) |
 
@@ -12,7 +12,7 @@
 |---|---|---|
 | Is there stop/start? | **No.** OpenSandbox has pause/resume and delete only; `stop` returns `501 unsupported_operation` | Yes (Freestyle stops by running `poweroff` in the guest) |
 | How long does the filesystem live? | Until the sandbox is deleted, or OpenSandbox's `timeout` ends it | Until deleted, or the provider's TTL ends it |
-| Does memory survive? | While paused, if the runtime keeps it; pause and resume kept files on the Docker runtime; memory-preserving pause on Fast Sandbox is documented by OpenSandbox, unverified here | Pause on Freestyle and Daytona VM class; Freestyle and Daytona VM snapshots include memory |
+| Does memory survive? | While paused, if the runtime keeps it; pause and resume kept files on the Docker runtime; memory-preserving pause on Fast Sandbox kept a desktop's processes and unsaved work in a live run (a pause takes minutes) | Pause on Freestyle and Daytona VM class; Freestyle and Daytona VM snapshots include memory |
 | Can I snapshot? | Disk by default; memory only if the pool adds `snapshots.memory` to `config.features` | Daytona: disk, or memory for VM class; Freestyle: always memory and disk |
 | Can I fork? | Yes, through a snapshot restored with `snapshotId`; checked against the fake server only | Freestyle yes (memory); Daytona not advertised |
 | Where does a restore or fork run? | Same pool, that is, the same OpenSandbox server | Same pool |
@@ -184,8 +184,7 @@ sequenceDiagram
 ## 9. Memory snapshot plan
 
 Differently no longer implements memory snapshots itself. The Firecracker
-capture-and-restore plan ([ADR 0014](adr/0014-defer-memory-snapshots-until-restore-proven.md),
-now obsolete) left with the node agent; it is in git history.
+capture-and-restore plan left with the node agent; it is in git history.
 
 An OpenSandbox pool advertises `snapshots.memory` only when the operator adds
 it to `config.features`. Add it only after checking, on the runtime actually
@@ -260,6 +259,6 @@ unless noted. Items marked **Fixed** were resolved before the initial import.
    overloaded runtime shows up as `Create` failures.
 8. A terminating sandbox whose backend is gone retries `Delete` forever
    (E0.22).
-9. Removed with the node agent (ADR 0020), no longer applicable: networking
+9. Removed with the node agent, no longer applicable: networking
    not recreated on `start` after a host reboot, the heartbeat-partition grace,
    `pending` VMs left by an agent crash.

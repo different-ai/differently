@@ -5,9 +5,9 @@
 | Status date | 2026-10-28 |
 | Evidence rule | **Done** means implemented and covered by automated tests, most of which run in-process with fakes. **Validated** means run against real infrastructure or live accounts; today only the `opensandbox` adapter with OpenSandbox's Docker runtime is validated. |
 | Detail | Tasks and acceptance criteria in [backlog.md](backlog.md); experiments in [proof-of-concepts.md](proof-of-concepts.md) |
-| Runtime change | [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md): Differently's own Firecracker node agent was removed; OpenSandbox is the default private runtime. |
+| Runtime change | Differently's own Firecracker node agent was removed; OpenSandbox is the default private runtime. |
 
-Legend: ✅ done (tested in-process) · ✅ live: also run against a real backend · 🧪 implemented against published specs, fake servers only · 🟡 partial · 📋 planned · ⛔ obsolete (ADR 0020)
+Legend: ✅ done (tested in-process) · ✅ live: also run against a real backend · 🧪 implemented against published specs, fake servers only · 🟡 partial · 📋 planned · ⛔ obsolete
 
 ```mermaid
 flowchart LR
@@ -38,7 +38,7 @@ quota and placement policy, runnable on a laptop.
 | Scheduler, retries, reconciler | ✅ | `internal/scheduler` (no package-level tests; covered by server tests) |
 | Memory store | ✅ | `internal/store/memory.go` |
 | Postgres store, migrations, advisory-lock leadership | 🟡 | Implemented; the conformance suite needs `DIFFERENTLY_TEST_POSTGRES_URL` and runs in the CI `postgres conformance` job; multi-replica failover not yet run ([E5](backlog.md#e5-postgres-in-ci-failover-and-scale)) |
-| CI and release workflows | 🟡 | `.github/workflows/ci.yml`, `release.yml`; encode the branch model ([ADR 0012](adr/0012-pre-release-integration-branch-model.md)) |
+| CI and release workflows | 🟡 | `.github/workflows/ci.yml`, `release.yml`; encode the branch model |
 | Tamper-evident audit chain, verify endpoint, JSON-lines mirror | ✅ | `internal/audit`, `internal/auditlog` |
 | Dev mode with `devhost` pool | ✅ | `differently-server --dev` |
 | CLI, dashboard | ✅ | `cmd/differently`, `internal/dashboard` |
@@ -51,7 +51,7 @@ quota and placement policy, runnable on a laptop.
 
 ## Phase 1: Private microVM backend
 
-**Goal (revised by ADR 0020).** A private runtime on infrastructure the
+**Goal (revised by the move to OpenSandbox).** A private runtime on infrastructure the
 operator controls, under Differently's policies. Originally this was
 Differently's own Firecracker node agent; it is now OpenSandbox, installed
 with its own tooling and registered as a pool with `trust: private`.
@@ -59,7 +59,7 @@ with its own tooling and registered as a pool with `trust: private`.
 | Item | Status | Where / notes |
 |---|---|---|
 | `opensandbox` adapter | ✅ live (Docker runtime) | `internal/adapters/opensandbox`; fake-server tests plus `TestLiveOpenSandbox` against OpenSandbox server `release-1.2.0` and `execd` v1.1.0 (arm64, Colima); a manual run through Differently ([spike](research/opensandbox-spike.md)) |
-| OpenSandbox as the default private runtime | ✅ decided | [ADR 0020](adr/0020-opensandbox-replaces-node-agent.md); the Helm chart's `opensandbox:` values render a pool named `opensandbox` |
+| OpenSandbox as the default private runtime | ✅ decided | The Helm chart's `opensandbox:` values render a pool named `opensandbox` |
 | OpenSandbox Kubernetes runtime | ✅ live (single node) | Single-node k3s on Azure: e2e 14/14 with a snapshot registry (stop/start, snapshots, fork), signed port URLs and egress policy, and recorded adapter runs; multi-node and drain not run ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
 | OpenSandbox Fast Sandbox (Firecracker microVMs) | ✅ live (single node) | Single-node k3s on Azure under nested KVM: the recorded adapter scenario and Workbot's desktop (streamed, paused and resumed with memory, idled and woken); pause takes minutes; e2e suite not run yet ([E18](backlog.md#e18-fast-sandbox-spike)) |
 | End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (14/14, arm64 Colima) and the Kubernetes runtime (14/14, k3s on Azure, Helm install), 2026-10-29 ([results](../test/e2e/README.md)). Fast Sandbox not yet |
@@ -75,7 +75,7 @@ with its own tooling and registered as a pool with `trust: private`.
 | Terraform for AWS | 🟡 | `deploy/terraform/aws`; creates EKS with a KVM node group, which only Fast Sandbox needs; not run |
 | Kernel and rootfs build scripts, systemd unit | ⛔ | Removed (`deploy/images`, `deploy/systemd`) |
 | Any run on real KVM ([POC 1](proof-of-concepts.md#poc-1-firecracker-on-real-kvm), [E1](backlog.md#e1-firecracker-on-real-kvm)) | ⛔ | The agent's e2e suite booted real microVMs under nested virtualization on Colima before removal; KVM through OpenSandbox is [E18](backlog.md#e18-fast-sandbox-spike) |
-| Jailer ([ADR 0015](adr/0015-defer-jailer-integration.md), [E4](backlog.md#e4-firecracker-jailer)) | ⛔ | Differently no longer launches a VMM |
+| Jailer ([E4](backlog.md#e4-firecracker-jailer)) | ⛔ | Differently no longer launches a VMM |
 | Authenticated agent channel ([E3](backlog.md#e3-authenticated-agent-channel)) | ⛔ | No agent channel; pools hold a backend credential by reference |
 | Inbound ports on Firecracker ([E6](backlog.md#e6-preview-urls-for-firecracker-pools)) | ⛔ | OpenSandbox pools expose ports when OpenSandbox serves them without request headers |
 
@@ -145,8 +145,7 @@ Ordered by priority. P0 items gate any production recommendation.
 **Exit criteria.** All P0 epics done; POC 6, 7 and 10–13 run with results
 published; release gates in
 [reliability-and-performance.md §7](reliability-and-performance.md#7-release-gates-proposal)
-automated; first release candidate tagged from `pre-release`
-([ADR 0012](adr/0012-pre-release-integration-branch-model.md)).
+automated; first release candidate tagged from `pre-release`.
 
 ## Phase 4: Scale and ecosystem
 

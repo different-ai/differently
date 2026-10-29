@@ -10,13 +10,13 @@ outside contributors.
 - **Committers** have write access and may merge into `pre-release` once CI
   passes. Committers are invited after sustained, high-quality contributions.
 - **Maintainers** cut releases (merge `pre-release` into `main`), manage
-  security advisories, and decide on ADRs when consensus is not reached.
+  security advisories, and decide on significant technical changes when consensus is not reached.
 
 ## Decisions
 
-Day-to-day decisions happen in pull requests. Significant technical decisions
-are recorded as Architecture Decision Records in `docs/adr/`, proposed by PR
-and accepted by lazy consensus after at least five business days, or by a
+Day-to-day decisions happen in pull requests. Significant technical changes
+are proposed by PR, with the design described in `docs/architecture/`, and
+accepted by lazy consensus after at least five business days, or by a
 maintainer decision when consensus is not reached.
 
 ## Commitments
@@ -25,7 +25,7 @@ maintainer decision when consensus is not reached.
   license server, OpenWork account or proprietary coordination service will
   ever be required to run a self-hosted installation.
 - The adapter protocol and public API are versioned; breaking changes go
-  through an ADR and a deprecation period after 1.0.
+  through a documented proposal and a deprecation period after 1.0.
 
 ## Code of conduct
 
