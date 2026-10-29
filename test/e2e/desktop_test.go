@@ -25,9 +25,10 @@ import (
 	"github.com/different-ai/differently/pkg/api"
 )
 
-// desktopImage is a desktop image with VNC over a WebSocket on port 6080,
-// such as test/e2e/desktop (DIFFERENTLY_E2E_DESKTOP_IMAGE). Without it the
-// desktop test is skipped.
+// desktopImage is the template of a desktop serving VNC over a WebSocket on
+// port 6080, such as test/e2e/desktop (DIFFERENTLY_E2E_DESKTOP_IMAGE): an
+// image on container runtimes, a Fast Sandbox template ID built from it on
+// microVM pools. Without it the desktop test is skipped.
 var desktopImage = os.Getenv("DIFFERENTLY_E2E_DESKTOP_IMAGE")
 
 // A full desktop streams from a sandbox through its signed port URL: a real
