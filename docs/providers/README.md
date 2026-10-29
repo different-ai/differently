@@ -56,25 +56,27 @@ Cloud, Northflank BYOC).
 ### What each adapter offers
 
 "Keeps state" is stop/start that keeps the disk, or pause that keeps memory.
+"Snapshots" is what a snapshot captures; "+ fork" means a new sandbox can
+start from one.
 
-| Provider | Isolation | Keeps state | Snapshots | Fork | Port URLs |
-|---|---|---|---|---|---|
-| OpenSandbox | container; microVM (Fast Sandbox) | stop/start (Kubernetes), pause (Docker, Fast Sandbox) | disk | yes | signed (Kubernetes) |
-| agent-sandbox | RuntimeClass | stop/start with a volume | no | no | in-cluster |
-| Daytona | container or VM | stop/start; pause on VMs | disk; memory on VMs | no | signed |
-| Freestyle | microVM | stop/start, pause | memory | yes | public |
-| E2B | microVM | pause | memory | yes | public, opt-in |
-| Boat | VM | stop/start | disk | yes | token or public |
-| Morph Cloud | VM | pause | memory | yes | public by default |
-| Vercel Sandbox | microVM | stop/start | disk | yes | public |
-| Fly.io Machines | microVM | stop/start; suspend opt-in | no | no | no |
-| Blaxel | microVM | automatic standby | no | no | token in URL |
-| CubeSandbox | microVM | pause | memory | yes | opt-in |
-| AWS AgentCore | microVM | no | no | no | no |
-| Azure Sandboxes | managed | stop/start | disk | yes | public |
-| Azure sessions | Hyper-V | no | no | no | no |
-| Google Cloud sandboxes | container | stop/start | memory | yes | no |
-| Northflank | microVM or gVisor | no | no | no | public |
+| Provider | Isolation | Keeps state | Snapshots | Port URLs |
+|---|---|---|---|---|
+| OpenSandbox | container or microVM | stop/start or pause, by runtime | disk + fork | signed |
+| agent-sandbox | RuntimeClass | stop/start (volume) | — | in-cluster |
+| Daytona | container or VM | stop/start; pause on VMs | disk (memory on VMs) | signed |
+| Freestyle | microVM | stop/start, pause | memory + fork | public |
+| E2B | microVM | pause | memory + fork | public, opt-in |
+| Boat | VM | stop/start | disk + fork | token or public |
+| Morph Cloud | VM | pause | memory + fork | public |
+| Vercel Sandbox | microVM | stop/start | disk + fork | public |
+| Fly.io Machines | microVM | stop/start, suspend | — | — |
+| Blaxel | microVM | auto standby | — | token |
+| CubeSandbox | microVM | pause | memory + fork | opt-in |
+| AWS AgentCore | microVM | — | — | — |
+| Azure Sandboxes | managed | stop/start | disk + fork | public |
+| Azure sessions | Hyper-V | — | — | — |
+| Google Cloud sandboxes | container | stop/start | memory + fork | — |
+| Northflank | microVM or gVisor | — | — | public |
 
 Every adapter offers exec and files. Streamed exec, stdin, egress control and
 size limits differ: each page has the full table.
