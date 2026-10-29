@@ -2,6 +2,9 @@
 {{- $np := .Values.networkPolicy }}
 {{- $egress := $np.server.egress }}
 {{- $providers := include "differently.enabledProviders" . | fromJsonArray }}
+{{- /* External pools declared under config.pools (for example a provider whose key is stored in Differently) reach their provider on 443 too. */}}
+{{- $configExternal := list }}
+{{- range .Values.config.pools }}{{ if eq (.trust | default "") "external" }}{{ $configExternal = append $configExternal .name }}{{ end }}{{ end }}
 {{- $usesOpenSandbox := false }}
 {{- range (include "differently.config" . | fromYaml).pools }}
 {{- if eq .adapter "opensandbox" }}{{ $usesOpenSandbox = true }}{{ end }}
@@ -84,8 +87,8 @@ spec:
         {{- end }}
       {{- end }}
     {{- end }}
-    {{- if or $providers $egress.runtimeProviders }}
-    # External providers ({{ range $i, $p := $providers }}{{ if $i }}, {{ end }}{{ $p.kind }}{{ end }}{{ if $egress.runtimeProviders }}{{ if $providers }}, {{ end }}added at runtime{{ end }})
+    {{- if or $providers $configExternal $egress.runtimeProviders }}
+    # External providers ({{ range $i, $p := $providers }}{{ if $i }}, {{ end }}{{ $p.kind }}{{ end }}{{ range $i, $n := $configExternal }}{{ if or $i $providers }}, {{ end }}{{ $n }}{{ end }}{{ if $egress.runtimeProviders }}{{ if or $providers $configExternal }}, {{ end }}added at runtime{{ end }})
     - ports:
         - {port: 443, protocol: TCP}
       to:
