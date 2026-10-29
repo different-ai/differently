@@ -3,10 +3,10 @@ title: Features
 description: What OpenSandbox provides, what Differently adds on top, and how that compares to using a single provider.
 ---
 
-Differently is an orchestration and resource-management layer. It does not run sandboxes itself: it decides where each one runs and keeps account of it. Its default private runtime is [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox), which you operate; other pools can be Daytona, Freestyle or any service that speaks the [adapter protocol](/differently/docs/adapters/specification/). See [ADR 0020](/differently/docs/adr/0020-opensandbox-replaces-node-agent/) for why.
+Differently is an orchestration and resource-management layer. It does not run sandboxes itself: it decides where each one runs and keeps account of it. Its default private runtime is [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox), which you operate; other pools can be any of the [built-in provider adapters](/differently/docs/providers/), from E2B and Daytona to the cloud providers' sandbox services, or any service that speaks the [adapter protocol](/differently/docs/adapters/specification/). See [ADR 0020](/differently/docs/adr/0020-opensandbox-replaces-node-agent/) for why.
 
 :::caution[Pre-release]
-The end-to-end suite runs the real stack against an OpenSandbox server using its Docker runtime. OpenSandbox's Kubernetes and Fast Sandbox (microVM) runtimes, real clusters and live Daytona/Freestyle accounts are not verified yet. See the [roadmap](/differently/docs/roadmap/).
+The end-to-end suite passes 14/14 against real OpenSandbox servers on the Docker runtime and on the Kubernetes runtime (single-node k3s). Fast Sandbox (microVM), multi-node and managed clusters, and live accounts on managed providers are not verified yet. See the [roadmap](/differently/docs/roadmap/).
 :::
 
 ## What OpenSandbox provides
@@ -16,10 +16,11 @@ These come from the runtime. Differently exposes them through its own API when t
 | Feature | Notes |
 |---|---|
 | Runtimes | Docker, Kubernetes, and Fast Sandbox (Firecracker microVMs managed by a per-node agent) |
-| Lifecycle | Create, delete, pause and resume. No stop/start: Differently returns `unsupported_operation` |
-| Exec | Commands with env, cwd, timeouts, exit codes and streamed output. No stdin |
+| Lifecycle | Create and delete everywhere. Pause and resume keep memory on Docker (and Fast Sandbox); stop and start keep the disk on Kubernetes, through a snapshot registry |
+| Exec | Commands with env, cwd, timeouts, exit codes and streamed output; stdin is staged in a file the command reads |
 | Files | Upload, download and list |
-| Snapshots and fork | Disk snapshots by default; memory snapshots on Fast Sandbox are documented upstream but not yet verified |
+| Snapshots and fork | Disk snapshots and fork on Docker, and on Kubernetes through a snapshot registry; memory snapshots on Fast Sandbox are documented upstream but not yet verified |
+| Port URLs and egress | Signed, time-limited port URLs through its ingress gateway, and per-pool egress (`none` or an allowlist) through its egress sidecar, both checked on Kubernetes |
 | TTL backstop | OpenSandbox's own timeout is set from the sandbox TTL at creation |
 | Isolation | Containers on Docker and Kubernetes (shared kernel); a microVM per sandbox only on Fast Sandbox |
 | License | Apache-2.0, self-hostable |
@@ -36,7 +37,8 @@ OpenSandbox is a single-trust-domain runtime: one server-wide API key, no organi
 | Quotas and fair queueing | Usage derived from sandbox state, enforced atomically at admission, queued fairly across tenants |
 | Policy-gated placement | Global, organization and project policies plus data classification decide which pools may run each sandbox; a request can only narrow them |
 | Fail-closed external capacity | Registering an external provider authorizes nothing until policy explicitly allows it |
-| One API across backends | OpenSandbox pools, Daytona, Freestyle and custom adapters behind one HTTP contract, CLI and TypeScript, Python and Go SDKs |
+| One API across backends | OpenSandbox pools, 15 more [provider adapters](/differently/docs/providers/) and custom plugins behind one HTTP contract, CLI and TypeScript, Python and Go SDKs |
+| Idle auto-stop | Sandboxes left idle are stopped or paused and wake on the next call |
 | Placement explanations | `GET /v1/sandboxes/{id}/placement` lists the pools considered, the ones rejected and why |
 | Tamper-evident audit | Hash-chained audit events with a verify endpoint and JSON-lines export |
 | Trust report | Endpoints, credentials by reference, external placements, admin actions, audit chain status and what Differently cannot prove |

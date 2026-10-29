@@ -204,6 +204,7 @@ opensandbox:
   # sandbox template overrides it per request.
   image: ""
   # Fast Sandbox template to create sandboxes from instead of an image.
+  # Required with runtime: fastsandbox.
   templateId: ""
   # Isolation the runtime provides, reported in the trust report:
   # container (Docker or Kubernetes runtime; shares the host kernel) or
@@ -220,8 +221,11 @@ opensandbox:
   # Reach execd (exec and files) through the OpenSandbox server's proxy, so
   # the control plane needs only the server's port. With false, the server
   # connects to each sandbox's endpoint directly; allow that with
-  # networkPolicy.server.egress.extra.
-  useServerProxy: true
+  # networkPolicy.server.egress.extra. Empty (null) is the adapter default:
+  # true, except with runtime: fastsandbox, where only traffic through the
+  # ingress gateway counts as activity and wakes a paused microVM, so the
+  # default is false.
+  useServerProxy: null
   # kept passes command output through byte for byte and needs the server to
   # run execd release-1.2.0 or later (its execd_image setting). stripped (the
   # adapter default when empty) suits execd 1.1, which drops line endings; a
@@ -233,7 +237,15 @@ opensandbox:
   # pool offers stop/start (disk kept) instead of pause/resume (memory kept),
   # plus disk snapshots and fork. Without controller.snapshot.registry, set
   # features to [exec, exec.stream, files].
+  # fastsandbox runs Firecracker microVMs from templateId (set isolation:
+  # microvm). Pause checkpoints the VM, memory kept, and a sandbox with
+  # idleTimeoutSeconds gets OpenSandbox's native idle policy: the server
+  # pauses it and its ingress gateway wakes it on the next request, so
+  # Differently's own idle sweep stands aside. Templates fix env and sizing.
   runtime: ""
+  # fastsandbox only: the timeout sent for sandboxes without a TTL, since
+  # template mode requires one (default 86400).
+  timeoutSeconds: null
   # Port URLs tenants can open: signed uses OpenSandbox's ingress gateway in
   # route mode uri with secure-access signing keys. Sandboxes are created
   # with secure access, and ports.expose returns a signed, time-limited URL

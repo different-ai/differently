@@ -35,8 +35,10 @@ Pools are where sandboxes run:
 - **`opensandbox`:** an OpenSandbox server. `trust` must be declared:
   `private` if you operate the server and its runtime, `external` if someone
   else does.
-- **`daytona`, `freestyle`:** optional external providers. These are always
-  `trust=external`, and sandboxes are placed on them only when policy allows it.
+- **Managed providers** (`daytona`, `freestyle`, `e2b`, `vercel` and the
+  others in the [provider catalog](../providers/README.md)): optional
+  capacity someone else runs. Managed kinds are always `trust=external`, and
+  sandboxes are placed on them only when policy allows it.
 - **`remote`:** an out-of-process adapter plugin speaking the
   [adapter protocol](../adapters/specification.md). Its trust is the
   operator's declaration (default `private`).
@@ -160,7 +162,7 @@ Postgres against a real OpenSandbox server with the Docker runtime and passed
 | Talos | Differently's chart; OpenSandbox per its docs | unverified | |
 | OpenSandbox on a plain Linux host, Differently elsewhere | Docker runtime on that host | documented | [bare-metal.md](bare-metal.md#register-an-opensandbox-server-on-a-plain-linux-host) |
 | Air-gapped | Any of the above | documented | [air-gapped.md](air-gapped.md) |
-| Daytona, Freestyle pools | Provider APIs | unverified | Adapters are checked against the providers' published OpenAPI specs with fake servers, not live accounts |
+| Managed provider pools | Provider APIs | unverified | Adapters are checked against each provider's published API with fake servers, not live accounts ([provider catalog](../providers/README.md)) |
 
 ## Security model in one paragraph
 

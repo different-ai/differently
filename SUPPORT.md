@@ -9,7 +9,7 @@
   something broken.
 - **Bugs:** use the bug report form. Include the version
   (`differently-server version`), how you deployed it, the backend (OpenSandbox
-  runtime, Daytona, Freestyle or a plugin), and `differently doctor` output.
+  runtime, the provider's adapter kind, or a plugin), and `differently doctor` output.
 - **Security issues:** never in a public issue; follow [SECURITY.md](SECURITY.md).
 
 Differently is pre-release and maintained by the OpenWork team on a
