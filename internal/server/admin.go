@@ -260,6 +260,9 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 		MaxConcurrency *int           `json:"maxConcurrency,omitempty"`
 		CostModel      *api.CostModel `json:"costModel,omitempty"`
 		Region         *string        `json:"region,omitempty"`
+		// Preemption replaces the pool's preemption policy ({"mode":"off"}
+		// turns it off).
+		Preemption *api.Preemption `json:"preemption,omitempty"`
 		// CredentialRef moves an API-registered pool to another credential,
 		// for example from env:NAME to a stored secret:name.
 		CredentialRef *string `json:"credentialRef,omitempty"`
@@ -295,6 +298,12 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 	}
 	if req.Region != nil {
 		pool.Region = *req.Region
+	}
+	if req.Preemption != nil {
+		if err := config.ValidatePreemption(req.Preemption); err != nil {
+			return api.Errorf(api.CodeInvalidRequest, "%v", err)
+		}
+		pool.Preemption = req.Preemption
 	}
 	if err := s.Store.UpsertPool(r.Context(), pool); err != nil {
 		return err

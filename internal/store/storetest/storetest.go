@@ -19,6 +19,7 @@ func Run(t *testing.T, newStore func(t *testing.T) store.Store) {
 	t.Run("ConcurrentAdmissionRespectsQueueLimit", func(t *testing.T) { concurrentAdmission(t, newStore(t)) })
 	t.Run("ConcurrentActivationRespectsQuota", func(t *testing.T) { concurrentActivation(t, newStore(t)) })
 	t.Run("PoolConcurrencyCap", func(t *testing.T) { poolCap(t, newStore(t)) })
+	t.Run("ReleasedSlotsAndReclaim", func(t *testing.T) { releasedSlots(t, newStore(t)) })
 	t.Run("Idempotency", func(t *testing.T) { idempotency(t, newStore(t)) })
 	t.Run("Secrets", func(t *testing.T) { secrets(t, newStore(t)) })
 	t.Run("FairOrderAcrossOrgs", func(t *testing.T) { fairOrder(t, newStore(t)) })
@@ -146,6 +147,61 @@ func poolCap(t *testing.T, s store.Store) {
 	counts, _ := s.PoolActive(ctx)
 	if counts["small"] != 2 {
 		t.Fatalf("pool active %v", counts)
+	}
+}
+
+// releasedSlots: a paused sandbox that released its slot does not count
+// toward the pool's cap, and two concurrent resumes racing for the one free
+// slot get it exactly once.
+func releasedSlots(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	_, p := seed(t, s, "org-rs")
+	now := time.Now().UTC()
+	var ids []string
+	for i := 0; i < 3; i++ {
+		rec, _, err := s.AdmitSandbox(ctx, sandbox(p, 1), store.Admission{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, rec.ID)
+	}
+	for _, sid := range ids[:2] {
+		if _, err := s.ActivateSandbox(ctx, sid, store.Activation{Pool: "ck", MaxConcurrency: 2, Now: now}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.UpdateSandbox(ctx, sid, func(r *store.SandboxRecord) error {
+			r.Status, r.SlotReleased = api.StatusPaused, true
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.ActivateSandbox(ctx, ids[2], store.Activation{Pool: "ck", MaxConcurrency: 2, Now: now}); err != nil {
+		t.Fatalf("released slots should not count: %v", err)
+	}
+	if counts, _ := s.PoolActive(ctx); counts["ck"] != 1 {
+		t.Fatalf("pool active %v, want 1", counts)
+	}
+	var ok atomic.Int32
+	var wg sync.WaitGroup
+	for _, sid := range ids[:2] {
+		wg.Add(1)
+		go func(sid string) {
+			defer wg.Done()
+			_, err := s.ReclaimSlot(ctx, sid, 2, now)
+			if err == nil {
+				ok.Add(1)
+			} else if !api.IsCode(err, "insufficient_capacity") {
+				t.Errorf("unexpected %v", err)
+			}
+		}(sid)
+	}
+	wg.Wait()
+	if ok.Load() != 1 {
+		t.Fatalf("reclaimed %d slots, want 1", ok.Load())
+	}
+	if counts, _ := s.PoolActive(ctx); counts["ck"] != 2 {
+		t.Fatalf("pool active %v, want 2", counts)
 	}
 }
 

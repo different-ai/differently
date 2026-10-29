@@ -54,10 +54,12 @@ type Scheduler struct {
 	// it changed, so it never races a lifecycle operation.
 	ReconcileGrace time.Duration
 
-	wake     chan struct{}
-	mu       sync.Mutex
-	inflight map[string]bool
-	wg       sync.WaitGroup
+	wake chan struct{}
+	mu   sync.Mutex
+	// preempting counts victims still pausing, per pool.
+	preempting map[string]int
+	inflight   map[string]bool
+	wg         sync.WaitGroup
 }
 
 // New returns a scheduler.
@@ -65,7 +67,7 @@ func New(st store.Store, pm *pools.Manager, cfg config.Config, installation stri
 	return &Scheduler{
 		Store: st, Pools: pm, Config: cfg, Installation: installation, Audit: rec, Log: log,
 		Now: func() time.Time { return time.Now().UTC() }, ReconcileGrace: 30 * time.Second,
-		wake: make(chan struct{}, 1), inflight: map[string]bool{},
+		wake: make(chan struct{}, 1), inflight: map[string]bool{}, preempting: map[string]int{},
 	}
 }
 
@@ -102,6 +104,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 					go func() {
 						defer s.sweeping.Store(false)
 						s.SweepIdle(ctx)
+						s.EnforceLifecycle(ctx)
 					}()
 				}
 			}
@@ -127,8 +130,15 @@ func (s *Scheduler) leader(ctx context.Context) bool {
 func (s *Scheduler) Tick(ctx context.Context) {
 	s.dispatch(ctx)
 	s.startProvisioning(ctx)
+	demand := s.resumeQueued(ctx)
+	if demand == nil {
+		demand = map[string]int{}
+	}
+	s.createDemand(ctx, demand)
+	s.makeRoom(ctx, demand)
 	s.terminate(ctx)
 	s.expire(ctx)
+	s.observeSlots(ctx)
 }
 
 // Drain waits for in-flight provisioning and termination.
@@ -552,12 +562,13 @@ func (s *Scheduler) idle(ctx context.Context, rec store.SandboxRecord) {
 		return
 	}
 	now := s.Now()
+	releases := s.ReleasesSlot(ctx, rec.Pool)
 	out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
 		if r.Status != api.StatusRunning {
 			return api.Errorf(api.CodeConflict, "sandbox changed to %s during the idle %s", r.Status, action)
 		}
-		stopClock(r, now)
 		r.Status, r.UpdatedAt, r.IdledAt = to, now, &now
+		MarkPaused(r, now, releases)
 		r.StatusReason = fmt.Sprintf("%s after %d s idle; the next exec, file, port or keepalive call wakes it", action, rec.IdleTimeoutSeconds)
 		return nil
 	})
@@ -565,6 +576,9 @@ func (s *Scheduler) idle(ctx context.Context, rec store.SandboxRecord) {
 		return
 	}
 	metrics.Reconciled.WithLabelValues("idle_"+action, rec.Pool).Inc()
+	if out.SlotReleased {
+		s.SlotFreed(ctx)
+	}
 	s.Audit.Record(ctx, api.AuditEvent{Actor: "scheduler", OrgID: out.OrgID, ProjectID: out.ProjectID, Action: "sandbox.idled", Resource: out.ID, Details: map[string]string{"pool": out.Pool, "action": action}})
 }
 
@@ -714,18 +728,22 @@ func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.S
 		if rec.Status != api.StatusRunning || rec.IdleTimeoutSeconds <= 0 || !s.idlesNatively(pool) {
 			return
 		}
+		releases := s.ReleasesSlot(ctx, pool)
 		out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
 			if r.Status != api.StatusRunning {
 				return nil
 			}
 			now := s.Now()
-			stopClock(r, now)
 			r.Status, r.UpdatedAt, r.IdledAt = api.StatusPaused, now, &now
+			MarkPaused(r, now, releases)
 			r.StatusReason = fmt.Sprintf("paused by the backend after %d s idle; the next exec, file, port or keepalive call wakes it", rec.IdleTimeoutSeconds)
 			return nil
 		})
 		if err == nil && out.Status == api.StatusPaused {
 			metrics.Reconciled.WithLabelValues("idle_pause", pool).Inc()
+			if out.SlotReleased {
+				s.SlotFreed(ctx)
+			}
 			s.Audit.Record(ctx, api.AuditEvent{Actor: "reconciler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.idled", Resource: rec.ID, Details: map[string]string{"pool": pool, "action": "pause", "by": "backend"}})
 		}
 	case adapter.StateRunning:
@@ -736,9 +754,11 @@ func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.S
 			if r.Status != api.StatusPaused || r.IdledAt == nil {
 				return nil
 			}
-			now := s.Now()
-			r.Status, r.UpdatedAt, r.IdledAt, r.StatusReason = api.StatusRunning, now, nil, ""
-			r.RunningSince, r.LastActivityAt = &now, &now
+			// A wake through the backend's own gateway takes a slot back
+			// without asking; a full pool shows it as overcommitted until
+			// preemption or a pause frees one.
+			MarkRunning(r, s.Now())
+			r.StatusReason = ""
 			return nil
 		})
 		if err == nil && out.Status == api.StatusRunning {

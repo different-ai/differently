@@ -459,7 +459,7 @@ func TestOpenSandboxFastSandbox(t *testing.T) {
 	}
 	a := New(o)
 	caps, _ := a.Capabilities(ctx)
-	if got := strings.Join(caps.Features, ","); got != "exec,exec.stream,files,lifecycle.pause-resume,snapshots.disk,fork,isolation.microvm" {
+	if got := strings.Join(caps.Features, ","); got != "exec,exec.stream,files,lifecycle.pause-resume,lifecycle.pause-checkpoint,snapshots.disk,fork,isolation.microvm" {
 		t.Fatalf("features %s", got)
 	}
 	if !a.IdlesNatively() || o.UseServerProxy {

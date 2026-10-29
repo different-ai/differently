@@ -155,7 +155,7 @@ paths:
     post: { tags: [Lifecycle], summary: Pause (freeze vCPUs; memory stays resident), responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
   /v1/sandboxes/{id}/resume:
     parameters: [{ $ref: "#/components/parameters/SandboxID" }]
-    post: { tags: [Lifecycle], summary: Resume a paused sandbox, responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
+    post: { tags: [Lifecycle], summary: "Resume a paused sandbox. On a full pool whose pause released the slot, the resume is queued: 202 with the sandbox still paused; wait for running", responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "202": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
   /v1/sandboxes/{id}/snapshots:
     parameters: [{ $ref: "#/components/parameters/SandboxID" }]
     post:
@@ -406,9 +406,12 @@ components:
         priority: { type: integer }
         fromSnapshot: { type: string }
         idleTimeoutSeconds: { type: integer, description: "Stop or pause after this many seconds with no exec, file, port or keepalive call (at least 60); the next such call wakes it. 0 uses the operator default, -1 turns it off" }
+        maxRunSeconds: { type: integer, description: "Pause (or stop) after running this long without a break, busy or not (at least 60); the next call resumes it. 0 uses the operator default, -1 turns it off" }
+        maxPausedSeconds: { type: integer, description: "Delete after staying paused or stopped this long (at least 60). 0 uses the operator default, -1 turns it off" }
+        preemptible: { type: boolean, description: "false keeps the scheduler from pausing this sandbox to make room on a full pool. Default true" }
     UpdateSandboxRequest:
       type: object
-      properties: { labels: { type: object, additionalProperties: { type: string } }, ttlSeconds: { type: integer }, idleTimeoutSeconds: { type: integer } }
+      properties: { labels: { type: object, additionalProperties: { type: string } }, ttlSeconds: { type: integer }, idleTimeoutSeconds: { type: integer }, maxRunSeconds: { type: integer }, maxPausedSeconds: { type: integer }, preemptible: { type: boolean } }
     Sandbox:
       type: object
       required: [id, orgId, projectId, status, resources, classification, createdAt]
@@ -434,6 +437,12 @@ components:
         ttlSeconds: { type: integer }
         expiresAt: { type: string, format: date-time }
         idleTimeoutSeconds: { type: integer }
+        maxRunSeconds: { type: integer }
+        maxPausedSeconds: { type: integer }
+        preemptible: { type: boolean }
+        pausedAt: { type: string, format: date-time }
+        slotReleased: { type: boolean, description: "A paused sandbox on a pool that checkpoints on pause holds no pool slot until it resumes" }
+        resumeRequestedAt: { type: string, format: date-time, description: Set while a resume waits for a free slot }
         lastActivityAt: { type: string, format: date-time }
         idledAt: { type: string, format: date-time, description: Set while stopped or paused for being idle; the next exec, file, port or keepalive call wakes it }
         fromSnapshot: { type: string }

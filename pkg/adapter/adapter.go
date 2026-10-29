@@ -28,25 +28,30 @@ const ProtocolVersion = "1"
 // Feature names advertised in Capabilities.Features and requested through
 // CreateSandboxRequest.Capabilities.
 const (
-	FeatureExec          = "exec"
-	FeatureExecStream    = "exec.stream"
-	FeatureFiles         = "files"
-	FeatureStopStart     = "lifecycle.stop-start"
-	FeaturePauseResume   = "lifecycle.pause-resume"
-	FeatureSnapshotDisk  = "snapshots.disk"
-	FeatureSnapshotMem   = "snapshots.memory"
-	FeatureFork          = "fork"
-	FeaturePersistDisk   = "persistence.disk"
-	FeaturePorts         = "ports.expose"
-	FeatureSSH           = "ssh"
-	FeaturePTY           = "pty"
-	FeatureEgressControl = "network.egress-control"
-	FeatureGPU           = "gpu"
-	FeatureArchAMD64     = "arch.amd64"
-	FeatureArchARM64     = "arch.arm64"
-	FeatureMicroVM       = "isolation.microvm"
-	FeatureContainer     = "isolation.container"
-	FeatureNoIsolation   = "isolation.none"
+	FeatureExec        = "exec"
+	FeatureExecStream  = "exec.stream"
+	FeatureFiles       = "files"
+	FeatureStopStart   = "lifecycle.stop-start"
+	FeaturePauseResume = "lifecycle.pause-resume"
+	// FeaturePauseCheckpoint: a pause writes the sandbox (memory included)
+	// out of the host and frees its share of the pool, as Fast Sandbox and
+	// Freestyle do. A paused sandbox on such a pool holds no slot; resuming
+	// takes one again, waiting in the queue if the pool is full.
+	FeaturePauseCheckpoint = "lifecycle.pause-checkpoint"
+	FeatureSnapshotDisk    = "snapshots.disk"
+	FeatureSnapshotMem     = "snapshots.memory"
+	FeatureFork            = "fork"
+	FeaturePersistDisk     = "persistence.disk"
+	FeaturePorts           = "ports.expose"
+	FeatureSSH             = "ssh"
+	FeaturePTY             = "pty"
+	FeatureEgressControl   = "network.egress-control"
+	FeatureGPU             = "gpu"
+	FeatureArchAMD64       = "arch.amd64"
+	FeatureArchARM64       = "arch.arm64"
+	FeatureMicroVM         = "isolation.microvm"
+	FeatureContainer       = "isolation.container"
+	FeatureNoIsolation     = "isolation.none"
 )
 
 // Well-known labels adapters attach to backend resources so the reconciler can

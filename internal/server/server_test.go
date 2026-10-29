@@ -807,3 +807,108 @@ func TestCapabilitiesFollowTenantPolicy(t *testing.T) {
 		t.Fatalf("another organization's policy changes nothing here: %v", got)
 	}
 }
+
+// checkpointPool adds a one-slot pool whose pause checkpoints (frees its slot),
+// with an optional preemption policy, and returns a tenant pinned to it.
+func checkpointPool(t *testing.T, h *harness, pre *api.Preemption) (token string, pin *api.Placement) {
+	t.Helper()
+	features := append(slices.Clone(fake.DefaultFeatures), adapter.FeaturePauseCheckpoint)
+	a := fake.New(fake.Options{Trust: api.TrustPrivate, Features: features})
+	pool := api.Pool{Name: "ckpt", Adapter: "fake", Trust: api.TrustPrivate, Enabled: true, Region: "dc1", MaxConcurrency: 1, Source: "config", Preemption: pre}
+	ctx := context.Background()
+	_ = h.store.UpsertPool(ctx, pool)
+	h.pools.Set(pool, a)
+	h.pools.Refresh(ctx)
+	_, _, token = h.tenant("ckpt-"+t.Name(), api.Quota{})
+	return token, &api.Placement{AllowedPools: []string{"ckpt"}}
+}
+
+// A paused sandbox on a checkpointing pool gives its slot back; resuming on
+// the full pool queues (202), and the queue resumes it once the slot frees.
+func TestPausedSandboxGivesItsSlotBack(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	token, pin := checkpointPool(t, h, nil)
+	a := h.create(token, api.CreateSandboxRequest{Profile: "small", Placement: pin})
+	h.tick()
+	h.must(200, "POST", "/v1/sandboxes/"+a.ID+"/pause", token, nil, nil)
+	if got := h.get(token, a.ID); got.Status != api.StatusPaused || !got.SlotReleased || got.PausedAt == nil {
+		t.Fatalf("pause should release the slot: %+v", got)
+	}
+	b := h.create(token, api.CreateSandboxRequest{Profile: "small", Placement: pin})
+	h.tick()
+	if got := h.get(token, b.ID); got.Status != api.StatusRunning {
+		t.Fatalf("the freed slot should take a new sandbox: %+v", got)
+	}
+	var queued api.Sandbox
+	h.must(202, "POST", "/v1/sandboxes/"+a.ID+"/resume", token, nil, &queued)
+	if queued.Status != api.StatusPaused || queued.ResumeRequestedAt == nil || !strings.Contains(queued.StatusReason, "waiting for a free slot") {
+		t.Fatalf("resume on a full pool should queue: %+v", queued)
+	}
+	h.tick()
+	if got := h.get(token, a.ID); got.Status != api.StatusPaused {
+		t.Fatalf("still full, still queued: %+v", got)
+	}
+	h.must(202, "DELETE", "/v1/sandboxes/"+b.ID, token, nil, nil)
+	h.tick()
+	got := h.get(token, a.ID)
+	if got.Status != api.StatusRunning || got.ResumeRequestedAt != nil || got.SlotReleased {
+		t.Fatalf("the queue should resume it once the slot frees: %+v", got)
+	}
+}
+
+// With a preemption policy, waiting work makes the scheduler pause the least
+// recently used running sandbox; a non-preemptible one is never chosen.
+func TestPreemptionMakesRoom(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	token, pin := checkpointPool(t, h, &api.Preemption{Mode: api.PreemptLRU, MinRunSeconds: 60})
+	no := false
+	guarded := h.create(token, api.CreateSandboxRequest{Profile: "small", Placement: pin, Preemptible: &no})
+	h.tick()
+	later := time.Now().UTC().Add(5 * time.Minute)
+	h.sched.Now = func() time.Time { return later }
+	waiting := h.create(token, api.CreateSandboxRequest{Profile: "small", Placement: pin})
+	h.tick()
+	if got := h.get(token, waiting.ID); got.Status != api.StatusQueued {
+		t.Fatalf("a non-preemptible sandbox keeps its slot: %+v", got)
+	}
+
+	h.must(200, "PATCH", "/v1/sandboxes/"+guarded.ID, token, api.UpdateSandboxRequest{Preemptible: ptrBool(true)}, nil)
+	h.tick() // the waiting create triggers the preemption
+	h.sched.Drain()
+	victim := h.get(token, guarded.ID)
+	if victim.Status != api.StatusPaused || !victim.SlotReleased || victim.IdledAt == nil || !strings.Contains(victim.StatusReason, "make room") {
+		t.Fatalf("the running sandbox should be preempted: %+v", victim)
+	}
+	h.tick()
+	if got := h.get(token, waiting.ID); got.Status != api.StatusRunning {
+		t.Fatalf("the waiting create should take the freed slot: %+v", got)
+	}
+}
+
+// maxRunSeconds pauses a long runner; maxPausedSeconds deletes a sandbox left
+// paused.
+func TestLifecycleLimits(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	token, pin := checkpointPool(t, h, nil)
+	sb := h.create(token, api.CreateSandboxRequest{Profile: "small", Placement: pin, MaxRunSeconds: 60, MaxPausedSeconds: 120})
+	h.tick()
+	if got := h.get(token, sb.ID); got.MaxRunSeconds != 60 || got.MaxPausedSeconds != 120 || !got.Preemptible {
+		t.Fatalf("limits not recorded: %+v", got)
+	}
+	start := time.Now().UTC()
+	h.sched.Now = func() time.Time { return start.Add(61 * time.Second) }
+	h.sched.EnforceLifecycle(context.Background())
+	if got := h.get(token, sb.ID); got.Status != api.StatusPaused || !strings.Contains(got.StatusReason, "maxRunSeconds") {
+		t.Fatalf("maxRunSeconds should pause it: %+v", got)
+	}
+	h.sched.Now = func() time.Time { return start.Add(61*time.Second + 121*time.Second) }
+	h.sched.EnforceLifecycle(context.Background())
+	if got := h.get(token, sb.ID); got.Status != api.StatusTerminating && got.Status != api.StatusTerminated {
+		t.Fatalf("maxPausedSeconds should delete it: %+v", got)
+	}
+	if code := h.call("POST", "/v1/sandboxes", token, api.CreateSandboxRequest{Profile: "small", MaxRunSeconds: 10}, nil); code != 400 {
+		t.Fatalf("maxRunSeconds under 60 should be refused, got %d", code)
+	}
+}
+
+func ptrBool(b bool) *bool { return &b }
