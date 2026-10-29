@@ -530,10 +530,18 @@ func (s *Server) deletePolicy(w http.ResponseWriter, r *http.Request, p auth.Pri
 }
 
 // capabilities lists pools as tenants see them: no config or credentials.
-func (s *Server) capabilities(w http.ResponseWriter, r *http.Request, _ auth.Principal) error {
+// A tenant key sees only the pools its placement policies let a sandbox of
+// the default classification use; an operator key sees every pool.
+func (s *Server) capabilities(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
 	list, err := s.Store.ListPools(r.Context())
 	if err != nil {
 		return err
+	}
+	var eff *policy.Effective
+	if p.OrgID != "" {
+		class, _ := s.Config.Classification(s.Config.Defaults.Classification)
+		e := policy.Merge(policy.Input{Policies: s.Scheduler.Policies(r.Context(), p.OrgID, p.ProjectID), Classification: class})
+		eff = &e
 	}
 	active, _ := s.Store.PoolActive(r.Context())
 	type view struct {
@@ -547,6 +555,9 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request, _ auth.Pri
 	}
 	out := api.List[view]{Items: []view{}}
 	for _, pl := range list {
+		if eff != nil && len(policy.PolicyReasons(*eff, pl)) > 0 {
+			continue
+		}
 		s.Pools.Decorate(&pl, active[pl.Name])
 		out.Items = append(out.Items, view{Pool: pl.Name, Adapter: pl.Adapter, Trust: pl.Trust, Region: pl.Region, Enabled: pl.Enabled && !pl.Draining, Health: pl.Health.Status, Capabilities: pl.Capabilities})
 	}

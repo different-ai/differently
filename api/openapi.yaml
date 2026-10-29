@@ -264,7 +264,7 @@ paths:
       responses: { "200": { description: Stored, content: { application/json: { schema: { $ref: "#/components/schemas/PlacementPolicy" } } } }, "403": { $ref: "#/components/responses/Error" } }
     delete: { tags: [Policy], summary: Remove a policy, responses: { "204": { description: Removed } } }
   /v1/capabilities:
-    get: { tags: [Policy], summary: Pools as tenants see them (no config or credentials), responses: { "200": { description: Pools } } }
+    get: { tags: [Policy], summary: "Pools as tenants see them (no config or credentials): a tenant key gets the pools its placement policies allow, an operator key every pool", responses: { "200": { description: Pools } } }
   /v1/profiles:
     get: { tags: [Policy], summary: Resource profiles, responses: { "200": { description: Profiles } } }
   /v1/templates:

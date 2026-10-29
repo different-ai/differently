@@ -159,8 +159,17 @@ should use it; every other organization keeps the runner's own provider.
   is gone, and the next computer goes through Differently again. The runner
   records which side made each computer.
 - **Size and pause.** Computers ask for their own size, so the project's
-  quotas must allow it. Give the pool pause and snapshots (on the Kubernetes
-  runtime, a snapshot registry), or idle computers cannot be paused.
+  quotas must allow it. The runner pauses idle computers only when every
+  pool its key may use can pause (or every one can stop), which it reads
+  from `GET /v1/capabilities`. That answer lists only the pools the key's
+  placement policies allow, so give OpenWork's organization a policy that
+  allows just the pools Workbot uses, each with pause and snapshots (on the
+  Kubernetes runtime, a snapshot registry):
+
+  ```bash
+  echo '{"allowedPools":["opensandbox-microvm","freestyle"]}' > workbot.json
+  differently admin policy org:<org-id> workbot.json
+  ```
 
 ## Limits to know
 
