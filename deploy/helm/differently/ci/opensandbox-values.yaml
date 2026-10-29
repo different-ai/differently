@@ -1,6 +1,7 @@
 # A private OpenSandbox server running Fast Sandbox (Firecracker microVMs),
-# with its API key in an existing Secret. Fast Sandbox is not yet verified
-# with Differently; the declared isolation is reported, not enforced.
+# with its API key in an existing Secret. Sandboxes are created from a Fast
+# Sandbox template; pause keeps memory, and a sandbox's idleTimeoutSeconds
+# becomes OpenSandbox's native idle auto-pause with wake on access.
 opensandbox:
   apiURL: http://opensandbox-server.opensandbox-system.svc/v1
   trust: private
@@ -8,18 +9,10 @@ opensandbox:
     name: opensandbox-microvm
     region: dc1
     maxConcurrency: 50
+  runtime: fastsandbox
   isolation: microvm
-  image: ubuntu:24.04
-  # templateId: fsb-...   # a Fast Sandbox template instead of the image
-  features:
-    - exec
-    - exec.stream
-    - files
-    - lifecycle.pause-resume
-    - snapshots.disk
-    - fork
-    - ports.expose
-    # - snapshots.memory  # once your runtime is confirmed to capture memory
+  templateId: tpl-ubuntu-2404
+  timeoutSeconds: 86400
   # kubectl create secret generic opensandbox-api-key -n <release namespace> \
   #   --from-literal=api-key='<the OpenSandbox server api_key>'
   existingSecret: opensandbox-api-key

@@ -20,13 +20,94 @@ code and published documentation.
 
 ## Providers
 
-| Provider | Adapter | Status | Trust | Isolation | Notes |
-|---|---|---|---|---|---|
-| [OpenSandbox](opensandbox.md) | `opensandbox` | **Verified live** (Docker and Kubernetes runtimes, 2026-10-29) | declared | containers, or Firecracker microVMs (Fast Sandbox, not verified) | The default private runtime. Stop/start, snapshots, fork, signed port URLs and egress policy on Kubernetes |
-| [Daytona](daytona.md) | `daytona` | **Tested with a fake server** | external | containers, or VMs (`class: linux-vm`) | Pause and memory snapshots on the VM class only; no stdin |
-| [Freestyle](freestyle.md) | `freestyle` | **Tested with a fake server** | external | microVMs | Memory snapshots and fork; deny-all egress by default; exposed ports are public |
-| [Remote plugin](remote.md) | `remote` | **Tested with a fake server** | private unless declared | the plugin's | Any backend behind Differently's HTTP adapter protocol |
-| Dev host | `devhost` | **Verified live** (dev mode only) | private | **none** | Runs commands on the server's own machine; `--dev` only, for trying the API |
+26 providers are covered: 16 with a built-in adapter, 8 reachable through a
+[remote plugin](remote.md), and 2 that cannot be supported. Two of the 16
+have run live; the rest are implemented from published APIs and tested
+against fakes of them. "Persists" means stop/start keeps the disk or pause
+keeps memory; "Snapshots" are disk unless marked memory.
+
+### Built-in adapters
+
+| Provider | Status | Trust |
+|---|---|---|
+| [OpenSandbox](opensandbox.md) `opensandbox` | **Verified live**: Docker and Kubernetes runtimes, 2026-10-29 | declared |
+| [agent-sandbox](agent-sandbox.md) `agent-sandbox` | **Verified live**: kind cluster, runc, 2026-10-28 | declared |
+| [Daytona](daytona.md) `daytona` | Tested with a fake server | external |
+| [Freestyle](freestyle.md) `freestyle` | Tested with a fake server | external |
+| [E2B](e2b.md) `e2b` | Tested with a fake server | declared |
+| [Boat](boat.md) `boat` | Tested with a fake server | external |
+| [Morph Cloud](morph.md) `morph` | Tested with a fake server | external |
+| [Vercel Sandbox](vercel.md) `vercel` | Tested with a fake server | external |
+| [Fly.io Machines](fly.md) `fly` | Tested with a fake server | external |
+| [Blaxel](blaxel.md) `blaxel` | Tested with a fake server | external |
+| [CubeSandbox](cubesandbox.md) `cubesandbox` | Tested with a fake server | declared |
+| [AWS AgentCore Code Interpreter](aws-agentcore.md) `aws-agentcore` | Tested with a fake server | declared |
+| [Azure Container Apps Sandboxes](azure-sandboxes.md) `azure-sandboxes` | Tested with a fake server | declared |
+| [Azure dynamic sessions](azure-sessions.md) `azure-sessions` | Tested with a fake server (Python pools) | declared |
+| [Google Cloud Agent Platform sandboxes](gcp-sandboxes.md) `gcp-sandboxes` | Tested with a fake server | declared |
+| [Northflank](northflank.md) `northflank` | Tested with a fake server | declared |
+
+**Trust:** *external* pools are always third-party capacity and receive work
+only when policy allows it. *Declared* pools must say `private` or
+`external`: self-hostable runtimes (OpenSandbox, agent-sandbox, CubeSandbox,
+E2B) and cloud services that run in your own account (AWS, Azure, Google
+Cloud, Northflank BYOC).
+
+### What each adapter offers
+
+"Keeps state" is stop/start that keeps the disk, or pause that keeps memory.
+"Snapshots" is what a snapshot captures; "+ fork" means a new sandbox can
+start from one.
+
+| Provider | Isolation | Keeps state | Snapshots | Port URLs |
+|---|---|---|---|---|
+| OpenSandbox | container or microVM | stop/start or pause, by runtime | disk + fork | signed |
+| agent-sandbox | RuntimeClass | stop/start (volume) | — | in-cluster |
+| Daytona | container or VM | stop/start; pause on VMs | disk (memory on VMs) | signed |
+| Freestyle | microVM | stop/start, pause | memory + fork | public |
+| E2B | microVM | pause | memory + fork | public, opt-in |
+| Boat | VM | stop/start | disk + fork | token or public |
+| Morph Cloud | VM | pause | memory + fork | public |
+| Vercel Sandbox | microVM | stop/start | disk + fork | public |
+| Fly.io Machines | microVM | stop/start, suspend | — | — |
+| Blaxel | microVM | auto standby | — | token |
+| CubeSandbox | microVM | pause | memory + fork | opt-in |
+| AWS AgentCore | microVM | — | — | — |
+| Azure Sandboxes | managed | stop/start | disk + fork | public |
+| Azure sessions | Hyper-V | — | — | — |
+| Google Cloud sandboxes | container | stop/start | memory + fork | — |
+| Northflank | microVM or gVisor | — | — | public |
+
+Every adapter offers exec and files. Streamed exec, stdin, egress control and
+size limits differ: each page has the full table.
+
+Two more kinds are not providers: [`remote`](remote.md), for any backend
+behind the HTTP adapter protocol (private unless declared), and `devhost`,
+which runs commands on the server's own machine with **no isolation**, in
+`--dev` mode only.
+
+### Through a remote plugin (documented)
+
+These have no built-in adapter. Each page explains why and what a plugin
+would wrap.
+
+| Provider | Why there is no adapter |
+|---|---|
+| [Modal](modal.md) | Sandboxes have no public REST API; the SDKs speak a gRPC API Modal says is not public |
+| [Cloudflare Sandbox SDK and Containers](cloudflare.md) | Containers are reachable only through a Durable Object in a Worker |
+| [CodeSandbox](codesandbox.md) | The supported interface is the `@codesandbox/sdk` |
+| [Beam](beam.md) | Driven through Beam's SDK; its open-source engine (beta9) can be self-hosted |
+| [Koyeb](koyeb.md) | Sandboxes (public preview) are driven through Koyeb's SDK |
+| [Sprites](sprites.md) (Fly.io) | Exec is specified only over WebSocket; a built-in adapter is possible later |
+| [Amazon Bedrock AgentCore Runtime](aws-agentcore-runtime.md) | Command execution needs a plugin or a future adapter |
+| [GKE Agent Sandbox](gke-agent-sandbox.md) | A GKE add-on with no Google HTTP API of its own |
+
+### Not supported
+
+| Provider | Why |
+|---|---|
+| [Runloop](runloop.md) | The service is winding down; transition support ends 2026-11-13 |
+| [microsandbox](microsandbox.md) | Since its 2026 rewrite it has no server API: the runtime is embedded in each SDK process |
 
 ## Choose a route for a new provider
 

@@ -127,9 +127,11 @@ shows as unavailable with a connection timeout.
 
 ### Dashboard
 
-1. **Pools → Add provider.** Choose the kind (Daytona or Freestyle), a pool
-   name, the trust (external), the adapter config (for example `apiURL`) and
-   the API key. The dashboard stores the key as a secret, then registers the
+1. **Pools → Add provider.** Choose the kind (Daytona, Freestyle or any
+   other provider in the [catalog](../providers/README.md)), a pool name, the
+   trust (fixed to external for managed providers, your choice for
+   self-hostable ones), the adapter config (for example `apiURL`) and the API
+   key. The dashboard stores the key as a secret, then registers the
    pool with that secret as its credential.
 2. Check the new pool's health on the Pools page.
 3. **Use for new sandboxes** switches new work to it

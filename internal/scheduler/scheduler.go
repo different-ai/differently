@@ -336,16 +336,19 @@ func (s *Scheduler) provision(ctx context.Context, rec store.SandboxRecord) {
 		s.retry(ctx, rec, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.Config.Scheduler.ProvisionTimeoutSeconds)*time.Second)
+	// The timeout bounds the backend call only: recording its outcome, a
+	// retry included, must not run on a context that has already expired.
+	createCtx, cancel := context.WithTimeout(ctx, time.Duration(s.Config.Scheduler.ProvisionTimeoutSeconds)*time.Second)
 	defer cancel()
 	labels := map[string]string{adapter.LabelOrg: rec.OrgID, adapter.LabelProject: rec.ProjectID}
 	for k, v := range rec.Labels {
 		labels[k] = v
 	}
 	start := s.Now()
-	inst, err := a.Create(ctx, adapter.CreateRequest{
+	inst, err := a.Create(createCtx, adapter.CreateRequest{
 		ID: rec.ID, Installation: s.Installation, Template: s.Config.BackendTemplate(rec.Template, rec.Pool), Resources: rec.Resources,
 		Env: rec.Env, Labels: labels, TTLSeconds: rec.TTLSeconds, FromSnapshot: rec.SnapshotBackendRef,
+		IdleTimeoutSeconds: rec.IdleTimeoutSeconds,
 	})
 	if err != nil {
 		s.retry(ctx, rec, err)
@@ -486,7 +489,8 @@ func (s *Scheduler) expire(ctx context.Context) {
 // had no exec, file, port or keepalive call for that long, and marks them
 // idled so the next such call wakes them. Pools that keep memory pause
 // (cheaper to wake); others stop with the disk kept. Pools that can do
-// neither are left alone.
+// neither are left alone, and so are pools whose backend idles natively
+// (adapter.NativeIdler): the reconciler follows those pauses instead.
 func (s *Scheduler) SweepIdle(ctx context.Context) {
 	now := s.Now()
 	recs, err := s.Store.ListSandboxes(ctx, store.SandboxFilter{Statuses: []api.SandboxStatus{api.StatusRunning}})
@@ -501,12 +505,21 @@ func (s *Scheduler) SweepIdle(ctx context.Context) {
 		if rec.LastActivityAt != nil && rec.LastActivityAt.After(last) {
 			last = *rec.LastActivityAt
 		}
-		if now.Sub(last) < time.Duration(rec.IdleTimeoutSeconds)*time.Second || !s.claim(rec.ID) {
+		if now.Sub(last) < time.Duration(rec.IdleTimeoutSeconds)*time.Second || s.idlesNatively(rec.Pool) || !s.claim(rec.ID) {
 			continue
 		}
 		s.idle(ctx, rec)
 		s.release(rec.ID)
 	}
+}
+
+func (s *Scheduler) idlesNatively(pool string) bool {
+	a, err := s.Pools.Adapter(pool)
+	if err != nil {
+		return false
+	}
+	n, ok := a.(adapter.NativeIdler)
+	return ok && n.IdlesNatively()
 }
 
 func (s *Scheduler) idle(ctx context.Context, rec store.SandboxRecord) {
@@ -668,7 +681,10 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 // reconcileState follows a backend instance that changed state behind the
 // control plane's back, for example sandboxes that stopped when their
 // runtime restarted. A stopped instance makes the sandbox stopped (so it can
-// be started again from its disk); an instance in error fails it.
+// be started again from its disk); an instance in error fails it. On pools
+// that idle natively, a backend pause of a sandbox with an idle timeout marks
+// it idled (so the next call wakes it), and a backend wake of an idled
+// sandbox (traffic through the backend's gateway) marks it running again.
 func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.SandboxRecord, in adapter.Instance) {
 	if (rec.Status != api.StatusRunning && rec.Status != api.StatusPaused) || s.isInflight(rec.ID) || s.recentlyChanged(rec) {
 		return
@@ -687,6 +703,41 @@ func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.S
 		if err == nil && out.Status == api.StatusStopped {
 			metrics.Reconciled.WithLabelValues("stopped", pool).Inc()
 			s.Audit.Record(ctx, api.AuditEvent{Actor: "reconciler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "reconcile.instance_stopped", Resource: rec.ID, Details: map[string]string{"pool": pool, "ref": in.Ref}})
+		}
+	case adapter.StatePaused:
+		if rec.Status != api.StatusRunning || rec.IdleTimeoutSeconds <= 0 || !s.idlesNatively(pool) {
+			return
+		}
+		out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+			if r.Status != api.StatusRunning {
+				return nil
+			}
+			now := s.Now()
+			stopClock(r, now)
+			r.Status, r.UpdatedAt, r.IdledAt = api.StatusPaused, now, &now
+			r.StatusReason = fmt.Sprintf("paused by the backend after %d s idle; the next exec, file, port or keepalive call wakes it", rec.IdleTimeoutSeconds)
+			return nil
+		})
+		if err == nil && out.Status == api.StatusPaused {
+			metrics.Reconciled.WithLabelValues("idle_pause", pool).Inc()
+			s.Audit.Record(ctx, api.AuditEvent{Actor: "reconciler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.idled", Resource: rec.ID, Details: map[string]string{"pool": pool, "action": "pause", "by": "backend"}})
+		}
+	case adapter.StateRunning:
+		if rec.Status != api.StatusPaused || rec.IdledAt == nil || !s.idlesNatively(pool) {
+			return
+		}
+		out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+			if r.Status != api.StatusPaused || r.IdledAt == nil {
+				return nil
+			}
+			now := s.Now()
+			r.Status, r.UpdatedAt, r.IdledAt, r.StatusReason = api.StatusRunning, now, nil, ""
+			r.RunningSince, r.LastActivityAt = &now, &now
+			return nil
+		})
+		if err == nil && out.Status == api.StatusRunning {
+			metrics.Reconciled.WithLabelValues("woke", pool).Inc()
+			s.Audit.Record(ctx, api.AuditEvent{Actor: "reconciler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.woke", Resource: rec.ID, Details: map[string]string{"pool": pool, "by": "backend"}})
 		}
 	case adapter.StateError:
 		s.fail(ctx, rec.ID, "backend instance failed: "+in.Message, nil)

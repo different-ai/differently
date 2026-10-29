@@ -62,7 +62,7 @@
       "required": ["name", "adapter"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
-        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "vercel", "fly", "blaxel"]},
+        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "vercel", "fly", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel"]},
         "trust": {"type": "string", "enum": ["private", "external"]},
         "region": {"type": "string"},
         "labels": {"$ref": "#/definitions/stringMap"},
@@ -96,13 +96,28 @@
                   "isolation": {"enum": ["", "container", "microvm"]},
                   "useServerProxy": {"enum": ["true", "false"]},
                   "lineEndings": {"enum": ["kept", "stripped"]},
-                  "runtime": {"enum": ["docker", "kubernetes"]},
+                  "runtime": {"enum": ["docker", "kubernetes", "fastsandbox"]},
+                  "timeoutSeconds": {"type": "string", "pattern": "^[0-9]+$"},
                   "ports": {"enum": ["signed"]},
                   "egress": {"enum": ["none", "public", "allowlist"]},
                   "portScheme": {"enum": ["https", "http"]}
                 }
               }
             }
+          }
+        },
+        {
+          "if": {"properties": {"adapter": {"const": "agent-sandbox"}}},
+          "then": {
+            "required": ["trust"],
+            "properties": {"config": {"properties": {"isolation": {"enum": ["", "container", "microvm"]}}}}
+          }
+        },
+        {
+          "if": {"properties": {"adapter": {"const": "cubesandbox"}}},
+          "then": {
+            "required": ["config", "trust"],
+            "properties": {"config": {"required": ["apiURL"], "properties": {"proxyScheme": {"enum": ["https", "http"]}}}}
           }
         }
       ]
@@ -171,9 +186,10 @@
         "templateId": {"type": "string"},
         "isolation": {"type": "string", "enum": ["container", "microvm"]},
         "features": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9.-]*$"}},
-        "useServerProxy": {"type": "boolean"},
+        "useServerProxy": {"type": ["boolean", "null"]},
         "lineEndings": {"type": "string", "enum": ["", "kept", "stripped"]},
-        "runtime": {"type": "string", "enum": ["", "docker", "kubernetes"]},
+        "runtime": {"type": "string", "enum": ["", "docker", "kubernetes", "fastsandbox"]},
+        "timeoutSeconds": {"type": ["integer", "null"], "minimum": 60},
         "ports": {"type": "string", "enum": ["", "signed"]},
         "egress": {"type": "string", "enum": ["", "none", "public", "allowlist"]},
         "egressAllow": {"type": "array", "items": {"type": "string", "minLength": 1}},

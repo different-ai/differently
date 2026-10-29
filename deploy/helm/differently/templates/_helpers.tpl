@@ -205,7 +205,9 @@ api-key
 {{/* The OpenSandbox pool declared by .Values.opensandbox, as a dict. */}}
 {{- define "differently.opensandboxPool" -}}
 {{- $o := .Values.opensandbox -}}
-{{- $c := dict "apiURL" $o.apiURL "isolation" $o.isolation "useServerProxy" (toString $o.useServerProxy) -}}
+{{- $c := dict "apiURL" $o.apiURL "isolation" $o.isolation -}}
+{{- if not (kindIs "invalid" $o.useServerProxy) }}{{ $_ := set $c "useServerProxy" (toString $o.useServerProxy) }}{{ end -}}
+{{- with $o.timeoutSeconds }}{{ $_ := set $c "timeoutSeconds" (toString .) }}{{ end -}}
 {{- with $o.image }}{{ $_ := set $c "image" . }}{{ end -}}
 {{- with $o.templateId }}{{ $_ := set $c "templateId" . }}{{ end -}}
 {{- with $o.lineEndings }}{{ $_ := set $c "lineEndings" . }}{{ end -}}
@@ -361,6 +363,17 @@ Validation. Fails the render with an actionable message. The server's
 {{- end -}}
 {{- if not (has $o.isolation (list "container" "microvm")) -}}
 {{- fail (printf "opensandbox.isolation=%q must be container (Docker or Kubernetes runtime) or microvm (Fast Sandbox)." (toString $o.isolation)) -}}
+{{- end -}}
+{{- if eq (toString $o.runtime) "fastsandbox" -}}
+{{- if not $o.templateId -}}
+{{- fail "opensandbox.runtime=fastsandbox needs opensandbox.templateId: Fast Sandbox creates microVMs from a template's golden image, not from an image." -}}
+{{- end -}}
+{{- if ne $o.isolation "microvm" -}}
+{{- fail "opensandbox.runtime=fastsandbox runs Firecracker microVMs; set opensandbox.isolation=microvm." -}}
+{{- end -}}
+{{- if $o.ports -}}
+{{- fail "opensandbox.ports=signed needs secure access, which Fast Sandbox templates reject; leave opensandbox.ports empty." -}}
+{{- end -}}
 {{- end -}}
 {{- if and $o.existingSecret $o.apiKey -}}
 {{- fail "Set only one of opensandbox.existingSecret and opensandbox.apiKey." -}}

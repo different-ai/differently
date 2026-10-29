@@ -30,6 +30,10 @@ type fakeOpenSandbox struct {
 	files   map[string][]byte
 	lastCmd map[string]any
 	snaps   map[string]string
+	// direct is execd reached without the server proxy (no API key header);
+	// a paused sandbox then answers 503 as the ingress gateway does.
+	direct  bool
+	resumes int
 }
 
 const apiKey = "osb-key-1234567890"
@@ -119,6 +123,11 @@ func newFake(t *testing.T) *fakeOpenSandbox {
 			setState(b, "Pausing")
 			w.WriteHeader(202)
 		case "resume":
+			if stateOf(b) == "Running" {
+				jsonOut(w, 409, map[string]string{"code": "INVALID_STATE", "message": "sandbox is running"})
+				return
+			}
+			f.resumes++
 			setState(b, "Resuming")
 			w.WriteHeader(202)
 		case "renew-expiration":
@@ -153,12 +162,17 @@ func newFake(t *testing.T) *fakeOpenSandbox {
 	execd := func(h http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			id := r.PathValue("id")
-			if r.Header.Get("X-EXECD-ACCESS-TOKEN") != "tok-"+id || r.Header.Get(APIKeyHeader) != apiKey {
+			if r.Header.Get("X-EXECD-ACCESS-TOKEN") != "tok-"+id || !f.direct && r.Header.Get(APIKeyHeader) != apiKey || f.direct && r.Header.Get(APIKeyHeader) != "" {
 				jsonOut(w, 401, map[string]string{"code": "UNAUTHORIZED", "message": "bad execd token"})
 				return
 			}
 			f.mu.Lock()
 			defer f.mu.Unlock()
+			if b, ok := f.boxes[id]; ok && f.direct && stateOf(b) == "Paused" {
+				w.Header().Set("OpenSandbox-Wake", "expired")
+				jsonOut(w, 503, map[string]any{"error": map[string]string{"code": "sandbox_wake_timeout"}})
+				return
+			}
 			if b, ok := f.boxes[id]; !ok || stateOf(b) != "Running" {
 				jsonOut(w, 409, map[string]string{"code": "NOT_RUNNING", "message": "sandbox is not running"})
 				return
@@ -410,3 +424,98 @@ func TestOpenSandboxCredentialsAndConfig(t *testing.T) {
 		t.Fatalf("explicit trust: %v", err)
 	}
 }
+
+// Fast Sandbox: template-mode creates, OpenSandbox's native idle policy from
+// Differently's idle timeout, execd reached directly so the gateway sees the
+// traffic, and a sandbox the idle policy paused woken on the next call.
+func TestOpenSandboxFastSandbox(t *testing.T) {
+	f := newFake(t)
+	f.direct = true
+	ctx := context.Background()
+	base := map[string]string{"apiURL": f.srv.URL + "/v1", "runtime": "fastsandbox", "templateId": "tpl_1"}
+	with := func(k, v string) map[string]string {
+		m := map[string]string{}
+		for a, b := range base {
+			m[a] = b
+		}
+		m[k] = v
+		return m
+	}
+	for name, cfg := range map[string]map[string]string{
+		"no template":         with("templateId", ""),
+		"signed ports":        with("ports", "signed"),
+		"container isolation": with("isolation", "container"),
+		"short timeout":       with("timeoutSeconds", "10"),
+	} {
+		if _, err := FromConfig(cfg, api.TrustPrivate, apiKey); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	o, err := FromConfig(base, api.TrustPrivate, apiKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(o)
+	caps, _ := a.Capabilities(ctx)
+	if got := strings.Join(caps.Features, ","); got != "exec,exec.stream,files,lifecycle.pause-resume,snapshots.disk,fork,isolation.microvm" {
+		t.Fatalf("features %s", got)
+	}
+	if !a.IdlesNatively() || o.UseServerProxy {
+		t.Fatal("fastsandbox should idle natively and reach execd past the server proxy")
+	}
+	if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_env", Installation: "inst", Env: map[string]string{"A": "1"}}); !api.IsCode(err, api.CodeInvalidRequest) {
+		t.Fatalf("env must be refused, not dropped: %v", err)
+	}
+
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_1", Installation: "inst", IdleTimeoutSeconds: 10, Resources: api.Resources{CPU: 2, MemoryMiB: 2048}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	req := f.boxes[in.Ref]["request"].(map[string]any)
+	f.mu.Unlock()
+	for _, k := range []string{"image", "entrypoint", "env", "resourceLimits", "secureAccess"} {
+		if _, ok := req[k]; ok {
+			t.Errorf("template-mode create sent %s", k)
+		}
+	}
+	if req["templateId"] != "tpl_1" || req["timeout"] != float64(86400) {
+		t.Fatalf("create %v", req)
+	}
+	if got := mustJSON(req["lifecycle"]); got != `{"idlePolicy":{"idleTimeoutSeconds":30,"onIdle":"pause","wakeOnAccess":true}}` {
+		t.Fatalf("idle policy %s", got)
+	}
+
+	// The idle policy pauses the microVM; the next exec wakes it.
+	f.mu.Lock()
+	f.boxes[in.Ref]["status"] = map[string]any{"state": "Paused"}
+	f.mu.Unlock()
+	res, err := a.Exec(ctx, in.Ref, api.ExecRequest{Command: "echo hi"})
+	if err != nil || res.ExitCode != 0 || f.resumes != 1 {
+		t.Fatalf("exec on an idle-paused sandbox: %+v %v (resumes %d)", res, err, f.resumes)
+	}
+	// Resume tolerates a sandbox the gateway already woke.
+	if err := a.Resume(ctx, in.Ref); err != nil {
+		t.Fatalf("resume of a running sandbox: %v", err)
+	}
+	if err := a.Pause(ctx, in.Ref); err != nil {
+		t.Fatalf("pause keeps memory on Fast Sandbox: %v", err)
+	}
+	if got, _ := a.Get(ctx, in.Ref); got.State != adapter.StatePaused {
+		t.Fatalf("paused microVM reported as %s", got.State)
+	}
+
+	// No idle timeout: no policy, and a TTL becomes the timeout.
+	in2, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_2", Installation: "inst", TTLSeconds: 600, Template: "tpl_2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	req = f.boxes[in2.Ref]["request"].(map[string]any)
+	f.mu.Unlock()
+	if _, ok := req["lifecycle"]; ok || req["timeout"] != float64(600) || req["templateId"] != "tpl_2" {
+		t.Fatalf("create without idle %v", req)
+	}
+}
+
+func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }

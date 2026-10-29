@@ -505,6 +505,33 @@ func TestSandboxFailureKeepsPoolHealthy(t *testing.T) {
 	}
 }
 
+// A backend call that outlives the provision timeout is retried: the
+// requeue is recorded even though the call's own context has expired, so the
+// sandbox does not stay provisioning.
+func TestProvisionTimeoutRequeues(t *testing.T) {
+	h := newHarnessWith(t, api.PlacementPolicy{}, func(c *config.Config) { c.Scheduler.ProvisionTimeoutSeconds = 1 },
+		func(s store.Store) store.Store { return ctxStore{s} })
+	_, _, token := h.tenant("a", api.Quota{})
+	h.fc.HangCreates = 1
+	sb := h.create(token, api.CreateSandboxRequest{})
+	h.sched.Tick(context.Background())
+	h.sched.Drain()
+	got := h.get(token, sb.ID)
+	if got.Status != api.StatusQueued || got.Attempts != 1 || !strings.Contains(got.StatusReason, "deadline exceeded") {
+		t.Fatalf("a timed-out create should requeue with its reason: %+v", got)
+	}
+}
+
+// ctxStore refuses writes on an ended context, as PostgreSQL does.
+type ctxStore struct{ store.Store }
+
+func (s ctxStore) UpdateSandbox(ctx context.Context, id string, fn func(*store.SandboxRecord) error) (store.SandboxRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return store.SandboxRecord{}, err
+	}
+	return s.Store.UpdateSandbox(ctx, id, fn)
+}
+
 // Two pools can front the same backend. Each pool's reconcile sees the
 // other's instances and must not delete them; an instance left behind by an
 // earlier placement is still an orphan.
@@ -635,6 +662,52 @@ func TestIdleAutoStopAndWake(t *testing.T) {
 	h.must(200, "PATCH", "/v1/sandboxes/"+sb.ID, token, api.UpdateSandboxRequest{IdleTimeoutSeconds: ptr(-1)}, &off)
 	if off.IdleTimeoutSeconds != 0 {
 		t.Fatalf("-1 should turn idle auto-stop off: %d", off.IdleTimeoutSeconds)
+	}
+}
+
+// Native idling: on a pool whose backend pauses idle sandboxes itself
+// (OpenSandbox Fast Sandbox), Differently's sweep stands aside, the
+// reconciler marks a backend pause as idled, the next exec wakes it, and a
+// wake by the backend's gateway is followed back to running.
+func TestNativeIdlePools(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	h.fc.NativeIdle = true
+	_, _, token := h.tenant("a", api.Quota{})
+	sb := h.create(token, api.CreateSandboxRequest{IdleTimeoutSeconds: 60})
+	h.tick()
+	ctx := context.Background()
+	h.sched.Now = func() time.Time { return time.Now().UTC().Add(time.Hour) }
+	h.sched.SweepIdle(ctx)
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning {
+		t.Fatalf("Differently's sweep should leave a natively idling pool alone: %s", got.Status)
+	}
+	h.sched.Now = func() time.Time { return time.Now().UTC() }
+
+	ref := h.fc.RefOf(sb.ID)
+	_ = h.fc.Pause(ctx, ref) // the backend's idle policy fires
+	h.sched.Reconcile(ctx)
+	got := h.get(token, sb.ID)
+	if got.Status != api.StatusPaused || got.IdledAt == nil {
+		t.Fatalf("a backend idle pause should mark the sandbox idled: %s %v", got.Status, got.IdledAt)
+	}
+	h.must(200, "POST", "/v1/sandboxes/"+sb.ID+"/exec", token, api.ExecRequest{Command: "echo hi"}, nil)
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning || got.IdledAt != nil {
+		t.Fatalf("exec should wake it: %s", got.Status)
+	}
+
+	_ = h.fc.Pause(ctx, ref)
+	h.sched.Reconcile(ctx)
+	_ = h.fc.Resume(ctx, ref) // traffic through the backend's gateway wakes it
+	h.sched.Reconcile(ctx)
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning || got.IdledAt != nil {
+		t.Fatalf("a backend wake should be followed: %s %v", got.Status, got.IdledAt)
+	}
+
+	// A caller's pause is not reinterpreted when the backend reports it.
+	h.must(200, "POST", "/v1/sandboxes/"+sb.ID+"/pause", token, nil, nil)
+	h.sched.Reconcile(ctx)
+	if got := h.get(token, sb.ID); got.Status != api.StatusPaused || got.IdledAt != nil {
+		t.Fatalf("a caller's pause must stay a caller's pause: %s %v", got.Status, got.IdledAt)
 	}
 }
 
