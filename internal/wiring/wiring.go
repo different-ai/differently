@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 
 	"github.com/different-ai/differently/internal/adapters/agentcore"
+	"github.com/different-ai/differently/internal/adapters/agentsandbox"
 	"github.com/different-ai/differently/internal/adapters/azuresandboxes"
 	"github.com/different-ai/differently/internal/adapters/azuresessions"
 	"github.com/different-ai/differently/internal/adapters/blaxel"
 	"github.com/different-ai/differently/internal/adapters/boat"
+	"github.com/different-ai/differently/internal/adapters/cubesandbox"
 	"github.com/different-ai/differently/internal/adapters/daytona"
 	"github.com/different-ai/differently/internal/adapters/devhost"
 	"github.com/different-ai/differently/internal/adapters/e2b"
@@ -159,6 +161,28 @@ func Register() {
 			return nil, err
 		}
 		return northflank.New(opts), nil
+	})
+	pools.Register("agent-sandbox", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		token, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := agentsandbox.FromConfig(p.Config, p.Trust, token)
+		if err != nil {
+			return nil, err
+		}
+		return agentsandbox.New(opts)
+	})
+	pools.Register("cubesandbox", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		key, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := cubesandbox.FromConfig(p.Config, p.Trust, key)
+		if err != nil {
+			return nil, err
+		}
+		return cubesandbox.New(opts)
 	})
 	pools.Register("opensandbox", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
 		key, err := resolve(p, d)

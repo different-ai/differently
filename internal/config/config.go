@@ -201,7 +201,7 @@ func (d DashboardConfig) On() bool { return d.Enabled == nil || *d.Enabled }
 var externalKinds = []string{"daytona", "freestyle", "vercel", "fly", "boat", "morph", "blaxel"}
 
 // KnownAdapters lists adapter kinds the server can build.
-var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "vercel", "fly", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel"}
+var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "vercel", "fly", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel"}
 
 // Adapter kinds that run where the operator put them (a plugin they deploy,
 // the dev host, the test fake), so they are private unless declared.
@@ -210,7 +210,7 @@ var privateByDefaultKinds = []string{"remote", "devhost", "fake"}
 // Adapter kinds whose trust boundary depends on who operates the backend, so
 // the operator must declare it. Any kind in none of these lists is treated the
 // same way: a new adapter never becomes private by omission.
-var declaredTrustKinds = []string{"opensandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "e2b"}
+var declaredTrustKinds = []string{"opensandbox", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "e2b"}
 
 // Default returns a configuration with every default applied.
 func Default() Config {
@@ -384,6 +384,9 @@ func (c Config) Validate() error {
 		}
 		if p.Adapter == "opensandbox" && p.Config["apiURL"] == "" {
 			bad("pool %s: the opensandbox adapter needs config.apiURL", p.Name)
+		}
+		if p.Adapter == "cubesandbox" && p.Config["apiURL"] == "" {
+			bad("pool %s: the cubesandbox adapter needs config.apiURL (CubeAPI, e.g. http://cube-api:3000)", p.Name)
 		}
 		if p.Adapter == "devhost" && !c.Dev {
 			bad("pool %s: the devhost adapter has no isolation and is only allowed with dev: true", p.Name)
