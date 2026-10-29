@@ -45,7 +45,7 @@ func e2bError(w http.ResponseWriter, status int, msg, code string) {
 
 func connectEnvelope(w io.Writer, flags byte, v any) {
 	b, _ := json.Marshal(v)
-	frame := envelope(b)
+	frame, _ := envelope(b)
 	frame[0] = flags
 	w.Write(frame)
 	if f, ok := w.(http.Flusher); ok {
@@ -553,5 +553,15 @@ func TestE2BErrorClassification(t *testing.T) {
 			t.Errorf("%d: got %v, want %s", c.status, err, c.want)
 		}
 		srv.Close()
+	}
+}
+
+// A request too large for one Connect message is refused before anything is
+// sent (the API here is unreachable, so a request would be an outage).
+func TestE2BRefusesOversizedCommand(t *testing.T) {
+	a := New(Options{APIURL: "http://127.0.0.1:1", APIKey: "k"})
+	_, err := a.Exec(context.Background(), "sbx", api.ExecRequest{Command: strings.Repeat("x", maxMessage)})
+	if !api.IsCode(err, api.CodeInvalidRequest) {
+		t.Fatalf("oversized command: %v", err)
 	}
 }

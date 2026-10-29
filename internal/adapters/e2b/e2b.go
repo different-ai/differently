@@ -569,12 +569,18 @@ func (a *Adapter) Exec(ctx context.Context, ref string, req api.ExecRequest) (ap
 	return api.ExecResult{ExitCode: code, Stdout: stdout.String(), Stderr: stderr.String(), DurationMs: time.Since(start).Milliseconds()}, nil
 }
 
+// maxMessage bounds one Connect message in either direction.
+const maxMessage = 32 << 20
+
 // envelope frames one Connect streaming message.
-func envelope(msg []byte) []byte {
+func envelope(msg []byte) ([]byte, error) {
+	if len(msg) > maxMessage {
+		return nil, api.Errorf(api.CodeInvalidRequest, "e2b: the command request is %d bytes; the limit is %d", len(msg), maxMessage)
+	}
 	out := make([]byte, 5+len(msg))
 	binary.BigEndian.PutUint32(out[1:5], uint32(len(msg)))
 	copy(out[5:], msg)
-	return out
+	return out, nil
 }
 
 func readEnvelope(r io.Reader) (byte, []byte, error) {
@@ -583,7 +589,7 @@ func readEnvelope(r io.Reader) (byte, []byte, error) {
 		return 0, nil, err
 	}
 	n := binary.BigEndian.Uint32(h[1:])
-	if n > 32<<20 {
+	if n > maxMessage {
 		return 0, nil, fmt.Errorf("message of %d bytes is too large", n)
 	}
 	msg := make([]byte, n)
@@ -623,7 +629,11 @@ func (a *Adapter) ExecStream(ctx context.Context, ref string, req api.ExecReques
 	if req.TimeoutSeconds > 0 {
 		h.Set("Connect-Timeout-Ms", strconv.Itoa(req.TimeoutSeconds*1000)) // envd kills the process when it passes
 	}
-	resp, err := a.envdDo(ctx, ref, "/process.Process/Start", envelope(msg), "application/connect+json", h)
+	frame, err := envelope(msg)
+	if err != nil {
+		return -1, err
+	}
+	resp, err := a.envdDo(ctx, ref, "/process.Process/Start", frame, "application/connect+json", h)
 	if err != nil {
 		return -1, err
 	}
