@@ -6,6 +6,21 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added (provider catalog)
+
+- `docs/providers/`: 26 providers, each with a tested status (verified live,
+  tested with a fake server, documented, or not supported), capabilities,
+  configuration and exactly what was tested, and a guide to adding one.
+- A new adapter kind can no longer become private by omission: only
+  `remote`, `devhost` and `fake` default to private, and a test fails until
+  every kind is in exactly one trust list.
+- `vercel` (Vercel Sandbox) and `fly` (Fly.io Machines) adapters, always
+  external; pages for Modal, Cloudflare and Sprites (documented: a `remote`
+  plugin). Tested with fake servers, not live accounts.
+- `boat`, `morph` (always external) and `e2b` (declared trust: it is
+  self-hostable) adapters; a page for CodeSandbox (documented). Tested with
+  fake servers, not live accounts.
+
 ### Added (self-hosted runtimes)
 
 - `agent-sandbox` pools: Sandboxes from kubernetes-sigs/agent-sandbox, or

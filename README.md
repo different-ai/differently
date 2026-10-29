@@ -30,7 +30,9 @@ account of it:
 
 - by default on [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox)
   on your own Docker hosts, Kubernetes clusters or microVM nodes;
-- on Daytona, Freestyle or your own backend, only where your policies allow it.
+- on [26 other providers](docs/providers/README.md), from E2B, Daytona and
+  Vercel to the AWS, Azure and Google Cloud sandbox services, or your own
+  backend, only where your policies allow it.
 
 Apache-2.0, fully self-hosted, no telemetry. Built by the
 [OpenWork](https://github.com/different-ai) team.
@@ -138,17 +140,19 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 - the published `v0.1.0-alpha.1` chart and images install from public
   artifacts alone;
 - real OpenSandbox responses are recorded and replayed in every `go test`;
+- the `agent-sandbox` adapter against a Kubernetes cluster (kind);
 - [OpenWork](https://github.com/different-ai/openwork)'s Workbot computers run
-  through Differently as a sandbox gateway (in review).
+  through Differently as a sandbox gateway, behind a flag.
 
 **Not verified yet:**
 - Fast Sandbox microVMs;
 - multi-node clusters;
 - managed EKS, GKE and AKS;
-- live Daytona and Freestyle accounts through Differently.
+- live accounts on the managed providers: their adapters are tested
+  against fakes of each provider's published API.
 
-Each backend has a page with its status and configuration in the
-[provider catalog](docs/providers/README.md). The
+Each of the 26 providers has a page with its tested status, capabilities and
+configuration in the [provider catalog](docs/providers/README.md). The
 [roadmap](docs/roadmap.md) and [feature parity](docs/feature-parity.md)
 pages track the details. Releases follow [semantic versioning](https://semver.org/):
 pre-releases are tagged `vX.Y.Z-alpha.N` or `-rc.N`, and images are
