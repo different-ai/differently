@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly }
+    target-branch: pre-release
+    groups:
+      go: { patterns: ["*"] }
+  - package-ecosystem: npm
+    directory: /sdk/typescript
+    schedule: { interval: weekly }
+    target-branch: pre-release
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    target-branch: pre-release
+  - package-ecosystem: docker
+    directory: /build
+    schedule: { interval: weekly }
+    target-branch: pre-release

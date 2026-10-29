@@ -1,0 +1,55 @@
+# End-to-end stack: Postgres, the Differently control plane and a real
+# OpenSandbox server (Docker runtime) as its private pool. Runs on any
+# Docker host; see README.md.
+name: differently-e2e
+
+x-osb-key: &osb_key osb-live-test-key-0123456789 # matches ../opensandbox/config.toml
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: e2e
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  opensandbox-server:
+    image: opensandbox/server:release-1.2.0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "18091:8090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../opensandbox/config.toml:/etc/opensandbox/config.toml:ro
+    environment:
+      SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  server:
+    image: differently-server:e2e
+    command: ["--config", "/etc/differently/config.yaml"]
+    environment:
+      # Test-only credentials for this throwaway stack.
+      DIFFERENTLY_BOOTSTRAP_TOKEN: dly_e2eoperator_e2etoken0123456789abcdefghjkmnpqrstvwxyz
+      DIFFERENTLY_DATABASE_URL: postgres://postgres:e2e@postgres:5432/postgres?sslmode=disable
+      DIFFERENTLY_OPENSANDBOX_API_KEY: *osb_key
+      # Test-only key that seals provider credentials stored through the API.
+      DIFFERENTLY_SECRETS_KEY: ZGlmZmVyZW50bHktZTJlLXNlY3JldHMta2V5LTAwMDE=
+    volumes:
+      - ./config.yaml:/etc/differently/config.yaml:ro
+    ports:
+      - "18090:8080"
+      - "19091:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensandbox-server:
+        condition: service_healthy

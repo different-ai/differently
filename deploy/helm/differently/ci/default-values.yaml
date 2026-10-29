@@ -1,0 +1,3 @@
+# Chart defaults: in-memory store, one server replica, the OpenSandbox pool
+# (trust=private, container isolation, API key from <fullname>-opensandbox),
+# no external providers, policy.external=never. Intentionally empty.

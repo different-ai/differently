@@ -1,0 +1,35 @@
+# Control-plane config for the e2e stack (test/e2e/compose.yaml): one
+# private OpenSandbox pool behind Differently's policies.
+listen: ":8080"
+store:
+  driver: postgres
+pools:
+  - name: opensandbox
+    adapter: opensandbox
+    trust: private
+    region: local
+    maxConcurrency: 20
+    costModel: { cpuHour: 0.01, memoryGiBHour: 0.002 }
+    config:
+      apiURL: http://opensandbox-server:8090/v1
+      image: debian:bookworm-slim
+      isolation: container
+      lineEndings: kept # the stack runs execd release-1.2.0
+    credentials:
+      env: DIFFERENTLY_OPENSANDBOX_API_KEY
+profiles:
+  - name: small
+    resources: { cpu: 1, memoryMiB: 512, diskGiB: 1 }
+  - name: medium
+    resources: { cpu: 2, memoryMiB: 1024, diskGiB: 1 }
+defaults:
+  profile: small
+  ttlSeconds: 1800
+policy:
+  external: never
+scheduler:
+  reconcileIntervalSeconds: 5
+audit:
+  failClosed: true
+metrics:
+  listen: ":9091"

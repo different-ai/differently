@@ -1,0 +1,12 @@
+{{- include "differently.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "differently.configName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "server") | nindent 4 }}
+data:
+  config.yaml: |
+    # Rendered by the differently Helm chart from .Values.config.
+    {{- include "differently.config" . | nindent 4 }}

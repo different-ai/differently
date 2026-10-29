@@ -1,0 +1,30 @@
+{
+  "name": "@differently/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for Differently, the self-hosted sandbox and microVM platform.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test build/test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "^7.0.2"
+  }
+}

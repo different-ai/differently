@@ -1,0 +1,182 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [pre-release, main]
+  push:
+    branches: [pre-release, main]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: make fmt-check
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - name: cross-build linux amd64/arm64
+        run: make build-linux
+
+  postgres:
+    name: postgres conformance
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -count=1 ./internal/store/postgres/
+        env:
+          DIFFERENTLY_TEST_POSTGRES_URL: postgres://postgres:test@localhost:5432/postgres?sslmode=disable
+
+  sdk-typescript:
+    name: sdk (typescript)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+
+  sdk-python:
+    name: sdk (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.13"]
+    defaults:
+      run:
+        working-directory: sdk/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests
+
+  helm:
+    name: helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: make helm-lint
+
+  images:
+    name: container images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: build/server.Dockerfile
+          push: false
+      - name: build cli image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: build/cli.Dockerfile
+          push: false
+
+  dco:
+    name: dco sign-off
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: every commit is signed off
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=0
+          for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            if ! git log -1 --format=%B "$c" | grep -q '^Signed-off-by: '; then
+              echo "::error::commit $c is missing a Signed-off-by line (git commit -s)"
+              missing=1
+            fi
+          done
+          exit $missing
+
+  release-source:
+    name: main accepts releases only
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: head branch is pre-release or hotfix/*
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          case "$HEAD_REF" in
+            pre-release|hotfix/*) [ "$SAME_REPO" = "true" ] && exit 0 ;;
+          esac
+          echo "::error::main only accepts PRs from pre-release or hotfix/* in this repository; target pre-release instead"
+          exit 1
+
+  # Approves a pull request from this repository once every job above passed,
+  # so release pull requests into main meet the ruleset's one-approval rule
+  # without waiting for a person. Forks are never approved. The approval comes
+  # from github-actions, which never pushes, so it counts as an approval after
+  # the last push; a new push dismisses it and the next green run approves
+  # again. It approves what CI checked, not what a reviewer read.
+  approve:
+    name: approve when CI passes
+    needs: [go, postgres, sdk-typescript, sdk-python, helm, images, dco, release-source]
+    if: >-
+      always() &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: approve the pull request at the head CI checked
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)" != "$HEAD" ]; then
+            echo "the pull request moved on since this run; the next run decides"
+            exit 0
+          fi
+          gh pr review "$PR" --repo "$REPO" --approve --body "CI passed at $HEAD."

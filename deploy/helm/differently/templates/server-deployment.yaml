@@ -1,0 +1,189 @@
+{{- $migrationMode := include "differently.migrationMode" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "differently.serverName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "server") | nindent 4 }}
+spec:
+  replicas: {{ .Values.server.replicas }}
+  revisionHistoryLimit: 5
+  {{- if eq (include "differently.storeDriver" .) "memory" }}
+  # The in-memory store cannot be shared, so never run two pods at once.
+  strategy:
+    type: Recreate
+  {{- else }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "server") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "differently.componentLabels" (dict "ctx" . "component" "server") | nindent 8 }}
+        {{- with .Values.server.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include "differently.config" . | sha256sum }}
+        # Explicit secret values (generated tokens never change across upgrades).
+        checksum/secrets: {{ list .Values.auth .Values.postgresql.external .Values.opensandbox .Values.providers | toJson | sha256sum }}
+        {{- with .Values.server.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "differently.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.server.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.server.podSecurityContext | nindent 8 }}
+      {{- if or .Values.server.preflight.enabled (eq $migrationMode "initContainer") }}
+      initContainers:
+        {{- if .Values.server.preflight.enabled }}
+        - name: preflight
+          image: {{ include "differently.image" (dict "image" .Values.server.image "ctx" .) }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          args: ["preflight", "--config", "/etc/differently/config.yaml"]
+          env:
+            {{- include "differently.serverEnv" . | nindent 12 }}
+          {{- with .Values.server.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.server.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/differently, readOnly: true}
+            - {name: data, mountPath: /var/lib/differently}
+            - {name: tmp, mountPath: /tmp}
+        {{- end }}
+        {{- if eq $migrationMode "initContainer" }}
+        - name: migrate
+          image: {{ include "differently.image" (dict "image" .Values.server.image "ctx" .) }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          # Idempotent. A failure restarts the init container with backoff, which
+          # also covers the embedded database still starting.
+          args: ["migrate", "--config", "/etc/differently/config.yaml"]
+          env:
+            {{- include "differently.serverEnv" . | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.server.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml (.Values.migrations.resources | default .Values.server.resources) | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/differently, readOnly: true}
+            - {name: data, mountPath: /var/lib/differently}
+            - {name: tmp, mountPath: /tmp}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ include "differently.image" (dict "image" .Values.server.image "ctx" .) }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/differently/config.yaml
+            {{- with .Values.server.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.containerPort }}
+              protocol: TCP
+            {{- if .Values.metrics.port }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          env:
+            {{- include "differently.serverEnv" . | nindent 12 }}
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  containerName: server
+                  resource: limits.memory
+          {{- with .Values.server.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.server.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.server.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.server.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.server.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/differently, readOnly: true}
+            - {name: data, mountPath: /var/lib/differently}
+            - {name: tmp, mountPath: /tmp}
+            {{- with .Values.server.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "differently.configName" . }}
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        {{- with .Values.server.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if .Values.server.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.server.topologySpreadConstraints | nindent 8 }}
+      {{- else if .Values.server.defaultTopologySpread }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "server") | nindent 14 }}
+          matchLabelKeys: [pod-template-hash]
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "server") | nindent 14 }}
+          matchLabelKeys: [pod-template-hash]
+      {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

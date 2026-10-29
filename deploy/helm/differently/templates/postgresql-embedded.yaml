@@ -1,0 +1,168 @@
+{{- if .Values.postgresql.embedded.enabled }}
+{{- /*
+EVALUATION ONLY: one replica, no replication, no backups, no automated major
+upgrades. Production: postgresql.external with a managed PostgreSQL or a
+CloudNativePG Cluster.
+*/}}
+{{- $pg := .Values.postgresql.embedded }}
+{{- $name := include "differently.postgresqlName" . }}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace $name | default dict }}
+{{- $data := get $existing "data" | default dict }}
+{{- $password := "" }}
+{{- if $pg.password }}
+{{- $password = $pg.password }}
+{{- else if hasKey $data "password" }}
+{{- $password = index $data "password" | b64dec }}
+{{- else }}
+{{- $password = randAlphaNum 32 }}
+{{- end }}
+{{- $host := printf "%s.%s.svc.%s" $name .Release.Namespace .Values.clusterDomain }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+    differently.dev/evaluation-only: "true"
+  annotations:
+    {{- if $pg.keepSecretOnUninstall }}
+    # The data volume outlives the release; so must the password that opens it.
+    helm.sh/resource-policy: keep
+    {{- end }}
+type: Opaque
+data:
+  password: {{ $password | b64enc | quote }}
+  database-url: {{ printf "postgres://%s:%s@%s:5432/%s?sslmode=disable" $pg.username $password $host $pg.database | b64enc | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+    differently.dev/evaluation-only: "true"
+spec:
+  clusterIP: None
+  selector:
+    {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+    differently.dev/evaluation-only: "true"
+  annotations:
+    differently.dev/notice: "Evaluation only: single replica, no replication or backups. Use postgresql.external (managed PostgreSQL or CloudNativePG) in production."
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  {{- if $pg.persistence.enabled }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "postgresql") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "differently.componentLabels" (dict "ctx" . "component" "postgresql") | nindent 8 }}
+        differently.dev/evaluation-only: "true"
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgresql
+          image: {{ include "differently.image" (dict "image" $pg.image "ctx" .) }}
+          imagePullPolicy: {{ $pg.image.pullPolicy }}
+          env:
+            - {name: POSTGRES_USER, value: {{ $pg.username | quote }}}
+            - {name: POSTGRES_DB, value: {{ $pg.database | quote }}}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: {{ $name }}, key: password}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", {{ $pg.username | quote }}, "-d", {{ $pg.database | quote }}]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", {{ $pg.username | quote }}, "-d", {{ $pg.database | quote }}]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            {{- toYaml $pg.resources | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: run, mountPath: /var/run/postgresql}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        {{- if not $pg.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+      {{- with $pg.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $pg.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $pg.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if $pg.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "postgresql") | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml $pg.persistence.accessModes | nindent 10 }}
+        {{- with $pg.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $pg.persistence.size }}
+  {{- end }}
+{{- end }}

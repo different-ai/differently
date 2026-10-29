@@ -17,11 +17,12 @@ the `pre-release` branch receive security fixes.
 
 ## Scope
 
-In scope: the control plane, node agent, guest agent, adapters, CLI, SDKs,
-Helm chart and image build scripts in this repository.
+In scope: the control plane, adapters, CLI, SDKs and Helm chart in this
+repository, including how Differently passes credentials and requests to
+backends.
 
-Out of scope: vulnerabilities in Firecracker, the Linux kernel, Kubernetes or
-external providers themselves (report those upstream), and issues that require
+Out of scope: vulnerabilities in OpenSandbox, Firecracker, the Linux kernel,
+Kubernetes or external providers themselves (report those upstream), and issues that require
 an attacker who already controls the infrastructure Differently runs on — see
 the residual risks in [docs/security/trust-model.md](docs/security/trust-model.md).
 

@@ -1,0 +1,607 @@
+openapi: 3.1.0
+info:
+  title: Differently API
+  version: v1
+  summary: Self-hosted sandbox orchestration. Your infrastructure, your rules, one API.
+  description: |
+    One vendor-neutral API for isolated compute environments on infrastructure you
+    own, with optional, policy-gated use of external providers.
+
+    * Authenticate with `Authorization: Bearer dly_<id>_<secret>`.
+    * Errors use `{"error": {"code", "message", "details", "requestId"}}`. Branch on `code`.
+    * Lists return `{"items": [...], "nextCursor": "..."}`.
+    * Backends are never named by applications: placement is decided by operator,
+      organization and project policies, which a request can only narrow.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server (differently-server --dev)
+security:
+  - bearer: []
+tags:
+  - name: Sandboxes
+  - name: Exec and files
+  - name: Lifecycle
+  - name: Tenancy
+  - name: Policy
+  - name: Usage and audit
+  - name: Admin
+  - name: System
+
+paths:
+  /healthz:
+    get: { tags: [System], security: [], summary: Liveness, responses: { "200": { description: OK } } }
+  /readyz:
+    get: { tags: [System], security: [], summary: Readiness (store reachable), responses: { "200": { description: Ready }, "503": { $ref: "#/components/responses/Error" } } }
+  /version:
+    get:
+      tags: [System]
+      security: []
+      summary: Build and installation identity
+      responses: { "200": { description: Version, content: { application/json: { schema: { $ref: "#/components/schemas/VersionInfo" } } } } }
+  /metrics:
+    get: { tags: [System], security: [], summary: Prometheus metrics, responses: { "200": { description: Prometheus text format } } }
+  /v1/me:
+    get:
+      tags: [Tenancy]
+      summary: Describe the calling key
+      responses: { "200": { description: Caller, content: { application/json: { schema: { $ref: "#/components/schemas/Me" } } } } }
+
+  /v1/sandboxes:
+    post:
+      tags: [Sandboxes]
+      summary: Create a sandbox
+      description: |
+        Admits the request against quota and queues it (202). The scheduler places it on
+        an eligible pool. Returns 422 immediately when no permitted pool could ever satisfy
+        it (`no_eligible_pool`, `unsupported_capability`). Requires `sandboxes:write`.
+      parameters:
+        - { name: Idempotency-Key, in: header, schema: { type: string }, description: "Replaying the same key within a project returns the live sandbox it created (200). Once that sandbox is terminated or failed, the key creates a new one." }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateSandboxRequest" } } } }
+      responses:
+        "202": { description: Queued, content: { application/json: { schema: { $ref: "#/components/schemas/Sandbox" } } } }
+        "200": { description: Idempotent replay, content: { application/json: { schema: { $ref: "#/components/schemas/Sandbox" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    get:
+      tags: [Sandboxes]
+      summary: List sandboxes (newest first)
+      parameters:
+        - { name: status, in: query, schema: { type: string }, description: Comma-separated statuses }
+        - { name: projectId, in: query, schema: { type: string } }
+        - { name: pool, in: query, schema: { type: string } }
+        - { name: label, in: query, schema: { type: string }, description: "key=value; repeatable" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses: { "200": { description: Page, content: { application/json: { schema: { $ref: "#/components/schemas/SandboxList" } } } } }
+  /v1/sandboxes/{id}:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    get:
+      tags: [Sandboxes]
+      summary: Get a sandbox
+      responses: { "200": { description: Sandbox, content: { application/json: { schema: { $ref: "#/components/schemas/Sandbox" } } } }, "404": { $ref: "#/components/responses/Error" } }
+    patch:
+      tags: [Sandboxes]
+      summary: Update labels or TTL
+      requestBody: { content: { application/json: { schema: { $ref: "#/components/schemas/UpdateSandboxRequest" } } } }
+      responses: { "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Sandbox" } } } } }
+    delete:
+      tags: [Sandboxes]
+      summary: Delete (terminate) a sandbox
+      description: Idempotent. Queued sandboxes terminate immediately; others move to `terminating`.
+      responses: { "202": { description: Terminating, content: { application/json: { schema: { $ref: "#/components/schemas/Sandbox" } } } } }
+  /v1/sandboxes/{id}/wait:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    get:
+      tags: [Sandboxes]
+      summary: Long-poll until a status is reached
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/SandboxStatus" }, description: Defaults to running }
+        - { name: timeoutSeconds, in: query, schema: { type: integer, minimum: 1, maximum: 300, default: 60 } }
+      responses: { "200": { description: Current sandbox (check status), content: { application/json: { schema: { $ref: "#/components/schemas/Sandbox" } } } } }
+  /v1/sandboxes/{id}/placement:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    get:
+      tags: [Sandboxes]
+      summary: Explain where the sandbox runs and why
+      description: Includes every pool evaluated with reasons. For queued sandboxes, `current` is a fresh dry-run decision.
+      responses: { "200": { description: Explanation, content: { application/json: { schema: { $ref: "#/components/schemas/PlacementExplanation" } } } } }
+  /v1/sandboxes/{id}/exec:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    post:
+      tags: [Exec and files]
+      summary: Run a command
+      description: |
+        Requires `sandboxes:exec` and a running sandbox. With `?stream=1` (or
+        `Accept: text/event-stream`) the response is server-sent events named
+        `stdout`, `stderr`, `exit` and `error`, each carrying an ExecEvent as JSON data.
+      parameters: [{ name: stream, in: query, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ExecRequest" } } } }
+      responses:
+        "200":
+          description: Result, or an event stream
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/ExecResult" } }
+            text/event-stream: { schema: { type: string } }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/sandboxes/{id}/files:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    get:
+      tags: [Exec and files]
+      summary: List a directory
+      parameters: [{ $ref: "#/components/parameters/Path" }]
+      responses: { "200": { description: Entries, content: { application/json: { schema: { $ref: "#/components/schemas/FileList" } } } }, "501": { $ref: "#/components/responses/Error" } }
+  /v1/sandboxes/{id}/files/content:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }, { $ref: "#/components/parameters/Path" }]
+    get:
+      tags: [Exec and files]
+      summary: Download a file
+      responses: { "200": { description: File bytes, content: { application/octet-stream: { schema: { type: string, format: binary } } } } }
+    put:
+      tags: [Exec and files]
+      summary: Upload a file (max 100 MiB), creating parent directories
+      requestBody: { required: true, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+      responses: { "204": { description: Written } }
+  /v1/sandboxes/{id}/stop:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    post: { tags: [Lifecycle], summary: Stop (keep disk, release CPU and memory), responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
+  /v1/sandboxes/{id}/start:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    post: { tags: [Lifecycle], summary: Start a stopped sandbox from its disk, responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
+  /v1/sandboxes/{id}/pause:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    post: { tags: [Lifecycle], summary: Pause (freeze vCPUs; memory stays resident), responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
+  /v1/sandboxes/{id}/resume:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    post: { tags: [Lifecycle], summary: Resume a paused sandbox, responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
+  /v1/sandboxes/{id}/snapshots:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    post:
+      tags: [Lifecycle]
+      summary: Snapshot a sandbox
+      description: Snapshots live on the pool that took them; restoring is only possible there.
+      requestBody: { content: { application/json: { schema: { $ref: "#/components/schemas/CreateSnapshotRequest" } } } }
+      responses: { "201": { description: Snapshot, content: { application/json: { schema: { $ref: "#/components/schemas/Snapshot" } } } }, "501": { $ref: "#/components/responses/Error" } }
+  /v1/sandboxes/{id}/fork:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    post:
+      tags: [Lifecycle]
+      summary: Snapshot and start a copy on the same pool
+      responses: { "202": { description: Queued child, content: { application/json: { schema: { $ref: "#/components/schemas/Sandbox" } } } } }
+  /v1/sandboxes/{id}/ports:
+    parameters: [{ $ref: "#/components/parameters/SandboxID" }]
+    post:
+      tags: [Lifecycle]
+      summary: Expose a service port (backend-dependent)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [port], properties: { port: { type: integer, minimum: 1, maximum: 65535 } } } } } }
+      responses: { "200": { description: URL, content: { application/json: { schema: { $ref: "#/components/schemas/PortURL" } } } }, "501": { $ref: "#/components/responses/Error" } }
+  /v1/snapshots:
+    get:
+      tags: [Lifecycle]
+      summary: List snapshots
+      responses: { "200": { description: Snapshots, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Snapshot" } } } } } } } }
+  /v1/snapshots/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { tags: [Lifecycle], summary: Get a snapshot, responses: { "200": { description: Snapshot, content: { application/json: { schema: { $ref: "#/components/schemas/Snapshot" } } } } } }
+    delete: { tags: [Lifecycle], summary: Delete a snapshot, responses: { "204": { description: Deleted } } }
+
+  /v1/projects:
+    get: { tags: [Tenancy], summary: List projects, responses: { "200": { description: Projects, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Project" } } } } } } } } }
+    post:
+      tags: [Tenancy]
+      summary: Create a project (projects:write)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, orgId: { type: string }, quota: { $ref: "#/components/schemas/Quota" } } } } } }
+      responses: { "201": { description: Project, content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } } } }
+  /v1/projects/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { tags: [Tenancy], summary: Get a project, responses: { "200": { description: Project, content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } } } } }
+    delete: { tags: [Tenancy], summary: Delete an empty project, responses: { "204": { description: Deleted }, "409": { $ref: "#/components/responses/Error" } } }
+  /v1/api-keys:
+    get: { tags: [Tenancy], summary: List keys (keys:write), responses: { "200": { description: Keys, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/APIKey" } } } } } } } } }
+    post:
+      tags: [Tenancy]
+      summary: Create a scoped key
+      description: A key can only grant scopes it holds, within its own organization and project. The token is returned once.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateAPIKeyRequest" } } } }
+      responses: { "201": { description: Key and one-time token, content: { application/json: { schema: { $ref: "#/components/schemas/CreateAPIKeyResponse" } } } }, "403": { $ref: "#/components/responses/Error" } }
+  /v1/api-keys/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { tags: [Tenancy], summary: Get a key (keys:write), responses: { "200": { description: Key, content: { application/json: { schema: { $ref: "#/components/schemas/APIKey" } } } }, "404": { $ref: "#/components/responses/Error" } } }
+    delete: { tags: [Tenancy], summary: Revoke a key, responses: { "204": { description: Revoked } } }
+  /v1/api-keys/{id}/rotate:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [Tenancy]
+      summary: Rotate a key
+      description: Issues a replacement with the same name, scopes, organization, project and lifetime, and returns its token once. The old key stays valid for graceSeconds (at most a week), or is revoked at once. The caller must be able to grant every scope the key holds.
+      requestBody: { content: { application/json: { schema: { $ref: "#/components/schemas/RotateAPIKeyRequest" } } } }
+      responses: { "201": { description: Replacement and one-time token, content: { application/json: { schema: { $ref: "#/components/schemas/CreateAPIKeyResponse" } } } }, "403": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" } }
+  /v1/quotas:
+    get:
+      tags: [Usage and audit]
+      summary: Quota limits and current consumption (usage:read)
+      parameters: [{ name: projectId, in: query, schema: { type: string } }, { name: orgId, in: query, schema: { type: string }, description: Operator keys only }]
+      responses: { "200": { description: Report, content: { application/json: { schema: { $ref: "#/components/schemas/QuotaReport" } } } } }
+  /v1/usage:
+    get:
+      tags: [Usage and audit]
+      summary: Estimated usage over a window (usage:read)
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: groupBy, in: query, schema: { type: string, enum: [pool, project, org, trust], default: pool } }
+      responses: { "200": { description: Report, content: { application/json: { schema: { $ref: "#/components/schemas/UsageReport" } } } } }
+  /v1/audit-events:
+    get:
+      tags: [Usage and audit]
+      summary: List audit events in sequence order (audit:read)
+      parameters:
+        - { name: afterSeq, in: query, schema: { type: integer } }
+        - { name: resource, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+      responses: { "200": { description: Events, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } }, nextCursor: { type: string } } } } } } }
+  /v1/policies:
+    get: { tags: [Policy], summary: List visible placement policies, responses: { "200": { description: Policies, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/PlacementPolicy" } } } } } } } } }
+  /v1/policies/{scope}:
+    parameters: [{ name: scope, in: path, required: true, schema: { type: string }, description: "global (operator), org:<id> or project:<id>" }]
+    put:
+      tags: [Policy]
+      summary: Set a placement policy
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PlacementPolicy" } } } }
+      responses: { "200": { description: Stored, content: { application/json: { schema: { $ref: "#/components/schemas/PlacementPolicy" } } } }, "403": { $ref: "#/components/responses/Error" } }
+    delete: { tags: [Policy], summary: Remove a policy, responses: { "204": { description: Removed } } }
+  /v1/capabilities:
+    get: { tags: [Policy], summary: Pools as tenants see them (no config or credentials), responses: { "200": { description: Pools } } }
+  /v1/profiles:
+    get: { tags: [Policy], summary: Resource profiles, responses: { "200": { description: Profiles } } }
+  /v1/templates:
+    get: { tags: [Policy], summary: Image templates, responses: { "200": { description: Templates } } }
+  /v1/classifications:
+    get: { tags: [Policy], summary: Data classifications, responses: { "200": { description: Classifications } } }
+
+  /v1/admin/organizations:
+    get: { tags: [Admin], summary: List organizations, responses: { "200": { description: Organizations } } }
+    post:
+      tags: [Admin]
+      summary: Create an organization (optionally with a default project)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, quota: { $ref: "#/components/schemas/Quota" }, defaultProject: { type: string } } } } } }
+      responses: { "201": { description: Created } }
+  /v1/admin/organizations/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { tags: [Admin], summary: Get an organization, responses: { "200": { description: Organization } } }
+    patch: { tags: [Admin], summary: Rename or set quota, responses: { "200": { description: Organization } } }
+  /v1/admin/organizations/{id}/suspend:
+    post:
+      tags: [Admin]
+      summary: Suspend a tenant (optionally terminating its sandboxes)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { terminate: { type: boolean }, reason: { type: string } } } } } }
+      responses: { "200": { description: Suspended } }
+  /v1/admin/organizations/{id}/resume:
+    post: { tags: [Admin], summary: Lift a suspension, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Resumed } } }
+  /v1/admin/projects/{id}:
+    patch: { tags: [Admin], summary: Set a project quota, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Project } } }
+  /v1/admin/pools:
+    get: { tags: [Admin], summary: List pools with health and capacity, responses: { "200": { description: Pools } } }
+    post:
+      tags: [Admin]
+      summary: Register a pool at runtime
+      description: 'Credentials are references, never values: `{"env": NAME}` or `{"file": PATH}` resolved on the server, or `{"secret": name}` for a credential stored with PUT /v1/admin/secrets/{name}.'
+      responses: { "201": { description: Pool } }
+  /v1/admin/pools/{name}:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+    get: { tags: [Admin], summary: Get a pool, responses: { "200": { description: Pool } } }
+    patch: { tags: [Admin], summary: Enable/disable, set concurrency, cost model, region or (for API-registered pools) credentialRef, responses: { "200": { description: Pool } } }
+    delete: { tags: [Admin], summary: Remove an API-registered pool with no sandboxes, responses: { "204": { description: Removed } } }
+  /v1/admin/pools/{name}/drain:
+    post: { tags: [Admin], summary: Stop new placements on a pool, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Pool } } }
+  /v1/admin/pools/{name}/use:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [Admin]
+      summary: Send new sandboxes to this pool
+      description: Undrains the pool and drains every other one; running sandboxes stay where they are. An external pool must be approved by the global policy, or approved here with approveExternal. Private-only work still never leaves private pools.
+      requestBody: { content: { application/json: { schema: { type: object, properties: { approveExternal: { type: boolean } } } } } }
+      responses: { "200": { description: What changed, content: { application/json: { schema: { type: object, properties: { pool: { type: object }, drained: { type: array, items: { type: string } }, policy: { $ref: "#/components/schemas/PlacementPolicy" } } } } } }, "409": { $ref: "#/components/responses/Error" } }
+  /v1/admin/pools/{name}/undrain:
+    post: { tags: [Admin], summary: Resume placements on a pool, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Pool } } }
+  /v1/admin/sandboxes/{id}/terminate:
+    post: { tags: [Admin], summary: Terminate any tenant's sandbox, parameters: [{ $ref: "#/components/parameters/SandboxID" }], responses: { "202": { description: Terminating } } }
+  /v1/admin/secrets:
+    get: { tags: [Admin], summary: List stored provider credentials (fingerprints and the pools using them; never values), responses: { "200": { description: Secrets, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Secret" } } } } } } } } }
+  /v1/admin/secrets/{name}:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,62}$" } }]
+    put:
+      tags: [Admin]
+      summary: Store or replace a provider credential
+      description: The value is sealed with AES-256-GCM under the server's secrets key and never returned. Pools whose credential is secret:<name> use the new value without a restart. Needs a secrets key on the server (secrets.keyEnv or secrets.keyFile).
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PutSecretRequest" } } } }
+      responses: { "201": { description: Stored, content: { application/json: { schema: { $ref: "#/components/schemas/Secret" } } } }, "200": { description: Replaced, content: { application/json: { schema: { $ref: "#/components/schemas/Secret" } } } }, "409": { $ref: "#/components/responses/Error" } }
+    delete: { tags: [Admin], summary: Delete a credential no pool uses, responses: { "204": { description: Deleted }, "409": { $ref: "#/components/responses/Error" } } }
+  /v1/admin/trust-report:
+    get: { tags: [Admin], summary: Where work may go, where it went, and what cannot be proven, responses: { "200": { description: Trust report } } }
+  /v1/admin/audit/verify:
+    get: { tags: [Admin], summary: Verify the audit hash chain, responses: { "200": { description: Result } } }
+  /v1/admin/reconcile:
+    post: { tags: [Admin], summary: Run the reconciler now, responses: { "200": { description: Done } } }
+
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: "dly_<id>_<secret>" }
+  parameters:
+    SandboxID: { name: id, in: path, required: true, schema: { type: string, example: sbx_01j9z3k6c8x2m4n6p8q0r2s4t6 } }
+    Path: { name: path, in: query, required: true, schema: { type: string } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 50 } }
+  responses:
+    Error:
+      description: Structured error
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+    SandboxOK:
+      description: Sandbox
+      content: { application/json: { schema: { $ref: "#/components/schemas/Sandbox" } } }
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_request, unauthenticated, permission_denied, not_found, conflict, quota_exceeded, no_eligible_pool, unsupported_capability, unsupported_operation, provider_unavailable, invalid_state, rate_limited, suspended, internal]
+            message: { type: string }
+            details: { type: object, additionalProperties: { type: string } }
+            requestId: { type: string }
+    VersionInfo:
+      type: object
+      properties: { version: { type: string }, commit: { type: string }, apiVersion: { type: string }, installation: { type: string } }
+    Me:
+      type: object
+      properties: { keyId: { type: string }, orgId: { type: string }, projectId: { type: string }, scopes: { type: array, items: { type: string } }, operator: { type: boolean } }
+    SandboxStatus:
+      type: string
+      enum: [queued, provisioning, running, stopped, paused, terminating, terminated, failed]
+    Resources:
+      type: object
+      properties: { cpu: { type: integer, minimum: 1 }, memoryMiB: { type: integer, minimum: 128 }, diskGiB: { type: integer, minimum: 0 } }
+    Placement:
+      type: object
+      description: Request-level preference; can only narrow policy.
+      properties:
+        strategy: { type: string, enum: [private-first, cost, spread] }
+        allowedPools: { type: array, items: { type: string } }
+        regions: { type: array, items: { type: string } }
+        external: { type: string, enum: [never, overflow, allowed] }
+    Capability:
+      type: string
+      enum: [exec, exec.stream, files, lifecycle.stop-start, lifecycle.pause-resume, snapshots.disk, snapshots.memory, fork, persistence.disk, ports.expose, ssh, pty, network.egress-control, gpu, arch.amd64, arch.arm64, isolation.microvm, isolation.container]
+    CreateSandboxRequest:
+      type: object
+      properties:
+        projectId: { type: string, description: Required for organization and operator keys }
+        template: { type: string }
+        profile: { type: string, description: Named resource preset, e.g. small }
+        resources: { $ref: "#/components/schemas/Resources" }
+        capabilities: { type: array, items: { $ref: "#/components/schemas/Capability" } }
+        classification: { type: string, description: "Operator-defined, e.g. private-only, internal, public" }
+        placement: { $ref: "#/components/schemas/Placement" }
+        ttlSeconds: { type: integer }
+        env: { type: object, additionalProperties: { type: string }, description: Write-only; never returned }
+        labels: { type: object, additionalProperties: { type: string } }
+        priority: { type: integer }
+        fromSnapshot: { type: string }
+    UpdateSandboxRequest:
+      type: object
+      properties: { labels: { type: object, additionalProperties: { type: string } }, ttlSeconds: { type: integer } }
+    Sandbox:
+      type: object
+      required: [id, orgId, projectId, status, resources, classification, createdAt]
+      properties:
+        id: { type: string }
+        orgId: { type: string }
+        projectId: { type: string }
+        status: { $ref: "#/components/schemas/SandboxStatus" }
+        statusReason: { type: string }
+        template: { type: string }
+        profile: { type: string }
+        resources: { $ref: "#/components/schemas/Resources" }
+        capabilities: { type: array, items: { type: string } }
+        classification: { type: string }
+        placement: { $ref: "#/components/schemas/Placement" }
+        pool: { type: string }
+        adapter: { type: string }
+        trust: { type: string, enum: [private, external] }
+        region: { type: string }
+        labels: { type: object, additionalProperties: { type: string } }
+        envKeys: { type: array, items: { type: string } }
+        priority: { type: integer }
+        ttlSeconds: { type: integer }
+        expiresAt: { type: string, format: date-time }
+        fromSnapshot: { type: string }
+        attempts: { type: integer }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
+        decision: { $ref: "#/components/schemas/PlacementDecision" }
+    SandboxList:
+      type: object
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/Sandbox" } }, nextCursor: { type: string } }
+    PlacementDecision:
+      type: object
+      properties:
+        pool: { type: string }
+        strategy: { type: string }
+        external: { type: string }
+        outcome: { type: string, enum: [placed, waiting, rejected] }
+        reason: { type: string }
+        policies: { type: array, items: { type: string } }
+        evaluatedAt: { type: string, format: date-time }
+        candidates:
+          type: array
+          items:
+            type: object
+            properties:
+              pool: { type: string }
+              trust: { type: string }
+              eligible: { type: boolean }
+              hasCapacity: { type: boolean }
+              estimatedCostPerHour: { type: number }
+              rank: { type: integer }
+              reasons: { type: array, items: { type: string } }
+    PlacementExplanation:
+      type: object
+      properties:
+        sandboxId: { type: string }
+        status: { $ref: "#/components/schemas/SandboxStatus" }
+        pool: { type: string }
+        trust: { type: string }
+        decision: { $ref: "#/components/schemas/PlacementDecision" }
+        current: { $ref: "#/components/schemas/PlacementDecision" }
+    ExecRequest:
+      type: object
+      description: Set `command` (run by /bin/sh -c) or `args` (executed directly).
+      properties:
+        command: { type: string }
+        args: { type: array, items: { type: string } }
+        env: { type: object, additionalProperties: { type: string } }
+        cwd: { type: string }
+        stdin: { type: string }
+        timeoutSeconds: { type: integer }
+    ExecResult:
+      type: object
+      properties: { exitCode: { type: integer }, stdout: { type: string }, stderr: { type: string }, durationMs: { type: integer }, truncated: { type: boolean } }
+    ExecEvent:
+      type: object
+      properties: { stream: { type: string, enum: [stdout, stderr] }, data: { type: string }, exitCode: { type: integer }, error: { type: string } }
+    FileInfo:
+      type: object
+      properties: { path: { type: string }, name: { type: string }, size: { type: integer }, mode: { type: string }, isDir: { type: boolean }, modTime: { type: string, format: date-time } }
+    FileList:
+      type: object
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/FileInfo" } } }
+    CreateSnapshotRequest:
+      type: object
+      properties: { kind: { type: string, enum: [disk, memory], default: disk } }
+    Snapshot:
+      type: object
+      properties: { id: { type: string }, sandboxId: { type: string }, orgId: { type: string }, projectId: { type: string }, pool: { type: string }, kind: { type: string }, status: { type: string }, sizeBytes: { type: integer }, createdAt: { type: string, format: date-time }, createdBy: { type: string } }
+    PortURL:
+      type: object
+      properties: { port: { type: integer }, url: { type: string } }
+    Quota:
+      type: object
+      description: Zero means unlimited at that level.
+      properties:
+        maxActiveSandboxes: { type: integer }
+        maxQueued: { type: integer }
+        maxCPU: { type: integer }
+        maxMemoryMiB: { type: integer }
+        maxDiskGiB: { type: integer }
+        maxTTLSeconds: { type: integer }
+        maxSnapshots: { type: integer }
+        poolBudgetsPerHour: { type: object, additionalProperties: { type: number } }
+    QuotaUsage:
+      type: object
+      properties: { activeSandboxes: { type: integer }, queued: { type: integer }, cpu: { type: integer }, memoryMiB: { type: integer }, diskGiB: { type: integer }, snapshots: { type: integer } }
+    QuotaReport:
+      type: object
+      properties:
+        orgId: { type: string }
+        projectId: { type: string }
+        orgQuota: { $ref: "#/components/schemas/Quota" }
+        orgUsage: { $ref: "#/components/schemas/QuotaUsage" }
+        projectQuota: { $ref: "#/components/schemas/Quota" }
+        projectUsage: { $ref: "#/components/schemas/QuotaUsage" }
+    Project:
+      type: object
+      properties: { id: { type: string }, orgId: { type: string }, name: { type: string }, quota: { $ref: "#/components/schemas/Quota" }, createdAt: { type: string, format: date-time } }
+    APIKey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        orgId: { type: string }
+        projectId: { type: string }
+        scopes: { type: array, items: { type: string } }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        revoked: { type: boolean }
+        replacedBy: { type: string, description: The key a rotation issued in place of this one }
+    CreateAPIKeyRequest:
+      type: object
+      required: [name, scopes]
+      properties:
+        name: { type: string }
+        orgId: { type: string }
+        projectId: { type: string }
+        scopes: { type: array, items: { type: string, enum: [admin, "org:admin", "sandboxes:read", "sandboxes:write", "sandboxes:exec", "projects:write", "keys:write", "usage:read", "audit:read", "policies:write"] } }
+        ttlHours: { type: integer }
+    CreateAPIKeyResponse:
+      allOf:
+        - { $ref: "#/components/schemas/APIKey" }
+        - { type: object, properties: { token: { type: string, description: Shown once }, replaced: { $ref: "#/components/schemas/APIKey", description: "On a rotation, the old key's new state; its replacedBy names the new key" } } }
+    RotateAPIKeyRequest:
+      type: object
+      properties: { graceSeconds: { type: integer, minimum: 0, maximum: 604800, description: How long the old key stays valid; 0 revokes it at once } }
+    Secret:
+      type: object
+      properties:
+        name: { type: string }
+        fingerprint: { type: string, description: Identifies the value without revealing it }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+        updatedBy: { type: string }
+        usedBy: { type: array, items: { type: string }, description: Pools whose credential is this secret }
+    PutSecretRequest:
+      type: object
+      required: [value]
+      properties: { value: { type: string, maxLength: 16384, writeOnly: true } }
+    PlacementPolicy:
+      type: object
+      properties:
+        scope: { type: string }
+        allowedPools: { type: array, items: { type: string } }
+        deniedPools: { type: array, items: { type: string } }
+        allowedRegions: { type: array, items: { type: string } }
+        external: { type: string, enum: [never, overflow, allowed] }
+        externalPools: { type: array, items: { type: string }, description: External pools explicitly approved; none are approved by default }
+        strategy: { type: string, enum: [private-first, cost, spread] }
+        maxCostPerHour: { type: number }
+        maxQueueSeconds: { type: integer }
+    UsageReport:
+      type: object
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        groupBy: { type: string }
+        note: { type: string }
+        lines: { type: array, items: { $ref: "#/components/schemas/UsageLine" } }
+        total: { $ref: "#/components/schemas/UsageLine" }
+    UsageLine:
+      type: object
+      properties: { key: { type: string }, sandboxes: { type: integer }, cpuSeconds: { type: number }, memoryGiBSeconds: { type: number }, runSeconds: { type: number }, queueSeconds: { type: number }, estimatedCost: { type: number } }
+    AuditEvent:
+      type: object
+      properties:
+        seq: { type: integer }
+        time: { type: string, format: date-time }
+        actor: { type: string }
+        orgId: { type: string }
+        projectId: { type: string }
+        action: { type: string }
+        resource: { type: string }
+        outcome: { type: string }
+        details: { type: object, additionalProperties: { type: string } }
+        requestId: { type: string }
+        prevHash: { type: string }
+        hash: { type: string }

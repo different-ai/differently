@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "differently"
+dynamic = ["version"]
+description = "Official Python SDK for Differently, the self-hosted sandbox and microVM platform."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Typing :: Typed",
+]
+
+[tool.hatch.version]
+path = "differently/_http.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["differently"]
+
+[tool.hatch.build.targets.sdist]
+include = ["differently", "tests", "README.md"]

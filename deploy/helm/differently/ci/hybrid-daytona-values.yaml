@@ -1,0 +1,47 @@
+# Hybrid: the private OpenSandbox pool first, Daytona as an approved overflow
+# pool for the "internal" and "public" classifications only. "private-only"
+# sandboxes still never leave the OpenSandbox pool.
+config:
+  store:
+    driver: postgres
+  policy:
+    external: overflow
+    externalPools: [daytona]
+    strategy: private-first
+
+postgresql:
+  embedded:
+    enabled: true
+    persistence:
+      size: 4Gi
+
+opensandbox:
+  trust: private
+  pool:
+    name: opensandbox
+    region: us
+    maxConcurrency: 50
+  # kubectl create secret generic opensandbox-api-key --from-literal=api-key=...
+  existingSecret: opensandbox-api-key
+
+providers:
+  daytona:
+    enabled: true
+    pool:
+      name: daytona
+      region: us
+      maxConcurrency: 20
+      costModel:
+        currency: USD
+        cpuHour: 0.05
+        memoryGiBHour: 0.0125
+      config:
+        apiURL: https://app.daytona.io/api
+        class: container
+        autoStopMinutes: "30"
+    # kubectl create secret generic daytona-credentials --from-literal=api-key=dtn_...
+    existingSecret: daytona-credentials
+    existingSecretKey: api-key
+
+test:
+  projectId: prj_01jabcdefghjkmnpqrstvwxyz0

@@ -1,0 +1,508 @@
+# Default values for the Differently chart.
+#
+# The chart deploys the Differently control plane only. Sandboxes run on an
+# OpenSandbox server (github.com/opensandbox-group/OpenSandbox) that you
+# install separately with its own Helm chart or manifests; the opensandbox
+# block below registers it as the default private pool.
+#
+# The defaults are fail-closed:
+#   - no external provider (Daytona, Freestyle) is registered;
+#   - the global placement policy is `external: never`;
+#   - the OpenSandbox pool is declared trust=private, which is only true when
+#     you operate that server yourself;
+#   - with a CNI that enforces NetworkPolicy, the server may reach only DNS,
+#     its database, OpenSandbox and enabled providers.
+#
+# The defaults are also evaluation-sized: one server replica with the
+# in-memory store. For production, set config.store.driver=postgres, point
+# postgresql.external at a managed PostgreSQL or a CloudNativePG cluster, and
+# raise server.replicas. See docs/deploy/kubernetes.md.
+
+global:
+  # Replaces the registry of every image, for a private mirror
+  # (e.g. registry.internal.example.com). See docs/deploy/air-gapped.md.
+  imageRegistry: ""
+  # Pull secrets added to every pod, e.g. [{name: regcred}].
+  imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+# Cluster DNS domain, used to build in-cluster URLs.
+clusterDomain: cluster.local
+# Extra labels added to every resource.
+commonLabels: {}
+
+# ---------------------------------------------------------------------------
+# Server configuration file
+# ---------------------------------------------------------------------------
+# Rendered verbatim (plus the chart-managed keys below) into a ConfigMap and
+# mounted at /etc/differently/config.yaml. The server parses it strictly:
+# unknown keys are errors, and values.schema.json mirrors that schema so
+# typos fail at `helm install` time.
+#
+# Chart-managed keys you cannot set here: listen (from server.containerPort),
+# dataDir (/var/lib/differently, an emptyDir), dev (always false), auth (env
+# variable names), store.dsnEnv (DIFFERENTLY_DATABASE_URL).
+#
+# Secrets never belong in this block. Pools reference credentials by
+# environment variable (credentials: {env: NAME}); the chart wires the
+# opensandbox.* and providers.* credentials for you.
+config:
+  # External URL of the API and dashboard. Derived from the first ingress host
+  # when empty and ingress is enabled.
+  publicURL: ""
+
+  store:
+    # memory   - state is lost on restart; requires server.replicas=1.
+    #            Evaluation only.
+    # postgres - requires postgresql.embedded.enabled (evaluation only) or
+    #            postgresql.external (production).
+    driver: memory
+
+  defaults:
+    # Quotas applied to new organizations and projects. 0 means unlimited.
+    orgQuota: {}
+    projectQuota: {}
+    # Classification and profile applied when a request names none.
+    classification: internal
+    profile: small
+    ttlSeconds: 3600
+
+  # Data sensitivity levels. `external` is the most permissive external
+  # placement mode a class allows: never | overflow | allowed. The global
+  # policy below must also allow it before anything leaves private pools.
+  classifications:
+    - name: private-only
+      description: Must never leave private pools.
+      external: never
+    - name: internal
+      description: May overflow to approved external pools.
+      external: overflow
+    - name: public
+      description: No residency restriction beyond policy.
+      external: allowed
+
+  # Named resource presets.
+  profiles:
+    - name: small
+      resources: {cpu: 1, memoryMiB: 1024, diskGiB: 5}
+    - name: medium
+      resources: {cpu: 2, memoryMiB: 4096, diskGiB: 10}
+    - name: large
+      resources: {cpu: 4, memoryMiB: 8192, diskGiB: 20}
+
+  # Sandbox templates listed by the API (GET /v1/templates). Optional; an
+  # OpenSandbox pool with opensandbox.templateId reports that template too.
+  templates: []
+
+  # Additional execution pools. The default private pool comes from the
+  # opensandbox block and external providers from providers.*; both are added
+  # to this list when enabled. Declare extra pools here (for example a second
+  # OpenSandbox server or a `remote` plugin) with credentials: {env: NAME}
+  # and server.extraEnv. opensandbox pools must set trust explicitly. Pool
+  # `config` values must be strings.
+  pools: []
+
+  # Global placement policy (scope: global).
+  # external: never | overflow | allowed. Fail-closed default: never.
+  # externalPools: the only external pools placement may use.
+  # strategy: private-first | cost | spread.
+  # Note: a global policy stored through the API (PUT /v1/policies/global)
+  # replaces this block at runtime. Check GET /v1/policies after changes.
+  policy:
+    external: never
+    externalPools: []
+    strategy: private-first
+
+  # Dispatch and reconcile loop tuning. Zero values use server defaults.
+  scheduler: {}
+  # Per-API-key token bucket (per server replica). Zero uses server defaults.
+  rateLimit: {}
+  audit:
+    # Mirror audit events to a JSON-lines file. Must be under
+    # /var/lib/differently (the only writable path), which is an emptyDir, so
+    # ship it with a sidecar or prefer exporting from the API.
+    file: ""
+    # Store full exec command lines in audit events. Commands can contain
+    # secrets; the default records only the program name.
+    recordCommands: false
+    # Refuse state-changing API requests (503) when their audit event cannot
+    # be stored. The default proceeds and counts the failure in
+    # differently_audit_append_failures_total.
+    failClosed: false
+  dashboard:
+    enabled: true
+
+# ---------------------------------------------------------------------------
+# Bootstrap token
+# ---------------------------------------------------------------------------
+auth:
+  # Use an existing Secret instead of the chart-managed one. Required for
+  # GitOps tools that render with `helm template` (Argo CD, Flux with
+  # post-rendering), because they cannot `lookup` the generated tokens and
+  # would rotate them on every sync.
+  existingSecret: ""
+  bootstrapTokenKey: bootstrap-token
+  # Leave empty to generate once at install. Generated values are kept across
+  # upgrades with `lookup`. The bootstrap token has the form
+  # dly_<id>_<secret> with a secret of at least 24 characters from [0-9a-z].
+  # Rotating: keep the same <id> and change only <secret>, otherwise the old
+  # operator key stays valid and must be revoked through the API.
+  bootstrapToken: ""
+  # Keep the chart-managed token Secret on `helm uninstall`, so a reinstall
+  # with the same release name and namespace reuses the same token (matching
+  # a database that outlived the release).
+  keepSecretOnUninstall: true
+
+# ---------------------------------------------------------------------------
+# Stored provider credentials
+# ---------------------------------------------------------------------------
+# The key that seals provider credentials stored in Differently (the
+# dashboard's "Add provider", `differently admin secret put`,
+# PUT /v1/admin/secrets/{name}). Without it, pools can still reference env:
+# or file: credentials, but none can be stored.
+secrets:
+  enabled: true
+  # A Secret you manage (for example synced from Azure Key Vault or AWS
+  # Secrets Manager) holding a base64 32-byte key. Required for GitOps
+  # renderers that cannot `lookup`. When empty, the chart generates a key once
+  # in <fullname>-secrets-key and keeps it across upgrades and uninstalls.
+  # Back the key up: without it, stored credentials cannot be read.
+  existingSecret: ""
+  existingSecretKey: secrets-key
+
+# ---------------------------------------------------------------------------
+# OpenSandbox (the default sandbox runtime)
+# ---------------------------------------------------------------------------
+# Registers an OpenSandbox server as a pool. OpenSandbox is NOT installed by
+# this chart: install it with its own Helm chart or manifests
+# (github.com/opensandbox-group/OpenSandbox), pick its runtime (Docker,
+# Kubernetes, or Fast Sandbox Firecracker microVMs, which need KVM nodes),
+# and give its API key to this chart.
+opensandbox:
+  enabled: true
+  # Lifecycle API base URL, ending in /v1. The default is where
+  # OpenSandbox's own Helm chart puts its server (namespace
+  # opensandbox-system, port 80).
+  apiURL: http://opensandbox-server.opensandbox-system.svc/v1
+  # Who operates the OpenSandbox server: private if you run it and its
+  # runtime, external if someone else does. An external pool receives work
+  # only when config.policy allows it and lists it in externalPools.
+  trust: private
+  pool:
+    name: opensandbox
+    region: ""
+    labels: {}
+    # 0 means no limit beyond quotas.
+    maxConcurrency: 0
+    costModel: {}
+  # Default image URI. Empty uses ubuntu:24.04 unless templateId is set; a
+  # sandbox template overrides it per request.
+  image: ""
+  # Fast Sandbox template to create sandboxes from instead of an image.
+  templateId: ""
+  # Isolation the runtime provides, reported in the trust report:
+  # container (Docker or Kubernetes runtime; shares the host kernel) or
+  # microvm (Fast Sandbox). Differently does not enforce it.
+  isolation: container
+  # Capabilities to advertise. Empty uses the adapter defaults: exec,
+  # exec.stream, files, lifecycle.pause-resume, snapshots.disk, fork. On the
+  # Kubernetes runtime, pause and snapshots need OpenSandbox's snapshot
+  # registry (controller.snapshot.registry); without one, list only exec,
+  # exec.stream and files. Add ports.expose only if tenants can reach the
+  # runtime's direct endpoints, and snapshots.memory when the runtime
+  # captures memory.
+  features: []
+  # Reach execd (exec and files) through the OpenSandbox server's proxy, so
+  # the control plane needs only the server's port. With false, the server
+  # connects to each sandbox's endpoint directly; allow that with
+  # networkPolicy.server.egress.extra.
+  useServerProxy: true
+  # kept passes command output through byte for byte and needs the server to
+  # run execd release-1.2.0 or later (its execd_image setting). stripped (the
+  # adapter default when empty) suits execd 1.1, which drops line endings; a
+  # newline is restored after each line.
+  lineEndings: ""
+  # Secret holding the OpenSandbox server's API key. When empty, the server
+  # reads key api-key of the Secret <fullname>-opensandbox: the chart creates
+  # it from apiKey, or you create it before installing (see NOTES).
+  existingSecret: ""
+  existingSecretKey: api-key
+  # Inline API key; the chart stores it in a Secret. Prefer existingSecret.
+  apiKey: ""
+  # Environment variable the server reads the key from.
+  env: DIFFERENTLY_OPENSANDBOX_API_KEY
+
+# ---------------------------------------------------------------------------
+# External providers (policy-gated, disabled by default)
+# ---------------------------------------------------------------------------
+# Enabling a provider registers a trust=external pool and wires its
+# credential into the server as an environment variable. It does NOT make the
+# pool reachable: placement still requires config.policy.external to be
+# overflow or allowed AND the pool to be listed in
+# config.policy.externalPools, and the request's classification must allow it.
+providers:
+  daytona:
+    enabled: false
+    pool:
+      name: daytona
+      region: ""
+      labels: {}
+      maxConcurrency: 0
+      costModel: {}
+      # Adapter keys: apiURL, target, snapshot, class (container|linux-vm),
+      # autoStopMinutes. Values must be strings.
+      config:
+        apiURL: https://app.daytona.io/api
+    # Secret holding the API key (recommended). Created by you.
+    existingSecret: ""
+    existingSecretKey: api-key
+    # Inline API key; the chart stores it in a Secret. Prefer existingSecret.
+    apiKey: ""
+    # Environment variable the server reads the key from.
+    env: DIFFERENTLY_DAYTONA_API_KEY
+  freestyle:
+    enabled: false
+    pool:
+      name: freestyle
+      region: ""
+      labels: {}
+      maxConcurrency: 0
+      costModel: {}
+      # Adapter keys: apiURL, snapshot, egress (none|public), domain.
+      # Values must be strings.
+      config:
+        apiURL: https://api.freestyle.sh
+        egress: none
+    existingSecret: ""
+    existingSecretKey: api-key
+    apiKey: ""
+    env: DIFFERENTLY_FREESTYLE_API_KEY
+
+# ---------------------------------------------------------------------------
+# PostgreSQL
+# ---------------------------------------------------------------------------
+postgresql:
+  # EVALUATION ONLY. A single-replica PostgreSQL StatefulSet with no
+  # replication, backups, upgrades or tuning. For production use
+  # postgresql.external with a managed database or a CloudNativePG cluster.
+  embedded:
+    enabled: false
+    image:
+      registry: docker.io
+      repository: library/postgres
+      # Major-version tag; pin a patch release (or a digest) for repeatability.
+      tag: "17"
+      digest: ""
+      pullPolicy: IfNotPresent
+    database: differently
+    username: differently
+    # Leave empty to generate once (kept across upgrades with `lookup`).
+    password: ""
+    keepSecretOnUninstall: true
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: ""
+      accessModes: [ReadWriteOnce]
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {memory: 1Gi}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+
+  # Production database. Provide the DSN through an existing Secret
+  # (recommended) or inline (the chart stores it in a Secret).
+  # DSN example: postgres://differently:PASSWORD@db.example.internal:5432/differently?sslmode=verify-full
+  external:
+    existingSecret: ""
+    existingSecretKey: database-url
+    url: ""
+
+# Schema migrations (`differently-server migrate`, idempotent). Only used
+# when config.store.driver=postgres.
+migrations:
+  enabled: true
+  # auto          - hook for postgresql.external, initContainer for
+  #                 postgresql.embedded (the embedded database does not exist
+  #                 yet when pre-install hooks run).
+  # hook          - a pre-install/pre-upgrade Job.
+  # initContainer - run before every server pod starts.
+  mode: auto
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  resources: {}
+
+# ---------------------------------------------------------------------------
+# Control plane (differently-server)
+# ---------------------------------------------------------------------------
+server:
+  image:
+    registry: ghcr.io
+    repository: different-ai/differently-server
+    # Defaults to the chart appVersion.
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  # Must be 1 with config.store.driver=memory.
+  replicas: 1
+  containerPort: 8080
+  # Run `differently-server preflight` as an init container so configuration
+  # and environment errors appear in `kubectl logs -c preflight`.
+  preflight:
+    enabled: true
+  extraArgs: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 512Mi}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile: {type: RuntimeDefault}
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: {drop: [ALL]}
+  startupProbe:
+    httpGet: {path: /healthz, port: http}
+    periodSeconds: 2
+    failureThreshold: 60
+  livenessProbe:
+    httpGet: {path: /healthz, port: http}
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet: {path: /readyz, port: http}
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  pdb:
+    enabled: true
+    # Set one of maxUnavailable or minAvailable.
+    maxUnavailable: 1
+    minAvailable: ""
+  # Spread replicas across zones and nodes (ScheduleAnyway) unless
+  # topologySpreadConstraints is set.
+  defaultTopologySpread: true
+  topologySpreadConstraints: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  priorityClassName: ""
+  podAnnotations: {}
+  podLabels: {}
+  terminationGracePeriodSeconds: 30
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # The API and dashboard share one port. /metrics is served on
+  # metrics.port, which the ingress never routes to.
+  hosts: []
+  #  - differently.example.com
+  path: /
+  pathType: Prefix
+  tls:
+    enabled: false
+    # Defaults to <fullname>-tls.
+    secretName: ""
+    certManager:
+      # Adds cert-manager.io/cluster-issuer (or cert-manager.io/issuer).
+      clusterIssuer: ""
+      issuer: ""
+
+serviceAccount:
+  create: true
+  # Defaults to the fullname.
+  name: ""
+  annotations: {}
+  # No component calls the Kubernetes API.
+  automountServiceAccountToken: false
+
+networkPolicy:
+  # Has an effect only with a CNI that enforces NetworkPolicy.
+  enabled: true
+  server:
+    # Peers allowed to reach the API port (NetworkPolicyPeer list). Empty
+    # allows any source.
+    ingressFrom: []
+    # Peers allowed to scrape metrics.port (NetworkPolicyPeer list). Empty
+    # allows any source inside the cluster; the port is never on the ingress.
+    metricsFrom: []
+    egress:
+      # Restrict server egress to DNS, the database, OpenSandbox, enabled
+      # providers and the rules below.
+      restricted: true
+      # External PostgreSQL destinations; empty allows any address on
+      # databasePort.
+      databaseCIDRs: []
+      databasePort: 5432
+      # Destinations for TCP 443 when any provider is enabled. Provider IPs
+      # are not stable, so this is usually 0.0.0.0/0 or your egress proxy.
+      providerCIDRs: ["0.0.0.0/0"]
+      # Also allow TCP 443 to providerCIDRs for providers added at runtime
+      # (dashboard or API), such as Daytona or Freestyle with a stored key.
+      runtimeProviders: false
+      # The OpenSandbox server, allowed when any pool uses the opensandbox
+      # adapter. Exec and file traffic goes through its proxy (with
+      # opensandbox.useServerProxy=true), so only this port is needed.
+      opensandbox:
+        # In-cluster server pods: one peer from these selectors (podSelector
+        # alone means pods in this release's namespace). The namespace must
+        # match the one in opensandbox.apiURL. Set a selector to null to drop
+        # it ({} merges with the default); with both null only cidrs apply.
+        namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: opensandbox-system
+        podSelector: {}
+        # Servers outside the cluster (or reached through a load balancer).
+        cidrs: []
+        # The server pod's port (the Service's targetPort, which NetworkPolicy
+        # sees after Service translation). With no selectors and no cidrs,
+        # any destination is allowed on this port. OpenSandbox's own chart
+        # serves on port 80.
+        port: 80
+      # Additional raw NetworkPolicyEgressRule entries.
+      extra: []
+
+metrics:
+  # Serve Prometheus /metrics on its own port, off the API listener and the
+  # ingress. 0 serves it unauthenticated on the API port instead.
+  port: 9091
+  serviceMonitor:
+    # Requires the Prometheus Operator CRDs.
+    enabled: false
+    labels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+
+# `helm test` smoke test: creates a sandbox, runs `echo ok`, deletes it.
+test:
+  enabled: true
+  # CLI image; must contain /bin/sh and the `differently` binary.
+  image:
+    registry: ghcr.io
+    repository: different-ai/differently-cli
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  profile: small
+  # The bootstrap key is an operator key, which must name a project. Set
+  # projectId, or use a project-scoped key from existingSecret.
+  projectId: ""
+  existingSecret: ""
+  existingSecretKey: api-key
+  activeDeadlineSeconds: 300

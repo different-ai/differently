@@ -15,4 +15,4 @@ sdk/python/*.egg-info/
 sdk/python/dist/
 deploy/terraform/**/.terraform/
 deploy/terraform/**/*.tfstate*
-deploy/images/out/
+

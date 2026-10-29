@@ -1,0 +1,145 @@
+{{- $ns := .Release.Namespace -}}
+{{- $server := include "differently.serverName" . -}}
+{{- $tokens := include "differently.tokensSecretName" . -}}
+{{- $driver := include "differently.storeDriver" . -}}
+{{- $providers := include "differently.enabledProviders" . | fromJsonArray -}}
+{{- $public := include "differently.publicURL" . -}}
+{{- $o := .Values.opensandbox -}}
+{{- $pools := (include "differently.config" . | fromYaml).pools | default list -}}
+Differently {{ .Chart.AppVersion }} is installed as release "{{ .Release.Name }}" in namespace "{{ $ns }}".
+{{- if eq $driver "memory" }}
+
+WARNING: config.store.driver=memory. All state (organizations, keys created
+through the API, sandboxes) is lost when the server pod restarts. Evaluation
+only; see docs/deploy/kubernetes.md for PostgreSQL.
+{{- end }}
+{{- if .Values.postgresql.embedded.enabled }}
+
+WARNING: postgresql.embedded is EVALUATION ONLY (single replica, no backups).
+Use postgresql.external (managed PostgreSQL or CloudNativePG) in production.
+{{- end }}
+{{- if not $pools }}
+
+WARNING: no pool is configured (opensandbox.enabled=false, config.pools and
+providers.* are empty). Sandboxes stay queued until you add one with
+config.pools or POST /v1/admin/pools.
+{{- end }}
+{{- if $o.enabled }}
+{{- $secret := include "differently.opensandboxSecretName" . }}
+{{- $key := include "differently.opensandboxSecretKey" . }}
+
+OpenSandbox runs the sandboxes and is NOT installed by this chart. Install it
+separately with its own Helm chart or manifests
+(https://github.com/opensandbox-group/OpenSandbox), with the runtime you want:
+Docker, Kubernetes, or Fast Sandbox (Firecracker microVMs, needs KVM nodes).
+This release expects its lifecycle API at:
+
+     {{ $o.apiURL }}
+{{- if $o.apiKey }}
+
+The API key comes from opensandbox.apiKey and is stored in Secret
+{{ $secret }}. Prefer opensandbox.existingSecret.
+{{- else }}
+
+The server reads the OpenSandbox server's API key from key {{ $key }} of
+Secret {{ $secret }}. Server pods wait until it exists; create it with:
+
+     kubectl create secret generic {{ $secret }} -n {{ $ns }} \
+       --from-literal={{ $key }}='<the OpenSandbox server api_key>'
+{{- end }}
+
+Pool "{{ $o.pool.name }}" is declared trust={{ $o.trust }} and isolation={{ $o.isolation }}.
+{{- if eq $o.trust "private" }}
+trust=private is only true when you operate the OpenSandbox server and its
+runtime; set opensandbox.trust=external otherwise.
+{{- else }}
+As an external pool it receives work only when config.policy.external allows
+it and config.policy.externalPools lists "{{ $o.pool.name }}".
+{{- end }}
+{{- if eq $o.isolation "container" }}
+Containers share the host kernel. Set opensandbox.isolation=microvm only for
+an OpenSandbox server running Fast Sandbox.
+{{- else }}
+Fast Sandbox has not been verified with Differently yet, so treat microVM
+isolation as declared, not proven.
+{{- end }}
+Differently reports the declared isolation; it does not enforce isolation or
+sandbox egress itself.
+{{- if and .Values.networkPolicy.enabled .Values.networkPolicy.server.egress.restricted }}
+{{- $osb := .Values.networkPolicy.server.egress.opensandbox }}
+
+Server egress is restricted: OpenSandbox is reachable on TCP {{ $osb.port }}
+{{- with (dig "namespaceSelector" "matchLabels" "kubernetes.io/metadata.name" "" $osb) }} in namespace {{ . }}{{ end }}.
+Keep networkPolicy.server.egress.opensandbox in line with opensandbox.apiURL.
+{{- if not $o.useServerProxy }}
+opensandbox.useServerProxy=false: the server connects to each sandbox's execd
+endpoint directly; allow those addresses with networkPolicy.server.egress.extra.
+{{- end }}
+{{- end }}
+{{- end }}
+
+1. Read the bootstrap operator token (admin scope; store it in a vault):
+
+     export DIFFERENTLY_API_KEY=$(kubectl get secret -n {{ $ns }} {{ $tokens }} \
+       -o jsonpath='{.data.{{ .Values.auth.bootstrapTokenKey | replace "." "\\." }}}' | base64 -d)
+{{- if not .Values.auth.existingSecret }}
+
+   The token was generated once and is kept across upgrades. Tools that
+   render with `helm template` (Argo CD, Flux post-renderers) cannot keep it:
+   use auth.existingSecret there.
+{{- end }}
+
+2. Open the API and dashboard:
+{{- if and .Values.ingress.enabled $public }}
+
+     export DIFFERENTLY_URL={{ $public }}
+     open "$DIFFERENTLY_URL/dashboard/"
+{{- else }}
+
+     kubectl port-forward -n {{ $ns }} svc/{{ $server }} 8080:{{ .Values.server.service.port }}
+     export DIFFERENTLY_URL=http://127.0.0.1:8080
+     open "$DIFFERENTLY_URL/dashboard/"     # paste the token when asked
+{{- end }}
+
+     curl -fsS "$DIFFERENTLY_URL/readyz"
+     curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/admin/trust-report"
+
+3. Check the pools:
+{{- if .Values.server.preflight.enabled }}
+
+     kubectl logs -n {{ $ns }} deploy/{{ $server }} -c preflight   # config and credential checks
+{{- end }}
+     curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$DIFFERENTLY_URL/v1/admin/pools"
+{{- if $providers }}
+
+External providers registered (trust=external):
+{{- range $providers }}
+  - {{ .pool.name }} ({{ .kind }}), credential from env {{ .env }}
+{{- end }}
+{{- if eq (.Values.config.policy.external | default "never") "never" }}
+  config.policy.external is "never", so no sandbox can be placed on them.
+  To allow placement, set config.policy.external (overflow|allowed) and list
+  the pools in config.policy.externalPools.
+{{- else }}
+  config.policy.external is "{{ .Values.config.policy.external }}"; approved pools:
+  {{ .Values.config.policy.externalPools | default list | join ", " | default "(none)" }}.
+  Check "approvedForExternalPlacement" in the trust report above.
+{{- end }}
+{{- else }}
+
+No external provider is registered and config.policy.external is
+"{{ .Values.config.policy.external | default "never" }}": sandboxes stay on private pools.
+{{- end }}
+
+4. Smoke test (creates a sandbox, runs `echo ok`, deletes it):
+{{- if and (not .Values.test.existingSecret) (not .Values.test.projectId) }}
+
+   The bootstrap key is an operator key and must name a project. Create an
+   organization and project first (docs/deploy/kubernetes.md), then:
+
+     helm upgrade {{ .Release.Name }} <chart> -n {{ $ns }} --reuse-values --set test.projectId=prj_...
+{{- end }}
+
+     helm test {{ .Release.Name }} -n {{ $ns }} --logs
+
+Differently has no telemetry or phone-home code paths.
