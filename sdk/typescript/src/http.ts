@@ -41,7 +41,7 @@ export class HttpClient {
 
   constructor(config: HttpConfig) {
     this.#config = config;
-    this.baseUrl = config.baseUrl.replace(/\/+$/, "");
+    this.baseUrl = trimTrailingSlashes(config.baseUrl);
     this.timeoutMs = config.timeoutMs;
   }
 
@@ -215,4 +215,11 @@ class Attempt {
     const reason = err instanceof Error ? (err.cause instanceof Error ? err.cause.message : err.message) : String(err);
     return new DifferentlyError({ code: "connection_error", message: `request failed: ${reason}`, cause: err });
   }
+}
+
+// A loop instead of /\/+$/, which backtracks polynomially on long runs of "/".
+function trimTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end--;
+  return url.slice(0, end);
 }
