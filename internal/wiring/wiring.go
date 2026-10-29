@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/different-ai/differently/internal/adapters/agentcore"
+	"github.com/different-ai/differently/internal/adapters/azuresandboxes"
+	"github.com/different-ai/differently/internal/adapters/azuresessions"
 	"github.com/different-ai/differently/internal/adapters/blaxel"
 	"github.com/different-ai/differently/internal/adapters/boat"
 	"github.com/different-ai/differently/internal/adapters/daytona"
@@ -13,7 +16,9 @@ import (
 	"github.com/different-ai/differently/internal/adapters/fake"
 	"github.com/different-ai/differently/internal/adapters/fly"
 	"github.com/different-ai/differently/internal/adapters/freestyle"
+	"github.com/different-ai/differently/internal/adapters/gcpsandboxes"
 	"github.com/different-ai/differently/internal/adapters/morph"
+	"github.com/different-ai/differently/internal/adapters/northflank"
 	"github.com/different-ai/differently/internal/adapters/opensandbox"
 	"github.com/different-ai/differently/internal/adapters/vercel"
 	"github.com/different-ai/differently/internal/config"
@@ -99,6 +104,61 @@ func Register() {
 			return nil, err
 		}
 		return morph.New(morph.FromConfig(p.Config, key)), nil
+	})
+	pools.Register("aws-agentcore", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		cred, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := agentcore.FromConfig(p.Config, p.Region, cred)
+		if err != nil {
+			return nil, err
+		}
+		return agentcore.New(opts), nil
+	})
+	pools.Register("azure-sandboxes", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		cred, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := azuresandboxes.FromConfig(p.Config, p.Region, cred)
+		if err != nil {
+			return nil, err
+		}
+		return azuresandboxes.New(opts), nil
+	})
+	pools.Register("azure-sessions", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		cred, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := azuresessions.FromConfig(p.Config, p.Region, cred)
+		if err != nil {
+			return nil, err
+		}
+		return azuresessions.New(opts), nil
+	})
+	pools.Register("gcp-sandboxes", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		cred, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := gcpsandboxes.FromConfig(p.Config, p.Region, cred)
+		if err != nil {
+			return nil, err
+		}
+		return gcpsandboxes.New(opts), nil
+	})
+	pools.Register("northflank", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		token, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := northflank.FromConfig(p.Config, token)
+		if err != nil {
+			return nil, err
+		}
+		return northflank.New(opts), nil
 	})
 	pools.Register("opensandbox", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
 		key, err := resolve(p, d)
