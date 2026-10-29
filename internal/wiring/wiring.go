@@ -6,11 +6,14 @@ import (
 	"path/filepath"
 
 	"github.com/different-ai/differently/internal/adapters/blaxel"
+	"github.com/different-ai/differently/internal/adapters/boat"
 	"github.com/different-ai/differently/internal/adapters/daytona"
 	"github.com/different-ai/differently/internal/adapters/devhost"
+	"github.com/different-ai/differently/internal/adapters/e2b"
 	"github.com/different-ai/differently/internal/adapters/fake"
 	"github.com/different-ai/differently/internal/adapters/fly"
 	"github.com/different-ai/differently/internal/adapters/freestyle"
+	"github.com/different-ai/differently/internal/adapters/morph"
 	"github.com/different-ai/differently/internal/adapters/opensandbox"
 	"github.com/different-ai/differently/internal/adapters/vercel"
 	"github.com/different-ai/differently/internal/config"
@@ -75,6 +78,27 @@ func Register() {
 			return nil, err
 		}
 		return blaxel.New(opts), nil
+	})
+	pools.Register("boat", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		key, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		return boat.New(boat.FromConfig(p.Config, key)), nil
+	})
+	pools.Register("e2b", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		key, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		return e2b.New(e2b.FromConfig(p.Config, p.Trust, key)), nil
+	})
+	pools.Register("morph", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		key, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		return morph.New(morph.FromConfig(p.Config, key)), nil
 	})
 	pools.Register("opensandbox", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
 		key, err := resolve(p, d)
