@@ -162,10 +162,12 @@ operation a backend lacks returns `unsupported_operation` (501).
 | Provider-side TTL backstop | `timeout` (≥ 60 s) | `ttlMinutes` | `ttlSeconds` | `ttlSeconds` is passed; plugin's choice | n/a |
 
 "e2e" for `opensandbox` means the [end-to-end suite](../test/e2e/README.md)
-and the [live adapter check](../test/opensandbox/README.md) pass against a
-real OpenSandbox 1.2.0 server with the Docker runtime. Its Kubernetes and Fast
-Sandbox runtimes are not verified yet, so microVM isolation through
-Differently is unverified.
+(14/14) and the [live adapter check](../test/opensandbox/README.md) pass
+against a real OpenSandbox 1.2.0 server on its Docker runtime and on its
+Kubernetes runtime (single-node k3s). Its Fast Sandbox runtime is not
+verified yet, so microVM isolation through Differently is unverified. Each
+backend's page in the [provider catalog](providers/README.md) has its status
+and configuration.
 
 The reconciler works through each adapter's `List` and the sandbox-ID label,
 so it applies to every backend: orphans in the backend are deleted and
@@ -223,13 +225,11 @@ portable core only, and document every semantic difference. Mapping sketch:
 
 ## 6. Biggest gaps, in priority order
 
-1. Run OpenSandbox's Kubernetes and Fast Sandbox runtimes under
-   Differently on real infrastructure, so microVM isolation through
-   Differently is verified. Verify the Daytona and Freestyle adapters
-   against live accounts.
-2. Wire OpenSandbox's network policy into placement, then per-sandbox egress
-   allow-lists.
-3. Port URLs on OpenSandbox pools and an SSH gateway.
+1. Run OpenSandbox's Fast Sandbox runtime and a multi-node Kubernetes
+   cluster under Differently, so microVM isolation through Differently is
+   verified. Verify the Daytona and Freestyle adapters against live accounts.
+2. Use pool egress policy in placement, then per-request egress allow-lists.
+3. An SSH gateway.
 4. Detached processes and PTY sessions.
 5. Webhooks and OpenTelemetry traces.
 6. Memory snapshots with restore through OpenSandbox (Fast Sandbox).

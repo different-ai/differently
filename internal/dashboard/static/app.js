@@ -33,7 +33,7 @@ const tokenBox = (t) => `<div class="token"><strong>Store it now; it is not show
 const kinds = {
   daytona: ["Daytona", "external", [["apiURL", "API URL (default https://app.daytona.io/api)"], ["target", "target region"], ["snapshot", "snapshot"], ["class", "class", ["container", "linux-vm"]]]],
   freestyle: ["Freestyle", "external", [["apiURL", "API URL (default https://api.freestyle.sh)"], ["snapshot", "snapshot"], ["egress", "egress", ["none", "public"]], ["domain", "domain (default style.dev)"]]],
-  opensandbox: ["OpenSandbox", "", [["apiURL", "lifecycle API URL", null, true], ["image", "image"], ["templateId", "template id"], ["isolation", "isolation", ["container", "microvm"]], ["lineEndings", "line endings", ["kept", "stripped"]], ["useServerProxy", "server proxy", ["true", "false"]]]],
+  opensandbox: ["OpenSandbox", "", [["apiURL", "lifecycle API URL", null, true], ["image", "image"], ["templateId", "template id"], ["isolation", "isolation", ["container", "microvm"]], ["runtime", "runtime", ["docker", "kubernetes"]], ["lineEndings", "line endings", ["kept", "stripped"]], ["ports", "port URLs", ["signed"]], ["egress", "egress", ["none", "public", "allowlist"]], ["egressAllow", "egress allowlist (comma-separated hosts)"], ["useServerProxy", "server proxy", ["true", "false"]]]],
   remote: ["Remote plugin", "", [["endpoint", "plugin endpoint URL", null, true]]],
 };
 function pickKind() {

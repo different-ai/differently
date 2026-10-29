@@ -122,7 +122,8 @@ Status values:
 **The Helm chart has run on a real cluster against a live OpenSandbox
 server**: single-node k3s on Azure, with OpenSandbox installed from its own
 charts and its Kubernetes runtime ([one Linux VM](single-vm.md),
-2026-10-28). The end-to-end suite passed 12/12 there. The published
+2026-10-28 and 29). The end-to-end suite passed 14/14 there, with stop/start,
+snapshots, fork, signed port URLs and egress policy. The published
 `v0.1.0-alpha.1` chart and images installed from public artifacts alone. In
 CI, `helm lint` and `helm template` pass for every value set in
 `deploy/helm/differently/ci/`. Managed EKS, GKE and AKS clusters and
@@ -143,8 +144,8 @@ Postgres against a real OpenSandbox server with the Docker runtime and passed
 
 | Environment | Runtime path | Status | Notes |
 |---|---|---|---|
-| OpenSandbox 1.2.0 with the Docker runtime (Docker Compose on Colima, arm64) | Containers on one Docker host | **tested** (end-to-end suite 12/12, 2026-10-28) | Checks the API contract, not isolation: containers share the host kernel |
-| Single-node k3s on an Azure VM, Differently's chart plus OpenSandbox's charts | OpenSandbox Kubernetes runtime (pods) | **tested** (end-to-end suite 12/12, 2026-10-28) | [single-vm.md](single-vm.md). Pause and snapshots need OpenSandbox's snapshot registry |
+| OpenSandbox 1.2.0 with the Docker runtime (Docker Compose on Colima, arm64) | Containers on one Docker host | **tested** (end-to-end suite 14/14, 2026-10-29) | Checks the API contract, not isolation: containers share the host kernel |
+| Single-node k3s on an Azure VM, Differently's chart plus OpenSandbox's charts | OpenSandbox Kubernetes runtime (pods) | **tested** (end-to-end suite 14/14, 2026-10-29) | [single-vm.md](single-vm.md). Stop/start, snapshots, fork, port URLs and egress need the [Kubernetes runtime setup](../guides/opensandbox-pools.md#kubernetes-runtime-snapshot-registry-signed-ports-and-egress) |
 | Any conformant Kubernetes 1.29+, Differently's chart plus an OpenSandbox server | Whatever OpenSandbox runs | documented | [kubernetes.md](kubernetes.md); multi-node not yet run ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
 | OpenSandbox Fast Sandbox on KVM nodes | Firecracker microVMs | unverified | Not run on any target yet. [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter), [backlog E18](../backlog.md#e18-fast-sandbox-spike) |
 | AWS EKS, `.metal` node group (Fast Sandbox) | Bare metal | unverified | Matches Firecracker's tested platforms. The Terraform module is **unvalidated** |
