@@ -12,6 +12,9 @@
 //	DIFFERENTLY_E2E_METRICS_URL  metrics listener       (http://localhost:19091)
 //	OPENSANDBOX_E2E_URL          OpenSandbox lifecycle  (http://localhost:18091/v1)
 //	OPENSANDBOX_E2E_KEY          OpenSandbox API key    (test/opensandbox/config.toml)
+//	DIFFERENTLY_E2E_POOL         the pool under test    (opensandbox)
+//	DIFFERENTLY_E2E_TEMPLATE     default template       (the pool's)
+//	DIFFERENTLY_E2E_PYTHON_TEMPLATE  one with python3   (python:3.12-slim)
 package e2e
 
 import (
@@ -43,6 +46,10 @@ var (
 	osbInternalURL = env("OPENSANDBOX_E2E_INTERNAL_URL", "http://opensandbox-server:8090/v1")
 	// mainPool is the private pool the server's config defines.
 	mainPool = env("DIFFERENTLY_E2E_POOL", "opensandbox")
+	// defaultTemplate and pythonTemplate are what sandboxes boot: images on
+	// container runtimes, template IDs on Fast Sandbox pools.
+	defaultTemplate = os.Getenv("DIFFERENTLY_E2E_TEMPLATE")
+	pythonTemplate  = env("DIFFERENTLY_E2E_PYTHON_TEMPLATE", "python:3.12-slim")
 )
 
 func env(k, def string) string {
@@ -81,6 +88,9 @@ func tenant(t *testing.T, name string, quota api.Quota) *client.Client {
 
 func create(t *testing.T, c *client.Client, req api.CreateSandboxRequest) api.Sandbox {
 	t.Helper()
+	if req.Template == "" {
+		req.Template = defaultTemplate
+	}
 	start := time.Now()
 	sb, err := c.CreateSandbox(ctx(t), req, true)
 	if err != nil {
@@ -226,6 +236,16 @@ func TestSandboxRunsOnOpenSandboxWithLimits(t *testing.T) {
 	if !osbExists(t, backendRef(t, sb.ID)) {
 		t.Fatal("OpenSandbox does not know the sandbox")
 	}
+	if advertises(t, "isolation.microvm") {
+		// Fast Sandbox templates fix the microVM's size and OpenSandbox
+		// refuses per-sandbox limits there, so the envelope is the template's.
+		vm := sh(t, c, sb.ID, "uname -r; nproc; grep MemTotal /proc/meminfo")
+		if vm.ExitCode != 0 {
+			t.Fatalf("guest: %+v", vm)
+		}
+		t.Logf("microVM guest (kernel, vCPUs, memory): %q", vm.Stdout)
+		return
+	}
 	// Differently's resource envelope reaches the runtime as cgroup limits.
 	mem := strings.TrimSpace(sh(t, c, sb.ID, "cat /sys/fs/cgroup/memory.max").Stdout)
 	if mem != strconv.Itoa(1024<<20) {
@@ -244,9 +264,27 @@ func TestSandboxRunsOnOpenSandboxWithLimits(t *testing.T) {
 
 func TestExecSemantics(t *testing.T) {
 	c := tenant(t, "exec", api.Quota{})
-	sb := create(t, c, api.CreateSandboxRequest{Env: map[string]string{"GREETING": "hello"}})
 	ctx := ctx(t)
-	res, err := c.Exec(ctx, sb.ID, api.ExecRequest{Command: `echo "$GREETING $WHO"; echo oops >&2; exit 7`, Env: map[string]string{"WHO": "world"}})
+	cmdEnv := map[string]string{"WHO": "world"}
+	var sb api.Sandbox
+	if advertises(t, "isolation.microvm") {
+		// A Fast Sandbox template fixes the workload: sandbox env is refused
+		// with a reason that says so, and per-command env still works.
+		refused, err := c.CreateSandbox(ctx, api.CreateSandboxRequest{Template: defaultTemplate, Env: map[string]string{"GREETING": "hello"}}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = c.DeleteSandbox(context.Background(), refused.ID) })
+		eventually(t, time.Minute, "sandbox env to be refused", func() bool {
+			got, err := c.GetSandbox(ctx, refused.ID)
+			return err == nil && got.Status == api.StatusFailed && strings.Contains(got.StatusReason, "env")
+		})
+		sb = create(t, c, api.CreateSandboxRequest{})
+		cmdEnv["GREETING"] = "hello"
+	} else {
+		sb = create(t, c, api.CreateSandboxRequest{Env: map[string]string{"GREETING": "hello"}})
+	}
+	res, err := c.Exec(ctx, sb.ID, api.ExecRequest{Command: `echo "$GREETING $WHO"; echo oops >&2; exit 7`, Env: cmdEnv})
 	if err != nil || res.ExitCode != 7 || strings.TrimSpace(res.Stdout) != "hello world" || strings.TrimSpace(res.Stderr) != "oops" {
 		t.Fatalf("exec %+v %v", res, err)
 	}
@@ -385,6 +423,17 @@ func TestSnapshotAndFork(t *testing.T) {
 func TestUnpullableImageKeepsPoolHealthy(t *testing.T) {
 	c := tenant(t, "badimage", api.Quota{})
 	sb, err := c.CreateSandbox(ctx(t), api.CreateSandboxRequest{Template: "docker.io/library/debian:no-such-tag-differently"}, false)
+	if advertises(t, "isolation.microvm") {
+		// A Fast Sandbox pool serves only its own template: any other is
+		// refused at placement, before the backend is asked.
+		if !api.IsCode(err, api.CodeNoEligiblePool) {
+			t.Fatalf("another template on a Fast Sandbox pool: want no_eligible_pool, got %v", err)
+		}
+		if ok, msg := poolHealthy(t); !ok {
+			t.Fatalf("the refusal marked the pool unhealthy: %s", msg)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +478,7 @@ func TestPortURL(t *testing.T) {
 		t.Log("pool does not advertise ports.expose: checked the refusal")
 		return
 	}
-	sb := create(t, c, api.CreateSandboxRequest{Template: "python:3.12-slim"})
+	sb := create(t, c, api.CreateSandboxRequest{Template: pythonTemplate})
 	sh(t, c, sb.ID, "mkdir -p /srv && echo served-by-sandbox > /srv/index.html && cd /srv && (nohup python3 -m http.server 8080 >/dev/null 2>&1 &) && sleep 1")
 	port, err := c.ExposePort(ctx(t), sb.ID, 8080)
 	if err != nil {
@@ -728,7 +777,7 @@ func TestIdlePauseAndWakeThroughPortURL(t *testing.T) {
 		t.Skip("needs a microVM pool that pauses and exposes ports")
 	}
 	c := tenant(t, "idlevm", api.Quota{})
-	sb := create(t, c, api.CreateSandboxRequest{Template: "python:3.12-slim", IdleTimeoutSeconds: 60})
+	sb := create(t, c, api.CreateSandboxRequest{Template: pythonTemplate, IdleTimeoutSeconds: 60})
 	sh(t, c, sb.ID, "mkdir -p /srv && cd /srv && (nohup python3 -c 'import http.server,os\nclass H(http.server.BaseHTTPRequestHandler):\n def do_GET(s):\n  s.send_response(200);s.end_headers();s.wfile.write(str(os.getpid()).encode())\nhttp.server.HTTPServer((\"\",8080),H).serve_forever()' >/dev/null 2>&1 &) && sleep 1")
 	get := func(u string) (int, string) {
 		resp, err := http.Get(u + "/")
