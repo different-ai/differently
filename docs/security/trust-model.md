@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-10-28, after [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) removed Differently's own node agent. Nothing here has been validated by a penetration test. |
-| Companion | [Hardening checklist](hardening-checklist.md) · [Architecture](../architecture/README.md) · [ADR 0008](../adr/0008-secrets-by-reference-only.md) · [ADR 0009](../adr/0009-tamper-evident-audit-chain.md) · [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) · [ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md) · [OpenSandbox pools](../guides/opensandbox-pools.md) · [Keys and providers](../guides/keys-and-providers.md) |
+| Status | Describes the code as of 2026-10-28, after the move to OpenSandbox removed Differently's own node agent. Nothing here has been validated by a penetration test. |
+| Companion | [Hardening checklist](hardening-checklist.md) · [Architecture](../architecture/README.md) · [OpenSandbox pools](../guides/opensandbox-pools.md) · [Keys and providers](../guides/keys-and-providers.md) |
 
 This document separates three things that are easy to blur:
 
@@ -162,11 +162,10 @@ flowchart TB
 **Secrets and data handling**
 
 - Control-plane secrets (DSN, bootstrap token) are referenced, never
-  stored ([ADR 0008](../adr/0008-secrets-by-reference-only.md)). There is
+  stored. There is
   no agent token any more.
 - Backend credentials are referenced (`env:`, `file:`) or stored sealed
-  (`secret:`, [ADR 0021](../adr/0021-provider-credentials-stored-encrypted.md);
-  `internal/secrets`, `internal/server/secrets.go`):
+  (`secret:`; `internal/secrets`, `internal/server/secrets.go`):
   - AES-256-GCM with a random nonce per value;
   - the secret's name bound in as associated data;
   - a 32-byte key read at start-up from `secrets.keyEnv` or
@@ -188,8 +187,7 @@ flowchart TB
 
 **Integrity and accountability**
 
-- Tamper-evident audit chain with a verification endpoint
-  ([ADR 0009](../adr/0009-tamper-evident-audit-chain.md)).
+- Tamper-evident audit chain with a verification endpoint.
 - No telemetry or phone-home code path.
 
 ## 5. Operator responsibilities
@@ -238,7 +236,7 @@ turns them into steps.
 
 | Gap | Effect | Tracking |
 |---|---|---|
-| Isolation and egress belong to the runtime | Differently cannot prove or enforce what a pool declares; the trust report shows declarations | [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) |
+| Isolation and egress belong to the runtime | Differently cannot prove or enforce what a pool declares; the trust report shows declarations | By design: the runtime's job |
 | microVM isolation through Differently is unverified | Only the Docker runtime has run through Differently; its containers share the host kernel | [backlog E18](../backlog.md#e18-fast-sandbox-spike), [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter) |
 | OpenSandbox's network policy is not wired up | No per-sandbox egress control through Differently on OpenSandbox pools | [backlog E19](../backlog.md#e19-opensandbox-network-policy-and-egress) |
 | One server-wide OpenSandbox API key | Anyone holding it controls every sandbox on that server, outside Differently's tenancy and audit | OpenSandbox's model; keep the key in the control plane only |
@@ -259,15 +257,15 @@ Numbers are kept so earlier references stay valid.
 
 | # | Issue | Status |
 |---|---|---|
-| 1 | Agent impersonation through the shared agent token. | **Obsolete (ADR 0020).** Node agents, their tokens and per-agent secrets were removed. |
+| 1 | Agent impersonation through the shared agent token. | **Obsolete.** Node agents, their tokens and per-agent secrets were removed. |
 | 2 | Cross-tenant deletion of project policies. | **Fixed.** `DELETE /v1/policies/project:<id>` checks project ownership like `PUT`. |
 | 3 | Stopped sandboxes restarted without a quota check. | **Fixed.** `start` re-reserves CPU and memory atomically (`Store.ReserveCompute`). |
 | 4 | Audit was fail-open only. | **Option added.** `audit.failClosed: true` records each state-changing request before acting and answers `503` if that fails. Failures are counted in `differently_audit_append_failures_total` in both modes. Scheduler-side events stay fail-open. |
-| 5 | PID reuse on agent nodes. | **Obsolete (ADR 0020).** Differently no longer manages VM processes. |
+| 5 | PID reuse on agent nodes. | **Obsolete.** Differently no longer manages VM processes. |
 | 6 | Unauthenticated `/metrics` on the API port. | **Option added, on by default in Helm.** `metrics.listen` serves metrics on a separate port (chart default `9091`) that the ingress never routes to. |
 | 7 | Rate limiting runs after the key lookup, so unauthenticated floods still cost a database read per request, and limits are per replica. | Open (E0.8). |
 | 8 | A changed bootstrap token un-revoked the bootstrap key. | **Fixed.** A revoked bootstrap key stays revoked. |
-| 9 | Unbounded responses from the guest agent. | **Obsolete (ADR 0020)** for the guest; see issue 10 for the same class of problem with OpenSandbox. |
+| 9 | Unbounded responses from the guest agent. | **Obsolete** for the guest; see issue 10 for the same class of problem with OpenSandbox. |
 | 10 | The OpenSandbox adapter collects synchronous exec output without a size limit, and cuts file downloads at 100 MiB without reporting truncation. A sandbox can make a control-plane replica buffer arbitrary output. | Open (E0.35). |
 | 11 | OpenSandbox's own `timeout` is set from the TTL only at creation; extending the TTL through the API does not extend it, so OpenSandbox can delete the sandbox first. | Open (E0.20). |
 | 12 | A pool registered as `firecracker` through the admin API before the upgrade stays in the store with no adapter; its sandboxes cannot be reached and terminating them retries forever. | Open (E0.22). |

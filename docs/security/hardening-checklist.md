@@ -5,8 +5,7 @@ what to do and why, with the setting or code it relates to. Items marked
 **(gap)** cannot be fully closed today; the note says how to reduce the risk.
 Background: [trust model](trust-model.md).
 
-Differently does not isolate sandboxes itself
-([ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md)). Most of the
+Differently does not isolate sandboxes itself. Most of the
 isolation and egress work below is done in the backend runtime, usually an
 OpenSandbox server, and is marked as such.
 
@@ -63,8 +62,7 @@ OpenSandbox server, and is marked as such.
 - [ ] Back up and test restores. All quota, queue and audit state is here.
 - [ ] Set server-side TCP keepalives (`tcp_keepalives_idle`,
       `tcp_keepalives_interval`, `tcp_keepalives_count`) so a partitioned
-      leader's advisory lock is released promptly
-      ([ADR 0016](../adr/0016-single-leader-scheduler-advisory-lock.md)).
+      leader's advisory lock is released promptly.
 - [ ] Use an HA setup (for example CloudNativePG with synchronous replicas)
       and test failover ([POC 6](../proof-of-concepts.md#poc-6-postgres-failover-and-leader-handover)).
 - [ ] Limit who has write access. A database writer can rewrite the audit

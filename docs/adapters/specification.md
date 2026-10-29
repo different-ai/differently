@@ -3,8 +3,7 @@
 | | |
 |---|---|
 | Contract version | `adapter.ProtocolVersion = "1"` (`pkg/adapter/adapter.go`) |
-| Status | Describes the code as of 2026-10-28, after [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) removed the `firecracker` adapter and the node agent |
-| Decision record | [ADR 0007](../adr/0007-adapter-contract-optional-interfaces-http-protocol.md) |
+| Status | Describes the code as of 2026-10-28, after the move to OpenSandbox removed the `firecracker` adapter and the node agent |
 
 An **execution adapter** creates and manages sandbox instances on one backend.
 The control plane holds one adapter per [pool](../architecture/README.md#4-the-three-layers).
@@ -259,10 +258,9 @@ infrastructure that hosts them. Today Differently does not manage it:
 - **Backends manage their own hosts.** An OpenSandbox server runs sandboxes
   on its runtime's hosts (a Docker host, a Kubernetes cluster, or KVM nodes
   with Fast Sandbox's per-node agent), and Differently sees one pool per
-  server. Providers manage theirs. Before
-  [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md), Differently's
-  own node agents registered themselves with heartbeats; that path was
-  removed with the agent.
+  server. Providers manage theirs. Before the move to OpenSandbox,
+  Differently's own node agents registered themselves with heartbeats; that
+  path was removed with the agent.
 - **Existing VM pools** are covered by `remote` pools: a plugin that speaks the
   HTTP protocol in front of a fleet (libvirt hosts, Proxmox, a cloud account)
   allocates an instance per `Create`.

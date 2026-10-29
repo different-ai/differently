@@ -8,8 +8,7 @@
 | Isolation | the runtime's: containers on the Docker and Kubernetes runtimes (shared host kernel), Firecracker microVMs with Fast Sandbox. The pool declares which with `isolation` |
 | API checked | [opensandbox-group/OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) release 1.2.0 (server, `execd` release-1.2.0), 2026-10-28 |
 
-OpenSandbox is Differently's default private runtime
-([ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md)). The full
+OpenSandbox is Differently's default private runtime. The full
 installation guide is [OpenSandbox pools](../guides/opensandbox-pools.md).
 
 ## Capabilities

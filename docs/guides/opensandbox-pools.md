@@ -1,14 +1,12 @@
 # OpenSandbox pools
 
 [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) is
-Differently's default private runtime
-([ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md)). Differently
+Differently's default private runtime. Differently
 does not run sandboxes itself: you install an OpenSandbox server, choose its
 runtime (Docker, Kubernetes, or Firecracker microVMs with Fast Sandbox), and
 register it as a pool. Differently adds tenancy, scoped keys, quotas and fair
 queueing, policy-gated placement, audit and the trust report on top.
-Background: [spike](../research/opensandbox-spike.md),
-[ADR 0019](../adr/0019-opensandbox-backend-first.md).
+Background: the [OpenSandbox spike](../research/opensandbox-spike.md).
 
 > Status: checked live against OpenSandbox release 1.2.0 with `execd`
 > release-1.2.0, through the adapter's live test and the end-to-end suite:
