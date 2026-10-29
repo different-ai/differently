@@ -111,8 +111,9 @@ security gaps, and add the features users hit first.
 
 > **[E18 Fast Sandbox spike](backlog.md#e18-fast-sandbox-spike) ran on
 > 2026-10-29** on one node under nested KVM, through the adapter and with
-> Workbot's desktop. Next: the end-to-end suite on Fast Sandbox and a
-> multi-node cluster.
+> Workbot's desktop; on 2026-10-29 the end-to-end suite passed on a
+> two-node cluster ([azure-vms.md](deploy/azure-vms.md)). Next: node drains
+> and more than one KVM node.
 
 Ordered by priority. P0 items gate any production recommendation.
 

@@ -120,7 +120,7 @@ configToml: |
   host = "0.0.0.0"
   port = 80
   api_key = "$OSB_KEY"
-  max_sandbox_timeout_seconds = 86400   # the longest sandbox TTL OpenSandbox accepts
+  max_sandbox_timeout_seconds = 2592000 # the longest TTL OpenSandbox accepts: above any client's (OpenWork: 14 days)
   [log]
   level = "INFO"
   [runtime]

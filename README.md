@@ -148,14 +148,15 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
   accounts: exec, files, port URLs, stop/start and snapshots on both, and
   egress policy, pause/resume, memory snapshots and fork on Freestyle;
 - [OpenWork](https://github.com/different-ai/openwork)'s Workbot computers run
-  through Differently as a sandbox gateway, behind a flag;
-- Fast Sandbox microVMs on one node: the adapter scenario (recorded), and
+  through Differently as a sandbox gateway, behind a flag, desktops on Fast
+  Sandbox microVMs included, driven by OpenWork's runner;
+- Fast Sandbox microVMs on Azure (two-node k3s with one KVM node): the
+  adapter scenario (recorded), the end-to-end suite on the microVM pool, and
   Workbot's desktop streamed over a port URL, paused and resumed with its
   memory, idled and woken by a request (pause takes minutes).
 
 **Not verified yet:**
-- the end-to-end suite on Fast Sandbox microVMs;
-- multi-node clusters;
+- node drains, and more than one KVM node;
 - managed EKS, GKE and AKS;
 - the other 12 provider adapters against live accounts: each is tested
   against a fake of its provider's published API.
