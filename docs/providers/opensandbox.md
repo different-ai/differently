@@ -6,7 +6,7 @@
 | Adapter | `opensandbox` (`internal/adapters/opensandbox`) |
 | Trust | declared: `private` when you run the server, `external` when someone else does |
 | Isolation | the runtime's: containers on the Docker and Kubernetes runtimes (shared host kernel), Firecracker microVMs with Fast Sandbox. The pool declares which with `isolation` |
-| API checked | [alibaba/OpenSandbox](https://github.com/alibaba/OpenSandbox) release 1.2.0 (server, `execd` release-1.2.0), 2026-10-28 |
+| API checked | [opensandbox-group/OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) release 1.2.0 (server, `execd` release-1.2.0), 2026-10-28 |
 
 OpenSandbox is Differently's default private runtime
 ([ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md)). The full
@@ -30,6 +30,12 @@ installation guide is [OpenSandbox pools](../guides/opensandbox-pools.md).
 | Max size | server and runtime limits | server and runtime limits |
 | Provider TTL backstop | `timeout` (at least 60 s), moved on TTL change | same |
 
+**Fast Sandbox runtime** (`runtime: fastsandbox`): Firecracker microVMs
+created from a Fast Sandbox template, pause that keeps memory, disk snapshots
+and fork, and OpenSandbox's own idle pause with wake on access. It is
+implemented and tested with a fake server only; it has not run against a
+real Fast Sandbox yet ([setup and limits](../guides/opensandbox-pools.md#fast-sandbox-runtime-microvms-pause-with-memory-native-idle)).
+
 ## Configure
 
 ```yaml
@@ -43,7 +49,7 @@ pools:
       apiURL: http://opensandbox-server.opensandbox-system.svc/v1   # required
       image: ubuntu:24.04
       isolation: container         # or microvm (Fast Sandbox)
-      runtime: kubernetes          # docker (default) or kubernetes
+      runtime: kubernetes          # docker (default), kubernetes or fastsandbox
       lineEndings: kept            # with execd release-1.2.0 or later
       # ports: signed              # tenant port URLs through the ingress gateway
       # egress: allowlist          # none, public or allowlist
@@ -91,5 +97,6 @@ Other keys: `templateId` (a Fast Sandbox template instead of an image),
   Azure Standard_D8s_v6, both charts installed with Helm), 2026-10-29,
   including stop/start, snapshots, fork, signed port URLs, stdin and idle
   auto-stop with wake.
+- The Fast Sandbox runtime: unit tests against a fake server only.
 - Not run: Fast Sandbox microVMs, multi-node clusters and node drains,
   managed EKS, GKE and AKS.

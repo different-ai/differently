@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-labelledby="t d">
 <title id="t">Differently: the control plane for your sandboxes</title>
-<desc id="d">Apps and agents call one Differently API. Differently handles tenancy, quotas, policy placement and audit, and places each sandbox on OpenSandbox or your own plugin inside your infrastructure, or on Daytona or Freestyle only when policy allows.</desc>
+<desc id="d">Apps and agents call one Differently API. Differently handles tenancy, quotas, policy placement and audit, and places each sandbox on OpenSandbox or your own plugin inside your infrastructure, or on a managed provider such as E2B or Daytona only when policy allows.</desc>
 <defs><marker id="arrow-dark" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#9aa3af"/></marker></defs>
 <rect width="1280" height="640" fill="#0d1117"/>
 <g transform="translate(64 52) scale(1.6)"><rect x="10" y="3" width="19" height="19" rx="4" fill="none" stroke="#f3f4f6" stroke-width="2.5"/><rect x="3" y="10" width="19" height="19" rx="4" fill="#f3f4f6"/></g>
@@ -31,8 +31,8 @@
 <path d="M750 340C800 340 800 324 836 324" fill="none" stroke="#9aa3af" stroke-width="2" marker-end="url(#arrow-dark)"/>
 <path d="M750 420C800 420 800 434 836 434" fill="none" stroke="#9aa3af" stroke-width="2" marker-end="url(#arrow-dark)"/>
 <rect x="842" y="546" width="360" height="70" rx="14" fill="#0d1117" stroke="#3a424d" stroke-width="1.5" stroke-dasharray="7 6"/>
-<text x="866" y="577" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#f3f4f6">Daytona · Freestyle</text>
-<text x="866" y="602" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3af">external providers</text>
+<text x="866" y="577" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#f3f4f6">Managed providers</text>
+<text x="866" y="602" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3af">E2B · Daytona · Vercel · cloud sandboxes</text>
 <rect x="1070" y="562" width="112" height="24" rx="12" fill="#33260d"/><text x="1126" y="579" text-anchor="middle" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#fbbf24">only if allowed</text>
 <path d="M640 490C640 560 760 581 836 581" fill="none" stroke="#9aa3af" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow-dark)"/>
 <text x="560" y="560" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#9aa3af">fail-closed, by policy</text>

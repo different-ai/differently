@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | As built, documented from the code on 2026-10-28, after [ADR 0020](../adr/0020-opensandbox-replaces-node-agent.md) removed Differently's own Firecracker node agent |
-| Scope | Control plane (`differently-server`), CLI, built-in adapters (`opensandbox`, `daytona`, `freestyle`, `remote`, and the development-only `devhost` and `fake`), storage, HA, networking |
+| Scope | Control plane (`differently-server`), CLI, built-in adapters (16 provider adapters in the [provider catalog](../providers/README.md), `remote`, and the development-only `devhost` and `fake`), storage, HA, networking |
 | Related | [ADRs](../adr/README.md) · [Trust model](../security/trust-model.md) · [Adapter specification](../adapters/specification.md) · [Placement policy](../scheduling/placement-policy.md) · [Storage and lifecycle](../storage-and-lifecycle.md) · [OpenSandbox pools](../guides/opensandbox-pools.md) |
 
 ## 1. Summary
@@ -15,7 +15,8 @@ installation runs an [OpenSandbox](https://github.com/opensandbox-group/OpenSand
 server with the runtime that fits (Docker or Kubernetes containers, or
 Firecracker microVMs with Fast Sandbox) and registers it as a pool. When
 policy explicitly allows it, work can also go to an external provider such as
-Daytona or Freestyle, or to any backend behind a `remote` plugin.
+E2B, Daytona or a cloud provider's sandbox service, or to any backend behind a
+`remote` plugin ([provider catalog](../providers/README.md)).
 Applications never name a backend. They ask for resources, capabilities and
 a data classification; the policy engine picks a pool.
 
@@ -42,10 +43,10 @@ proven in production".
 |---|---|---|
 | API, auth, quotas, policy, scheduler, reconciler | In-process integration tests against the real server, scheduler and memory store with fake pools (`internal/server/server_test.go`); audit fail-closed and metrics-listener tests (`internal/server/hardening_test.go`) | Multi-replica run against Postgres |
 | Postgres store | Shared conformance suite `internal/store/storetest`; the `postgres conformance` CI job runs it against Postgres 17 and passed on `pre-release` on 2026-10-28 | That run predates migration `0002_drop_agents.sql`. Locally the suite runs only when `DIFFERENTLY_TEST_POSTGRES_URL` is set |
-| `opensandbox` adapter | Fake-server tests that cover the differences found between OpenSandbox's spec and its images (`internal/adapters/opensandbox/opensandbox_test.go`). `TestLiveOpenSandbox` (build tag `live`) passes against OpenSandbox release 1.2.0 with the Docker runtime and `execd` v1.1.0 (Colima, arm64). A manual run through `differently-server` checked placement, exec, pause and resume, the refused stop, the trust report and delete ([spike](../research/opensandbox-spike.md)) | Kubernetes runtime. Fast Sandbox, so microVM isolation through Differently is unverified ([backlog E18](../backlog.md#e18-fast-sandbox-spike)). Restore from snapshot, fork and port endpoints against a real server |
-| End-to-end suite (`test/e2e`) | Postgres, `differently-server` and a real OpenSandbox 1.2.0 server (Docker runtime) in Docker: 10/10 on arm64 Colima, 2026-10-28 ([results](../../test/e2e/README.md)) | OpenSandbox's Kubernetes and Fast Sandbox runtimes; x86_64; a real cluster |
-| Helm chart (0.2.0) | `helm lint` and `helm template` pass; the server's config parser accepts the rendered config | Not installed on a real cluster against a real OpenSandbox server |
-| Daytona and Freestyle adapters | Written against the published OpenAPI specs, tested with fake HTTP servers (`internal/adapters/{daytona,freestyle}/*_test.go`) | No live-account verification ([POC 7](../proof-of-concepts.md#poc-7-external-provider-live-account-verification)) |
+| `opensandbox` adapter | Fake-server tests that cover the differences found between OpenSandbox's spec and its images (`internal/adapters/opensandbox/opensandbox_test.go`). Real Docker and Kubernetes responses recorded in `testdata/recordings` and replayed in every `go test`. `TestLiveOpenSandbox` (build tag `live`) passes against OpenSandbox release 1.2.0 on the Docker runtime (Colima, arm64) and the Kubernetes runtime (k3s on Azure) | The Fast Sandbox runtime (`runtime: fastsandbox`) is tested only with a fake server, so microVM isolation through Differently is unverified ([backlog E18](../backlog.md#e18-fast-sandbox-spike)) |
+| End-to-end suite (`test/e2e`) | Postgres, `differently-server` and a real OpenSandbox 1.2.0 server: 14/14 on the Docker runtime (arm64 Colima) and on the Kubernetes runtime (single-node k3s on Azure, x86_64, with a snapshot registry, signed ports and egress policy), 2026-10-29 ([results](../../test/e2e/README.md)) | Fast Sandbox; multi-node clusters and node drains |
+| Helm chart | `helm lint` and `helm template` pass for every CI value set; installed on single-node k3s on Azure next to OpenSandbox's charts, and the published `v0.1.0-alpha.1` chart installed from public artifacts alone ([single VM](../deploy/single-vm.md)) | Managed EKS, GKE and AKS; multi-node clusters |
+| Other provider adapters | `agent-sandbox` ran live against a kind cluster. The other 14 (Daytona, Freestyle, E2B, Vercel, the AWS, Azure and Google Cloud services and more) are written against each provider's published API and tested with fake HTTP servers ([provider catalog](../providers/README.md)) | No live-account verification ([POC 7](../proof-of-concepts.md#poc-7-external-provider-live-account-verification)) |
 | `remote` plugin protocol (`pkg/adapter/adapterhttp`) | Round-trip tests of client and handler against the fake adapter (`pkg/adapter/adapterhttp/adapterhttp_test.go`) | A conformance suite for third-party plugins ([backlog E0](../backlog.md#e0-correctness-and-security-fixes-from-the-code-review), E0.34) |
 
 ## 3. Goals and non-goals
