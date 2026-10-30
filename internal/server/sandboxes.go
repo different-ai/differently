@@ -892,7 +892,7 @@ func (s *Server) transition(ctx context.Context, rec store.SandboxRecord, action
 			return rec, unsupported(rec, st.feature)
 		}
 		if action == "pause" {
-			err = pz.Pause(ctx, rec.BackendRef)
+			err = scheduler.Pause(ctx, pz, rec)
 		} else {
 			err = pz.Resume(ctx, rec.BackendRef)
 		}

@@ -17,6 +17,7 @@ import (
 	"github.com/different-ai/differently/internal/adapters/fake"
 	"github.com/different-ai/differently/internal/auditlog"
 	"github.com/different-ai/differently/internal/config"
+	"github.com/different-ai/differently/internal/metrics"
 	"github.com/different-ai/differently/internal/pools"
 	"github.com/different-ai/differently/internal/scheduler"
 	"github.com/different-ai/differently/internal/secrets"
@@ -24,6 +25,8 @@ import (
 	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/pkg/adapter"
 	"github.com/different-ai/differently/pkg/api"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 const operatorToken = "dly_bootstrap_0123456789abcdefghjkmnpqrstvwxyz"
@@ -823,6 +826,16 @@ func checkpointPool(t *testing.T, h *harness, pre *api.Preemption) (token string
 	return token, &api.Placement{AllowedPools: []string{"ckpt"}}
 }
 
+// pauseCount is how many pauses differently_pause_seconds has timed on pool.
+func pauseCount(t *testing.T, pool string) uint64 {
+	t.Helper()
+	var m dto.Metric
+	if err := metrics.PauseSeconds.WithLabelValues(pool).(prometheus.Metric).Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	return m.GetHistogram().GetSampleCount()
+}
+
 // A paused sandbox on a checkpointing pool gives its slot back; resuming on
 // the full pool queues (202), and the queue resumes it once the slot frees.
 func TestPausedSandboxGivesItsSlotBack(t *testing.T) {
@@ -830,9 +843,13 @@ func TestPausedSandboxGivesItsSlotBack(t *testing.T) {
 	token, pin := checkpointPool(t, h, nil)
 	a := h.create(token, api.CreateSandboxRequest{Profile: "small", Placement: pin})
 	h.tick()
+	pauses := pauseCount(t, "ckpt")
 	h.must(200, "POST", "/v1/sandboxes/"+a.ID+"/pause", token, nil, nil)
 	if got := h.get(token, a.ID); got.Status != api.StatusPaused || !got.SlotReleased || got.PausedAt == nil {
 		t.Fatalf("pause should release the slot: %+v", got)
+	}
+	if got := pauseCount(t, "ckpt"); got != pauses+1 {
+		t.Fatalf("differently_pause_seconds should time the pause: %d pauses before, %d after", pauses, got)
 	}
 	b := h.create(token, api.CreateSandboxRequest{Profile: "small", Placement: pin})
 	h.tick()
