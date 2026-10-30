@@ -200,7 +200,7 @@ Against what Freestyle gives Workbot computers, as of 2026-10-29:
 | Per-request port URL lifetime | **Not built yet** | URLs last the pool's `portURLSeconds`; the ports API takes no `ttlSeconds`. |
 | Egress on the Docker runtime | **Not checked** | The setting is sent on both runtimes; enforcement was checked on Kubernetes only. |
 | Detached processes, PTY, SSH | **Not built yet** | OpenSandbox's execd offers background commands; not wired into the adapter. |
-| Fast Sandbox: pause speed, guest firewall, guest clock | **Limitation** of OpenSandbox 1.2.0; the clock is handled by Differently | Each pause uploads a full checkpoint (minutes for a 4 GiB desktop), so pools wait up to `checkpointTimeoutSeconds`; the stock guest kernel cannot load per-user firewall rules (a guest kernel with nftables can); OpenSandbox does not step the guest clock after a restore, so the adapter sets it after create and resume. Details in the [pools guide](guides/opensandbox-pools.md#measured-on-a-workbot-desktop). |
+| Fast Sandbox: pause speed, guest firewall, guest clock | **Limitation** of OpenSandbox 1.2.0; the clock is handled by Differently | Each pause uploads a full checkpoint (minutes for a 4 GiB desktop; sparse templates cut it by about a fifth, [research](research/fast-sandbox-pause-time.md)), so pools wait up to `checkpointTimeoutSeconds`; the stock guest kernel cannot load per-user firewall rules (a guest kernel with nftables can); OpenSandbox does not step the guest clock after a restore, so the adapter sets it after create and resume. Details in the [pools guide](guides/opensandbox-pools.md#measured-on-a-workbot-desktop). |
 
 ## 5. Boat-compatible facade: decision
 

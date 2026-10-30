@@ -269,14 +269,54 @@ Differently on the host above:
 |---|---|
 | Template build, once per image | about 10 min, mostly writing the 4 GiB memory snapshot (178 s) |
 | Create, template already on the node | 1.2 s to running |
-| Pause, memory kept | 179 s: the whole checkpoint (root filesystem and memory) is written and uploaded to the artifact store |
+| Pause, memory kept | 190–231 s (median 207 s idle, 216–222 s in use) with templates as Fast Sandbox 1.2.0 caches them; a median 162 s idle and 182 s in use (114 s for the first pause after a create) with the template's zero runs left as holes ([below](#shortening-pauses)) |
 | Resume | 0.9 s, with the same processes and unsaved work on screen |
 | Idle pause (`idleTimeoutSeconds: 60`) | 60 s idle, then the same checkpoint |
 | Wake by a request to a port URL | 0.67 s for the first response, 0.27 s once awake |
 
 Slow pause is a limitation of Fast Sandbox on this storage: every pause
-writes and uploads a full checkpoint, so it grows with memory size and disk
-speed (a P6 managed disk here). Resume and wake are fast.
+writes, reads back, hashes and uploads a full checkpoint (13.96 GB for this
+template, whatever changed), so it grows with the template's size and the
+state root's throughput. Resume and wake are fast.
+
+#### Shortening pauses
+
+Measured on the test host with Workbot's desktop; method, phases and raw
+numbers in [research/fast-sandbox-pause-time.md](../research/fast-sandbox-pause-time.md).
+
+- **Leave templates sparse.** Fast Sandbox 1.2.0 writes a pulled template
+  densely: the 9 GiB root filesystem and 4 GiB memory file take 13 GiB on
+  disk though 3.5 GiB is data. Every pause then reads the zeros back from
+  disk. With the zero runs as holes the median pause fell 17–22% (45% for
+  the first pause after a create), resumes stayed as fast and the desktop
+  kept its state. The fix belongs in Fast Sandbox's pull
+  ([patch](../research/fast-sandbox-sparse-pull.patch)). Until it ships, an
+  operator can punch the holes into a newly pulled template before putting
+  it in service: the first create pulls it, so create and delete one
+  sandbox, then run `test/pause/punch.py` on the cached `rootfs.img` and
+  `memory.snap` under `/var/lib/fast-sandbox/firecracker/images/` with no
+  sandbox on the node. Content and digests do not change (compare them with
+  the entry's `manifest.json`); a later pull of the same template writes it
+  densely again.
+- **Mind the disk's throughput, not its size.** Every phase is limited by
+  the state root: about 175 MB/s through a P6 or P15 on burst credits,
+  reads and writes together. When the credits run out the disk falls to its
+  baseline (50 MB/s on a P6, 125 MB/s on a P15) and an in-use pause took
+  316–340 s here. Provision throughput (Premium SSD v2, or a local NVMe disk)
+  for nodes that pause often.
+- **A RAM spill area shortens the freeze, not the pause.**
+  `FAST_SANDBOX_SNAPSHOT_SPILL_DIR` on a memory-backed volume took the
+  memory dump from 26–49 s to 1.6 s, but the same bytes still reach the disk
+  afterwards and the pause took as long (210 s). It helps snapshots and
+  forks of running sandboxes, whose guest is frozen for the dump. Firecracker
+  runs in the fastlet's memory cgroup, so a RAM spill needs the fastlet's
+  `fastletOverhead` in `fast-sandbox-runtime-environments` raised by one
+  dump (dumps run one at a time per fastlet), or two busy VMs plus a dump can
+  exceed its limit.
+- **Keep the node cache under 20 GiB.** A fastlet restart evicts cache
+  entries over the cap, least used first, and that can be the desktop
+  template while stale checkpoints stay; the next create then pulls 14 GB
+  again.
 
 What a template and host need:
 
@@ -302,7 +342,7 @@ Gaps found running Workbot's desktop:
 | The template builder pulls the source image anonymously (no pull secrets) | **Limitation**; copy private images to a registry the builder can reach without credentials, such as one on the KVM node's private address |
 | Each KVM node caches converted templates up to a fixed 20 GiB, and evicted templates are not re-pulled (`RuntimeNotReady ... no committed restore set`) | **Limitation** of 1.2.0; keep one desktop-sized template (about 14 GB) per node and delete superseded templates |
 | Port URLs (route scopes) never expire | **Limitation**; keep the gateway private or treat URLs as credentials |
-| Pause takes minutes for a 4 GiB desktop | **Limitation** (full checkpoint per pause) |
+| Pause takes minutes for a 4 GiB desktop | **Limitation** of 1.2.0 (full checkpoint, read twice, per pause); sparse templates cut it (above). Upstream changes that would cut it further are listed in the [research](../research/fast-sandbox-pause-time.md#remaining-ideas-that-need-an-upstream-change) |
 | One template per pool; Differently shows the requested size, not the template's | **Not built yet** |
 
 ## Isolation, egress and credentials
