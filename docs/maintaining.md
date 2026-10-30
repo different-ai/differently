@@ -8,8 +8,9 @@ page holds the reasoning and the commands.
 
 Differently is a control plane. It owns tenancy, keys, quotas, fair queueing,
 placement policy, reconciliation, audit and the trust report. It runs no
-sandboxes itself: OpenSandbox (the default private runtime), Daytona,
-Freestyle and `remote` plugins do, behind the adapter contract. Most bugs worth
+sandboxes itself: OpenSandbox (the default private runtime), the other
+[provider adapters](providers/README.md) and `remote` plugins do, behind the
+adapter contract. Most bugs worth
 fixing sit where the two meet: what a backend really returns, and what the
 control plane does with it.
 
@@ -19,18 +20,29 @@ control plane does with it.
 |---|---|---|
 | Public API (a route, a field, an error) | `pkg/api`, `internal/server`, `api/openapi.yaml`, the SDKs | `internal/server` tests (the OpenAPI test keeps the router and spec in sync); SDK tests |
 | Placement, policy, classification | `internal/policy`, `internal/scheduler` | `internal/server/server_test.go` (acceptance scenarios A–L) |
+| Slots, the resume queue, preemption, lifecycle limits | `internal/scheduler/capacity.go`, `internal/store` (`HoldsPoolSlot`, `ReclaimSlot`), the model in `internal/capsim` | The capacity tests named in [capacity.md](scheduling/capacity.md); store conformance through both stores; rerun `go run ./cmd/differently-capsim` when a strategy changes |
 | Quotas, admission, activation | `internal/store` (memory and Postgres) | `internal/store/storetest` through both stores; `make test-postgres` |
 | Reconciliation and recovery | `internal/scheduler` (`Reconcile`, `retry`) | Server tests using the fake backend; the e2e drift test |
 | A backend's behaviour | `internal/adapters/<kind>` | Its fake-server tests; for OpenSandbox also the recordings ([below](#recordings-real-backends-replayed-in-go-test)) |
+| A new provider kind | The adapter, then every registration list in [the provider catalog's checklist](providers/README.md#add-a-built-in-adapter) | `TestEveryAdapterKindHasATrustRule`; its fake-server tests |
 | The adapter contract | `pkg/adapter`, `pkg/adapter/adapterhttp`, `internal/adapters/fake` | `adapterhttp` round-trip tests; [adapter specification](adapters/specification.md) |
 | Stored credentials and keys | `internal/secrets`, `internal/server` | [keys-and-providers.md](guides/keys-and-providers.md) lists what is verified |
 | Install and operations | `deploy/helm/differently` (values, schema, templates, NOTES), `cmd/differently-server` (`preflight`, `migrate`) | `make helm-lint`; the ci value sets; the deploy guides |
 | The OpenWork integration | This repository's API and [docs/guides/openwork.md](guides/openwork.md); the client lives in OpenWork (`packages/sandbox-differently`) | OpenWork's provider tests against a running Differently |
+| The built-in dashboard | `internal/dashboard/static` | Load it against `differently-server --dev` |
+| The admin console | `console/` ([README](../console/README.md)); `src/lib/providers.ts` follows the dashboard's `kinds` | `npm run typecheck`, `npm run build` and `npm run build:server` (CI's `console` job); its pages against dev mode |
+| The website | `site/src/pages/index.astro` (landing page), `site/pages-src/features.md`, the sidebar in `site/astro.config.mjs`; every other page syncs from `docs/**` and the READMEs | `npm run build` in `site/` validates every link |
 
 Docs that must stay truthful with the code: [feature-parity.md](feature-parity.md),
 [roadmap.md](roadmap.md), [acceptance-scenarios.md](acceptance-scenarios.md),
 the [trust model](security/trust-model.md) and the `limitations()` the trust
 report returns.
+
+A verified result is stated in several places: the page that recorded it
+(a deploy guide, [test/e2e](../test/e2e/README.md), a provider page), then
+the README's status list, the roadmap, feature parity, the website's landing
+page and its Features page. Update them in the same PR, so no page still
+says "not yet" about something another one reports as run.
 
 ## Prove a change at the right cost
 
@@ -45,7 +57,7 @@ the one before; repeating a rung for reassurance adds nothing.
 | Recorded runtimes | part of `go test` (`TestReplayRecordings`) | Any OpenSandbox adapter change: real responses from the Docker and Kubernetes runtimes, no server |
 | Live adapter | `OPENSANDBOX_URL=… go test -tags live -run TestLiveOpenSandbox ./internal/adapters/opensandbox/`; for the managed providers `DAYTONA_API_KEY=… go test -tags live -run TestLiveDaytona ./internal/adapters/daytona/` and `FREESTYLE_API_KEY=… go test -tags live -run TestLiveFreestyle ./internal/adapters/freestyle/` (a few small sandboxes, all deleted) | A new OpenSandbox call or version; re-recording; any Daytona or Freestyle adapter change |
 | Real stack, local | `make e2e-prepare e2e-up e2e` | Behaviour across the API, scheduler, store and a real OpenSandbox server |
-| Real stack, a real cluster | the e2e suite pointed at an install ([test/e2e](../test/e2e/README.md#run-against-another-deployment)) | Helm, NetworkPolicy, the Kubernetes runtime, upgrades |
+| Real stack, a real cluster | the e2e suite pointed at an install ([test/e2e](../test/e2e/README.md#run-against-another-deployment)) | Helm, NetworkPolicy, the Kubernetes and Fast Sandbox runtimes, upgrades |
 
 CI runs the first four on every PR. The live, e2e and cluster rungs need a
 server and are run by hand; record what ran, where and with which versions in
@@ -55,6 +67,11 @@ PR what did not run.
 
 On macOS, run Docker stacks from a checkout under your home folder: Colima
 shares only `$HOME` with its VM, so bind mounts from `/tmp` fail.
+
+On a cluster, a Fast Sandbox pause or snapshot of a desktop takes minutes,
+so the suite there takes much longer than the Docker stack. Point
+`DIFFERENTLY_E2E_METRICS_URL` at the scheduler leader's pod rather than the
+Service: with several replicas only the leader counts transitions.
 
 ## Recordings: real backends, replayed in go test
 
@@ -166,6 +183,14 @@ Self-hosting checklist for any change an operator will feel:
 | Pause hangs, snapshots fail `RegistryNotConfigured` | The Kubernetes runtime needs `controller.snapshot.registry` | Configure the registry, or leave both out of the pool's `features` |
 | stderr arrives before earlier stdout | `execd` reads the two pipes separately | Compare each stream on its own |
 | `docker pull ghcr.io/different-ai/...` says `denied` on one machine only | A stale `ghcr.io` login in `~/.docker/config.json` | `docker logout ghcr.io`; release images are public, tagged without a leading `v` |
+| Times inside a Fast Sandbox microVM are hours or days behind | The guest clock starts at the time its template or checkpoint was written | The adapter sets it after create and resume; keep that step when changing the adapter |
+| A Fast Sandbox pause or snapshot times out | A 4 GiB desktop's checkpoint takes about three minutes, longer than the general ready timeout | The pool's `checkpointTimeoutSeconds` (default 900) |
+| Fast Sandbox template builds fail when they report their result | The build pods cannot reach the Kubernetes API (6443) or the source registry | Allow both in the sandbox network policy ([azure-vms.md](deploy/azure-vms.md)) |
+| A client shows a date of 31 December, year 1 | The API sends Go's zero time (`0001-01-01T00:00:00Z`) for a time never set | Treat it as unset, as `isSet` in `console/src/lib/ui.ts` does |
+| In `console/`, `npm run dev` answers 404 for `/v1/...` | Astro's `trailingSlash: 'always'` rejects paths without a slash before any Vite middleware runs | Leave `trailingSlash` unset in `console/astro.config.mjs` |
+| A PR shows no CI run at all | GitHub runs no `pull_request` workflows while a PR has merge conflicts | Merge `pre-release` in, resolve, push |
+| CodeQL reports `go/allocation-size-overflow` | `make([]byte, n+len(msg))` with an unbounded length | Check the size against a limit before allocating |
+| `gh pr merge --auto` on a `pre-release` PR fails with "unstable status" | `pre-release` has no required checks, so there is nothing for auto-merge to wait for | Check the CI run, then merge |
 
 ## Releasing
 
@@ -175,3 +200,25 @@ approval `main` needs once every job is green; a release is a squash-merged
 `pre-release` → `main` PR followed by a `vX.Y.Z` tag on `main`, which builds
 the binaries, the Helm chart and the images (`ghcr.io/different-ai/differently-{server,cli}:X.Y.Z`);
 `sync-pre-release` merges `main` back.
+
+What the releases so far have shown:
+
+- Alpha and RC tags are signed annotated tags on `pre-release`
+  (`git tag -s vX.Y.Z-alpha.N -m vX.Y.Z-alpha.N <merge commit>`); the release
+  workflow takes every version from the tag. `checksums.txt` covers the
+  binary archives, not the chart.
+- A release prep PR changes the CHANGELOG and the version strings in the
+  docs and on the website (`site/src/pages/index.astro`). Merge it and push
+  the tag one after the other, so the website never names a release that
+  is not published yet.
+- `main` follows `pre-release` through a PR titled
+  `chore: merge pre-release into main`. Its auto-merge can stay `BLOCKED`
+  with every check green and the CI approval present. Merge it with the
+  GraphQL `mergePullRequest` mutation, pinned to the head CI checked
+  (`expectedHeadOid`), then confirm in
+  `GET /repos/different-ai/differently/rulesets/rule-suites?ref=refs/heads/main`
+  that every rule passed. A rule that did not pass means the merge used a
+  bypass: say so in the PR and fix the cause.
+- A ruleset stops `pre-release` from being deleted when a release PR merges
+  (the repository deletes merged head branches). If it is ever gone,
+  recreate it at the release PR's head and rerun `sync-pre-release`.

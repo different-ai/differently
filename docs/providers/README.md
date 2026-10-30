@@ -141,9 +141,12 @@ would wrap.
      fails until you choose, so a new kind can never be treated as private
      by omission;
    - the adapter enum in `deploy/helm/differently/values.schema.json`;
-   - the `--adapter` help in `cmd/differently/main.go` and the `kinds`
-     table in `internal/dashboard/static/app.js`, so operators can add it
-     without a config file.
+   - the `--adapter` help in `cmd/differently/main.go`, the `kinds` table
+     in `internal/dashboard/static/app.js` and `console/src/lib/providers.ts`,
+     so operators can add it without a config file.
+
+   Adapters written in parallel all edit these lists, so their PRs conflict
+   with each other. The resolution is always the union of both sides.
 3. Write `docs/providers/<kind>.md` from the template below, and add a row
    here.
 4. When you have an account or a running install, run the adapter's live

@@ -106,8 +106,9 @@ const ways = [
     title: 'Existing Kubernetes',
     where: 'EKS · GKE · AKS · k3s · RKE2',
     what: 'Install the Helm chart on an existing cluster, next to an OpenSandbox server.',
-    status: 'Documented',
-    kind: 'documented',
+    detail: 'Tested with Helm on single-node and two-node k3s on Azure. Managed EKS, GKE and AKS are documented and have not been run yet.',
+    status: 'Verified on k3s',
+    kind: 'verified',
     href: `${base}/docs/deploy/kubernetes/`,
     cta: 'Kubernetes guide',
   },
@@ -123,11 +124,11 @@ const ways = [
 
 // Project status. verified: ran against real infrastructure. notVerified: not run yet.
 const verified = [
-  ['End-to-end suite', "14 of 14 tests pass on OpenSandbox's Docker runtime (arm64) and its Kubernetes runtime (single-node k3s on Azure, installed with Helm)."],
+  ['End-to-end suite', "14 of 14 tests pass on OpenSandbox's Docker runtime (arm64), its Kubernetes runtime (single-node k3s on Azure, installed with Helm) and a Fast Sandbox microVM pool (two-node k3s)."],
   ['Kubernetes runtime', 'Stop/start with the disk kept, snapshots and fork through a snapshot registry, signed port URLs including WebSockets, and egress policy.'],
   ['Idle auto-stop', 'Idle sandboxes stop (Kubernetes) or pause (Docker) and wake on the next call.'],
   ['Release artifacts', 'The published chart and images install from public registries; the first sandbox runs in about 2 s.'],
-  ['Recorded runtimes', 'Real OpenSandbox responses from both runtimes are replayed in every go test.'],
+  ['Recorded runtimes', 'Real OpenSandbox responses from the Docker, Kubernetes and Fast Sandbox runtimes are replayed in every go test.'],
   ['OpenWork', "Workbot computers run through Differently as a sandbox gateway, behind a flag: commands with Python tools, files, pause and resume, and Workbot's desktop on Fast Sandbox microVMs."],
   ['Failure isolation', 'An image that cannot be pulled fails that sandbox only; the shared pool stays healthy.'],
   ['agent-sandbox', 'The adapter runs against a Kubernetes cluster (kind, runc).'],
@@ -176,11 +177,25 @@ const features = [
     href: '/docs/security/trust-model/',
     cta: 'Security and trust model',
   },
+  {
+    k: '05',
+    title: 'Capacity that follows use',
+    body: 'A paused sandbox on a pool that checkpoints, such as Fast Sandbox microVMs or Freestyle, gives its slot back, and its resume waits in a queue when the pool is full. Preemption and run or pause limits keep pools from filling with forgotten sandboxes.',
+    href: '/docs/scheduling/capacity/',
+    cta: 'Capacity',
+  },
+  {
+    k: '06',
+    title: 'Admin console',
+    body: 'Sandboxes, keys, providers, policies, usage, audit and the trust report in one small app. Host it as static files anywhere, even only on your laptop, or run it on Node with sign-in next to a Differently you keep private.',
+    href: '/docs/guides/console/',
+    cta: 'Admin console guide',
+  },
 ];
 
 const fromRuntime = [
   ['Sandbox runtimes', 'Docker, Kubernetes, and Fast Sandbox (Firecracker microVMs on a per-node agent).'],
-  ['Lifecycle', 'Create and delete; pause and resume on Docker; stop and start on Kubernetes; a provider-side timeout as a TTL backstop.'],
+  ['Lifecycle', 'Create and delete; pause and resume on Docker and Fast Sandbox; stop and start on Kubernetes; a provider-side timeout as a TTL backstop.'],
   ['Exec and files', 'Commands with env, cwd, timeouts and streamed output; upload, download and list files.'],
   ['Snapshots', 'Disk snapshots and fork on Docker, Kubernetes and Fast Sandbox; memory-preserving pause on Docker and Fast Sandbox (a Fast Sandbox pause takes minutes).'],
   ['Open source', 'Apache-2.0, self-hostable, with SDKs in several languages.'],
@@ -192,6 +207,7 @@ const added = [
   ['Many backends, one API', '16 built-in provider adapters and plugins behind one contract and one SDK.'],
   ['Placement explanations', 'Every decision records the pools considered, the ones rejected and why.'],
   ['Audit and trust report', 'A tamper-evident audit chain and one report of endpoints, credentials by reference, external placements and limits.'],
+  ['Capacity that follows use', 'A paused microVM gives its pool slot back; resumes queue on a full pool, and preemption makes room for waiting work.'],
 ];
 const compare = [
   ['Where sandboxes can run', 'One runtime or one vendor', 'Every registered pool, chosen per request'],

@@ -34,6 +34,16 @@ All notable changes are recorded here. The format follows
 - The OpenWork guide records the end-to-end run, Freestyle template slugs
   and OpenSandbox's maximum timeout; the e2e suite runs on installs with
   several pools and replicas, and gives Fast Sandbox checkpoints time.
+- The README, roadmap, feature parity, end-to-end and keys pages, and the
+  website now state the same verified results: the end-to-end suite on a
+  Fast Sandbox pool, two-node k3s, and stored provider keys in use on Azure.
+  The website lists capacity and the admin console, and its sidebar gains
+  Capacity, Keys and providers, OpenWork and Maintaining.
+- `AGENTS.md` and `docs/maintaining.md` record what building and releasing
+  taught so far: where capacity, the console and the website live and how to
+  check them, the lists a new provider kind touches, new traps (Fast Sandbox
+  clock and checkpoints, template builds, zero times, CI on conflicting PRs),
+  and how release tags and `main` syncs are done.
 
 ### Added (admin console)
 

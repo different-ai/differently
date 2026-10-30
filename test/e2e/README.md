@@ -118,6 +118,8 @@ them precisely instead.
 
 Not covered yet:
 
-- the full suite on OpenSandbox's Fast Sandbox (Firecracker microVM) runtime (one partial run, above);
-- several nodes and a node drain on the Kubernetes runtime;
-- external providers.
+- on Fast Sandbox, the four tests not run there (the e2e desktop image,
+  unpullable images, Differently's own idle sweep and provider switching);
+- a node drain, and more than one KVM node;
+- external providers through this suite (Daytona and Freestyle have run
+  with their adapters' live tests instead).
