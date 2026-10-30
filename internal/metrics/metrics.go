@@ -63,6 +63,13 @@ var (
 		Name: "differently_resume_wait_seconds", Help: "Time a queued resume waited for a slot.",
 		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1800, 3600},
 	}, []string{"pool"})
+	// PauseSeconds measures how long the backend took to pause: on a
+	// checkpointing pool, the time until the paused sandbox frees its slot
+	// (internal/capsim's PauseTime).
+	PauseSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "differently_pause_seconds", Help: "Time a pause took on its backend.",
+		Buckets: []float64{1, 5, 15, 30, 45, 60, 90, 120, 180, 300, 600, 900},
+	}, []string{"pool"})
 	// Preemptions counts sandboxes paused to make room on a full pool.
 	Preemptions = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "differently_preemptions_total", Help: "Sandboxes paused to make room for waiting work.",
@@ -77,5 +84,5 @@ var (
 func init() {
 	Registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	Registry.MustRegister(Transitions, Placements, ProvisionSeconds, QueueSeconds, Requests, RequestSeconds, Reconciled, AuditFailures,
-		PoolSlots, Overcommitted, ResumesQueued, ResumeWaitSeconds, Preemptions, LifecycleActions)
+		PoolSlots, Overcommitted, ResumesQueued, ResumeWaitSeconds, PauseSeconds, Preemptions, LifecycleActions)
 }

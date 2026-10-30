@@ -59,13 +59,14 @@ type Config struct {
 }
 
 // Workbot returns OpenWork Workbot's settings on the Azure Fast Sandbox pool:
-// a 5-minute idle pause, a checkpoint pause of about 3 minutes and a resume
-// of about 2 s.
+// a 5-minute idle pause, a checkpoint pause of 182 s (the median for an
+// in-use desktop with sparse templates, docs/research/fast-sandbox-pause-time.md)
+// and a resume of about 2 s.
 func Workbot(s Strategy, slots, users int) Config {
 	return Config{
 		Strategy: s, Slots: slots, Users: users, Days: 5,
 		SessionsPerDay: 6, SessionMedian: 12 * 60, SessionSigma: 0.9,
-		IdlePause: 300, PauseTime: 180, ResumeTime: 2, MinRun: 600, PreemptIdle: 60, Seed: 1,
+		IdlePause: 300, PauseTime: 182, ResumeTime: 2, MinRun: 600, PreemptIdle: 60, Seed: 1,
 	}
 }
 

@@ -24,9 +24,21 @@ All notable changes are recorded here. The format follows
   `slotReleased`, `resumeRequestedAt`, and a pool's `preemption` and
   `released`. The console marks queued resumes, released slots and idle
   sandboxes, and the Providers page counts paused sandboxes that hold no slot.
+- `differently_pause_seconds{pool}`: how long each pause Differently asks for
+  takes on its backend, the time a checkpointing pool needs to free a slot.
+- `differently-capsim -pause` and `-resume`; the Workbot model's pause is the
+  measured 182 s.
 
 ### Documentation
 
+- `docs/research/fast-sandbox-pause-time.md`: where a Workbot desktop's
+  pause on Fast Sandbox spends its time (memory dump, a checksum pass that
+  reads the whole checkpoint back, a single-stream upload, all limited by
+  the state-root disk), what was measured before and after leaving templates
+  sparse (median 216 s → 180 s, resumes unchanged, state kept), ranked
+  candidates, and two Fast Sandbox patches (sparse pull, parallel multipart
+  upload). The pools guide gains "Shortening pauses"; `test/pause` holds the
+  harness that measured it.
 - `docs/deploy/azure-vms.md`: a verified install on two Azure VMs with Fast
   Sandbox microVMs, managed Postgres, ACR and Key Vault, serving OpenWork's
   Workbot computers, and what it took (guest kernel, template registry,
