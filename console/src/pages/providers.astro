@@ -65,7 +65,7 @@ import { providerKinds } from '../lib/providers';
       { label: 'Adapter', cell: (p) => p.adapter },
       { label: 'Trust', cell: (p) => p.trust },
       { label: 'Health', cell: (p) => badge(!p.enabled ? 'disabled' : p.draining ? 'draining' : p.health?.status ?? 'unknown') },
-      { label: 'Active', cell: (p) => p.active },
+      { label: 'Active', cell: (p) => p.released ? el('span', { title: 'Paused sandboxes that hold no slot until they resume' }, String(p.active), el('span', { class: 'muted' }, ` · ${p.released} paused, no slot`)) : p.active },
       { label: 'Source', cell: (p) => el('span', { class: 'muted' }, p.source === 'config' ? 'Config file' : 'Added here') },
       { label: '', className: 'actions', cell: (p) => rowMenu([
         { label: 'Use for new sandboxes', run: async () => { if (await confirmAction(`Use ${p.name}?`, 'Every other pool is drained, so new sandboxes go here. Running sandboxes stay where they are.', 'Use', false)) { await c.admin.pools.use(p.name, { approveExternal: p.trust === 'external' }); toast(`New sandboxes go to ${p.name}`); await load(); } } },

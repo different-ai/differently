@@ -69,6 +69,12 @@ export interface CreateSandboxParams {
   fromSnapshot?: string;
   /** Stop or pause after this many seconds unused (at least 60); the next call wakes it. -1 turns it off. */
   idleTimeoutSeconds?: number;
+  /** Pause (or stop) after running this long without a break, busy or not (at least 60). 0 uses the operator default, -1 turns it off. */
+  maxRunSeconds?: number;
+  /** Delete after staying paused or stopped this long (at least 60). 0 uses the operator default, -1 turns it off. */
+  maxPausedSeconds?: number;
+  /** false keeps the scheduler from pausing this sandbox to make room on a full pool. Default true. */
+  preemptible?: boolean;
 }
 
 export interface UpdateSandboxParams {
@@ -77,6 +83,9 @@ export interface UpdateSandboxParams {
   ttlSeconds?: number;
   /** At least 60, or -1 to turn idle auto-stop off. */
   idleTimeoutSeconds?: number;
+  maxRunSeconds?: number;
+  maxPausedSeconds?: number;
+  preemptible?: boolean;
 }
 
 export interface ListSandboxesParams {
@@ -117,6 +126,17 @@ export interface SandboxInfo {
   lastActivityAt?: string;
   /** Set while stopped or paused for being idle; the next exec, file, port or keepalive call wakes it. */
   idledAt?: string;
+  /** The lifecycle limits in force (absent: off). */
+  maxRunSeconds?: number;
+  maxPausedSeconds?: number;
+  /** Whether the scheduler may pause this sandbox to make room on a full pool. */
+  preemptible?: boolean;
+  /** When the sandbox last paused or stopped. */
+  pausedAt?: string;
+  /** True while a paused sandbox holds no pool slot: its pool checkpoints on pause. */
+  slotReleased?: boolean;
+  /** Set while a resume waits for a free slot. */
+  resumeRequestedAt?: string;
   fromSnapshot?: string;
   attempts: number;
   createdBy: string;
@@ -345,7 +365,18 @@ export interface Pool {
   capabilities?: string[];
   health?: PoolHealth;
   capacity?: PoolCapacity;
+  /** Lets the scheduler pause running sandboxes to make room for waiting work. Absent or `off`: never. */
+  preemption?: Preemption;
   active: number;
+  /** Paused sandboxes on the pool that hold no slot. */
+  released?: number;
+}
+
+export interface Preemption {
+  /** `idle`: sandboxes unused for `idleSeconds`; `lru`: the least recently used running sandbox. */
+  mode: "off" | "idle" | "lru" | (string & {});
+  minRunSeconds?: number;
+  idleSeconds?: number;
 }
 
 /** Body of POST /v1/admin/pools. Credentials are references, never values. */

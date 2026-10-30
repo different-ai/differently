@@ -163,13 +163,20 @@ class Sandbox:
         labels: Optional[Mapping[str, str]] = None,
         ttl_seconds: Optional[int] = None,
         idle_timeout_seconds: Optional[int] = None,
+        max_run_seconds: Optional[int] = None,
+        max_paused_seconds: Optional[int] = None,
+        preemptible: Optional[bool] = None,
     ) -> "Sandbox":
         """Merges labels (an empty value removes one), resets the TTL, and/or sets
-        the idle timeout (at least 60 seconds, or -1 to turn it off)."""
+        the idle timeout (at least 60 seconds, or -1 to turn it off), the
+        lifecycle limits, or whether the sandbox may be preempted."""
         body = compact(
             labels=dict(labels) if labels is not None else None,
             ttlSeconds=ttl_seconds,
             idleTimeoutSeconds=idle_timeout_seconds,
+            maxRunSeconds=max_run_seconds,
+            maxPausedSeconds=max_paused_seconds,
+            preemptible=preemptible,
         )
         return self._set(self._http.json("PATCH", self._path, json=body))
 
@@ -249,6 +256,9 @@ class Sandbox:
         return self._lifecycle("pause")
 
     def resume(self) -> "Sandbox":
+        """Resumes a paused sandbox. If its pause released the pool slot and the
+        pool is full, the resume is queued: the sandbox stays paused with
+        ``resumeRequestedAt`` set until a slot frees; ``wait()`` for running."""
         return self._lifecycle("resume")
 
     def keepalive(self) -> "Sandbox":
@@ -300,6 +310,9 @@ class Sandboxes:
         priority: Optional[int] = None,
         from_snapshot: Optional[str] = None,
         idle_timeout_seconds: Optional[int] = None,
+        max_run_seconds: Optional[int] = None,
+        max_paused_seconds: Optional[int] = None,
+        preemptible: Optional[bool] = None,
         wait: bool = True,
         timeout: float = DEFAULT_WAIT_SECONDS,
         idempotency_key: Optional[str] = None,
@@ -322,6 +335,9 @@ class Sandboxes:
             priority=priority,
             fromSnapshot=from_snapshot,
             idleTimeoutSeconds=idle_timeout_seconds,
+            maxRunSeconds=max_run_seconds,
+            maxPausedSeconds=max_paused_seconds,
+            preemptible=preemptible,
         )
         info = self._http.json(
             "POST",
@@ -372,9 +388,24 @@ class Sandboxes:
                 return
 
     def update(
-        self, sandbox_id: str, *, labels: Optional[Mapping[str, str]] = None, ttl_seconds: Optional[int] = None
+        self,
+        sandbox_id: str,
+        *,
+        labels: Optional[Mapping[str, str]] = None,
+        ttl_seconds: Optional[int] = None,
+        idle_timeout_seconds: Optional[int] = None,
+        max_run_seconds: Optional[int] = None,
+        max_paused_seconds: Optional[int] = None,
+        preemptible: Optional[bool] = None,
     ) -> Sandbox:
-        body = compact(labels=dict(labels) if labels is not None else None, ttlSeconds=ttl_seconds)
+        body = compact(
+            labels=dict(labels) if labels is not None else None,
+            ttlSeconds=ttl_seconds,
+            idleTimeoutSeconds=idle_timeout_seconds,
+            maxRunSeconds=max_run_seconds,
+            maxPausedSeconds=max_paused_seconds,
+            preemptible=preemptible,
+        )
         return Sandbox(self._http, self._http.json("PATCH", _sandbox_path(sandbox_id), json=body))
 
     def delete(self, sandbox_id: str) -> Sandbox:

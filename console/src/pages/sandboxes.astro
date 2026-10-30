@@ -41,6 +41,9 @@ import Icon from '../components/Icon.astro';
   const c = client();
   let status = '';
 
+  // Why a paused or stopped sandbox is waiting.
+  const note = (s: Sandbox) => (s.info.resumeRequestedAt ? 'Resume queued' : s.info.slotReleased ? 'Slot released' : s.info.idledAt ? 'Idle' : '');
+
   async function load() {
     await section('#list', async () => {
       const filter = status ? (status.split(',') as SandboxStatus[]) : undefined;
@@ -48,7 +51,7 @@ import Icon from '../components/Icon.astro';
       const act = (label: string, fn: () => Promise<unknown>) => ({ label, run: async () => { await fn(); toast(`${label}: done`); await load(); } });
       return table<Sandbox>([
         { label: 'Sandbox', cell: (s) => el('span', { class: 'mono' }, s.id) },
-        { label: 'Status', cell: (s) => badge(s.status) },
+        { label: 'Status', cell: (s) => el('span', { class: 'status-cell', title: s.info.statusReason }, badge(s.status), note(s) && el('span', { class: 'muted' }, note(s))) },
         { label: 'Pool', cell: (s) => s.info.pool || el('span', { class: 'muted' }, '—') },
         { label: 'Profile', cell: (s) => s.info.profile || s.info.template || '—' },
         { label: 'Created', cell: (s) => el('span', { class: 'muted' }, relTime(s.info.createdAt)) },
@@ -56,7 +59,8 @@ import Icon from '../components/Icon.astro';
           { ...act('Stop', () => s.stop()), hidden: s.status !== 'running' },
           { ...act('Start', () => s.start()), hidden: s.status !== 'stopped' },
           { ...act('Pause', () => s.pause()), hidden: s.status !== 'running' },
-          { ...act('Resume', () => s.resume()), hidden: s.status !== 'paused' },
+          { label: 'Resume', hidden: s.status !== 'paused' || !!s.info.resumeRequestedAt,
+            run: async () => { await s.resume(); toast(s.info.resumeRequestedAt ? 'Resume queued: it starts when the pool has a free slot' : 'Resume: done'); await load(); } },
           { label: 'Copy ID', run: () => navigator.clipboard.writeText(s.id).then(() => toast('Copied')) },
           { label: 'Delete', danger: true, hidden: s.status === 'terminated' || s.status === 'terminating',
             run: async () => { if (await confirmAction('Delete sandbox?', `${s.id} and its disk are removed. This cannot be undone.`, 'Delete')) { await s.delete(); toast('Deleted'); await load(); } } },
