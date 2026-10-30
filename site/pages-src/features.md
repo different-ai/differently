@@ -6,7 +6,7 @@ description: What OpenSandbox provides, what Differently adds on top, and how th
 Differently is an orchestration and resource-management layer. It does not run sandboxes itself: it decides where each one runs and keeps account of it. Its default private runtime is [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox), run by the operator; other pools can be any of the [built-in provider adapters](/differently/docs/providers/), from E2B and Daytona to the cloud providers' sandbox services, or any service that speaks the [adapter protocol](/differently/docs/adapters/specification/).
 
 :::caution[Pre-release]
-The end-to-end suite passes 14/14 against real OpenSandbox servers on the Docker runtime and on the Kubernetes runtime (single-node k3s). Fast Sandbox (microVM) ran live on one node, without the end-to-end suite yet; Daytona and Freestyle ran against live accounts; multi-node and managed clusters, and live accounts for the other managed providers, are not verified yet. See the [roadmap](/differently/docs/roadmap/).
+The end-to-end suite passes 14/14 against real OpenSandbox servers on the Docker runtime and on the Kubernetes runtime (single-node k3s), and on a Fast Sandbox microVM pool on a two-node k3s cluster (14 of 14 run). Daytona and Freestyle ran against live accounts. Node drains, more than one KVM node, managed clusters and live accounts for the other managed providers are not verified yet. See the [roadmap](/differently/docs/roadmap/).
 :::
 
 ## What OpenSandbox provides
@@ -16,7 +16,7 @@ These come from the runtime. Differently exposes them through its own API when t
 | Feature | Notes |
 |---|---|
 | Runtimes | Docker, Kubernetes, and Fast Sandbox (Firecracker microVMs managed by a per-node agent) |
-| Lifecycle | Create and delete everywhere. Pause and resume keep memory on Docker and Fast Sandbox (a Fast Sandbox pause uploads a full checkpoint and takes minutes); stop and start keep the disk on Kubernetes, through a snapshot registry |
+| Lifecycle | Create and delete everywhere. Pause and resume keep memory on Docker and Fast Sandbox (a Fast Sandbox pause uploads a full checkpoint and takes minutes, and a paused microVM leaves the host); stop and start keep the disk on Kubernetes, through a snapshot registry |
 | Exec | Commands with env, cwd, timeouts, exit codes and streamed output; stdin is staged in a file the command reads |
 | Files | Upload, download and list |
 | Snapshots and fork | Disk snapshots and fork on Docker, on Fast Sandbox, and on Kubernetes through a snapshot registry; memory snapshots are not exposed yet |
@@ -39,10 +39,13 @@ OpenSandbox is a single-trust-domain runtime: one server-wide API key, no organi
 | Fail-closed external capacity | Registering an external provider authorizes nothing until policy explicitly allows it |
 | One API across backends | OpenSandbox pools, 15 more [provider adapters](/differently/docs/providers/) and custom plugins behind one HTTP contract, CLI and TypeScript, Python and Go SDKs |
 | Idle auto-stop | Sandboxes left idle are stopped or paused and wake on the next call |
+| Capacity that follows use | A paused sandbox on a pool that checkpoints (Fast Sandbox, Freestyle) gives its slot back; a resume on a full pool waits in a queue; preemption and run or pause limits keep a pool from filling with forgotten sandboxes. See [capacity](/differently/docs/scheduling/capacity/) |
+| Provider keys and switching | Provider keys are stored sealed in Differently or referenced; one command moves new sandboxes to another provider, and API keys rotate with a grace period |
 | Placement explanations | `GET /v1/sandboxes/{id}/placement` lists the pools considered, the ones rejected and why |
 | Tamper-evident audit | Hash-chained audit events with a verify endpoint and JSON-lines export |
 | Trust report | Endpoints, credentials by reference, external placements, admin actions, audit chain status and what Differently cannot prove |
 | Reconciliation | The control plane reconciles its state against every backend |
+| Admin interfaces | A built-in dashboard, and a separate [admin console](/differently/docs/guides/console/) you can host as static files anywhere or run on Node with sign-in |
 | Self-hosted end to end | No hosted service, license server or telemetry; Postgres is the only production dependency |
 
 ## Compared to a single provider

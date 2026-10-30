@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status date | 2026-10-28 |
-| Evidence rule | **Done** means implemented and covered by automated tests, most of which run in-process with fakes. **Validated** means run against real infrastructure or live accounts; today only the `opensandbox` adapter with OpenSandbox's Docker runtime is validated. |
+| Status date | 2026-10-29 |
+| Evidence rule | **Done** means implemented and covered by automated tests, most of which run in-process with fakes. **Validated** means run against real infrastructure or live accounts: so far the `opensandbox` adapter on OpenSandbox's Docker, Kubernetes and Fast Sandbox runtimes, `agent-sandbox` on kind, and Daytona and Freestyle on live accounts. |
 | Detail | Tasks and acceptance criteria in [backlog.md](backlog.md); experiments in [proof-of-concepts.md](proof-of-concepts.md) |
 | Runtime change | Differently's own Firecracker node agent was removed; OpenSandbox is the default private runtime. |
 
@@ -11,9 +11,9 @@ Legend: ✅ done (tested in-process) · ✅ live: also run against a real backen
 
 ```mermaid
 flowchart LR
-  P0["Phase 0<br/>Foundations<br/>✅"] --> P1["Phase 1<br/>Private runtime<br/>🟡 OpenSandbox (Docker runtime live)"]
-  P0 --> P2["Phase 2<br/>Hybrid placement and<br/>external providers<br/>🟡 implemented, not validated"]
-  P1 --> P3["Phase 3<br/>Solidification<br/>📋 next: Fast Sandbox spike"]
+  P0["Phase 0<br/>Foundations<br/>✅"] --> P1["Phase 1<br/>Private runtime<br/>✅ OpenSandbox, three runtimes live"]
+  P0 --> P2["Phase 2<br/>Hybrid placement and<br/>external providers<br/>🟡 Daytona and Freestyle live"]
+  P1 --> P3["Phase 3<br/>Solidification<br/>🟡 in progress"]
   P2 --> P3
   P3 --> P4["Phase 4<br/>Scale and ecosystem<br/>📋"]
 ```
@@ -58,17 +58,17 @@ with its own tooling and registered as a pool with `trust: private`.
 
 | Item | Status | Where / notes |
 |---|---|---|
-| `opensandbox` adapter | ✅ live (Docker runtime) | `internal/adapters/opensandbox`; fake-server tests plus `TestLiveOpenSandbox` against OpenSandbox server `release-1.2.0` and `execd` v1.1.0 (arm64, Colima); a manual run through Differently ([spike](research/opensandbox-spike.md)) |
+| `opensandbox` adapter | ✅ live (Docker, Kubernetes, Fast Sandbox) | `internal/adapters/opensandbox`; fake-server tests plus `TestLiveOpenSandbox` against OpenSandbox `release-1.2.0` on each runtime, recorded and replayed in every `go test` ([spike](research/opensandbox-spike.md)) |
 | OpenSandbox as the default private runtime | ✅ decided | The Helm chart's `opensandbox:` values render a pool named `opensandbox` |
 | OpenSandbox Kubernetes runtime | ✅ live (single node) | Single-node k3s on Azure: e2e 14/14 with a snapshot registry (stop/start, snapshots, fork), signed port URLs and egress policy, and recorded adapter runs; multi-node and drain not run ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
-| OpenSandbox Fast Sandbox (Firecracker microVMs) | ✅ live (single node) | Single-node k3s on Azure under nested KVM: the recorded adapter scenario and Workbot's desktop (streamed, paused and resumed with memory, idled and woken); pause takes minutes; e2e suite not run yet ([E18](backlog.md#e18-fast-sandbox-spike)) |
-| End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (14/14, arm64 Colima) and the Kubernetes runtime (14/14, k3s on Azure, Helm install), 2026-10-29 ([results](../test/e2e/README.md)). Fast Sandbox not yet |
+| OpenSandbox Fast Sandbox (Firecracker microVMs) | ✅ live (one KVM node) | First on a single node under nested KVM, then on a two-node k3s cluster on Azure with a dedicated KVM node: the recorded adapter scenario, the end-to-end suite on the microVM pool, and Workbot's desktop (streamed, paused and resumed with memory, forked, idled and woken); a pause takes minutes ([azure-vms.md](deploy/azure-vms.md), [E18](backlog.md#e18-fast-sandbox-spike)) |
+| End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (14/14, arm64 Colima) and the Kubernetes runtime (14/14, k3s on Azure, Helm install), and on a Fast Sandbox microVM pool (14 of 14 run), 2026-10-29 ([results](../test/e2e/README.md)) |
 | Sandbox egress control | 🟡 | Per pool: `egress: none` or `allowlist`, enforced by OpenSandbox's egress sidecar (checked live on the Kubernetes runtime); placement and per-request allow-lists not yet ([E19](backlog.md#e19-opensandbox-network-policy-and-egress)) |
 | Node agent: lifecycle, capacity, heartbeat, `doctor` | ⛔ | Removed (`internal/agent`, `cmd/differently-agent`) |
 | Firecracker API client | ⛔ | Removed (`internal/firecracker`) |
 | Guest agent over vsock | ⛔ | Removed (`internal/guest`, `cmd/differently-guest`); the command runner moved to `internal/localexec` for `devhost` |
 | Per-VM tap, /30, iptables isolation | ⛔ | Removed; isolation and egress are the runtime's |
-| Stop/start, disk snapshots, fork pinned to node | ⛔ | OpenSandbox has pause/resume and snapshots, no stop/start |
+| Stop/start, disk snapshots, fork pinned to node | ⛔ | Each OpenSandbox runtime provides its own (stop/start on Kubernetes, pause/resume on Docker and Fast Sandbox) |
 | Restart recovery ([POC 2](proof-of-concepts.md#poc-2-agent-restart-semantics-in-kubernetes)) | ⛔ | Backend outages are now [POC 13](proof-of-concepts.md#poc-13-opensandbox-outage-and-recovery) |
 | Firecracker pool adapter (multi-agent placement, routing) | ⛔ | Removed (`internal/adapters/firecracker`) |
 | Helm chart with agent DaemonSet | ⛔ | The chart now deploys the control plane only, with an egress rule to OpenSandbox on port 80 |
@@ -79,10 +79,10 @@ with its own tooling and registered as a pool with `trust: private`.
 | Authenticated agent channel ([E3](backlog.md#e3-authenticated-agent-channel)) | ⛔ | No agent channel; pools hold a backend credential by reference |
 | Inbound ports on Firecracker ([E6](backlog.md#e6-preview-urls-for-firecracker-pools)) | ⛔ | OpenSandbox pools expose ports when OpenSandbox serves them without request headers |
 
-**Exit criteria (revised).** The end-to-end suite passes against a real
-OpenSandbox server with the Docker runtime; E18 (Fast Sandbox) and POC 12
-(Kubernetes runtime) recorded. The original criteria (POC 1, 2 and 9 on
-`.metal`) are obsolete.
+**Exit criteria (revised), met 2026-10-29.** The end-to-end suite passes
+against a real OpenSandbox server with the Docker runtime; E18 (Fast
+Sandbox) and POC 12 (Kubernetes runtime) recorded. The original criteria
+(POC 1, 2 and 9 on `.metal`) are obsolete.
 
 ## Phase 2: Hybrid placement and external providers
 
@@ -99,10 +99,12 @@ an operator-visible record of what left private infrastructure.
 | OpenSandbox as an external pool | ✅ | `trust: external` pools follow the usual approval rules; trust must be declared |
 | HTTP plugin protocol and `remote` pools | 🟡 | `pkg/adapter/adapterhttp`; untested since the agent tests, its only coverage, were removed ([E0.34](backlog.md#e0-correctness-and-security-fixes-from-the-code-review)); no protocol-version check yet |
 | Usage and cost estimates | ✅ | `GET /v1/usage`; estimates only, no invoice reconciliation |
-| **Live-account verification** | 🟡 | [POC 7](proof-of-concepts.md#poc-7-external-provider-live-account-verification), [E2](backlog.md#e2-external-adapters-on-live-accounts) |
+| **Live-account verification** | 🟡 | Daytona and Freestyle done; the other 12 provider adapters are tested against fakes of their published APIs ([POC 7](proof-of-concepts.md#poc-7-external-provider-live-account-verification), [E2](backlog.md#e2-external-adapters-on-live-accounts)) |
 
-**Exit criteria (not met).** POC 7 complete; Daytona and Freestyle rows in
-[feature-parity.md](feature-parity.md) moved from 🧪 to ✅.
+**Exit criteria.** POC 7 complete; Daytona and Freestyle rows in
+[feature-parity.md](feature-parity.md) moved from 🧪 to ✅. The second part
+is met (2026-10-29); Daytona's VM class (pause, memory snapshots) has not
+run on an account that offers it.
 
 ## Phase 3: Solidification (next)
 
@@ -114,14 +116,20 @@ security gaps, and add the features users hit first.
 > Workbot's desktop; on 2026-10-29 the end-to-end suite passed on a
 > two-node cluster ([azure-vms.md](deploy/azure-vms.md)). Next: node drains
 > and more than one KVM node.
+>
+> Also landed in this phase: paused sandboxes on checkpointing pools give
+> their slot back, with a resume queue, preemption and lifecycle limits
+> ([capacity](scheduling/capacity.md)); tenant keys see only the pools their
+> policies allow in `GET /v1/capabilities`; and a separate
+> [admin console](../console/README.md).
 
 Ordered by priority. P0 items gate any production recommendation.
 
 | Priority | Epic | Status |
 |---|---|---|
-| P0 | **[E18 Fast Sandbox spike](backlog.md#e18-fast-sandbox-spike)** (POC 11) | ✅ single node, 2026-10-29 |
+| P0 | **[E18 Fast Sandbox spike](backlog.md#e18-fast-sandbox-spike)** (POC 11) | ✅ one KVM node, end-to-end suite included, 2026-10-29 |
 | P0 | [E0 Correctness and security fixes from the code review](backlog.md#e0-correctness-and-security-fixes-from-the-code-review) | 📋 |
-| P0 | [E2 External adapters on live accounts](backlog.md#e2-external-adapters-on-live-accounts) (POC 7) | 📋 |
+| P0 | [E2 External adapters on live accounts](backlog.md#e2-external-adapters-on-live-accounts) (POC 7) | 🟡 Daytona and Freestyle live |
 | P1 | [E19 OpenSandbox network policy and egress](backlog.md#e19-opensandbox-network-policy-and-egress) (replaces E12) | 📋 |
 | P1 | [E21 OpenSandbox version pinning and upgrade testing](backlog.md#e21-opensandbox-version-pinning-and-upgrade-testing) (POC 13) | 📋 |
 | P1 | [E5 Postgres in CI, failover and scale](backlog.md#e5-postgres-in-ci-failover-and-scale) (POC 6, 10) | 📋 |

@@ -11,9 +11,10 @@ covers:
   stored credentials.
 
 > **Evidence level.** Unit and in-process API tests cover everything here
-> ([What is verified](#what-is-verified)). None of it has run against live
-> Daytona or Freestyle accounts, on a real cluster, or with more than one
-> server replica. Try it in a staging installation first.
+> ([What is verified](#what-is-verified)). On a two-replica install on Azure
+> the Freestyle and Daytona keys are stored this way (`secret:`) and Freestyle
+> sandboxes ran with them ([azure-vms.md](../deploy/azure-vms.md)); rotation
+> and switching have not run there. Try them in a staging installation first.
 
 The examples use the CLI with an operator key and the Helm release `dly`
 in namespace `differently`:
@@ -611,12 +612,14 @@ Tests on this branch:
 
 Not verified:
 
-- live Daytona and Freestyle accounts (their adapters are tested only
-  against fakes);
+- rotating a stored key, or switching providers, against live accounts
+  (stored keys are in use on the Azure install, where Freestyle sandboxes
+  ran with them);
 - `file:` pickup from a real Kubernetes Secret volume or Key Vault CSI mount.
   It uses the same code path as stored secrets but has no test of its own;
-- more than one server replica on a real cluster (covered only by a unit
-  test with two pool managers sharing a store; see
+- a rotation or a switch seen by more than one server replica on a real
+  cluster (two replicas run on the Azure install, but neither was exercised
+  there; a unit test covers two pool managers sharing a store, see
   [several replicas](#several-server-replicas));
 - the chart's generated secrets key and `runtimeProviders` egress on a real
   cluster.
