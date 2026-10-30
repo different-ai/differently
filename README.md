@@ -45,8 +45,9 @@ Apache-2.0, fully self-hosted, no telemetry. Built by the
 
 > **Pre-release ([`v0.1.0-alpha.2`](https://github.com/different-ai/differently/releases)).**
 > The whole platform is implemented and tested end to end against real
-> OpenSandbox servers (Docker and Kubernetes runtimes). It isn't ready for
-> production workloads yet: see [what is verified](#status).
+> OpenSandbox servers (Docker, Kubernetes and Fast Sandbox microVM
+> runtimes). It isn't ready for production workloads yet: see
+> [what is verified](#status).
 
 ## Why
 
@@ -67,7 +68,8 @@ that layer.
 | **Multi-tenant from day one** | Organizations, projects, scoped API keys with rotation, quotas and fair queueing. |
 | **Provable** | A tamper-evident audit chain, a placement explanation for every sandbox, and an operator trust report. |
 | **Keys stay with you** | Provider keys are stored sealed or by reference. Switch where new sandboxes go with one command. |
-| **Self-hosted, all of it** | API, dashboard, scheduler, queue, audit and metrics run on your infrastructure. No phone-home. |
+| **Capacity that follows use** | Paused microVMs give their pool slot back, resumes queue on a full pool, and preemption and run limits keep pools from filling up. |
+| **Self-hosted, all of it** | API, dashboard and admin console, scheduler, queue, audit and metrics run on your infrastructure. No phone-home. |
 
 ## Get started
 
@@ -92,7 +94,7 @@ Differently and a real OpenSandbox server, as the end-to-end suite runs it:
 
 ```bash
 make e2e-prepare e2e-up    # API on :18090, OpenSandbox on :18091
-make e2e                   # optional: the 12 end-to-end tests
+make e2e                   # optional: the end-to-end tests
 ```
 
 **3. Deploy it for your team.** On [one Linux VM on any cloud](docs/deploy/single-vm.md)
@@ -218,6 +220,7 @@ under a control plane you run. See the
 | `internal/` | Server, scheduler, reconciler, policy, store (memory and Postgres), auth, audit, secrets, adapters |
 | `api/openapi.yaml` | The HTTP API contract (a test keeps it in sync with the router) |
 | `sdk/typescript`, `sdk/python` | Official SDKs |
+| `console/` | The admin console: static files for any host, or Node with sign-in |
 | `deploy/` | Helm chart (control plane only), Terraform (AWS) |
 | `docs/` | Guides, deployment, architecture, security, roadmap |
 | `site/` | The website and docs site |

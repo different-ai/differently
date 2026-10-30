@@ -41,6 +41,8 @@ export default defineConfig({
           { label: 'OpenSandbox pools', link: '/docs/guides/opensandbox-pools/' },
           { label: 'Organization onboarding', link: '/docs/guides/organization-onboarding/' },
           { label: 'Hybrid overflow', link: '/docs/guides/hybrid-overflow/' },
+          { label: 'Keys and providers', link: '/docs/guides/keys-and-providers/' },
+          { label: 'OpenWork on Differently', link: '/docs/guides/openwork/' },
         ] },
         { label: 'Reference', items: [
           { label: 'HTTP API', link: '/docs/reference/api/' },
@@ -55,6 +57,7 @@ export default defineConfig({
         { label: 'Concepts', items: [
           { label: 'Architecture', link: '/docs/architecture/' },
           { label: 'Placement policy', link: '/docs/scheduling/placement-policy/' },
+          { label: 'Capacity', link: '/docs/scheduling/capacity/' },
           { label: 'Storage and lifecycle', link: '/docs/storage-and-lifecycle/' },
           { label: 'Reliability and performance', link: '/docs/reliability-and-performance/' },
         ] },
@@ -69,6 +72,7 @@ export default defineConfig({
           { label: 'Proofs of concept', link: '/docs/proof-of-concepts/' },
           { label: 'OpenSandbox spike', link: '/docs/research/opensandbox-spike/' },
           { label: 'Acceptance scenarios', link: '/docs/acceptance-scenarios/' },
+          { label: 'Maintaining', link: '/docs/maintaining/' },
         ] },
       ],
     }),

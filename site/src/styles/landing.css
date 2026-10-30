@@ -96,7 +96,7 @@ section:not(.hero) { padding: 96px 0; border-top: 1px solid var(--line); }
 }
 .note { color: var(--muted); font-size: 0.875rem; margin-top: 16px; }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
 .grid article { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 28px; display: flex; flex-direction: column; gap: 12px; }
 .grid .k { font: 0.75rem var(--mono); color: var(--muted); }
 .grid p { color: var(--muted); margin: 0; flex: 1; font-size: 0.9375rem; }

@@ -111,7 +111,9 @@ Boat is the developer-experience reference. Boat paths are relative to
 | Pause / resume (memory kept) | No | `POST …/pause`, `POST …/resume` | ✅ e2e | OpenSandbox's Docker runtime; OpenSandbox Fast Sandbox (`runtime: fastsandbox`, microVM checkpoint), run live: pause about 3 min for a 4 GiB desktop, resume 0.9 s; Freestyle run live (about 0.5 s, processes kept); Daytona's VM class 🧪. OpenSandbox's Kubernetes runtime keeps no memory, so it offers stop/start instead. |
 | Disk snapshot | Automatic every minute | `POST …/snapshots {kind: disk}` | ✅ e2e | OpenSandbox on both runtimes (Kubernetes: an OCI image in the snapshot registry, ready in about 7 s). |
 | Memory snapshot | No | `kind: memory` | 🟡 | Freestyle (always memory+disk; run live, and a fork from one keeps running processes), Daytona VM class (🧪). OpenSandbox: not on the Docker or Kubernetes runtime (root filesystem only); Fast Sandbox and its QEMU VMState mode are documented to capture memory, unverified. |
-| Fork | Disk copy | `POST …/fork` | ✅ e2e | Same pool as the source: snapshots are not portable. |
+| Fork | Disk copy | `POST …/fork` | ✅ e2e | Same pool as the source: snapshots are not portable. On Fast Sandbox the fork keeps the parent's disk, memory and processes (snapshot about 180 s for a 4 GiB desktop). |
+| A paused sandbox gives its pool slot back | No | Automatic on pools that checkpoint on pause (`lifecycle.pause-checkpoint`: Fast Sandbox, Freestyle); a resume on a full pool is queued (202) | ✅ | In-process tests and a capacity model ([capacity](scheduling/capacity.md)); not yet run on a full live pool. |
+| Lifecycle limits | No | `maxRunSeconds` (pause or stop after running that long), `maxPausedSeconds` (delete after staying paused), per request or as operator defaults | ✅ | |
 | Saved / named snapshots, restore by name | Yes | `fromSnapshot` on create; `GET /v1/snapshots` | ✅ | |
 | Point-in-time restore | No | No | — | |
 | Volumes / persistent disks independent of a sandbox | No | — | 📋 | |
@@ -122,12 +124,13 @@ Boat is the developer-experience reference. Boat paths are relative to
 | Capability | Boat | Differently | Status |
 |---|---|---|---|
 | Scoped API keys | Yes | `POST /v1/api-keys`; scopes, project-bound, expiry; no-escalation rule; rotation with a grace period of up to 7 days (`POST /v1/api-keys/{id}/rotate`) | ✅ |
-| Provider credentials managed in the product | n/a | `PUT /v1/admin/secrets/{name}`, used by pools as `secret:name`; replacing a value takes effect without a restart. Not yet tried against live Daytona or Freestyle accounts ([guide](guides/keys-and-providers.md)) | ✅ |
+| Provider credentials managed in the product | n/a | `PUT /v1/admin/secrets/{name}`, used by pools as `secret:name`; replacing a value takes effect without a restart. In use for Freestyle and Daytona on the [Azure install](deploy/azure-vms.md); live rotation not run yet ([guide](guides/keys-and-providers.md)) | ✅ |
 | Organizations / projects | Orgs, seats | Operator-managed orgs, tenant-managed projects | ✅ |
 | Quotas (active, queued, CPU, memory, disk, TTL, snapshots) | Plan limits | Per org and project, enforced atomically | ✅ e2e |
 | Fair queueing across tenants | n/a | Round-robin by least active CPU | ✅ |
 | Suspend a tenant | n/a | `POST /v1/admin/organizations/{id}/suspend` (optionally terminate) | ✅ |
 | Drain a pool | n/a | `POST /v1/admin/pools/{name}/drain` | ✅ |
+| Preemption on a full pool | n/a | `preemption.mode: idle` or `lru` pauses running sandboxes to make room for waiting work; `preemptible: false` opts a sandbox out | ✅ |
 | Switch which provider new sandboxes go to | n/a | `POST /v1/admin/pools/{name}/use` drains every other pool; running sandboxes stay; external pools need approval; every replica picks it up within about 5 s | ✅ |
 | Webhooks | 6 lifecycle events, HMAC | — | 📋 |
 | OpenTelemetry | Metrics + logs | Prometheus `/metrics`, structured JSON logs | 🟡 OTel traces 📋 |
@@ -152,8 +155,8 @@ operation a backend lacks returns `unsupported_operation` (501).
 | `exec.stream` | ✅ e2e | — (falls back to buffered) | — (falls back to buffered) | As advertised | ✅ |
 | `files` | ✅ e2e | ✅ live | ✅ live | As advertised | ✅ |
 | `lifecycle.stop-start` / `persistence.disk` | ✅ e2e with `runtime: kubernetes` and a snapshot registry (root filesystem kept); not on Docker | ✅ live | ✅ live (stop = in-guest poweroff) | As advertised | ✅ |
-| `lifecycle.pause-resume` | ✅ e2e (Docker runtime; memory kept); not on Kubernetes, which keeps no memory | 🧪 VM class only | ✅ live | As advertised | — |
-| `snapshots.disk` / `fork` | ✅ e2e (Docker; Kubernetes with a snapshot registry) | ✅ live (fork from a disk snapshot) | ✅ live | As advertised | ✅ |
+| `lifecycle.pause-resume` | ✅ e2e (Docker and Fast Sandbox runtimes; memory kept); not on Kubernetes, which keeps no memory | 🧪 VM class only | ✅ live | As advertised | — |
+| `snapshots.disk` / `fork` | ✅ e2e (Docker; Kubernetes with a snapshot registry; Fast Sandbox) | ✅ live (fork from a disk snapshot) | ✅ live | As advertised | ✅ |
 | `snapshots.memory` | 🧪 opt-in per pool (Fast Sandbox) | 🧪 VM class only | ✅ live; always memory+disk | As advertised | — |
 | `ports.expose` | ✅ e2e with `ports: signed` (ingress gateway, signed time-limited URLs, no header); off otherwise | ✅ live; signed preview URL | ✅ live; public TLS host | As advertised | — |
 | `network.egress-control` | ✅ live with `egress: none` or `allowlist` (Kubernetes runtime) | — | ✅ live; firewall (deny by default; `egress: public` to allow) | As advertised | — |
@@ -197,7 +200,7 @@ Against what Freestyle gives Workbot computers, as of 2026-10-29:
 | Per-request port URL lifetime | **Not built yet** | URLs last the pool's `portURLSeconds`; the ports API takes no `ttlSeconds`. |
 | Egress on the Docker runtime | **Not checked** | The setting is sent on both runtimes; enforcement was checked on Kubernetes only. |
 | Detached processes, PTY, SSH | **Not built yet** | OpenSandbox's execd offers background commands; not wired into the adapter. |
-| Fast Sandbox: pause speed, guest firewall, guest clock | **Limitation** of OpenSandbox 1.2.0 | Each pause uploads a full checkpoint (minutes for a 4 GiB desktop); the stock guest kernel cannot load per-user firewall rules; the guest clock is not stepped after a restore. Details in the [pools guide](guides/opensandbox-pools.md#measured-on-a-workbot-desktop). |
+| Fast Sandbox: pause speed, guest firewall, guest clock | **Limitation** of OpenSandbox 1.2.0; the clock is handled by Differently | Each pause uploads a full checkpoint (minutes for a 4 GiB desktop), so pools wait up to `checkpointTimeoutSeconds`; the stock guest kernel cannot load per-user firewall rules (a guest kernel with nftables can); OpenSandbox does not step the guest clock after a restore, so the adapter sets it after create and resume. Details in the [pools guide](guides/opensandbox-pools.md#measured-on-a-workbot-desktop). |
 
 ## 5. Boat-compatible facade: decision
 
@@ -230,10 +233,10 @@ portable core only, and document every semantic difference. Mapping sketch:
 
 ## 6. Biggest gaps, in priority order
 
-1. Run the end-to-end suite on OpenSandbox's Fast Sandbox runtime and on a
-   multi-node Kubernetes cluster under Differently (Fast Sandbox has run
-   live on one node). Run Daytona's VM class (pause, memory snapshots) on an
-   account that offers it.
+1. Node drains and more than one KVM node under Differently (the
+   end-to-end suite has passed on a Fast Sandbox pool on a two-node
+   cluster). Run Daytona's VM class (pause, memory snapshots) on an account
+   that offers it.
 2. Use pool egress policy in placement, then per-request egress allow-lists.
 3. An SSH gateway.
 4. Detached processes and PTY sessions.
