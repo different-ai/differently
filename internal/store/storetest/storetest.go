@@ -156,6 +156,11 @@ func poolCap(t *testing.T, s store.Store) {
 func releasedSlots(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	_, p := seed(t, s, "org-rs")
+	// The server writes a row for every pool at startup; Postgres serializes
+	// a pool's slots by locking it, so without one the reclaims below race.
+	if err := s.UpsertPool(ctx, api.Pool{Name: "ck", Adapter: "fake"}); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC()
 	var ids []string
 	for i := 0; i < 3; i++ {
