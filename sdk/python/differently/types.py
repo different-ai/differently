@@ -92,6 +92,12 @@ class SandboxInfo(_SandboxRequired, total=False):
     idleTimeoutSeconds: int
     lastActivityAt: str
     idledAt: str
+    maxRunSeconds: int
+    maxPausedSeconds: int
+    preemptible: bool
+    pausedAt: str
+    slotReleased: bool
+    resumeRequestedAt: str
     fromSnapshot: str
     startedAt: str
     endedAt: str
@@ -274,6 +280,8 @@ class Pool(_PoolRequired, total=False):
     capabilities: List[str]
     health: Dict[str, str]
     capacity: Dict[str, object]
+    preemption: Dict[str, object]
+    released: int
 
 
 class _PoolCapabilitiesRequired(TypedDict):

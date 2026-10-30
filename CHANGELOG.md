@@ -19,6 +19,11 @@ All notable changes are recorded here. The format follows
 - Capacity metrics (`differently_pool_slots`, `differently_resume_wait_seconds`,
   `differently_preemptions_total` and more) and a capacity model,
   `cmd/differently-capsim`, with results in `docs/scheduling/capacity.md`.
+- The TypeScript and Python SDKs take `maxRunSeconds`, `maxPausedSeconds`
+  and `preemptible` on create and update, and return `pausedAt`,
+  `slotReleased`, `resumeRequestedAt`, and a pool's `preemption` and
+  `released`. The console marks queued resumes, released slots and idle
+  sandboxes, and the Providers page counts paused sandboxes that hold no slot.
 
 ### Documentation
 

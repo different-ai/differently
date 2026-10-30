@@ -247,6 +247,11 @@ export class Sandbox {
     return this.#lifecycle("keepalive");
   }
 
+  /**
+   * Resumes a paused sandbox. If its pause released the pool slot and the pool
+   * is full, the resume is queued: the sandbox stays paused with
+   * `resumeRequestedAt` set until a slot frees; `wait()` for `running`.
+   */
   resume(): Promise<this> {
     return this.#lifecycle("resume");
   }
