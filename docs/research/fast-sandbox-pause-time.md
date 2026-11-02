@@ -202,7 +202,44 @@ gains are Estimated from those phase times.
 | Incremental checkpoints | Firecracker diff snapshots, reflink-aware disk diffs | Bytes in proportion to change: seconds for an idle desktop | Proposal (Fast Sandbox issue #56) |
 | Keep the VM stopped after a pause's dump | fastlet | Not pause time: frees the sandbox's CPU and memory at the dump instead of after the upload, and nothing the guest does in that window is silently lost | Proposal |
 | Cancel a pause when its sandbox is deleted | fastlet | Not pause time: a deleted sandbox's checkpoint kept hashing and uploading for minutes here, holding the disk | Proposal |
-| Evict consumed checkpoints before templates | node agent cache GC | Not pause time: a fastlet restart here evicted the desktop template and kept a stale checkpoint, so the next create pulled 14 GB | Proposal |
+| Evict consumed checkpoints before templates | fastlet image GC (`images.go`) | Not pause time: it keeps resumes fast ([below](#resumes-that-miss-the-nodes-cache-measured)) | [Patch](fast-sandbox-shared-image-cache.patch), tested, running in production |
+
+## Resumes that miss the node's cache (Measured)
+
+The resume times on this page assume the checkpoint is still in the node's
+image cache. In production on 2026-10-30 and 2026-11-02, three resumes found
+it gone and took 117–138 s, around the two-minute budget the OpenWork runner
+had at the time:
+
+| Resume | `POST /resume` | Where the time goes |
+|---|---:|---|
+| Checkpoint cached | about 2 s | Root filesystem reflinked in milliseconds |
+| Checkpoint evicted | 117–138 s | About 74 s pulling 13.96 GB from the artifact store, then 46–63 s creating the instance's root filesystem |
+
+**Cause (Read, then matched against production).** The fastlets on a node share
+one image cache, but each ranks eviction by its own in-memory use counts, under
+a hard-coded 20 GiB limit that counts root filesystems only: two 9 GiB images.
+No checkpoint is ever referenced, because a paused sandbox has no state
+directory and a running one records its template. So the first fastlet to run
+its hourly collection deletes checkpoints it never used, the newest included.
+All three slow resumes followed the eviction of exactly the checkpoint they
+needed, matched by cache key (the SHA-256 of `checkpoint:sha256:<digest>`).
+
+**Fix.** [The patch](fast-sandbox-shared-image-cache.patch) has each boot leave a
+marker in its cache entry that every fastlet can read. Spent checkpoints go
+first, then other entries oldest first, templates last, and
+`FAST_SANDBOX_IMAGE_CACHE_LIMIT_GIB` sets the limit. Rebuilding its base commit
+reproduces OpenSandbox 1.2.0's fastlet byte for byte, so the patch is the only
+difference.
+
+**After, on production with a 90 GiB limit:** a desktop paused in 242 s and
+resumed in 1.14 s (root filesystem 1.9 ms) with its file intact, and a
+collection with 36 GiB cached, above the old limit, evicted nothing. The
+eviction order under a full cache is covered by unit tests only.
+
+Production pauses took 242–255 s that day, longer than the 174–186 s measured
+on this node earlier, so the pause work above still matters. Sparse templates
+are not applied there.
 
 ## Capacity (capsim)
 

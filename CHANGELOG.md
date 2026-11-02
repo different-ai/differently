@@ -39,6 +39,9 @@ All notable changes are recorded here. The format follows
   candidates, and two Fast Sandbox patches (sparse pull, parallel multipart
   upload). The pools guide gains "Shortening pauses"; `test/pause` holds the
   harness that measured it.
+- `docs/research/fast-sandbox-shared-image-cache.patch`: stops Fast Sandbox's
+  image cache GC deleting the checkpoints paused sandboxes resume from, which
+  turned a 2 s resume into two minutes.
 - `docs/deploy/azure-vms.md`: a verified install on two Azure VMs with Fast
   Sandbox microVMs, managed Postgres, ACR and Key Vault, serving OpenWork's
   Workbot computers, and what it took (guest kernel, template registry,

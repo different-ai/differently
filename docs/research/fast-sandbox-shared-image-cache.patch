@@ -1,0 +1,288 @@
+Fast Sandbox: evict from the shared image cache by what is on disk
+
+Base: opensandbox-group/fast-sandbox main at 7b28a0c (2026-10-27), the fastlet
+OpenSandbox 1.2.0 ships: rebuilding that commit with Go 1.25.14 reproduces the
+published binary byte for byte. Apply with `git apply`.
+
+Every fastlet on a node shares one image cache, but its GC ranked eviction by
+that fastlet's in-memory use counts, under a 20 GiB limit that holds two 9 GiB
+root filesystems. No checkpoint is ever referenced (a paused sandbox has no
+state directory and a running one records its template), so the first fastlet
+to collect deleted checkpoints it had never used, the newest included, and the
+next resume pulled 14 GB again. Boots now leave a marker in the cache entry
+that every fastlet can read: spent checkpoints go first, then other entries
+oldest first, templates last. FAST_SANDBOX_IMAGE_CACHE_LIMIT_GIB sets the limit.
+See docs/research/fast-sandbox-pause-time.md in different-ai/differently.
+
+diff --git a/internal/runtime/firecracker/driver.go b/internal/runtime/firecracker/driver.go
+index b5cc7ba..c6dfec7 100644
+--- a/internal/runtime/firecracker/driver.go
++++ b/internal/runtime/firecracker/driver.go
+@@ -124,7 +124,7 @@ func New(profile runtimecatalog.RuntimeProfile) (*Driver, error) {
+ 		waitSocket:   waitForAPISocket, processes: make(map[string]Process),
+ 		checkStorage:         checkStateRootStorage,
+ 		imageGCInterval:      defaultImageGCInterval,
+-		imageCacheLimitBytes: defaultImageCacheLimitBytes,
++		imageCacheLimitBytes: configuredImageCacheLimit(),
+ 	}, nil
+ }
+ 
+@@ -628,6 +628,7 @@ func (d *Driver) EnsureSandbox(ctx context.Context, input *fastletapi.EnsureSand
+ 			"sandboxID", identity.SandboxUID, "jailRoot", jailRoot)
+ 	}()
+ 	d.touchImage(restoreRef)
++	markImageBooted(stateRoot, restoreRef)
+ 	rootfsDur := time.Since(rootfsStarted) + ociPrepareDur
+ 	rootfsMiB := float64(0)
+ 	if info, statErr := os.Stat(instanceRootfs); statErr == nil {
+diff --git a/internal/runtime/firecracker/images.go b/internal/runtime/firecracker/images.go
+index d96d5ab..f28392b 100644
+--- a/internal/runtime/firecracker/images.go
++++ b/internal/runtime/firecracker/images.go
+@@ -11,7 +11,9 @@ import (
+ 	"os/exec"
+ 	"path/filepath"
+ 	"sort"
++	"strconv"
+ 	"strings"
++	"time"
+ 
+ 	"k8s.io/klog/v2"
+ 
+@@ -185,15 +187,71 @@ func copyFile(source, target string) error {
+ }
+ 
+ // defaultImageCacheLimitBytes bounds the converted-image cache. When the
+-// cache exceeds it, the GC evicts unreferenced images in least-frequently-used
+-// order. 20 GiB holds roughly a few dozen rootfs images.
++// cache exceeds it, the GC evicts unreferenced images (see evictionRank).
++// 20 GiB holds roughly a few dozen rootfs images, but only two 9 GiB desktops.
+ const defaultImageCacheLimitBytes = 20 << 30
+ 
++// imageCacheLimitEnv sizes the cache in GiB, for nodes whose images are large
++// or that keep the checkpoints of paused Sandboxes. It counts rootfs bytes
++// only, and a checkpoint's memory snapshot sits beside its rootfs.
++const imageCacheLimitEnv = "FAST_SANDBOX_IMAGE_CACHE_LIMIT_GIB"
++
++// configuredImageCacheLimit returns the limit imageCacheLimitEnv sets, or the
++// default when it is unset or invalid.
++func configuredImageCacheLimit() int64 {
++	value := os.Getenv(imageCacheLimitEnv)
++	if value == "" {
++		return defaultImageCacheLimitBytes
++	}
++	gib, err := strconv.ParseInt(value, 10, 32)
++	if err != nil || gib <= 0 {
++		klog.InfoS("ignoring invalid image cache limit", "env", imageCacheLimitEnv, "value", value)
++		return defaultImageCacheLimitBytes
++	}
++	return gib << 30
++}
++
++// Cache entries are shared by every Fastlet on a node, while the use counts
++// live in one Fastlet's memory, so a boot also leaves a marker in its entry
++// that all of them can read.
++const (
++	// consumedMarkerName marks a checkpoint a Sandbox has resumed from. That
++	// Sandbox's next pause writes a new checkpoint, so this one is spent.
++	consumedMarkerName = ".consumed"
++	// templateMarkerName marks an image Sandboxes are created from.
++	templateMarkerName = ".template"
++)
++
++// markImageBooted records what a boot says about its cache entry.
++func markImageBooted(stateRoot, image string) {
++	marker := templateMarkerName
++	if strings.HasPrefix(image, artifacts.CheckpointReference("")) {
++		marker = consumedMarkerName
++	}
++	path := filepath.Join(stateRoot, imageCacheDir, imageKey(image), marker)
++	if err := os.WriteFile(path, nil, 0o640); err != nil {
++		klog.V(2).InfoS("could not mark cached image", "image", image, "err", err)
++	}
++}
++
++// evictionRank orders unreferenced entries, lowest first: spent checkpoints,
++// then images no boot has marked (above all the checkpoint a paused Sandbox
++// will resume from, which no Sandbox state references), then templates.
++func evictionRank(entryDir string) int {
++	if _, err := os.Stat(filepath.Join(entryDir, consumedMarkerName)); err == nil {
++		return 0
++	}
++	if _, err := os.Stat(filepath.Join(entryDir, templateMarkerName)); err == nil {
++		return 2
++	}
++	return 1
++}
++
+ // garbageCollectImages evicts cached rootfs images to keep the cache under
+-// limitBytes. Candidates are images no managed Sandbox references; among them
+-// the least frequently used (recorded in memory by the driver, not derived
+-// from filesystem timestamps) are removed first, newest/unknown entries
+-// counting as zero uses. References are read from the durable per-Sandbox
++// limitBytes. Candidates are images no managed Sandbox references, by
++// evictionRank and then oldest first; the use counts recorded in memory by the
++// driver order templates only, because another Fastlet's image reads as unused
++// here however much it is needed. References are read from the durable per-Sandbox
+ // state, so a VM that died with its Fastlet still pins its image until its
+ // state directory is removed. Reflink instance copies are independent once
+ // created, so deleting a cache entry never affects a running VM. A Sandbox
+@@ -225,9 +283,11 @@ func garbageCollectImages(stateRoot string, limitBytes int64, useCount map[strin
+ 		return nil, err
+ 	}
+ 	type entry struct {
+-		digest string
+-		bytes  int64
+-		uses   int64
++		digest   string
++		bytes    int64
++		uses     int64
++		rank     int
++		modified time.Time
+ 	}
+ 	entries := make([]entry, 0, len(cached))
+ 	total := int64(0)
+@@ -237,7 +297,8 @@ func garbageCollectImages(stateRoot string, limitBytes int64, useCount map[strin
+ 		if !validImageDigest(digest) {
+ 			continue
+ 		}
+-		info, err := os.Stat(filepath.Join(stateRoot, imageCacheDir, digest, rootfsImageName))
++		entryDir := filepath.Join(stateRoot, imageCacheDir, digest)
++		info, err := os.Stat(filepath.Join(entryDir, rootfsImageName))
+ 		if err != nil {
+ 			continue
+ 		}
+@@ -245,14 +306,24 @@ func garbageCollectImages(stateRoot string, limitBytes int64, useCount map[strin
+ 		if _, used := referenced[digest]; used {
+ 			continue
+ 		}
+-		entries = append(entries, entry{digest: digest, bytes: info.Size(), uses: useCount[digest]})
++		directory, err := os.Stat(entryDir)
++		if err != nil {
++			continue
++		}
++		entries = append(entries, entry{digest: digest, bytes: info.Size(), uses: useCount[digest], rank: evictionRank(entryDir), modified: directory.ModTime()})
+ 	}
+-	// Least-frequently-used first; ties resolve deterministically by digest.
+ 	sort.Slice(entries, func(i, j int) bool {
+-		if entries[i].uses != entries[j].uses {
+-			return entries[i].uses < entries[j].uses
++		a, b := entries[i], entries[j]
++		if a.rank != b.rank {
++			return a.rank < b.rank
++		}
++		if a.rank == 2 && a.uses != b.uses {
++			return a.uses < b.uses
++		}
++		if !a.modified.Equal(b.modified) {
++			return a.modified.Before(b.modified)
+ 		}
+-		return entries[i].digest < entries[j].digest
++		return a.digest < b.digest
+ 	})
+ 	removed := make([]string, 0, len(entries))
+ 	for _, candidate := range entries {
+diff --git a/internal/runtime/firecracker/images_test.go b/internal/runtime/firecracker/images_test.go
+index 52d81fc..8eeeb08 100644
+--- a/internal/runtime/firecracker/images_test.go
++++ b/internal/runtime/firecracker/images_test.go
+@@ -12,6 +12,7 @@ import (
+ 	"github.com/stretchr/testify/require"
+ 
+ 	apiv1alpha2 "fast-sandbox/api/v1alpha2"
++	"fast-sandbox/internal/artifacts"
+ 	runtimecatalog "fast-sandbox/internal/catalog/runtime"
+ 	fastletapi "fast-sandbox/internal/protocol/fastlet"
+ )
+@@ -99,9 +100,12 @@ func TestGarbageCollectImages(t *testing.T) {
+ 		require.NoError(t, os.WriteFile(path, []byte("rootfs"), 0o640))
+ 		return imageKey(image)
+ 	}
+-	// hot and cold are both unreferenced; the LFU order evicts cold first.
++	// hot and cold are both unreferenced templates; the LFU order evicts cold
++	// first.
+ 	hot := seedImage("example.com/hot:v1")
+ 	cold := seedImage("example.com/cold:v1")
++	markImageBooted(root, "example.com/hot:v1")
++	markImageBooted(root, "example.com/cold:v1")
+ 	useCount[hot] = 100
+ 	useCount[cold] = 1
+ 	// unknown has no recorded use: it counts as zero and is the first victim.
+@@ -138,6 +142,8 @@ func TestGarbageCollectImages(t *testing.T) {
+ 	cold = seedImage("example.com/cold:v1")
+ 	unknown = seedImage("example.com/unknown:v1")
+ 	hot = seedImage("example.com/hot:v1")
++	markImageBooted(root, "example.com/hot:v1")
++	markImageBooted(root, "example.com/cold:v1")
+ 	removed, err = garbageCollectImages(root, 12, useCount)
+ 	require.NoError(t, err)
+ 	require.ElementsMatch(t, []string{unknown, cold}, removed)
+@@ -164,6 +170,68 @@ func TestGarbageCollectImages(t *testing.T) {
+ 	require.NoError(t, err, "high-frequency image must survive eviction")
+ }
+ 
++// TestImageGCKeepsWhatAPausedSandboxResumesFrom covers the cache every Fastlet
++// on a node shares: the Fastlet collecting has no use count for checkpoints
++// another one wrote or booted, so only what is on disk can rank them.
++func TestImageGCKeepsWhatAPausedSandboxResumesFrom(t *testing.T) {
++	root := t.TempDir()
++	const image = "12345678"
++	base := time.Now().Add(-time.Hour)
++	seed := func(reference string, age int) string {
++		digest := imageKey(reference)
++		dir := filepath.Join(root, imageCacheDir, digest)
++		require.NoError(t, os.MkdirAll(dir, 0o750))
++		require.NoError(t, os.WriteFile(filepath.Join(dir, rootfsImageName), []byte(image), 0o640))
++		modified := base.Add(time.Duration(age) * time.Minute)
++		require.NoError(t, os.Chtimes(dir, modified, modified))
++		return digest
++	}
++	exists := func(digest string) bool {
++		_, err := os.Stat(filepath.Join(root, imageCacheDir, digest))
++		return err == nil
++	}
++
++	template := seed("tpl-desktop", 0)
++	markImageBooted(root, "tpl-desktop")
++	spent := seed(artifacts.CheckpointReference("spent"), 3)
++	markImageBooted(root, artifacts.CheckpointReference("spent"))
++	older := seed(artifacts.CheckpointReference("paused-yesterday"), 1)
++	newest := seed(artifacts.CheckpointReference("paused-just-now"), 2)
++
++	// Marking changed the entries' times: put the ages back.
++	for digest, age := range map[string]int{template: 0, spent: 3} {
++		modified := base.Add(time.Duration(age) * time.Minute)
++		require.NoError(t, os.Chtimes(filepath.Join(root, imageCacheDir, digest), modified, modified))
++	}
++
++	// The collecting Fastlet booted only the template and an old checkpoint.
++	useCount := map[string]int64{template: 1, older: 1}
++
++	// Room for all but one: the spent checkpoint goes, though it is the newest.
++	removed, err := garbageCollectImages(root, 24, useCount)
++	require.NoError(t, err)
++	require.Equal(t, []string{spent}, removed)
++
++	// Room for two: the template outlives a paused checkpoint, and the older
++	// checkpoint goes first although this Fastlet has counted a use of it.
++	removed, err = garbageCollectImages(root, 16, useCount)
++	require.NoError(t, err)
++	require.Equal(t, []string{older}, removed)
++	require.True(t, exists(newest), "the checkpoint a paused Sandbox needs must survive")
++	require.True(t, exists(template), "the template must survive checkpoints")
++}
++
++func TestConfiguredImageCacheLimit(t *testing.T) {
++	t.Setenv(imageCacheLimitEnv, "")
++	require.Equal(t, int64(defaultImageCacheLimitBytes), configuredImageCacheLimit())
++	t.Setenv(imageCacheLimitEnv, "90")
++	require.Equal(t, int64(90<<30), configuredImageCacheLimit())
++	for _, invalid := range []string{"0", "-1", "lots"} {
++		t.Setenv(imageCacheLimitEnv, invalid)
++		require.Equal(t, int64(defaultImageCacheLimitBytes), configuredImageCacheLimit())
++	}
++}
++
+ // TestImageGCLoopRunsIndependently verifies the cache GC is driven by its own
+ // periodic loop, not by Sandbox lifecycle events, and stops on Close.
+ func TestImageGCLoopRunsIndependently(t *testing.T) {
