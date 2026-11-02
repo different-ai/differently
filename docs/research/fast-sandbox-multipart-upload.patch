@@ -1,0 +1,406 @@
+Fast Sandbox: publish large artifacts as a parallel multipart upload
+
+Base: opensandbox-group/fast-sandbox main at 3d804c0 (2026-10-29), the code
+OpenSandbox 1.2.0 ships for these files. Apply with `git apply`.
+
+The node agent uploads each artifact as one streamed PUT, so the store
+handles a 14 GB checkpoint on a single connection. Files of 256 MiB or more
+now go up as a multipart upload with four 64 MiB parts in flight; each part
+retries like a PUT, and a failed upload is aborted so the store drops its
+parts (the single-PUT retries left orphaned temporary objects on RustFS).
+signWrite now signs the request's own method, as the multipart POST and
+DELETE need. Measured against Garage 2.4.1 from RAM: 285 MB/s as one PUT,
+644 MB/s as four parallel parts. See
+docs/research/fast-sandbox-pause-time.md in different-ai/differently.
+
+diff --git a/internal/runtime/firecracker/agent/multipart_test.go b/internal/runtime/firecracker/agent/multipart_test.go
+new file mode 100644
+index 0000000..2461c36
+--- /dev/null
++++ b/internal/runtime/firecracker/agent/multipart_test.go
+@@ -0,0 +1,141 @@
++package agent
++
++import (
++	"bytes"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"sort"
++	"strconv"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/require"
++)
++
++// fakeMultipartStore serves PUT objects and the multipart calls (initiate,
++// part, complete, abort), recording how many parts were in flight at once.
++type fakeMultipartStore struct {
++	mu       sync.Mutex
++	objects  map[string][]byte
++	parts    map[int][]byte
++	inFlight int
++	peak     int
++	aborted  bool
++	failPart int // respond 400 to this part number
++}
++
++func (s *fakeMultipartStore) handle(w http.ResponseWriter, r *http.Request) {
++	key := strings.Trim(r.URL.Path, "/")
++	query := r.URL.Query()
++	switch {
++	case r.Method == http.MethodPost && query.Has("uploads"):
++		_, _ = w.Write([]byte(`<InitiateMultipartUploadResult><UploadId>up-1</UploadId></InitiateMultipartUploadResult>`))
++	case r.Method == http.MethodPut && query.Get("uploadId") == "up-1":
++		number, _ := strconv.Atoi(query.Get("partNumber"))
++		s.mu.Lock()
++		s.inFlight++
++		s.peak = max(s.peak, s.inFlight)
++		s.mu.Unlock()
++		time.Sleep(20 * time.Millisecond)
++		body, _ := io.ReadAll(r.Body)
++		s.mu.Lock()
++		s.inFlight--
++		fail := number == s.failPart
++		if !fail {
++			s.parts[number] = body
++		}
++		s.mu.Unlock()
++		if fail {
++			w.WriteHeader(http.StatusBadRequest)
++			return
++		}
++		w.Header().Set("ETag", fmt.Sprintf(`"etag-%d"`, number))
++	case r.Method == http.MethodPost && query.Get("uploadId") == "up-1":
++		body, _ := io.ReadAll(r.Body)
++		s.mu.Lock()
++		defer s.mu.Unlock()
++		numbers := make([]int, 0, len(s.parts))
++		for n := range s.parts {
++			if !bytes.Contains(body, []byte(fmt.Sprintf("<PartNumber>%d</PartNumber><ETag>&#34;etag-%d&#34;</ETag>", n, n))) {
++				w.WriteHeader(http.StatusBadRequest)
++				return
++			}
++			numbers = append(numbers, n)
++		}
++		sort.Ints(numbers)
++		var object []byte
++		for _, n := range numbers {
++			object = append(object, s.parts[n]...)
++		}
++		s.objects[key] = object
++		_, _ = w.Write([]byte(`<CompleteMultipartUploadResult/>`))
++	case r.Method == http.MethodDelete && query.Get("uploadId") == "up-1":
++		s.mu.Lock()
++		s.aborted = true
++		s.mu.Unlock()
++		w.WriteHeader(http.StatusNoContent)
++	case r.Method == http.MethodPut:
++		body, _ := io.ReadAll(r.Body)
++		s.mu.Lock()
++		s.objects[key] = body
++		s.mu.Unlock()
++	default:
++		w.WriteHeader(http.StatusMethodNotAllowed)
++	}
++}
++
++func shrinkMultipart(t *testing.T) {
++	t.Helper()
++	threshold, part, workers := multipartThreshold, multipartPartSize, multipartWorkers
++	multipartThreshold, multipartPartSize, multipartWorkers = 1024, 256, 3
++	t.Cleanup(func() { multipartThreshold, multipartPartSize, multipartWorkers = threshold, part, workers })
++}
++
++// A large artifact goes up as parallel parts and arrives byte-identical;
++// small files keep the single PUT.
++func TestPublishLargeArtifactUploadsPartsInParallel(t *testing.T) {
++	shrinkMultipart(t)
++	store := &fakeMultipartStore{objects: map[string][]byte{}, parts: map[int][]byte{}}
++	server := httptest.NewServer(http.HandlerFunc(store.handle))
++	defer server.Close()
++	client, err := NewClient("s3://bucket/publish", writeCredential(), WithEndpoint(server.URL))
++	require.NoError(t, err)
++	dir := stageArtifactSet(t)
++	rootfs := bytes.Repeat([]byte("0123456789abcdef"), 200) // 3200 bytes: 13 parts of 256
++	require.NoError(t, os.WriteFile(filepath.Join(dir, "rootfs.ext4"), rootfs, 0o644))
++
++	result, err := client.PublishImage(t.Context(), "", "app-v2", dir)
++	require.NoError(t, err)
++	base := strings.TrimSuffix(strings.TrimPrefix(result.ManifestRef, "s3://"), "/manifest.json")
++	require.Equal(t, rootfs, store.objects[base+"/rootfs.ext4"])
++	require.Equal(t, []byte("memory"), store.objects[base+"/memory.snap"], "small files keep the single PUT")
++	require.Len(t, store.parts, 13)
++	require.Greater(t, store.peak, 1, "parts upload in parallel")
++	require.False(t, store.aborted)
++}
++
++// A part the store refuses fails the publish and aborts the upload, so the
++// store does not keep orphaned parts.
++func TestPublishAbortsFailedMultipartUpload(t *testing.T) {
++	shrinkMultipart(t)
++	store := &fakeMultipartStore{objects: map[string][]byte{}, parts: map[int][]byte{}, failPart: 5}
++	server := httptest.NewServer(http.HandlerFunc(store.handle))
++	defer server.Close()
++	client, err := NewClient("s3://bucket/publish", writeCredential(), WithEndpoint(server.URL))
++	require.NoError(t, err)
++	dir := stageArtifactSet(t)
++	require.NoError(t, os.WriteFile(filepath.Join(dir, "rootfs.ext4"), bytes.Repeat([]byte{7}, 3000), 0o644))
++
++	_, err = client.PublishImage(t.Context(), "", "app-v2", dir)
++	require.ErrorContains(t, err, "part 5")
++	require.True(t, store.aborted)
++	for key := range store.objects {
++		require.NotContains(t, key, "rootfs.ext4", "a failed upload is never completed")
++	}
++}
+diff --git a/internal/runtime/firecracker/agent/publish.go b/internal/runtime/firecracker/agent/publish.go
+index e0bafe7..86aed2b 100644
+--- a/internal/runtime/firecracker/agent/publish.go
++++ b/internal/runtime/firecracker/agent/publish.go
+@@ -141,6 +141,9 @@ func (c *Client) putFile(ctx context.Context, dir, name, storeKey string) error
+ 	if err != nil {
+ 		return err
+ 	}
++	if info.Size() >= multipartThreshold {
++		return c.s3.putFileMultipart(ctx, path, storeKey, info.Size())
++	}
+ 	return c.s3.put(ctx, storeKey, info.Size(), func() (io.ReadCloser, error) {
+ 		return os.Open(path)
+ 	})
+diff --git a/internal/runtime/firecracker/agent/s3client.go b/internal/runtime/firecracker/agent/s3client.go
+index 129d7a8..5ca59ed 100644
+--- a/internal/runtime/firecracker/agent/s3client.go
++++ b/internal/runtime/firecracker/agent/s3client.go
+@@ -1,17 +1,21 @@
+ package agent
+ 
+ import (
++	"bytes"
+ 	"context"
+ 	"crypto/hmac"
+ 	"crypto/sha256"
+ 	"encoding/hex"
++	"encoding/xml"
+ 	"errors"
+ 	"fmt"
+ 	"io"
+ 	"net/http"
+ 	"net/url"
++	"os"
+ 	"strconv"
+ 	"strings"
++	"sync"
+ 	"time"
+ 
+ 	"k8s.io/klog/v2"
+@@ -189,6 +193,179 @@ func (c *s3Client) put(ctx context.Context, storeKey string, size int64, open fu
+ 	return fmt.Errorf("PUT %s: %w", key, lastErr)
+ }
+ 
++// Large artifacts publish as a parallel multipart upload. One streamed PUT
++// keeps the store on a single connection, and with it on one core for its
++// hashing and compression; parts let it use several. Garage took a 4 GiB
++// memory snapshot at about 285 MB/s as one PUT and about 650 MB/s as four
++// parallel 64 MiB parts. Variables so tests can shrink them.
++var (
++	multipartThreshold int64 = 256 << 20
++	multipartPartSize  int64 = 64 << 20
++	multipartWorkers         = 4
++)
++
++// putFileMultipart uploads the file at path as a multipart upload with
++// multipartWorkers parts in flight. Each part is retried on its own like a
++// PUT; an upload that fails is aborted, so the store drops its parts.
++func (c *s3Client) putFileMultipart(ctx context.Context, path, storeKey string, size int64) error {
++	if !c.writable() {
++		return ErrNotWritable
++	}
++	key := storeKey
++	if c.prefix != "" {
++		key = c.prefix + "/" + storeKey
++	}
++	urlString, err := c.objectURL(key)
++	if err != nil {
++		return err
++	}
++	file, err := os.Open(path)
++	if err != nil {
++		return err
++	}
++	defer file.Close()
++
++	var uploadID string
++	err = c.retryWrite(ctx, key, func() error {
++		_, body, err := c.writeOnce(ctx, http.MethodPost, urlString+"?uploads=", nil, 0)
++		if err != nil {
++			return err
++		}
++		var initiated struct {
++			UploadID string `xml:"UploadId"`
++		}
++		if err := xml.Unmarshal(body, &initiated); err != nil || initiated.UploadID == "" {
++			return &httpError{StatusCode: http.StatusBadGateway, Body: "no UploadId in " + string(body)}
++		}
++		uploadID = initiated.UploadID
++		return nil
++	})
++	if err != nil {
++		return fmt.Errorf("PUT %s: start multipart upload: %w", key, err)
++	}
++	upload := "uploadId=" + awsQueryEscape(uploadID)
++
++	parts := int((size + multipartPartSize - 1) / multipartPartSize)
++	etags := make([]string, parts)
++	partCtx, cancel := context.WithCancel(ctx)
++	defer cancel()
++	var (
++		wg       sync.WaitGroup
++		failOnce sync.Once
++		partErr  error
++	)
++	next := make(chan int)
++	for range min(multipartWorkers, parts) {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for i := range next {
++				offset := int64(i) * multipartPartSize
++				length := min(multipartPartSize, size-offset)
++				partURL := urlString + "?partNumber=" + strconv.Itoa(i+1) + "&" + upload
++				err := c.retryWrite(partCtx, key, func() error {
++					header, _, err := c.writeOnce(partCtx, http.MethodPut, partURL, io.NewSectionReader(file, offset, length), length)
++					etags[i] = header.Get("ETag")
++					return err
++				})
++				if err != nil {
++					failOnce.Do(func() { partErr = fmt.Errorf("part %d: %w", i+1, err); cancel() })
++				}
++			}
++		}()
++	}
++feed:
++	for i := range parts {
++		select {
++		case next <- i:
++		case <-partCtx.Done():
++			break feed
++		}
++	}
++	close(next)
++	wg.Wait()
++	if partErr == nil {
++		partErr = ctx.Err()
++	}
++	if partErr == nil {
++		var complete bytes.Buffer
++		complete.WriteString("<CompleteMultipartUpload>")
++		for i, etag := range etags {
++			fmt.Fprintf(&complete, "<Part><PartNumber>%d</PartNumber><ETag>", i+1)
++			_ = xml.EscapeText(&complete, []byte(etag))
++			complete.WriteString("</ETag></Part>")
++		}
++		complete.WriteString("</CompleteMultipartUpload>")
++		partErr = c.retryWrite(ctx, key, func() error {
++			_, body, err := c.writeOnce(ctx, http.MethodPost, urlString+"?"+upload, bytes.NewReader(complete.Bytes()), int64(complete.Len()))
++			if err == nil && bytes.Contains(body, []byte("<Error>")) {
++				// S3 may answer 200 and report the failure in the body.
++				return &httpError{StatusCode: http.StatusInternalServerError, Body: string(body)}
++			}
++			return err
++		})
++	}
++	if partErr != nil {
++		abortCtx, cancelAbort := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
++		defer cancelAbort()
++		_, _, _ = c.writeOnce(abortCtx, http.MethodDelete, urlString+"?"+upload, nil, 0)
++		return fmt.Errorf("PUT %s: %w", key, partErr)
++	}
++	return nil
++}
++
++// retryWrite runs one write with put's policy: transport errors and 5xx
++// responses are retried with exponential backoff, 4xx responses are not.
++func (c *s3Client) retryWrite(ctx context.Context, key string, write func() error) error {
++	backoff := c.retryDelay
++	var lastErr error
++	for attempt := 0; attempt <= s3RetryAttempts; attempt++ {
++		if attempt > 0 {
++			select {
++			case <-time.After(backoff):
++			case <-ctx.Done():
++				return ctx.Err()
++			}
++			backoff *= 2
++		}
++		err := write()
++		if err == nil {
++			return nil
++		}
++		var status *httpError
++		if errors.As(err, &status) && status.StatusCode < http.StatusInternalServerError {
++			return err
++		}
++		if ctx.Err() != nil {
++			return ctx.Err()
++		}
++		klog.V(2).InfoS("S3 write attempt failed, retrying", "key", key, "attempt", attempt+1, "err", err)
++		lastErr = err
++	}
++	return lastErr
++}
++
++// writeOnce sends one request signed with the write credential and returns
++// the response headers and its (bounded) body.
++func (c *s3Client) writeOnce(ctx context.Context, method, urlString string, body io.Reader, size int64) (http.Header, []byte, error) {
++	request, err := http.NewRequestWithContext(ctx, method, urlString, body)
++	if err != nil {
++		return nil, nil, err
++	}
++	request.ContentLength = size
++	c.signWrite(request)
++	response, err := c.putHTTP.Do(request)
++	if err != nil {
++		return nil, nil, err
++	}
++	defer response.Body.Close()
++	payload, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
++	if response.StatusCode < 200 || response.StatusCode >= 300 {
++		return response.Header, nil, &httpError{StatusCode: response.StatusCode, Body: string(payload)}
++	}
++	return response.Header, payload, nil
++}
++
+ // putOnce performs a single signed PUT. The payload is signed as
+ // UNSIGNED-PAYLOAD so multi-GiB artifacts stream from disk without a second
+ // read for the content hash; Content-Length still carries the exact size.
+@@ -461,9 +638,11 @@ func deriveSigningKey(secretKey, date, region string) []byte {
+ 	return hmacSHA256(key, "aws4_request")
+ }
+ 
+-// signWrite applies AWS Signature Version 4 to a PUT with the write
+-// credential. The payload hash is UNSIGNED-PAYLOAD: streamed bodies cannot
+-// promise a content hash header without a second full read.
++// signWrite applies AWS Signature Version 4 to a write (a PUT, or a
++// multipart POST or DELETE) with the write credential. The payload hash is
++// UNSIGNED-PAYLOAD: streamed bodies cannot promise a content hash header
++// without a second full read. The query must already be canonical (sorted,
++// encoded).
+ func (c *s3Client) signWrite(request *http.Request) {
+ 	now := time.Now().UTC()
+ 	amzDate := now.Format("20060102T150405Z")
+@@ -481,7 +660,7 @@ func (c *s3Client) signWrite(request *http.Request) {
+ 		"x-amz-date:" + amzDate + "\n"
+ 	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
+ 	canonicalRequest := strings.Join([]string{
+-		http.MethodPut,
++		request.Method,
+ 		canonicalURI,
+ 		request.URL.RawQuery,
+ 		canonicalHeaders,

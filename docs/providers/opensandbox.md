@@ -33,8 +33,10 @@ installation guide is [OpenSandbox pools](../guides/opensandbox-pools.md).
 created from a Fast Sandbox template, pause that keeps memory, disk snapshots
 and fork, and OpenSandbox's own idle pause with wake on access. Run live
 on 2026-10-29 (single node, nested KVM) and recorded; OpenWork's Workbot
-desktop streamed through it. Pause is slow: a full checkpoint upload, about
-3 minutes for a 4 GiB desktop; resume and wake take under a second
+desktop streamed through it. Pause is slow: a full checkpoint, read back and
+uploaded, about 3.5 minutes for a 4 GiB desktop (about 3 with sparse
+templates, [shortening pauses](../guides/opensandbox-pools.md#shortening-pauses));
+resume and wake take under two seconds
 ([setup, timings and gaps](../guides/opensandbox-pools.md#fast-sandbox-runtime-microvms-pause-with-memory-native-idle)).
 
 ## Configure

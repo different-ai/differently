@@ -1,0 +1,183 @@
+Fast Sandbox: write pulled artifacts sparse
+
+Base: opensandbox-group/fast-sandbox main at 3d804c0 (2026-10-29), the code
+OpenSandbox 1.2.0 ships for these files. Apply with `git apply`.
+
+The node agent writes every pulled artifact densely (io.Copy), so a cached
+template's root filesystem occupies its full configured size and its memory
+snapshot the VM's full RAM, though both are mostly zeros. Every sandbox
+reflinks that rootfs, every checkpoint stages a reflink of the sandbox's, and
+a restored VM maps the template's memory file: the checksum pass and the
+upload of each pause then read gigabytes of zeros from disk, and the memory
+dump faults untouched guest pages in from it. copySparse skips all-zero
+64 KiB runs (holes) and sets the final size with a truncate; content and
+digest are unchanged, and SHA256File already hashes holes without reading.
+See docs/research/fast-sandbox-pause-time.md in different-ai/differently.
+
+diff --git a/internal/runtime/firecracker/agent/cache.go b/internal/runtime/firecracker/agent/cache.go
+index adaa055..c42b342 100644
+--- a/internal/runtime/firecracker/agent/cache.go
++++ b/internal/runtime/firecracker/agent/cache.go
+@@ -13,6 +13,7 @@ package agent
+ // resolveRootfsImage and GC work on the pulled artifacts unchanged.
+ 
+ import (
++	"bytes"
+ 	"context"
+ 	"crypto/sha256"
+ 	"encoding/hex"
+@@ -157,7 +158,7 @@ func stageFile(ctx context.Context, c *Client, dir, storeKey string, file native
+ 		}
+ 	}()
+ 	digest := sha256.New()
+-	written, err := io.Copy(tmp, io.TeeReader(body, digest))
++	written, err := copySparse(tmp, io.TeeReader(body, digest))
+ 	if err != nil {
+ 		return fmt.Errorf("download %s: %w", file.publish, err)
+ 	}
+@@ -184,6 +185,46 @@ func stageFile(ctx context.Context, c *Client, dir, storeKey string, file native
+ 	return nil
+ }
+ 
++// sparseChunk is the granularity at which copySparse leaves holes: coarse
++// enough that a mostly-written file keeps few extents (reflink clones and
++// SEEK_DATA walks stay cheap), fine enough to drop an ext4 image's free space
++// and a memory snapshot's untouched RAM.
++const sparseChunk = 64 << 10
++
++// copySparse copies src to dst like io.Copy, but seeks over every all-zero
++// sparseChunk instead of writing it, then sets the final size, so zero runs
++// become holes. The file reads back byte-identical. Published root
++// filesystems are sized to their configured disk and memory snapshots to
++// the VM's RAM, mostly zeros: written densely, every sandbox's reflinked
++// rootfs and every checkpoint staged from it is read in full from disk when
++// it is hashed and uploaded. SHA256File and the upload read holes without
++// touching the disk.
++func copySparse(dst *os.File, src io.Reader) (int64, error) {
++	buf := make([]byte, 1<<20)
++	zero := make([]byte, sparseChunk)
++	var written int64
++	for {
++		n, readErr := io.ReadFull(src, buf)
++		for off := 0; off < n; off += sparseChunk {
++			chunk := buf[off:min(off+sparseChunk, n)]
++			if !bytes.Equal(chunk, zero[:len(chunk)]) {
++				if _, err := dst.WriteAt(chunk, written); err != nil {
++					return written, err
++				}
++			}
++			written += int64(len(chunk))
++		}
++		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
++			break
++		}
++		if readErr != nil {
++			return written, readErr
++		}
++	}
++	// Holes at the end are not written: the size comes from the truncate.
++	return written, dst.Truncate(written)
++}
++
+ // commitManifest writes the downloaded manifest as the pull commit point:
+ // its presence with matching files means the pull is complete. The write is
+ // atomic so a crash never leaves a half-written manifest.
+diff --git a/internal/runtime/firecracker/agent/cache_sparse_test.go b/internal/runtime/firecracker/agent/cache_sparse_test.go
+new file mode 100644
+index 0000000..ef26bcf
+--- /dev/null
++++ b/internal/runtime/firecracker/agent/cache_sparse_test.go
+@@ -0,0 +1,93 @@
++package agent
++
++import (
++	"bytes"
++	"context"
++	"os"
++	"path/filepath"
++	"syscall"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++
++	"fast-sandbox/internal/artifacts"
++)
++
++// A pulled artifact keeps its bytes and digest but leaves its zero runs as
++// holes: the rootfs of a desktop template is mostly unused disk.
++func TestPullImageLeavesZeroRunsSparse(t *testing.T) {
++	store, client, _, _ := publishFixture(t)
++	data := bytes.Repeat([]byte{0xab}, 3*sparseChunk)
++	rootfs := make([]byte, 0, 64*sparseChunk+100)
++	rootfs = append(rootfs, data...)
++	rootfs = append(rootfs, make([]byte, 40*sparseChunk)...)
++	rootfs = append(rootfs, data[:sparseChunk/2]...) // a partly written chunk stays data
++	rootfs = append(rootfs, make([]byte, 20*sparseChunk+100)...)
++	artifacts := map[string][]byte{"rootfs.ext4": rootfs, "vmstate.snap": []byte("vmstate-bytes"), "memory.snap": make([]byte, 8*sparseChunk)}
++	manifestPayload := testManifestFor(t, artifacts)
++	buildDir := sha256Hex(manifestPayload)[:16]
++	for name, content := range artifacts {
++		store.objects[buildDir+"/"+name] = content
++	}
++	store.objects[buildDir+"/manifest.json"] = manifestPayload
++	root := t.TempDir()
++
++	require.NoError(t, (&Client{s3: client}).PullCheckpoint(context.Background(), root, "checkpoint-sparse",
++		"s3://"+testBucket+"/"+testPrefix+"/"+buildDir+"/manifest.json", sha256Hex(manifestPayload)))
++
++	dir := imageDir(root, "checkpoint-sparse")
++	for cacheName, publishName := range map[string]string{"rootfs.img": "rootfs.ext4", "memory.snap": "memory.snap"} {
++		path := filepath.Join(dir, cacheName)
++		content, err := os.ReadFile(path)
++		require.NoError(t, err)
++		require.Equal(t, artifacts[publishName], content, cacheName)
++		var st syscall.Stat_t
++		require.NoError(t, syscall.Stat(path, &st))
++		allocated := st.Blocks * 512
++		if allocated >= int64(len(content))/2 {
++			t.Skipf("%s: %d of %d bytes allocated; this filesystem does not keep holes", cacheName, allocated, len(content))
++		}
++	}
++	complete, err := cacheComplete(dir)
++	require.NoError(t, err)
++	require.True(t, complete, "the sparse files must still verify against the manifest")
++}
++
++// testManifestFor is testManifest with a fixed x86 CPU identity, so the test
++// does not depend on the host it runs on.
++func testManifestFor(t *testing.T, contents map[string][]byte) []byte {
++	t.Helper()
++	files := map[string]artifacts.ManifestFile{}
++	for name, content := range contents {
++		files[name] = artifacts.ManifestFile{SHA256: sha256Hex(content), SizeBytes: int64(len(content))}
++	}
++	payload, err := artifacts.MarshalVMManifest(artifacts.VMManifest{
++		SchemaVersion: artifacts.VMManifestVersion,
++		Runtime:       "firecracker",
++		Machine:       artifacts.VMMachine{VCPUCount: 1, MemoryMiB: 1, RootfsSizeMiB: 1, RootfsDriveID: "rootfs", RootfsDrivePath: "rootfs.img"},
++		Kernel:        artifacts.VMKernel{Version: "6.1.177"},
++		Compatibility: artifacts.SnapshotCompatibility{CPUArch: "x86_64", FirecrackerVersion: "1.16.1", CPUTemplate: artifacts.CPUTemplateNone, Vendor: artifacts.VendorGenuineIntel, CPUFamily: 6, CPUModel: 85, CPUStepping: 7},
++		Lineage:       &artifacts.VMLineage{Image: testImage},
++		Files:         files,
++	})
++	require.NoError(t, err)
++	return payload
++}
++
++func TestCopySparseMatchesSource(t *testing.T) {
++	for _, size := range []int{0, 1, sparseChunk - 1, sparseChunk, sparseChunk + 1, 3<<20 + 17} {
++		src := make([]byte, size)
++		for i := 0; i < size; i += 7919 {
++			src[i] = byte(i)
++		}
++		out, err := os.CreateTemp(t.TempDir(), "sparse")
++		require.NoError(t, err)
++		written, err := copySparse(out, bytes.NewReader(src))
++		require.NoError(t, err)
++		require.Equal(t, int64(size), written)
++		require.NoError(t, out.Close())
++		got, err := os.ReadFile(out.Name())
++		require.NoError(t, err)
++		require.Equal(t, src, got, "size %d", size)
++	}
++}

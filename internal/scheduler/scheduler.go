@@ -546,7 +546,7 @@ func (s *Scheduler) idle(ctx context.Context, rec store.SandboxRecord) {
 	to, action := api.StatusPaused, "pause"
 	switch pz, pausable := a.(adapter.Pauser); {
 	case pausable && s.Pools.Supports(ctx, rec.Pool, adapter.FeaturePauseResume):
-		err = pz.Pause(ctx, rec.BackendRef)
+		err = Pause(ctx, pz, rec)
 	case s.Pools.Supports(ctx, rec.Pool, adapter.FeatureStopStart):
 		l, ok := a.(adapter.Lifecycle)
 		if !ok {

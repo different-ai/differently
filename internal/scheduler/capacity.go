@@ -343,6 +343,17 @@ func (s *Scheduler) EnforceLifecycle(ctx context.Context) {
 	}
 }
 
+// Pause pauses rec on its backend and records how long that took
+// (differently_pause_seconds).
+func Pause(ctx context.Context, pz adapter.Pauser, rec store.SandboxRecord) error {
+	started := time.Now()
+	if err := pz.Pause(ctx, rec.BackendRef); err != nil {
+		return err
+	}
+	metrics.PauseSeconds.WithLabelValues(rec.Pool).Observe(time.Since(started).Seconds())
+	return nil
+}
+
 // park pauses (or, where the pool cannot pause, stops) a running sandbox for
 // the scheduler's own reasons and marks it idled, so the next call wakes it.
 // It reports whether the sandbox was parked.
@@ -354,7 +365,7 @@ func (s *Scheduler) park(ctx context.Context, rec store.SandboxRecord, kind, rea
 	to := api.StatusPaused
 	switch pz, pausable := a.(adapter.Pauser); {
 	case pausable && s.Pools.Supports(ctx, rec.Pool, adapter.FeaturePauseResume):
-		err = pz.Pause(ctx, rec.BackendRef)
+		err = Pause(ctx, pz, rec)
 	case s.Pools.Supports(ctx, rec.Pool, adapter.FeatureStopStart):
 		l, ok := a.(adapter.Lifecycle)
 		if !ok {
