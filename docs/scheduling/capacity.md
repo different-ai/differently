@@ -259,7 +259,7 @@ Limits of the model:
 | `differently_pool_overcommitted` | pool | slots held beyond `maxConcurrency` (backend wakes) |
 | `differently_resumes_queued_total` | pool | resumes that had to wait |
 | `differently_resume_wait_seconds` | pool | how long they waited |
-| `differently_pause_seconds` | pool | how long pauses Differently asked for took on the backend: on a checkpointing pool, the time until the slot is free (capsim's `PauseTime`). A backend's own idle pause (Fast Sandbox native idle) is not timed |
+| `differently_pause_seconds` | pool | how long pauses Differently asked for took on the backend, counting only those that finished, not failed or called-off ones: on a checkpointing pool, the time until the slot is free (capsim's `PauseTime`). A backend's own idle pause (Fast Sandbox native idle) is not timed |
 | `differently_preemptions_total` | pool, mode | sandboxes paused to make room |
 | `differently_lifecycle_actions_total` | action = preempted, max_run, max_paused; pool | the scheduler's own pauses and deletions |
 

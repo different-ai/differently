@@ -65,9 +65,10 @@ var (
 	}, []string{"pool"})
 	// PauseSeconds measures how long the backend took to pause: on a
 	// checkpointing pool, the time until the paused sandbox frees its slot
-	// (internal/capsim's PauseTime).
+	// (internal/capsim's PauseTime). Only pauses that finish count: one that
+	// failed or was called off freed nothing.
 	PauseSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "differently_pause_seconds", Help: "Time a pause took on its backend.",
+		Name: "differently_pause_seconds", Help: "Time a finished pause took on its backend.",
 		Buckets: []float64{1, 5, 15, 30, 45, 60, 90, 120, 180, 300, 600, 900},
 	}, []string{"pool"})
 	// Preemptions counts sandboxes paused to make room on a full pool.

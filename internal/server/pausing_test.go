@@ -114,6 +114,7 @@ func TestResumeCallsOffAPause(t *testing.T) {
 	h := newHarness(t, api.PlacementPolicy{})
 	token, _, sb, _, _ := holdingPool(t, h, nil, true)
 	time.Sleep(20 * time.Millisecond)
+	timed := pauseCount(t, "ckpt")
 	pausing := h.pause(token, sb.ID)
 
 	var back api.Sandbox
@@ -126,6 +127,9 @@ func TestResumeCallsOffAPause(t *testing.T) {
 	}
 	if got := <-pausing; got != 409 {
 		t.Fatalf("the pause's caller should hear it was called off: %d", got)
+	}
+	if got := pauseCount(t, "ckpt"); got != timed {
+		t.Fatalf("a called-off pause should not count as a pause's length: %d before, %d after", timed, got)
 	}
 	if got := h.ran(token, sb.ID); got != 200 {
 		t.Fatalf("exec after a called-off pause: %d", got)
@@ -158,8 +162,12 @@ func TestFailedPauseGoesBackToRunning(t *testing.T) {
 	a.FailPauses = 1
 	sb := h.create(token, api.CreateSandboxRequest{Profile: "small", Placement: pin})
 	h.tick()
+	timed := pauseCount(t, "ckpt")
 	if got := h.call("POST", "/v1/sandboxes/"+sb.ID+"/pause", token, nil, nil); got < 500 {
 		t.Fatalf("a failed pause should answer an error: %d", got)
+	}
+	if got := pauseCount(t, "ckpt"); got != timed {
+		t.Fatalf("a failed pause should not count as a pause's length: %d before, %d after", timed, got)
 	}
 	if got := h.get(token, sb.ID); got.Status != api.StatusRunning {
 		t.Fatalf("a failed pause leaves the sandbox running: %s", got.Status)
