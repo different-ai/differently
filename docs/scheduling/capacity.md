@@ -43,11 +43,26 @@ A resume during a pause depends on the backend:
 - **It can call the pause off** (`adapter.PauseCanceller`: OpenSandbox Fast
   Sandbox, whose runtime serves until it is released). The sandbox goes back to
   running with everything it did, in about as long as the dump has left to run,
-  and the pause's caller gets a conflict. The checkpoint already being written
-  is wasted: it finishes uploading, and it stays in the node's image cache and
-  the artifact store, since nothing refers to it.
+  and the pause's caller gets a conflict.
 - **It cannot.** The resume joins the queue (202) and runs when the pause has
   finished.
+
+Measured on a real Fast Sandbox with a 4 GiB desktop, each with a process and a
+file checked afterwards:
+
+| Step | Time |
+|---|---|
+| A pause, to `paused` | 281 s |
+| Resume after that pause | 1.1 s |
+| Resume during the checkpoint's upload | 1.0 s |
+| Resume during the memory dump | 41 s |
+
+**A called-off pause still costs its disk time.** The checkpoint already being
+written is not cancelled: it finishes hashing and uploading, then stays in the
+node's image cache and the artifact store with nothing referring to it. A new
+pause on that sandbox cannot start its dump until the old one reaches its
+upload, and then shares the disk with it. A pause started right after a
+called-off one took about 8 minutes, with the VM frozen for 151 s instead of 34.
 
 A failed pause goes back to running. If the replica waiting for a pause stops,
 the reconciler follows the backend: paused when it finishes, or back to running

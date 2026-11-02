@@ -223,6 +223,7 @@ Checked on this layout:
 | Fast Sandbox create, template on the node | about 2 s through the public API |
 | Workbot desktop on Fast Sandbox | its nftables egress guard loads; desktop and browser stream through the gateway's WebSocket |
 | Pause / resume, 2 vCPU / 4 GiB desktop | 174–186 s / under 1–2 s, processes and `/dev/shm` kept |
+| Resume during a pause, same desktop | [calls it off](../scheduling/capacity.md#pausing): 1.0 s during the upload, 41 s during the memory dump, process and files kept |
 | Fork | snapshot about 180 s, the fork running about 85 s later with the parent's disk, memory and processes |
 | Adapter live scenario (`fastsandbox-1.2.0`) | passed in 9 min 27 s |
 | Freestyle through Differently, Workbot snapshot | create 4 s, pause 44 s, resume 3 s, process kept |
