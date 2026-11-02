@@ -585,6 +585,11 @@ func (a *Adapter) fastSandboxBody(req adapter.CreateRequest) (map[string]any, er
 	return body, nil
 }
 
+// CancelsPause reports that a resume during a Fast Sandbox pause calls it off:
+// the runtime serves until the checkpoint is durable, and a resume before it is
+// released keeps that runtime.
+func (a *Adapter) CancelsPause() bool { return a.opts.Runtime == runtimeFastSandbox }
+
 // IdlesNatively reports that OpenSandbox pauses idle sandboxes itself and
 // wakes them on access, which Fast Sandbox does when given an idle policy.
 func (a *Adapter) IdlesNatively() bool { return a.opts.Runtime == runtimeFastSandbox }
@@ -1083,6 +1088,7 @@ var (
 	_ adapter.Streamer         = (*Adapter)(nil)
 	_ adapter.FileSystem       = (*Adapter)(nil)
 	_ adapter.Pauser           = (*Adapter)(nil)
+	_ adapter.PauseCanceller   = (*Adapter)(nil)
 	_ adapter.Lifecycle        = (*Adapter)(nil)
 	_ adapter.Snapshotter      = (*Adapter)(nil)
 	_ adapter.PortExposer      = (*Adapter)(nil)

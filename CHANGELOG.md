@@ -6,6 +6,18 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Fixed (lifecycle)
+
+- A sandbox being paused reports the new status `pausing` instead of `running`
+  and refuses exec, file and port calls. A Fast Sandbox VM runs on for minutes
+  after its memory dump, and what it did then was lost on resume while every
+  call reported success. A resume during a pause calls it off on Fast Sandbox,
+  keeping the sandbox as it is; on other backends it waits for the pause. A
+  client that lists sandboxes by status needs to add `pausing`.
+- Idle preemption no longer pauses sandboxes in use. Without an idle timeout of
+  their own their activity was never recorded, so they all looked idle a minute
+  after starting, and a running command now counts as activity until it ends.
+
 ### Added (capacity)
 
 - A paused sandbox on a pool that checkpoints on pause

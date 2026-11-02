@@ -18,6 +18,7 @@ const (
 	StatusProvisioning SandboxStatus = "provisioning"
 	StatusRunning      SandboxStatus = "running"
 	StatusStopped      SandboxStatus = "stopped"
+	StatusPausing      SandboxStatus = "pausing"
 	StatusPaused       SandboxStatus = "paused"
 	StatusTerminating  SandboxStatus = "terminating"
 	StatusTerminated   SandboxStatus = "terminated"
@@ -33,7 +34,7 @@ func (s SandboxStatus) Terminal() bool {
 // quota. Paused microVMs keep their memory resident, so they still reserve.
 func (s SandboxStatus) ReservesCompute() bool {
 	switch s {
-	case StatusQueued, StatusProvisioning, StatusRunning, StatusPaused, StatusTerminating:
+	case StatusQueued, StatusProvisioning, StatusRunning, StatusPausing, StatusPaused, StatusTerminating:
 		return true
 	}
 	return false

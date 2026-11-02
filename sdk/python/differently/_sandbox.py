@@ -258,7 +258,9 @@ class Sandbox:
     def resume(self) -> "Sandbox":
         """Resumes a paused sandbox. If its pause released the pool slot and the
         pool is full, the resume is queued: the sandbox stays paused with
-        ``resumeRequestedAt`` set until a slot frees; ``wait()`` for running."""
+        ``resumeRequestedAt`` set until a slot frees; ``wait()`` for running.
+        During a pause this calls it off where the backend can, and otherwise
+        queues."""
         return self._lifecycle("resume")
 
     def keepalive(self) -> "Sandbox":

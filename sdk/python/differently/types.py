@@ -12,7 +12,15 @@ from typing import Dict, Generic, List, Literal, Optional, TypedDict, TypeVar
 T = TypeVar("T")
 
 SandboxStatus = Literal[
-    "queued", "provisioning", "running", "stopped", "paused", "terminating", "terminated", "failed"
+    "queued",
+    "provisioning",
+    "running",
+    "stopped",
+    "pausing",
+    "paused",
+    "terminating",
+    "terminated",
+    "failed",
 ]
 ExternalMode = Literal["never", "overflow", "allowed"]
 PlacementStrategy = Literal["private-first", "cost", "spread"]

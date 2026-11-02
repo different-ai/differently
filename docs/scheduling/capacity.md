@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-10-29 |
+| Status | Describes the code as of 2026-11-02 |
 | Code | `internal/scheduler/capacity.go`, `internal/store/store.go` (`HoldsPoolSlot`, `ReclaimSlot`), `internal/capsim` (the model) |
-| Tests | `TestPausedSandboxGivesItsSlotBack`, `TestPreemptionMakesRoom`, `TestLifecycleLimits` (server), `TestVictimsOrder` (scheduler), `ReleasedSlotsAndReclaim` (store conformance, memory and Postgres), `TestStrategiesCompare` (model) |
+| Tests | `TestPausingSandboxRefusesWork`, `TestResumeCallsOffAPause`, `TestPreemptionSparesASandboxInUse`, `TestPausedSandboxGivesItsSlotBack`, `TestPreemptionMakesRoom`, `TestLifecycleLimits` (server), `TestVictimsOrder` (scheduler), `ReleasedSlotsAndReclaim` (store conformance, memory and Postgres), `TestStrategiesCompare` (model) |
 
 A pool's `maxConcurrency` is a number of **slots**. This page defines who
 holds them, how a slot moves from one sandbox to another, and what that buys,
@@ -14,7 +14,7 @@ with numbers from a model of real usage.
 
 | Status | Holds a slot |
 |---|---|
-| provisioning, running, stopped, terminating | yes |
+| provisioning, running, pausing, stopped, terminating | yes |
 | paused, on a pool whose pause keeps the sandbox on the host (OpenSandbox Docker, Daytona) | yes |
 | paused, on a pool that **checkpoints** on pause (`lifecycle.pause-checkpoint`: OpenSandbox Fast Sandbox, Freestyle) | **no**: the pause wrote memory and disk out and left the host (`slotReleased: true`) |
 | queued, terminated, failed | no |
@@ -26,6 +26,31 @@ node, only artifact storage, yet four of them filled a four-slot pool for the
 
 The slot is free when the pause **finishes** (a Fast Sandbox checkpoint of a
 4 GiB desktop takes about three minutes), not when it is asked for.
+
+### Pausing
+
+Between the two a sandbox is `pausing`. A Fast Sandbox VM freezes for its
+memory dump (25 to 50 s), then runs on while the checkpoint is hashed and
+uploaded, and is deleted when that is done. Whatever it does after the dump is
+gone when the checkpoint is restored, so exec, file and port calls on a pausing
+sandbox answer `invalid_state` (409). A connection already open to a port URL
+does not pass through Differently and stays up until the VM goes.
+
+A resume during a pause depends on the backend:
+
+- **It can call the pause off** (`adapter.PauseCanceller`: OpenSandbox Fast
+  Sandbox, whose runtime serves until it is released). The sandbox goes back to
+  running with everything it did, in about as long as the dump has left to run,
+  and the pause's caller gets a conflict. The checkpoint already being written
+  is wasted: it finishes uploading, and it stays in the node's image cache and
+  the artifact store, since nothing refers to it.
+- **It cannot.** The resume joins the queue (202) and runs when the pause has
+  finished.
+
+A failed pause goes back to running. If the replica waiting for a pause stops,
+the reconciler follows the backend: paused when it finishes, or back to running
+once no replica can still be waiting (15 minutes). Pauses that a backend starts
+by itself (native idling) are still seen only when they finish.
 
 ## 2. Taking a slot back: resume and the resume queue
 
@@ -74,7 +99,7 @@ Also `PATCH /v1/admin/pools/{name}` with `{"preemption": {...}}`.
 | Mode | Candidates | Order |
 |---|---|---|
 | `off` | none | |
-| `idle` (recommended) | running, preemptible, idle for `idleSeconds` | least recently active, then lowest priority, then longest running |
+| `idle` (recommended) | running, preemptible, no call in progress and idle for `idleSeconds` | least recently active, then lowest priority, then longest running |
 | `lru` | running, preemptible, ran for `minRunSeconds`, busy or not | same |
 
 Rules:
@@ -84,10 +109,15 @@ Rules:
 - Only pools that checkpoint on pause preempt: elsewhere a pause frees nothing.
 - A sandbox created with `"preemptible": false` (or patched so) is never a
   victim.
-- The victim is paused with its memory and marked idled: its next call
-  resumes it, through the queue if the pool is still full. Its reason says
-  why (`paused to make room on pool …`); the audit event is
-  `sandbox.preempted`.
+- The victim is paused with its memory and marked idled from the moment the
+  pause starts: its next call resumes it, through the queue if the pool is
+  still full, or calls the pause off if it has not finished. A pause called
+  off this way counts as a break for `maxRunSeconds`. Its reason says why
+  (`paused to make room on pool …`); the audit event is `sandbox.preempted`.
+- Activity is every exec, file, port and keepalive call, for every preemptible
+  sandbox whether or not it has an idle timeout. A command counts until it
+  ends. Work Differently cannot see, like a background job inside the guest or
+  someone using a port URL, needs a keepalive, or `preemptible: false`.
 
 ## 4. Lifecycle limits
 

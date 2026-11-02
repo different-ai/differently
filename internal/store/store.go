@@ -197,7 +197,7 @@ type Store interface {
 // (SlotReleased) until it resumes.
 func HoldsPoolSlot(s SandboxRecord) bool {
 	switch s.Status {
-	case api.StatusProvisioning, api.StatusRunning, api.StatusStopped, api.StatusTerminating:
+	case api.StatusProvisioning, api.StatusRunning, api.StatusPausing, api.StatusStopped, api.StatusTerminating:
 		return true
 	case api.StatusPaused:
 		return !s.SlotReleased
@@ -206,7 +206,7 @@ func HoldsPoolSlot(s SandboxRecord) bool {
 }
 
 // SlotHolders is the SQL condition matching HoldsPoolSlot.
-const SlotHolders = `(status IN ('provisioning','running','stopped','terminating') OR (status = 'paused' AND NOT COALESCE((doc->>'slotReleased')::boolean, false)))`
+const SlotHolders = `(status IN ('provisioning','running','pausing','stopped','terminating') OR (status = 'paused' AND NOT COALESCE((doc->>'slotReleased')::boolean, false)))`
 
 // Tally computes quota usage from records.
 func Tally(recs []SandboxRecord, snapshots int) api.QuotaUsage {

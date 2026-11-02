@@ -85,7 +85,8 @@ terminated like running ones.
 sandbox is `Paused`; `resume` waits for `Running` and then for `execd` to
 answer again. A paused sandbox keeps reserving CPU and memory in the tenant's
 quota and its pool concurrency slot. Exec and file operations on a paused
-sandbox return `409 invalid_state`.
+or `pausing` sandbox return `409 invalid_state`
+([what a pause in progress means](scheduling/capacity.md#pausing)).
 
 Whether process memory survives a pause depends on the runtime. The live test
 checks that files survive pause and resume on the Docker runtime; it does not

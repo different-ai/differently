@@ -187,6 +187,16 @@ func releasedSlots(t *testing.T, s store.Store) {
 	if counts, _ := s.PoolActive(ctx); counts["ck"] != 1 {
 		t.Fatalf("pool active %v, want 1", counts)
 	}
+	// A pause in progress has not given its slot back yet.
+	if _, err := s.UpdateSandbox(ctx, ids[2], func(r *store.SandboxRecord) error {
+		r.Status = api.StatusPausing
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if counts, _ := s.PoolActive(ctx); counts["ck"] != 1 {
+		t.Fatalf("pool active %v with one pausing, want 1", counts)
+	}
 	var ok atomic.Int32
 	var wg sync.WaitGroup
 	for _, sid := range ids[:2] {

@@ -237,6 +237,13 @@ type Pauser interface {
 	Resume(ctx context.Context, ref string) error
 }
 
+// PauseCanceller is implemented by adapters whose backend keeps an instance
+// serving until a pause completes and lets a Resume call it off, keeping the
+// instance as it is. Where a resume cannot, it waits for the pause to finish.
+type PauseCanceller interface {
+	CancelsPause() bool
+}
+
 // NativeIdler is implemented by adapters whose backend pauses idle instances
 // itself (from CreateRequest.IdleTimeoutSeconds) and wakes them on access.
 // The scheduler then leaves idling to the backend instead of sweeping, and

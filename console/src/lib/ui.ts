@@ -45,7 +45,7 @@ export function mount(target: string | Element, ...nodes: Child[]): void {
 
 const tone: Record<string, string> = {
   running: 'ok', healthy: 'ok', active: 'ok', ok: 'ok', valid: 'ok', placed: 'ok',
-  queued: 'warn', provisioning: 'warn', degraded: 'warn', draining: 'warn', terminating: 'warn',
+  queued: 'warn', provisioning: 'warn', degraded: 'warn', draining: 'warn', pausing: 'warn', terminating: 'warn',
   failed: 'bad', unavailable: 'bad', revoked: 'bad', denied: 'bad', rejected: 'bad', invalid: 'bad',
 };
 export const badge = (status: string) => el('span', { class: `badge ${tone[status] ?? ''}` }, status.replace(/_/g, ' '));

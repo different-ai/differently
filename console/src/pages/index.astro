@@ -23,7 +23,7 @@ const base = import.meta.env.BASE_URL;
     const { items } = await c.sandboxes.list({ limit: 500 });
     const count = (...s: string[]) => items.filter((x) => s.includes(x.status)).length;
     const stat = (label: string, value: number) => el('div', { class: 'stat' }, el('div', { class: 'label' }, label), el('div', { class: 'value' }, value));
-    return [stat('Running', count('running')), stat('Queued', count('queued', 'provisioning')), stat('Stopped or paused', count('stopped', 'paused')), stat('Failed', count('failed'))];
+    return [stat('Running', count('running')), stat('Queued', count('queued', 'provisioning')), stat('Stopped or paused', count('stopped', 'pausing', 'paused')), stat('Failed', count('failed'))];
   });
   section('#pools', async () => {
     const pools = await c.capabilities.list();
