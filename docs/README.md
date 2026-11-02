@@ -39,6 +39,7 @@ two-minute local quickstart.
 | [Feature parity](feature-parity.md) | Differently vs Boat, Daytona, Freestyle, E2B, OpenSandbox; backend capability matrix |
 | [Competitive landscape](competitive-landscape.md) | Ownership models and where Differently fits |
 | [OpenSandbox spike](research/opensandbox-spike.md) | What OpenSandbox offers as a backend or foundation, observed and read |
+| [Fast Sandbox pause time](research/fast-sandbox-pause-time.md) | Where a desktop's pause spends its time, what cut it, and the upstream patches for the rest |
 | [Architecture RFC](architecture/README.md) | Layers, components, request lifecycle, state machine, HA |
 | [Security and trust model](security/trust-model.md) | Threats, boundaries, enforced controls, residual risks |
 | [Adapter specification](adapters/specification.md) | The backend contract and the HTTP plugin protocol |

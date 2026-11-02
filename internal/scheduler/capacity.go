@@ -72,7 +72,8 @@ func MarkRunning(r *store.SandboxRecord, now time.Time) {
 // when the checkpoint is restored. mark sets the caller's own fields on the
 // pausing record, and the caller records the outcome. A failed pause puts the
 // sandbox back to running; one called off by a resume or a delete stops being
-// waited for and answers conflict.
+// waited for and answers conflict. A finished pause's length goes to
+// differently_pause_seconds.
 func (s *Scheduler) Pause(ctx context.Context, pz adapter.Pauser, rec store.SandboxRecord, mark func(*store.SandboxRecord)) error {
 	if _, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
 		if r.Status != api.StatusRunning {
@@ -104,8 +105,10 @@ func (s *Scheduler) Pause(ctx context.Context, pz adapter.Pauser, rec store.Sand
 			}
 		}
 	}()
+	started := time.Now()
 	err := pz.Pause(waiting, rec.BackendRef)
 	if err == nil {
+		metrics.PauseSeconds.WithLabelValues(rec.Pool).Observe(time.Since(started).Seconds())
 		return nil
 	}
 	ctx = context.WithoutCancel(ctx)

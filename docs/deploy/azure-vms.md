@@ -110,6 +110,12 @@ and needs:
   node's converted-template cache at 20 GiB; a second 14 GB template evicts
   the first, and the evicted one fails with `RuntimeNotReady ... no committed
   restore set` instead of being pulled again. Delete superseded templates.
+- **Pause time is disk throughput.** Every pause writes, reads back and
+  uploads the full 14 GB checkpoint through the state-root disk, which a
+  Premium SSD P15 serves at about 175 MB/s on burst credits and 125 MB/s
+  without them. Templates pulled by 1.2.0 are dense; leaving their zero runs
+  as holes cut the pause on the test host
+  ([pools guide](../guides/opensandbox-pools.md#shortening-pauses)).
 
 Create templates with an explicit `entrypoint` (the image's own is not run)
 and, for a desktop, a `readiness.probe` (`cmd://...`) so the snapshot is taken

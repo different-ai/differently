@@ -197,8 +197,10 @@ should use it; every other organization keeps the runner's own provider.
   `max_sandbox_timeout_seconds` above that, or every create is refused and
   the runner falls back to its own provider.
 - **Fast Sandbox pause takes minutes** (a full checkpoint: about three for a
-  4 GiB desktop). Differently finishes it even when the runner stops
-  waiting; OpenWork's runner gives pauses five minutes.
+  4 GiB desktop, more once a burstable disk runs out of credits; see
+  [shortening pauses](opensandbox-pools.md#shortening-pauses)). Differently
+  finishes it even when the runner stops waiting; OpenWork's runner gives
+  pauses five minutes.
 - **Den's Cloud workers** need detached processes and persistent volumes;
   both are in the [backlog](../backlog.md) and Den stays on Daytona until
   then.

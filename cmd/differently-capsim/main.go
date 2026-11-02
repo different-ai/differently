@@ -2,6 +2,7 @@
 // for Workbot-like users: see internal/capsim.
 //
 //	go run ./cmd/differently-capsim -slots 4 -users 4,6,8,12,16,24
+//	go run ./cmd/differently-capsim -slots 4 -users 12 -pause 90
 package main
 
 import (
@@ -18,6 +19,8 @@ func main() {
 	users := flag.String("users", "4,6,8,12,16,24", "comma-separated user counts")
 	days := flag.Int("days", 5, "days to simulate")
 	seeds := flag.Int("seeds", 5, "runs per row, averaged")
+	pause := flag.Int("pause", capsim.Workbot(capsim.Hold, 0, 0).PauseTime, "seconds a pause takes to free its slot")
+	resume := flag.Int("resume", capsim.Workbot(capsim.Hold, 0, 0).ResumeTime, "seconds a resume takes once it holds a slot")
 	flag.Parse()
 	fmt.Println("| users | strategy | users on the pool | external computer-hours | slot utilization | wait p50 | wait p95 | preemptions/day | interrupted sessions/day |")
 	fmt.Println("|---:|---|---:|---:|---:|---:|---:|---:|---:|")
@@ -28,7 +31,7 @@ func main() {
 		}
 		for _, s := range []capsim.Strategy{capsim.Hold, capsim.Release, capsim.PreemptIdle, capsim.PreemptLRU} {
 			cfg := capsim.Workbot(s, *slots, n)
-			cfg.Days = *days
+			cfg.Days, cfg.PauseTime, cfg.ResumeTime = *days, *pause, *resume
 			r := capsim.Average(cfg, *seeds)
 			fmt.Printf("| %d | %s | %.0f%% | %.0f | %.0f%% | %.0f s | %.0f s | %.1f | %.1f |\n", n, s,
 				100*r.PrivateUsers, r.ExternalHours, 100*r.Utilization, r.WaitP50, r.WaitP95, r.PreemptionsPerDay, r.InterruptionsPerDay)
