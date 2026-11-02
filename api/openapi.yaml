@@ -152,10 +152,10 @@ paths:
     post: { tags: [Lifecycle], summary: Start a stopped sandbox from its disk, responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
   /v1/sandboxes/{id}/pause:
     parameters: [{ $ref: "#/components/parameters/SandboxID" }]
-    post: { tags: [Lifecycle], summary: Pause (freeze vCPUs; memory stays resident), responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
+    post: { tags: [Lifecycle], summary: "Pause (freeze vCPUs; memory stays resident). The sandbox is pausing, and refuses exec, file and port calls, until this finishes; on a sandbox already pausing, 202 with the sandbox; wait for paused", responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "202": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
   /v1/sandboxes/{id}/resume:
     parameters: [{ $ref: "#/components/parameters/SandboxID" }]
-    post: { tags: [Lifecycle], summary: "Resume a paused sandbox. On a full pool whose pause released the slot, the resume is queued: 202 with the sandbox still paused; wait for running", responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "202": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
+    post: { tags: [Lifecycle], summary: "Resume a paused sandbox. During a pause, this calls it off where the backend can and keeps the sandbox as it is; elsewhere it is queued. On a full pool whose pause released the slot, the resume is queued. Queued: 202 with the sandbox still pausing or paused; wait for running", responses: { "200": { $ref: "#/components/responses/SandboxOK" }, "202": { $ref: "#/components/responses/SandboxOK" }, "501": { $ref: "#/components/responses/Error" } } }
   /v1/sandboxes/{id}/snapshots:
     parameters: [{ $ref: "#/components/parameters/SandboxID" }]
     post:
@@ -375,7 +375,7 @@ components:
       properties: { keyId: { type: string }, orgId: { type: string }, projectId: { type: string }, scopes: { type: array, items: { type: string } }, operator: { type: boolean } }
     SandboxStatus:
       type: string
-      enum: [queued, provisioning, running, stopped, paused, terminating, terminated, failed]
+      enum: [queued, provisioning, running, stopped, pausing, paused, terminating, terminated, failed]
     Resources:
       type: object
       properties: { cpu: { type: integer, minimum: 1 }, memoryMiB: { type: integer, minimum: 128 }, diskGiB: { type: integer, minimum: 0 } }
@@ -442,9 +442,9 @@ components:
         preemptible: { type: boolean }
         pausedAt: { type: string, format: date-time }
         slotReleased: { type: boolean, description: "A paused sandbox on a pool that checkpoints on pause holds no pool slot until it resumes" }
-        resumeRequestedAt: { type: string, format: date-time, description: Set while a resume waits for a free slot }
+        resumeRequestedAt: { type: string, format: date-time, description: Set while a resume waits for a free slot or for a pause to finish }
         lastActivityAt: { type: string, format: date-time }
-        idledAt: { type: string, format: date-time, description: Set while stopped or paused for being idle; the next exec, file, port or keepalive call wakes it }
+        idledAt: { type: string, format: date-time, description: Set while stopped, pausing or paused for being idle; the next exec, file, port or keepalive call wakes it }
         fromSnapshot: { type: string }
         attempts: { type: integer }
         createdBy: { type: string }

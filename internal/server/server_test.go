@@ -34,6 +34,7 @@ const operatorToken = "dly_bootstrap_0123456789abcdefghjkmnpqrstvwxyz"
 type harness struct {
 	t     *testing.T
 	srv   *httptest.Server
+	api   *server.Server
 	sched *scheduler.Scheduler
 	store *store.Memory
 	fc    *fake.Adapter
@@ -92,6 +93,7 @@ func newHarnessWith(t *testing.T, policy api.PlacementPolicy, tweak func(*config
 		t.Fatal(err)
 	}
 	pm.Refresh(ctx)
+	h.api = srv
 	h.srv = httptest.NewServer(srv.Handler())
 	t.Cleanup(h.srv.Close)
 	return h
@@ -815,6 +817,13 @@ func TestCapabilitiesFollowTenantPolicy(t *testing.T) {
 // with an optional preemption policy, and returns a tenant pinned to it.
 func checkpointPool(t *testing.T, h *harness, pre *api.Preemption) (token string, pin *api.Placement) {
 	t.Helper()
+	token, pin, _ = checkpointBackend(t, h, pre)
+	return token, pin
+}
+
+// checkpointBackend is checkpointPool, with the pool's fake backend.
+func checkpointBackend(t *testing.T, h *harness, pre *api.Preemption) (string, *api.Placement, *fake.Adapter) {
+	t.Helper()
 	features := append(slices.Clone(fake.DefaultFeatures), adapter.FeaturePauseCheckpoint)
 	a := fake.New(fake.Options{Trust: api.TrustPrivate, Features: features})
 	pool := api.Pool{Name: "ckpt", Adapter: "fake", Trust: api.TrustPrivate, Enabled: true, Region: "dc1", MaxConcurrency: 1, Source: "config", Preemption: pre}
@@ -822,8 +831,8 @@ func checkpointPool(t *testing.T, h *harness, pre *api.Preemption) (token string
 	_ = h.store.UpsertPool(ctx, pool)
 	h.pools.Set(pool, a)
 	h.pools.Refresh(ctx)
-	_, _, token = h.tenant("ckpt-"+t.Name(), api.Quota{})
-	return token, &api.Placement{AllowedPools: []string{"ckpt"}}
+	_, _, token := h.tenant("ckpt-"+t.Name(), api.Quota{})
+	return token, &api.Placement{AllowedPools: []string{"ckpt"}}, a
 }
 
 // pauseCount is how many pauses differently_pause_seconds has timed on pool.

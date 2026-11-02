@@ -425,6 +425,43 @@ func TestOpenSandboxCredentialsAndConfig(t *testing.T) {
 	}
 }
 
+// A resume during a Fast Sandbox pause calls it off: the runtime still serves,
+// so resuming waits for it and for execd as after any other resume.
+func TestOpenSandboxFastSandboxCallsOffPauses(t *testing.T) {
+	f := newFake(t)
+	f.direct = true
+	ctx := context.Background()
+	opts, err := FromConfig(map[string]string{"apiURL": f.srv.URL + "/v1", "runtime": "fastsandbox", "templateId": "tpl_1"}, api.TrustPrivate, apiKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(opts)
+	if !a.CancelsPause() {
+		t.Fatal("Fast Sandbox calls pauses off")
+	}
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_1", Installation: "inst", Template: "tpl_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.boxes[in.Ref]["status"] = map[string]any{"state": "Pausing"}
+	f.mu.Unlock()
+	if err := a.Resume(ctx, in.Ref); err != nil || f.resumes != 1 {
+		t.Fatalf("resume during a pause: %v (resumes %d)", err, f.resumes)
+	}
+	if got, _ := a.Get(ctx, in.Ref); got.State != adapter.StateRunning {
+		t.Fatalf("after calling the pause off: %+v", got)
+	}
+
+	docker, err := FromConfig(map[string]string{"apiURL": f.srv.URL + "/v1", "runtime": "docker"}, api.TrustPrivate, apiKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if New(docker).CancelsPause() {
+		t.Fatal("only Fast Sandbox calls pauses off")
+	}
+}
+
 // Fast Sandbox: template-mode creates, OpenSandbox's native idle policy from
 // Differently's idle timeout, execd reached directly so the gateway sees the
 // traffic, and a sandbox the idle policy paused woken on the next call.

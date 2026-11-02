@@ -7,6 +7,7 @@ export type SandboxStatus =
   | "provisioning"
   | "running"
   | "stopped"
+  | "pausing"
   | "paused"
   | "terminating"
   | "terminated"

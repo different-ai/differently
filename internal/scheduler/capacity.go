@@ -44,6 +44,12 @@ const (
 	defaultIdleSeconds   = 60
 )
 
+// LifecycleTimeout bounds one stop, start, pause or resume on a backend.
+const LifecycleTimeout = 15 * time.Minute
+
+// pauseWatch is how often a pause in progress checks that it is still wanted.
+const pauseWatch = 500 * time.Millisecond
+
 // MarkPaused records a pause (or stop) on r: when it happened and, for a pause
 // on a pool that checkpoints, that the sandbox gave its slot back.
 func MarkPaused(r *store.SandboxRecord, now time.Time, releasesSlot bool) {
@@ -54,9 +60,77 @@ func MarkPaused(r *store.SandboxRecord, now time.Time, releasesSlot bool) {
 
 // MarkRunning records a resume or start on r.
 func MarkRunning(r *store.SandboxRecord, now time.Time) {
+	stopClock(r, now) // a pause that was called off never stopped it
 	r.Status, r.UpdatedAt = api.StatusRunning, now
 	r.RunningSince, r.LastActivityAt = &now, &now
 	r.PausedAt, r.ResumeRequestedAt, r.SlotReleased, r.IdledAt = nil, nil, false, nil
+}
+
+// Pause pauses a running sandbox on its backend, marking it pausing first so
+// that nothing new starts on it. A Fast Sandbox VM runs on for minutes after
+// its memory dump while the checkpoint uploads, and what it does then is gone
+// when the checkpoint is restored. mark sets the caller's own fields on the
+// pausing record, and the caller records the outcome. A failed pause puts the
+// sandbox back to running; one called off by a resume or a delete stops being
+// waited for and answers conflict. A finished pause's length goes to
+// differently_pause_seconds.
+func (s *Scheduler) Pause(ctx context.Context, pz adapter.Pauser, rec store.SandboxRecord, mark func(*store.SandboxRecord)) error {
+	if _, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+		if r.Status != api.StatusRunning {
+			return api.Errorf(api.CodeInvalidState, "cannot pause a %s sandbox", r.Status).With("status", string(r.Status))
+		}
+		r.Status, r.UpdatedAt = api.StatusPausing, s.Now()
+		if mark != nil {
+			mark(r)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	metrics.Transitions.WithLabelValues(string(api.StatusPausing), rec.Pool).Inc()
+	waiting, stop := context.WithCancel(ctx)
+	defer stop()
+	go func() {
+		t := time.NewTicker(pauseWatch)
+		defer t.Stop()
+		for {
+			select {
+			case <-waiting.Done():
+				return
+			case <-t.C:
+			}
+			if cur, err := s.Store.GetSandbox(waiting, rec.ID); err == nil && cur.Status != api.StatusPausing {
+				stop()
+				return
+			}
+		}
+	}()
+	started := time.Now()
+	err := pz.Pause(waiting, rec.BackendRef)
+	if err == nil {
+		metrics.PauseSeconds.WithLabelValues(rec.Pool).Observe(time.Since(started).Seconds())
+		return nil
+	}
+	ctx = context.WithoutCancel(ctx)
+	switch cur, gerr := s.Store.GetSandbox(ctx, rec.ID); {
+	case gerr == nil && cur.Status == api.StatusPaused:
+		return nil // the reconciler saw the backend finish first
+	case gerr == nil && cur.Status != api.StatusPausing:
+		return api.Errorf(api.CodeConflict, "sandbox changed to %s during the pause", cur.Status)
+	}
+	s.abortPause(ctx, rec.ID)
+	return err
+}
+
+// abortPause puts a sandbox whose pause did not happen back to running.
+func (s *Scheduler) abortPause(ctx context.Context, sid string) {
+	_, _ = s.Store.UpdateSandbox(ctx, sid, func(r *store.SandboxRecord) error {
+		if r.Status == api.StatusPausing {
+			r.Status, r.UpdatedAt = api.StatusRunning, s.Now()
+			r.IdledAt, r.ResumeRequestedAt, r.StatusReason = nil, nil, ""
+		}
+		return nil
+	})
 }
 
 // SlotFreed lets waiting work at a freed slot right away instead of after its
@@ -81,11 +155,12 @@ func (s *Scheduler) ReclaimSlot(ctx context.Context, rec store.SandboxRecord) (s
 	return s.Store.ReclaimSlot(ctx, rec.ID, p.MaxConcurrency, s.Now())
 }
 
-// QueueResume puts a paused sandbox in the resume queue of its pool.
+// QueueResume puts a paused sandbox in the resume queue of its pool. A sandbox
+// still pausing joins it now and runs once its pause has finished.
 func (s *Scheduler) QueueResume(ctx context.Context, sid string) (store.SandboxRecord, error) {
 	now := s.Now()
 	out, err := s.Store.UpdateSandbox(ctx, sid, func(r *store.SandboxRecord) error {
-		if r.Status != api.StatusPaused {
+		if r.Status != api.StatusPaused && r.Status != api.StatusPausing {
 			return api.Errorf(api.CodeInvalidState, "sandbox %s is %s, not paused", sid, r.Status)
 		}
 		if r.ResumeRequestedAt == nil {
@@ -93,6 +168,9 @@ func (s *Scheduler) QueueResume(ctx context.Context, sid string) (store.SandboxR
 			metrics.ResumesQueued.WithLabelValues(r.Pool).Inc()
 		}
 		r.StatusReason = fmt.Sprintf("waiting for a free slot on pool %s to resume", r.Pool)
+		if r.Status == api.StatusPausing {
+			r.StatusReason = "resumes when its pause finishes"
+		}
 		return nil
 	})
 	s.Wake()
@@ -343,17 +421,6 @@ func (s *Scheduler) EnforceLifecycle(ctx context.Context) {
 	}
 }
 
-// Pause pauses rec on its backend and records how long that took
-// (differently_pause_seconds).
-func Pause(ctx context.Context, pz adapter.Pauser, rec store.SandboxRecord) error {
-	started := time.Now()
-	if err := pz.Pause(ctx, rec.BackendRef); err != nil {
-		return err
-	}
-	metrics.PauseSeconds.WithLabelValues(rec.Pool).Observe(time.Since(started).Seconds())
-	return nil
-}
-
 // park pauses (or, where the pool cannot pause, stops) a running sandbox for
 // the scheduler's own reasons and marks it idled, so the next call wakes it.
 // It reports whether the sandbox was parked.
@@ -362,16 +429,19 @@ func (s *Scheduler) park(ctx context.Context, rec store.SandboxRecord, kind, rea
 	if err != nil {
 		return false
 	}
-	to := api.StatusPaused
+	to, from := api.StatusPaused, api.StatusPausing
 	switch pz, pausable := a.(adapter.Pauser); {
 	case pausable && s.Pools.Supports(ctx, rec.Pool, adapter.FeaturePauseResume):
-		err = Pause(ctx, pz, rec)
+		err = s.Pause(ctx, pz, rec, func(r *store.SandboxRecord) {
+			now := s.Now()
+			r.IdledAt, r.StatusReason = &now, reason
+		})
 	case s.Pools.Supports(ctx, rec.Pool, adapter.FeatureStopStart):
 		l, ok := a.(adapter.Lifecycle)
 		if !ok {
 			return false
 		}
-		to = api.StatusStopped
+		to, from = api.StatusStopped, api.StatusRunning
 		err = l.Stop(ctx, rec.BackendRef)
 	default:
 		return false
@@ -383,7 +453,7 @@ func (s *Scheduler) park(ctx context.Context, rec store.SandboxRecord, kind, rea
 	now := s.Now()
 	releases := s.ReleasesSlot(ctx, rec.Pool)
 	out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
-		if r.Status != api.StatusRunning {
+		if r.Status != from {
 			return api.Errorf(api.CodeConflict, "sandbox changed to %s during the %s pause", r.Status, kind)
 		}
 		r.Status, r.UpdatedAt, r.IdledAt, r.StatusReason = to, now, &now, reason
@@ -408,7 +478,7 @@ func (s *Scheduler) observeSlots(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	recs, err := s.Store.ListSandboxes(ctx, store.SandboxFilter{Statuses: []api.SandboxStatus{api.StatusProvisioning, api.StatusRunning, api.StatusPaused, api.StatusStopped, api.StatusTerminating}})
+	recs, err := s.Store.ListSandboxes(ctx, store.SandboxFilter{Statuses: []api.SandboxStatus{api.StatusProvisioning, api.StatusRunning, api.StatusPausing, api.StatusPaused, api.StatusStopped, api.StatusTerminating}})
 	if err != nil {
 		return
 	}

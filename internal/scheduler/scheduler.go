@@ -543,16 +543,22 @@ func (s *Scheduler) idle(ctx context.Context, rec store.SandboxRecord) {
 	if err != nil {
 		return
 	}
-	to, action := api.StatusPaused, "pause"
+	to, from, action := api.StatusPaused, api.StatusPausing, "pause"
+	reason := func() string {
+		return fmt.Sprintf("%s after %d s idle; the next exec, file, port or keepalive call wakes it", action, rec.IdleTimeoutSeconds)
+	}
 	switch pz, pausable := a.(adapter.Pauser); {
 	case pausable && s.Pools.Supports(ctx, rec.Pool, adapter.FeaturePauseResume):
-		err = Pause(ctx, pz, rec)
+		err = s.Pause(ctx, pz, rec, func(r *store.SandboxRecord) {
+			now := s.Now()
+			r.IdledAt, r.StatusReason = &now, reason()
+		})
 	case s.Pools.Supports(ctx, rec.Pool, adapter.FeatureStopStart):
 		l, ok := a.(adapter.Lifecycle)
 		if !ok {
 			return
 		}
-		to, action = api.StatusStopped, "stop"
+		to, from, action = api.StatusStopped, api.StatusRunning, "stop"
 		err = l.Stop(ctx, rec.BackendRef)
 	default:
 		return
@@ -564,12 +570,12 @@ func (s *Scheduler) idle(ctx context.Context, rec store.SandboxRecord) {
 	now := s.Now()
 	releases := s.ReleasesSlot(ctx, rec.Pool)
 	out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
-		if r.Status != api.StatusRunning {
+		if r.Status != from {
 			return api.Errorf(api.CodeConflict, "sandbox changed to %s during the idle %s", r.Status, action)
 		}
 		r.Status, r.UpdatedAt, r.IdledAt = to, now, &now
 		MarkPaused(r, now, releases)
-		r.StatusReason = fmt.Sprintf("%s after %d s idle; the next exec, file, port or keepalive call wakes it", action, rec.IdleTimeoutSeconds)
+		r.StatusReason = reason()
 		return nil
 	})
 	if err != nil {
@@ -651,7 +657,7 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 		metrics.Reconciled.WithLabelValues("orphan_deleted", pool).Inc()
 		s.Audit.Record(ctx, api.AuditEvent{Actor: "reconciler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "reconcile.orphan_deleted", Resource: in.SandboxID, Details: map[string]string{"pool": pool, "ref": in.Ref}})
 	}
-	recs, err := s.Store.ListSandboxes(ctx, store.SandboxFilter{Pool: pool, Statuses: []api.SandboxStatus{api.StatusProvisioning, api.StatusRunning, api.StatusPaused, api.StatusStopped}})
+	recs, err := s.Store.ListSandboxes(ctx, store.SandboxFilter{Pool: pool, Statuses: []api.SandboxStatus{api.StatusProvisioning, api.StatusRunning, api.StatusPausing, api.StatusPaused, api.StatusStopped}})
 	if err != nil {
 		return
 	}
@@ -706,7 +712,14 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 // it idled (so the next call wakes it), and a backend wake of an idled
 // sandbox (traffic through the backend's gateway) marks it running again.
 func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.SandboxRecord, in adapter.Instance) {
-	if (rec.Status != api.StatusRunning && rec.Status != api.StatusPaused) || s.isInflight(rec.ID) || s.recentlyChanged(rec) {
+	if s.isInflight(rec.ID) || s.recentlyChanged(rec) {
+		return
+	}
+	if rec.Status == api.StatusPausing {
+		s.reconcilePausing(ctx, pool, rec, in)
+		return
+	}
+	if rec.Status != api.StatusRunning && rec.Status != api.StatusPaused {
 		return
 	}
 	switch in.State {
@@ -768,6 +781,35 @@ func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.S
 	case adapter.StateError:
 		s.fail(ctx, rec.ID, "backend instance failed: "+in.Message, nil)
 		metrics.Reconciled.WithLabelValues("failed", pool).Inc()
+	}
+}
+
+// reconcilePausing settles a pause whose waiter is gone: the replica that
+// asked for it stopped while the backend went on. A backend that finished
+// makes the sandbox paused. One still running is left until no waiter can be
+// left, since a retried pause reads as running between its attempts.
+func (s *Scheduler) reconcilePausing(ctx context.Context, pool string, rec store.SandboxRecord, in adapter.Instance) {
+	switch {
+	case in.State == adapter.StatePaused:
+		releases := s.ReleasesSlot(ctx, pool)
+		out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+			if r.Status != api.StatusPausing {
+				return nil
+			}
+			now := s.Now()
+			r.Status, r.UpdatedAt = api.StatusPaused, now
+			MarkPaused(r, now, releases)
+			return nil
+		})
+		if err == nil && out.Status == api.StatusPaused {
+			metrics.Reconciled.WithLabelValues("pause_finished", pool).Inc()
+			if out.SlotReleased {
+				s.SlotFreed(ctx)
+			}
+		}
+	case in.State == adapter.StateRunning && s.Now().Sub(rec.UpdatedAt) > LifecycleTimeout:
+		s.abortPause(ctx, rec.ID)
+		metrics.Reconciled.WithLabelValues("pause_abandoned", pool).Inc()
 	}
 }
 

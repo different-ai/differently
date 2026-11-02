@@ -4,6 +4,7 @@ package fake
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -61,10 +62,23 @@ type Adapter struct {
 	// NativeIdle makes the fake claim its backend idles instances itself
 	// (adapter.NativeIdler); tests pause and resume instances to act for it.
 	NativeIdle bool
+	// HoldPauses makes Pause wait until it is closed, like a checkpoint that
+	// takes minutes; the instance keeps running meanwhile. FailPauses fails
+	// the next N.
+	HoldPauses chan struct{}
+	FailPauses int
+	// PauseCancels makes the fake claim a resume calls off a pause in
+	// progress (adapter.PauseCanceller).
+	PauseCancels bool
+	// HoldExecs makes Exec wait until it is closed, like a long command.
+	HoldExecs chan struct{}
 }
 
 // IdlesNatively implements adapter.NativeIdler.
 func (a *Adapter) IdlesNatively() bool { return a.NativeIdle }
+
+// CancelsPause implements adapter.PauseCanceller.
+func (a *Adapter) CancelsPause() bool { return a.PauseCancels }
 
 // RefOf returns the instance ref backing a sandbox.
 func (a *Adapter) RefOf(sandboxID string) string {
@@ -268,7 +282,17 @@ func (a *Adapter) running(ref string) (*instance, error) {
 	return in, nil
 }
 
-func (a *Adapter) Exec(_ context.Context, ref string, req api.ExecRequest) (api.ExecResult, error) {
+func (a *Adapter) Exec(ctx context.Context, ref string, req api.ExecRequest) (api.ExecResult, error) {
+	a.mu.Lock()
+	hold := a.HoldExecs
+	a.mu.Unlock()
+	if hold != nil {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			return api.ExecResult{}, ctx.Err()
+		}
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if _, err := a.running(ref); err != nil {
@@ -355,7 +379,24 @@ func (a *Adapter) Stop(_ context.Context, ref string) error {
 func (a *Adapter) Start(_ context.Context, ref string) error {
 	return a.setState(ref, adapter.StateStopped, adapter.StateRunning)
 }
-func (a *Adapter) Pause(_ context.Context, ref string) error {
+func (a *Adapter) Pause(ctx context.Context, ref string) error {
+	a.mu.Lock()
+	hold := a.HoldPauses
+	fail := a.FailPauses > 0
+	if fail {
+		a.FailPauses--
+	}
+	a.mu.Unlock()
+	if fail {
+		return adapter.Unavailable(errors.New("pause failed"))
+	}
+	if hold != nil {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	return a.setState(ref, adapter.StateRunning, adapter.StatePaused)
 }
 func (a *Adapter) Resume(_ context.Context, ref string) error {

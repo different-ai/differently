@@ -47,6 +47,9 @@ type Server struct {
 	// Secrets seals provider credentials stored through the API; nil means
 	// none can be stored (env: and file: references still work).
 	Secrets *secrets.Box
+	// ActivityBeat is how often a call still running in a sandbox counts as
+	// activity.
+	ActivityBeat time.Duration
 
 	limiter *limiter
 	now     func() time.Time
@@ -56,8 +59,9 @@ type Server struct {
 func New(cfg config.Config, st store.Store, pm *pools.Manager, sch *scheduler.Scheduler, rec *auditlog.Recorder, log *slog.Logger, installation string) *Server {
 	return &Server{
 		Config: cfg, Store: st, Pools: pm, Scheduler: sch, Audit: rec, Log: log, Installation: installation,
-		limiter: newLimiter(cfg.RateLimit.RequestsPerSecond, cfg.RateLimit.Burst),
-		now:     func() time.Time { return time.Now().UTC() },
+		ActivityBeat: 15 * time.Second,
+		limiter:      newLimiter(cfg.RateLimit.RequestsPerSecond, cfg.RateLimit.Burst),
+		now:          func() time.Time { return time.Now().UTC() },
 	}
 }
 
