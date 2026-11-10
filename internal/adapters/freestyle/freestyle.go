@@ -35,6 +35,11 @@ import (
 // DefaultAPIURL is Freestyle's API.
 const DefaultAPIURL = "https://api.freestyle.sh"
 
+// backstopGrace keeps Freestyle's own deletion behind Differently's audited
+// expiry: Freestyle counts from the create request, Differently from the
+// moment the sandbox is ready.
+const backstopGrace = 5 * 60
+
 // Metadata keys. Freestyle metadata keys are short and unprefixed.
 const (
 	metaSandbox      = "dly-sandbox"
@@ -175,7 +180,7 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 			body["snapshotId"] = snapshot
 		}
 		if req.TTLSeconds > 0 {
-			body["ttlSeconds"] = req.TTLSeconds // provider-side backstop
+			body["ttlSeconds"] = req.TTLSeconds + backstopGrace // provider-side backstop
 		}
 		err = a.c.JSON(ctx, http.MethodPost, "/v5/vms", body, &v)
 		if api.IsCode(err, api.CodeInvalidState) {

@@ -291,7 +291,7 @@ func TestOpenSandboxLifecycleExecFiles(t *testing.T) {
 	}
 	sent := f.boxes[inst.Ref]["request"].(map[string]any)
 	limits := sent["resourceLimits"].(map[string]any)
-	if limits["cpu"] != "2" || limits["memory"] != "1024Mi" || sent["timeout"].(float64) != 60 || sent["image"].(map[string]any)["uri"] != "python:3.12-slim" {
+	if limits["cpu"] != "2" || limits["memory"] != "1024Mi" || sent["timeout"].(float64) != 30+backstopGrace || sent["image"].(map[string]any)["uri"] != "python:3.12-slim" {
 		t.Fatalf("create body %v", sent)
 	}
 	if again, err := a.Create(ctx, req); err != nil || again.Ref != inst.Ref || f.creates != 1 {
@@ -551,7 +551,8 @@ func TestOpenSandboxFastSandbox(t *testing.T) {
 		t.Fatalf("paused microVM reported as %s", got.State)
 	}
 
-	// No idle timeout: no policy, and a TTL becomes the timeout.
+	// No idle timeout: no policy, and the TTL plus the backstop grace becomes
+	// the timeout, so Differently's own expiry runs first.
 	in2, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_2", Installation: "inst", TTLSeconds: 600, Template: "tpl_2"})
 	if err != nil {
 		t.Fatal(err)
@@ -559,7 +560,7 @@ func TestOpenSandboxFastSandbox(t *testing.T) {
 	f.mu.Lock()
 	req = f.boxes[in2.Ref]["request"].(map[string]any)
 	f.mu.Unlock()
-	if _, ok := req["lifecycle"]; ok || req["timeout"] != float64(600) || req["templateId"] != "tpl_2" {
+	if _, ok := req["lifecycle"]; ok || req["timeout"] != float64(600+backstopGrace) || req["templateId"] != "tpl_2" {
 		t.Fatalf("create without idle %v", req)
 	}
 

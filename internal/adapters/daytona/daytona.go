@@ -34,6 +34,15 @@ import (
 // DefaultAPIURL is Daytona's hosted control plane.
 const DefaultAPIURL = "https://app.daytona.io/api"
 
+// backstopGrace keeps Daytona's own deletion behind Differently's audited
+// expiry: Daytona counts from the create request, Differently from the moment
+// the sandbox is ready.
+const backstopGrace = 5 * 60
+
+// ttlMinutes is the deletion deadline sent to Daytona for a sandbox TTL: the
+// TTL plus the grace, rounded up to whole minutes.
+func ttlMinutes(ttlSeconds int) int { return (ttlSeconds + backstopGrace + 59) / 60 }
+
 // Options configures the adapter. Pool config keys: apiURL, target, snapshot,
 // class (container|linux-vm). Daytona's own auto-stop is always off:
 // Differently owns TTL and lifecycle.
@@ -201,7 +210,7 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 		}
 		if req.TTLSeconds > 0 {
 			// Backstop in case this control plane is lost: the provider deletes too.
-			body["ttlMinutes"] = (req.TTLSeconds + 59) / 60
+			body["ttlMinutes"] = ttlMinutes(req.TTLSeconds)
 		}
 		if err := a.c.JSON(ctx, http.MethodPost, "/sandbox", body, &s); err != nil {
 			return adapter.Instance{}, err

@@ -153,6 +153,12 @@ type Options struct {
 
 const runtimeFastSandbox = "fastsandbox"
 
+// backstopGrace keeps OpenSandbox's own timeout behind Differently's audited
+// expiry. The timeout starts at the create request and Differently's TTL only
+// when the sandbox is ready, so without it the backend deletes first and the
+// sandbox ends as "failed: backend instance disappeared" instead of expired.
+const backstopGrace = 5 * 60
+
 // FromConfig maps pool config to options.
 func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
 	o := Options{
@@ -515,7 +521,7 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 			body["entrypoint"] = []string{"tail", "-f", "/dev/null"}
 		}
 		if req.TTLSeconds > 0 {
-			body["timeout"] = max(req.TTLSeconds, 60) // provider-side backstop; minimum 60 s
+			body["timeout"] = req.TTLSeconds + backstopGrace // provider-side backstop
 		}
 		if err := a.call(ctx, http.MethodPost, "/sandboxes", body, &s); err != nil {
 			return adapter.Instance{}, createError(err)
@@ -559,7 +565,7 @@ func (a *Adapter) fastSandboxBody(req adapter.CreateRequest) (map[string]any, er
 		"timeout":  a.opts.DefaultTimeout,
 	}
 	if req.TTLSeconds > 0 {
-		body["timeout"] = max(req.TTLSeconds, 60)
+		body["timeout"] = req.TTLSeconds + backstopGrace
 	}
 	switch {
 	case req.FromSnapshot != "":
