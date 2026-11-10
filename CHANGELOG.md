@@ -6,6 +6,50 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Fixed (placement, scheduler and clients)
+
+Found by reading the code, each with a test that fails on the old behaviour.
+None has run against a live backend.
+
+- Placement no longer treats a policy it could not read as a policy that
+  does not exist. During a database error, a sandbox whose organization sets
+  `external: never` or denies a pool could be placed with that scope left
+  out. The sandbox now stays queued, and create, the placement explanation
+  and `GET /v1/capabilities` answer 503 `provider_unavailable`.
+- The reconciler never deletes or adopts a backend instance that carries no
+  sandbox ID. The `daytona` and `freestyle` adapters check ownership
+  themselves instead of trusting the provider's label or metadata filter,
+  and Daytona's create reuses a sandbox only when its label carries the ID.
+  A provider that ignored the filter would have had every sandbox in the
+  account deleted as an orphan. The other provider adapters still rely on
+  their backend's filter for the installation match.
+- A negative `ttlSeconds` on create is rejected; it used to pass the
+  `maxTTLSeconds` quota and give a sandbox with no expiry. A `PATCH` must set
+  a positive `ttlSeconds`: 0 used to delete the sandbox within a second and
+  now answers 400, so a client that ended sandboxes that way needs `DELETE`.
+- A pool that stops answering no longer slows placement on the others. Pool
+  probes and the reconciler ran on the scheduler loop and held it for their
+  timeouts (5 s per probe, 30 s per list); they now run beside it.
+- A delete or a TTL extension that lands while the scheduler is deciding now
+  wins. Expiry, the reconciler's "failed" and crash adoption wrote the status
+  without reading the record again, so an extended sandbox could still be
+  expired and a deleted one could come back as running.
+- OpenSandbox, Daytona and Freestyle are given the TTL plus five minutes as
+  their own deletion deadline. Theirs counts from the create request and
+  Differently's from the moment the sandbox is ready, so the backend deleted
+  first and the sandbox ended as failed instead of expired.
+- A pool keeps its working adapter when its credential cannot be read for a
+  moment. One failed read used to leave the pool without an adapter until a
+  later refresh. A deleted secret or file still takes the pool down, and a
+  changed value still rebuilds the adapter.
+- The CLI uses the dev server's operator token only for `localhost`,
+  `*.localhost` and loopback addresses. It used to send it to any URL
+  containing "localhost", and not to `127.0.0.1`.
+- A streamed exec through the Go client (`differently sandbox exec`) is no
+  longer cut off after ten minutes.
+- CI: the Python SDK job runs on `ubuntu-24.04`, the last runner image with
+  a Python 3.9 build; on `ubuntu-latest` it failed at setup.
+
 ### Fixed (lifecycle)
 
 - A sandbox being paused reports the new status `pausing` instead of `running`
