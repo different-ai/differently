@@ -635,15 +635,27 @@ func (s *Scheduler) Reconcile(ctx context.Context) {
 func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.ExecutionAdapter, instances []adapter.Instance) {
 	byRef := map[string]adapter.Instance{}
 	bySandbox := map[string]adapter.Instance{}
+	// Only instances that carry a sandbox ID are Differently's to manage. One
+	// without it was not created here (or the backend ignored the ownership
+	// filter and returned its whole account): it is never adopted or deleted.
+	owned := make([]adapter.Instance, 0, len(instances))
 	for _, in := range instances {
 		byRef[in.Ref] = in
+		if in.SandboxID == "" {
+			continue
+		}
 		bySandbox[in.SandboxID] = in
+		owned = append(owned, in)
+	}
+	if n := len(instances) - len(owned); n > 0 {
+		metrics.Reconciled.WithLabelValues("unowned_skipped", pool).Add(float64(n))
+		s.Log.Warn("reconcile left alone backend instances that carry no sandbox ID", "pool", pool, "count", n)
 	}
 	// Orphans: backend instances whose sandbox is gone, terminal or elsewhere.
 	// "Elsewhere" means placed on another pool with a different instance: two
 	// pools can front the same backend (one OpenSandbox server registered
 	// twice), so each sees the other's live instances and must leave them be.
-	for _, in := range instances {
+	for _, in := range owned {
 		rec, err := s.Store.GetSandbox(ctx, in.SandboxID)
 		elsewhere := rec.Pool != pool && in.Ref != rec.BackendRef && rec.Status != api.StatusQueued && rec.Status != api.StatusProvisioning
 		orphan := api.IsCode(err, api.CodeNotFound) || (err == nil && (rec.Status.Terminal() || elsewhere))

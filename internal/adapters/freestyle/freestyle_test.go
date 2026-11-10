@@ -285,3 +285,29 @@ func TestFreestyleAdapter(t *testing.T) {
 		t.Fatalf("idempotent delete: %v", err)
 	}
 }
+
+// The reconciler deletes what List returns and the control plane does not
+// know, so List must check ownership itself: a provider that ignores the
+// metadata filter returns every VM in the account.
+func TestFreestyleListIgnoresVMsItDoesNotOwn(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v5/vms" {
+			http.NotFound(w, r)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"totalCount": 3, "vms": []any{
+			map[string]any{"id": "vm-mine", "state": "running", "metadata": map[string]string{metaInstallation: "inst_1", metaSandbox: "sbx_1"}},
+			map[string]any{"id": "vm-stranger", "state": "running", "metadata": map[string]string{}},
+			map[string]any{"id": "vm-other-install", "state": "running", "metadata": map[string]string{metaInstallation: "inst_other", metaSandbox: "sbx_theirs"}},
+		}})
+	}))
+	defer srv.Close()
+	a := New(Options{APIURL: srv.URL, APIKey: "k"})
+	list, err := a.List(context.Background(), "inst_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Ref != "vm-mine" || list[0].SandboxID != "sbx_1" {
+		t.Fatalf("list returned VMs of other owners: %+v", list)
+	}
+}
