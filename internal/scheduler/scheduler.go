@@ -337,7 +337,14 @@ func (s *Scheduler) wait(ctx context.Context, sid, reason string, dec *api.Place
 }
 
 func (s *Scheduler) fail(ctx context.Context, sid, reason string, dec *api.PlacementDecision) {
+	// The caller decided on a record it read earlier. A sandbox that ended or
+	// was deleted since keeps that outcome: the terminator still has to remove
+	// its backend instance, and "failed" would hide the delete.
+	failed := false
 	rec, err := s.Store.UpdateSandbox(ctx, sid, func(r *store.SandboxRecord) error {
+		if failed = !r.Status.Terminal() && r.Status != api.StatusTerminating; !failed {
+			return nil
+		}
 		now := s.Now()
 		stopClock(r, now)
 		r.Status, r.StatusReason, r.EndedAt, r.UpdatedAt = api.StatusFailed, reason, &now, now
@@ -346,7 +353,7 @@ func (s *Scheduler) fail(ctx context.Context, sid, reason string, dec *api.Place
 		}
 		return nil
 	})
-	if err == nil {
+	if err == nil && failed {
 		metrics.Transitions.WithLabelValues(string(api.StatusFailed), rec.Pool).Inc()
 		s.Audit.Record(ctx, api.AuditEvent{Actor: "scheduler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.failed", Resource: sid, Outcome: "failure", Details: map[string]string{"reason": reason}})
 	}
@@ -533,10 +540,20 @@ func (s *Scheduler) expire(ctx context.Context) {
 		if rec.ExpiresAt == nil || rec.ExpiresAt.After(now) {
 			continue
 		}
-		_, _ = s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+		// Check again under the row lock: the TTL may have been extended, or
+		// the sandbox deleted or failed, since the list was read.
+		expired := false
+		_, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+			live := r.Status == api.StatusRunning || r.Status == api.StatusPaused || r.Status == api.StatusStopped
+			if expired = live && r.ExpiresAt != nil && !r.ExpiresAt.After(now); !expired {
+				return nil
+			}
 			r.Status, r.StatusReason, r.UpdatedAt = api.StatusTerminating, "ttl expired", now
 			return nil
 		})
+		if err != nil || !expired {
+			continue
+		}
 		s.Audit.Record(ctx, api.AuditEvent{Actor: "scheduler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.expired", Resource: rec.ID})
 	}
 }
@@ -723,9 +740,15 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 			}
 			stale := rec.ProvisionStartedAt == nil || now.Sub(*rec.ProvisionStartedAt) > timeout
 			if in, ok := bySandbox[rec.ID]; ok && stale {
-				// Created before a crash: adopt it.
+				// Created before a crash: adopt it, unless it was deleted
+				// since the list was read (the terminator then needs the ref).
+				adopted := false
 				_, _ = s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
-					r.BackendRef, r.Status, r.RunningSince, r.UpdatedAt = in.Ref, api.StatusRunning, &now, now
+					r.BackendRef = in.Ref
+					if adopted = r.Status == api.StatusProvisioning; !adopted {
+						return nil
+					}
+					r.Status, r.RunningSince, r.UpdatedAt = api.StatusRunning, &now, now
 					if r.StartedAt == nil {
 						r.StartedAt = &now
 					}
@@ -735,7 +758,9 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 					}
 					return nil
 				})
-				metrics.Reconciled.WithLabelValues("adopted", pool).Inc()
+				if adopted {
+					metrics.Reconciled.WithLabelValues("adopted", pool).Inc()
+				}
 			} else if stale {
 				s.release(rec.ID)
 				s.retry(ctx, rec, adapter.Unavailable(errString("provisioning interrupted")))
