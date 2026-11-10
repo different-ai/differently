@@ -145,41 +145,55 @@ func (s *Scheduler) Tick(ctx context.Context) {
 func (s *Scheduler) Drain() { s.wg.Wait() }
 
 // Policies returns the placement policies that apply to a tenant: global,
-// then the organization's and the project's when they exist.
-func (s *Scheduler) Policies(ctx context.Context, orgID, projectID string) []api.PlacementPolicy {
-	return s.policies(ctx, orgID, projectID)
-}
-
-func (s *Scheduler) policies(ctx context.Context, orgID, projectID string) []api.PlacementPolicy {
+// then the organization's and the project's when they exist. A policy that
+// cannot be read is an error, never an absent policy: placing with a scope
+// left out could run work where that scope forbids it.
+func (s *Scheduler) Policies(ctx context.Context, orgID, projectID string) ([]api.PlacementPolicy, error) {
 	global := s.Config.Policy
-	if p, ok, _ := s.Store.GetPolicy(ctx, "global"); ok {
+	if p, ok, err := s.Store.GetPolicy(ctx, "global"); err != nil {
+		return nil, fmt.Errorf("read placement policy global: %w", err)
+	} else if ok {
 		global = p
 	}
 	out := []api.PlacementPolicy{global}
 	for _, scope := range []string{"org:" + orgID, "project:" + projectID} {
-		if p, ok, _ := s.Store.GetPolicy(ctx, scope); ok {
+		p, ok, err := s.Store.GetPolicy(ctx, scope)
+		if err != nil {
+			return nil, fmt.Errorf("read placement policy %s: %w", scope, err)
+		}
+		if ok {
 			out = append(out, p)
 		}
 	}
-	return out
+	return out, nil
 }
 
-// PlacementInput assembles the policy input for a sandbox.
-func (s *Scheduler) PlacementInput(ctx context.Context, rec store.SandboxRecord, active map[string]int) policy.Input {
+// PlacementInput assembles the policy input for a sandbox. It fails rather
+// than decide on a partial read of the policies or of the snapshot that pins
+// the sandbox to a pool.
+func (s *Scheduler) PlacementInput(ctx context.Context, rec store.SandboxRecord, active map[string]int) (policy.Input, error) {
+	policies, err := s.Policies(ctx, rec.OrgID, rec.ProjectID)
+	if err != nil {
+		return policy.Input{}, err
+	}
 	class, _ := s.Config.Classification(rec.Classification)
 	in := policy.Input{
-		Sandbox: rec.Sandbox, Policies: s.policies(ctx, rec.OrgID, rec.ProjectID), Classification: class,
+		Sandbox: rec.Sandbox, Policies: policies, Classification: class,
 		Pools: s.Pools.Views(active), ExcludedPools: rec.ExcludedPools, Now: s.Now(),
 	}
 	if rec.FromSnapshot != "" {
-		if snap, err := s.Store.GetSnapshot(ctx, rec.FromSnapshot); err == nil {
+		snap, err := s.Store.GetSnapshot(ctx, rec.FromSnapshot)
+		switch {
+		case err == nil:
 			in.PinnedPool = snap.Pool
+		case !api.IsCode(err, api.CodeNotFound):
+			return policy.Input{}, fmt.Errorf("read snapshot %s: %w", rec.FromSnapshot, err)
 		}
 	}
 	if t, ok := s.Config.Template(rec.Template); ok && rec.Template != "" {
 		in.Template = &t
 	}
-	return in
+	return in, nil
 }
 
 func (s *Scheduler) dispatch(ctx context.Context) {
@@ -209,7 +223,13 @@ func (s *Scheduler) dispatch(ctx context.Context) {
 		if err != nil {
 			continue
 		}
-		in := s.PlacementInput(ctx, rec, active)
+		in, err := s.PlacementInput(ctx, rec, active)
+		if err != nil {
+			// Fail closed: leave it queued until the policies can be read.
+			s.Log.Warn("placement input unavailable; sandbox stays queued", "sandbox", rec.ID, "err", err)
+			s.wait(ctx, rec.ID, "waiting: placement policy could not be read", nil)
+			continue
+		}
 		res := policy.Decide(in)
 		if (res.Err != nil || len(res.Ranked) == 0) && len(in.ExcludedPools) > 0 {
 			// Every other pool is out: retry the pools that failed before.
