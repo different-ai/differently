@@ -170,9 +170,16 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 		return adapter.Instance{}, err
 	}
 	var s sandbox
-	if len(existing) > 0 {
-		s = existing[0]
-	} else {
+	// Reuse only a sandbox that carries this ID: the label filter is the
+	// provider's, and one it ignored must not hand over someone else's.
+	found := false
+	for _, e := range existing {
+		if e.Labels[adapter.LabelSandboxID] == req.ID {
+			s, found = e, true
+			break
+		}
+	}
+	if !found {
 		snapshot := a.opts.Snapshot
 		if req.Template != "" {
 			snapshot = req.Template
@@ -233,6 +240,11 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 	}
 	var out []adapter.Instance
 	for _, s := range items {
+		// Never trust a filter we did not write: the reconciler deletes what
+		// List returns and the control plane does not know.
+		if s.Labels[adapter.LabelInstallation] != installation || s.Labels[adapter.LabelSandboxID] == "" {
+			continue
+		}
 		if s.State != "destroyed" && s.State != "destroying" {
 			out = append(out, a.instance(s))
 		}

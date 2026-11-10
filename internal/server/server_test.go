@@ -443,6 +443,13 @@ func TestFailureRecoveryAndReconcile(t *testing.T) {
 	if u.ActiveSandboxes != 0 || u.CPU != 0 {
 		t.Fatalf("quota leaked: %+v", u)
 	}
+	// An instance with no sandbox ID was not created by Differently (or the
+	// backend ignored the ownership filter): the reconciler never deletes it.
+	h.fc.Inject("", inst)
+	h.sched.Reconcile(context.Background())
+	if h.fc.Count() != 1 {
+		t.Fatal("the reconciler deleted a backend instance that carries no sandbox ID")
+	}
 }
 
 // A configured template reaches each backend as that pool's own image, and

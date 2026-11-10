@@ -242,7 +242,11 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 			return nil, err
 		}
 		for _, v := range page.VMs {
-			out = append(out, inst(v))
+			// Never trust a filter we did not write: the reconciler deletes
+			// what List returns and the control plane does not know.
+			if v.Metadata[metaInstallation] == installation && v.Metadata[metaSandbox] != "" {
+				out = append(out, inst(v))
+			}
 		}
 		offset += len(page.VMs)
 		if len(page.VMs) == 0 || offset >= page.TotalCount {
