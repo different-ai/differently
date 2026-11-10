@@ -180,7 +180,7 @@ sequenceDiagram
 | Snapshots between adapters | Refs are adapter-specific (OpenSandbox snapshot ID, Daytona snapshot name, Freestyle snapshot ID) | Placement pins restores to the snapshot's pool |
 | Memory state between runtimes, versions or CPU types | Each runtime has its own snapshot format and compatibility rules | Restore on matching hosts |
 | Network identity | Each sandbox gets its address from the runtime | Applications must not depend on the sandbox IP |
-| Provider-side lifetimes | OpenSandbox `timeout`, Daytona `ttlMinutes` and Freestyle `ttlSeconds` are set once at create | Extending a sandbox's TTL with `PATCH` does not update the backstop; the backend may delete it earlier and the reconciler then marks it failed (known issue) |
+| Provider-side lifetimes | OpenSandbox `timeout`, Daytona `ttlMinutes` and Freestyle `ttlSeconds` are set once at create, to the TTL plus five minutes so that Differently's own expiry runs first | Extending a sandbox's TTL with `PATCH` does not update the backstop; the backend may delete it earlier and the reconciler then marks it failed (known issue) |
 
 ## 9. Memory snapshot plan
 
