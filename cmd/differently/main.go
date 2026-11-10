@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"os/signal"
@@ -58,8 +59,8 @@ func load() settings {
 	if s.URL == "" {
 		s.URL = "http://localhost:8080"
 	}
-	// Local dev servers write an operator token; use it for localhost.
-	if s.APIKey == "" && strings.Contains(s.URL, "localhost") {
+	// Local dev servers write an operator token; use it for this machine only.
+	if s.APIKey == "" && isLoopbackURL(s.URL) {
 		home, _ := os.UserHomeDir()
 		if b, err := os.ReadFile(filepath.Join(home, ".differently", "dev", "token")); err == nil {
 			s.APIKey = strings.TrimSpace(string(b))
@@ -69,6 +70,23 @@ func load() settings {
 		}
 	}
 	return s
+}
+
+// isLoopbackURL reports whether raw points at this machine: localhost, a
+// *.localhost name or a loopback address. The dev operator token is sent
+// nowhere else; a host that merely contains "localhost" (for example
+// localhost.example.com) is someone else's server.
+func isLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func cli() *client.Client {
