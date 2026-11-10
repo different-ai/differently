@@ -6,7 +6,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"reflect"
 	"sync"
@@ -103,7 +105,9 @@ func (m *Manager) Sync(pools []api.Pool) {
 	for _, p := range pools {
 		seen[p.Name] = true
 		old, ok := m.entries[p.Name]
-		if ok && old.adapter != nil && sameBuild(old.pool, p) && old.credFP == fps[p.Name] {
+		if ok && old.adapter != nil && sameBuild(old.pool, p) && (old.credFP == fps[p.Name] || fps[p.Name] == fpUnreadable) {
+			// An unreadable credential is not a changed one: the adapter that
+			// works keeps the value it was built with until a read succeeds.
 			old.pool = p
 			continue
 		}
@@ -154,6 +158,15 @@ func (m *Manager) Recheck() {
 	m.Sync(list)
 }
 
+// Fingerprints for a credential that could not be resolved. Gone (a deleted
+// secret or file) takes the pool's adapter down, as a removed credential
+// should. Unreadable (the store or the file could not be read just now) says
+// nothing about the value, so it must not tear down a working adapter.
+const (
+	fpGone       = "unresolved"
+	fpUnreadable = "unreadable"
+)
+
 // fingerprint identifies a pool's current credential value without keeping
 // it. Without a resolver, only a changed reference counts as a change.
 func (m *Manager) fingerprint(p api.Pool) string {
@@ -161,11 +174,15 @@ func (m *Manager) fingerprint(p api.Pool) string {
 		return ""
 	}
 	v, err := m.deps.Resolve(p.CredentialRef)
-	if err != nil {
-		return "unresolved"
+	switch {
+	case err == nil:
+		sum := sha256.Sum256([]byte(v))
+		return hex.EncodeToString(sum[:8])
+	case api.IsCode(err, api.CodeNotFound) || errors.Is(err, fs.ErrNotExist):
+		return fpGone
 	}
-	sum := sha256.Sum256([]byte(v))
-	return hex.EncodeToString(sum[:8])
+	m.deps.Logger.Warn("pool credential could not be read; keeping the adapter as built", "pool", p.Name, "err", err)
+	return fpUnreadable
 }
 
 func sameBuild(a, b api.Pool) bool {
