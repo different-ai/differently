@@ -206,8 +206,12 @@ func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.Cre
 			return store.SandboxRecord{}, api.Errorf(api.CodeInvalidRequest, "placement.external must be never, overflow or allowed")
 		}
 	}
+	// A negative TTL would never expire and would slip under maxTTLSeconds.
 	ttl := req.TTLSeconds
-	if ttl == 0 {
+	switch {
+	case ttl < 0:
+		return store.SandboxRecord{}, api.Errorf(api.CodeInvalidRequest, "ttlSeconds must be positive, or 0 for the operator default")
+	case ttl == 0:
 		ttl = s.Config.Defaults.TTLSeconds
 	}
 	idle, err := idleTimeout(req.IdleTimeoutSeconds, s.Config.Defaults.IdleTimeoutSeconds)
@@ -343,6 +347,11 @@ func (s *Server) updateSandbox(w http.ResponseWriter, r *http.Request, p auth.Pr
 		*f.out = &v
 	}
 	if req.TTLSeconds != nil {
+		// The new TTL counts from now, so 0 would expire the sandbox at once
+		// (delete it instead) and a negative one is already in the past.
+		if *req.TTLSeconds <= 0 {
+			return api.Errorf(api.CodeInvalidRequest, "ttlSeconds must be positive; delete the sandbox to end it now")
+		}
 		for _, q := range []api.Quota{org.Quota, proj.Quota} {
 			if q.MaxTTLSeconds > 0 && *req.TTLSeconds > q.MaxTTLSeconds {
 				return api.Errorf(api.CodeQuotaExceeded, "ttl exceeds limit %ds", q.MaxTTLSeconds).With("dimension", "ttlSeconds")
