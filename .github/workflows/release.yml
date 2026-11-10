@@ -47,7 +47,7 @@ jobs:
       - uses: sigstore/cosign-installer@v3
       - name: sign checksums (keyless)
         run: cosign sign-blob --yes --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*.tar.gz
       - name: chart
