@@ -47,7 +47,7 @@ jobs:
       # Syncs docs/, SDK READMEs, the OpenAPI spec and CLI help, builds, and validates every internal link.
       - run: npm run build
         working-directory: site
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
         with:
           path: site/dist
