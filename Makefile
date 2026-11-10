@@ -4,18 +4,23 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.1.
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS := -s -w -X github.com/different-ai/differently/internal/version.Version=$(VERSION) -X github.com/different-ai/differently/internal/version.Commit=$(COMMIT)
 BINS    := differently-server differently
+# Go build tags for `make build`, `build-linux` and `images`. The default (none)
+# is the published build: opensandbox, daytona, freestyle, remote and devhost.
+# GO_TAGS=experimental_adapters adds the other adapter kinds (docs/providers).
+GO_TAGS ?=
+EXPERIMENTAL_TAG := experimental_adapters
 PG_PORT ?= 55432
 
-.PHONY: build build-linux test test-postgres fmt-check vet sdk-test helm-lint verify dev images clean
+.PHONY: build build-linux test test-postgres fmt-check vet experimental sdk-test helm-lint verify dev images clean
 
 build:
 	@mkdir -p bin
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/ $(addprefix ./cmd/,$(BINS))
+	CGO_ENABLED=0 go build -trimpath -tags "$(GO_TAGS)" -ldflags "$(LDFLAGS)" -o bin/ $(addprefix ./cmd/,$(BINS))
 
 build-linux:
 	@for arch in amd64 arm64; do \
 		mkdir -p bin/linux-$$arch; \
-		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" -o bin/linux-$$arch/ $(addprefix ./cmd/,$(BINS)) || exit 1; \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath -tags "$(GO_TAGS)" -ldflags "$(LDFLAGS)" -o bin/linux-$$arch/ $(addprefix ./cmd/,$(BINS)) || exit 1; \
 	done
 
 fmt-check:
@@ -26,6 +31,13 @@ vet:
 
 test:
 	go test -race -count=1 ./...
+
+# The adapter kinds outside the default build must keep compiling and passing
+# their fake-server tests: build, vet and test everything with the tag.
+experimental:
+	go build -tags $(EXPERIMENTAL_TAG) ./...
+	go vet -tags $(EXPERIMENTAL_TAG) ./...
+	go test -race -count=1 -tags $(EXPERIMENTAL_TAG) ./...
 
 # Runs the store conformance suite against a disposable Postgres container.
 test-postgres:
@@ -46,13 +58,13 @@ helm-lint:
 		helm template differently deploy/helm/differently -f $$f >/dev/null || exit 1; \
 	done
 
-verify: fmt-check vet test sdk-test helm-lint
+verify: fmt-check vet test experimental sdk-test helm-lint
 
 dev: build
 	./bin/differently-server --dev
 
 images:
-	docker build -f build/server.Dockerfile -t ghcr.io/different-ai/differently-server:$(VERSION) .
+	docker build -f build/server.Dockerfile --build-arg GO_TAGS=$(GO_TAGS) -t ghcr.io/different-ai/differently-server:$(VERSION) .
 	docker build -f build/cli.Dockerfile -t ghcr.io/different-ai/differently-cli:$(VERSION) .
 
 clean:

@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package e2b adapts E2B's sandbox API: the hosted service, or an E2B the
 // operator runs (its infrastructure is open source), so pools declare trust.
 //

@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package agentsandbox adapts kubernetes-sigs/agent-sandbox
 // (github.com/kubernetes-sigs/agent-sandbox, Apache-2.0): a Sandbox custom
 // resource that a controller turns into one stateful pod, with optional warm

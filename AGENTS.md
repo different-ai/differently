@@ -24,8 +24,9 @@ for humans).
 make verify
 ```
 
-It runs gofmt, go vet, Go tests with `-race`, the SDK tests and the Helm lint,
-including the replay of recorded OpenSandbox runtimes. For changes touching
+It runs gofmt, go vet, Go tests with `-race`, the same build, vet and tests
+with `-tags experimental_adapters` (`make experimental`), the SDK tests and
+the Helm lint, including the replay of recorded OpenSandbox runtimes. For changes touching
 `internal/store/postgres`, also run `make test-postgres`. For `console/`, run
 `npm run typecheck && npm run build && npm run build:server` there; for
 `site/` or any page it publishes from `docs/`, `npm run build` in `site/`
@@ -46,7 +47,12 @@ that covers it, and say in the PR what did not run.
   (acceptance scenarios A–L) green.
 - Backends: `internal/adapters/*` (`opensandbox` is the default private
   runtime; Differently runs no sandboxes itself), `internal/wiring` (adapter
-  factories), `internal/pools`. The real-stack suite is `test/e2e`
+  factories), `internal/pools`. The default build holds `opensandbox`,
+  `daytona`, `freestyle`, `remote`, `devhost` and `fake`. Every other
+  adapter, and the `cloudhttp`, `pyshell` and `shellcmd` helpers, carries
+  `//go:build experimental_adapters`: a plain `go build`, `go vet` or
+  `go test` does not see them, so use `make experimental` when you touch
+  them or anything they share (`httpx`, `pkg/adapter`). The real-stack suite is `test/e2e`
   (`make e2e-prepare e2e-up e2e`, or against any install).
 - Recorded runtimes: `internal/adapters/opensandbox/testdata/recordings`,
   replayed by `TestReplayRecordings`; re-record with the live test after an

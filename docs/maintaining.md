@@ -24,7 +24,7 @@ control plane does with it.
 | Quotas, admission, activation | `internal/store` (memory and Postgres) | `internal/store/storetest` through both stores; `make test-postgres` |
 | Reconciliation and recovery | `internal/scheduler` (`Reconcile`, `retry`) | Server tests using the fake backend; the e2e drift test |
 | A backend's behaviour | `internal/adapters/<kind>` | Its fake-server tests; for OpenSandbox also the recordings ([below](#recordings-real-backends-replayed-in-go-test)) |
-| A new provider kind | The adapter, then every registration list in [the provider catalog's checklist](providers/README.md#add-a-built-in-adapter) | `TestEveryAdapterKindHasATrustRule`; its fake-server tests |
+| A new provider kind | The adapter, then every registration list in [the provider catalog's checklist](providers/README.md#add-a-built-in-adapter) | `TestEveryAdapterKindHasATrustRule`, `TestRegisteredKindsMatchConfig`; its fake-server tests, which run only with `-tags experimental_adapters` (`make experimental`) |
 | The adapter contract | `pkg/adapter`, `pkg/adapter/adapterhttp`, `internal/adapters/fake` | `adapterhttp` round-trip tests; [adapter specification](adapters/specification.md) |
 | Stored credentials and keys | `internal/secrets`, `internal/server` | [keys-and-providers.md](guides/keys-and-providers.md) lists what is verified |
 | Install and operations | `deploy/helm/differently` (values, schema, templates, NOTES), `cmd/differently-server` (`preflight`, `migrate`) | `make helm-lint`; the ci value sets; the deploy guides |
@@ -52,7 +52,7 @@ the one before; repeating a rung for reassurance adds nothing.
 | Rung | Command | Use it for |
 |---|---|---|
 | Package tests | `go test ./internal/adapters/opensandbox/` (or the package you changed) | Every change, while iterating |
-| CI locally | `make verify` | Before every push: gofmt, vet, tests with `-race`, SDK tests, Helm lint |
+| CI locally | `make verify` | Before every push: gofmt, vet, tests with `-race`, the same again with the experimental adapters (`make experimental`: build, vet and test with `-tags experimental_adapters`), SDK tests, Helm lint |
 | Postgres store | `make test-postgres` (needs Docker) | Changes in `internal/store` |
 | Recorded runtimes | part of `go test` (`TestReplayRecordings`) | Any OpenSandbox adapter change: real responses from the Docker and Kubernetes runtimes, no server |
 | Live adapter | `OPENSANDBOX_URL=… go test -tags live -run TestLiveOpenSandbox ./internal/adapters/opensandbox/`; for the managed providers `DAYTONA_API_KEY=… go test -tags live -run TestLiveDaytona ./internal/adapters/daytona/` and `FREESTYLE_API_KEY=… go test -tags live -run TestLiveFreestyle ./internal/adapters/freestyle/` (a few small sandboxes, all deleted) | A new OpenSandbox call or version; re-recording; any Daytona or Freestyle adapter change |

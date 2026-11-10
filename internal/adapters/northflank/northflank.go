@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package northflank adapts Northflank sandboxes: each Differently sandbox
 // is one deployment service in a Northflank project, kept alive with
 // `sleep infinity` so commands can run in it.

@@ -37,8 +37,8 @@ pools:
 func TestManagedProvidersAreAlwaysExternal(t *testing.T) {
 	c, err := Parse([]byte(`
 pools:
-  - {name: bl, adapter: blaxel, trust: private, config: {workspace: ws}, credentials: {env: BL_API_KEY}}
-  - {name: bl2, adapter: blaxel, config: {workspace: ws}}
+  - {name: fs, adapter: freestyle, trust: private, credentials: {env: FREESTYLE_API_KEY}}
+  - {name: fs2, adapter: freestyle}
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -103,10 +103,10 @@ func TestNewAdapterKindsMustDeclareTrust(t *testing.T) {
 	}
 }
 
-// Every adapter kind the server can build sits in exactly one trust list, so
-// adding a kind means deciding who operates it.
+// Every adapter kind, in this build or behind the experimental tag, sits in
+// exactly one trust list, so adding a kind means deciding who operates it.
 func TestEveryAdapterKindHasATrustRule(t *testing.T) {
-	for _, kind := range KnownAdapters {
+	for _, kind := range slices.Concat(DefaultAdapters, ExperimentalAdapters) {
 		n := 0
 		for _, list := range [][]string{externalKinds, privateByDefaultKinds, declaredTrustKinds} {
 			if slices.Contains(list, kind) {
@@ -115,32 +115,6 @@ func TestEveryAdapterKindHasATrustRule(t *testing.T) {
 		}
 		if n != 1 {
 			t.Errorf("adapter %s is in %d trust lists; put it in exactly one of externalKinds, privateByDefaultKinds or declaredTrustKinds", kind, n)
-		}
-	}
-}
-
-// Managed providers are external whatever a pool says; E2B, which can also
-// be self-hosted, must declare who operates it and is private only when it
-// says so.
-func TestProviderKindsTrust(t *testing.T) {
-	pool := func(kind, trust string) []byte {
-		return []byte("pools:\n  - name: p\n    adapter: " + kind + "\n" + trust + "    credentials: {env: KEY}\n")
-	}
-	for _, kind := range []string{"boat", "morph"} {
-		for _, trust := range []string{"", "    trust: private\n"} {
-			c, err := Parse(pool(kind, trust))
-			if err != nil || c.Pools[0].Trust != api.TrustExternal {
-				t.Errorf("%s with %q: %+v %v", kind, trust, c.Pools, err)
-			}
-		}
-	}
-	if _, err := Parse(pool("e2b", "")); err == nil || !strings.Contains(err.Error(), "set trust explicitly") {
-		t.Fatalf("e2b without trust must be rejected, got %v", err)
-	}
-	for _, trust := range []string{api.TrustExternal, api.TrustPrivate} {
-		c, err := Parse(pool("e2b", "    trust: "+trust+"\n"))
-		if err != nil || c.Pools[0].Trust != trust {
-			t.Errorf("e2b declared %s: %+v %v", trust, c.Pools, err)
 		}
 	}
 }

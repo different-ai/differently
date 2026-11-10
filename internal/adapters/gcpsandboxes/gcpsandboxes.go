@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package gcpsandboxes adapts Google Cloud's Agent Platform sandbox
 // environments (formerly Vertex AI Agent Engine code execution) in their
 // shell flavour: each Differently sandbox is one sandbox environment under

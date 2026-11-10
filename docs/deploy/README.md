@@ -34,9 +34,11 @@ Pools are where sandboxes run:
 - **`opensandbox`:** an OpenSandbox server. `trust` must be declared:
   `private` if you operate the server and its runtime, `external` if someone
   else does.
-- **Managed providers** (`daytona`, `freestyle`, `e2b`, `vercel` and the
-  others in the [provider catalog](../providers/README.md)): optional
-  capacity someone else runs. Managed kinds are always `trust=external`, and
+- **Managed providers** (`daytona` and `freestyle`; adapters for others,
+  such as `e2b` and `vercel`, are experimental and need a server built with
+  `-tags experimental_adapters`, see the
+  [provider catalog](../providers/README.md#what-the-server-contains)):
+  optional capacity someone else runs. Managed kinds are always `trust=external`, and
   sandboxes are placed on them only when policy allows it.
 - **`remote`:** an out-of-process adapter plugin speaking the
   [adapter protocol](../adapters/specification.md). Its trust is the

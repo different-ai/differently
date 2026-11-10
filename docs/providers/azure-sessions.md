@@ -1,5 +1,10 @@
 # Azure Container Apps dynamic sessions
 
+> **Experimental adapter.** It is not in the default `differently-server`
+> build or the published image. It needs a server built with
+> `-tags experimental_adapters`: see
+> [what the server contains](README.md#what-the-server-contains).
+
 | | |
 |---|---|
 | Status | **Tested with a fake server** for Python code-interpreter pools (implemented from the published API, not run against Azure). Custom container and shell pools: **Not supported** by this adapter (see [below](#custom-container-and-shell-pools)) |

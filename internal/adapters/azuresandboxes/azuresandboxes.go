@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package azuresandboxes adapts Azure Container Apps Sandboxes: each
 // Differently sandbox is one sandbox in an Azure sandbox group.
 //

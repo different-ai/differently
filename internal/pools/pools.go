@@ -7,13 +7,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"reflect"
 	"sync"
 	"time"
 
+	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/internal/policy"
 	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/pkg/adapter"
@@ -117,7 +117,9 @@ func (m *Manager) Sync(pools []api.Pool) {
 		}
 		e := &entry{pool: p, credFP: fps[p.Name]}
 		if f := factoryFor(p.Adapter); f == nil {
-			e.buildErr = fmt.Errorf("adapter kind %q is not available in this build", p.Adapter)
+			// A pool stored by a build that had the kind (an experimental
+			// adapter, say) stays registered and reports why it cannot run.
+			e.buildErr = errors.New(config.UnavailableAdapter(p.Adapter))
 		} else if a, err := f(p, m.deps); err != nil {
 			e.buildErr = err
 		} else {

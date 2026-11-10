@@ -1,5 +1,10 @@
 # agent-sandbox (Kubernetes)
 
+> **Experimental adapter.** It is not in the default `differently-server`
+> build or the published image. It needs a server built with
+> `-tags experimental_adapters`: see
+> [what the server contains](README.md#what-the-server-contains).
+
 | | |
 |---|---|
 | Status | **Verified live** (2026-10-28): the adapter's live test and a Differently server, against agent-sandbox v1.0.8 on a single-node kind cluster (Kubernetes 1.37, runc, arm64) |
@@ -192,7 +197,8 @@ template and rejects `image`, `runtimeClassName`, `volumeSize`,
   lists, exec arguments and exit codes, stdin, streaming, files, stop/start,
   warm-pool claims, token rotation and that credentials are not echoed.
   `kube_test.go` covers the WebSocket framing.
-- **Live** (2026-10-28, `go test -tags live -run TestLiveAgentSandbox`):
+- **Live** (2026-10-28, `go test -tags live -run TestLiveAgentSandbox`; the
+  test now also needs `-tags live,experimental_adapters`):
   agent-sandbox v1.0.8 (`registry.k8s.io/agent-sandbox/agent-sandbox-controller:v1.0.8`,
   `sandbox-with-extensions.yaml`) on kind v0.33.0 (Kubernetes 1.37.0,
   containerd 2.3.4, runc) on an arm64 Colima VM, with a service account
