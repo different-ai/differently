@@ -41,7 +41,9 @@ const RetryDelay = 2 * time.Second
 
 // Scheduler runs dispatch, provisioning, termination and reconciliation.
 type Scheduler struct {
-	sweeping atomic.Bool // an idle sweep is running
+	sweeping    atomic.Bool // an idle sweep is running
+	refreshing  atomic.Bool // a pool probe pass is running
+	reconciling atomic.Bool // a reconcile pass is running
 
 	Store        store.Store
 	Pools        *pools.Manager
@@ -53,6 +55,8 @@ type Scheduler struct {
 	// ReconcileGrace is how long the reconciler leaves a sandbox alone after
 	// it changed, so it never races a lifecycle operation.
 	ReconcileGrace time.Duration
+	// RefreshInterval is how often pools are probed; zero means 5 seconds.
+	RefreshInterval time.Duration
 
 	wake chan struct{}
 	mu   sync.Mutex
@@ -80,33 +84,49 @@ func (s *Scheduler) Wake() {
 }
 
 // Run loops until ctx ends.
+//
+// Only dispatch runs on the loop itself. Pool probes and the reconciler call
+// backends, and one that does not answer holds its caller until a timeout (5 s
+// per probe, 30 s per list), so they run beside the loop: an unreachable pool
+// must not slow placement on the others.
 func (s *Scheduler) Run(ctx context.Context) {
+	every := s.RefreshInterval
+	if every <= 0 {
+		every = 5 * time.Second
+	}
 	tick := time.NewTicker(time.Duration(s.Config.Scheduler.IntervalMs) * time.Millisecond)
-	refresh := time.NewTicker(5 * time.Second)
+	refresh := time.NewTicker(every)
 	reconcile := time.NewTicker(time.Duration(s.Config.Scheduler.ReconcileIntervalSecs) * time.Second)
 	defer tick.Stop()
 	defer refresh.Stop()
 	defer reconcile.Stop()
-	s.Pools.Refresh(ctx)
+	s.Pools.Refresh(ctx) // the first tick needs a view of every pool
 	for {
 		select {
 		case <-ctx.Done():
 			s.wg.Wait()
 			return
 		case <-refresh.C:
-			s.Pools.Refresh(ctx)
+			if s.refreshing.CompareAndSwap(false, true) {
+				go func() {
+					defer s.refreshing.Store(false)
+					s.Pools.Refresh(ctx)
+				}()
+			}
 			continue
 		case <-reconcile.C:
-			if s.leader(ctx) {
-				s.Reconcile(ctx)
-				if s.sweeping.CompareAndSwap(false, true) {
-					// Stops can take seconds each: never hold up the loop.
-					go func() {
+			if s.leader(ctx) && s.reconciling.CompareAndSwap(false, true) {
+				go func() {
+					s.Reconcile(ctx)
+					s.reconciling.Store(false)
+					// Stops can take seconds each, so the sweep does not hold
+					// up the next reconcile pass either.
+					if s.sweeping.CompareAndSwap(false, true) {
 						defer s.sweeping.Store(false)
 						s.SweepIdle(ctx)
 						s.EnforceLifecycle(ctx)
-					}()
-				}
+					}
+				}()
 			}
 			continue
 		case <-tick.C:
