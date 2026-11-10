@@ -90,7 +90,10 @@ jobs:
 
   sdk-python:
     name: sdk (python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to Ubuntu 26.04, which has no Python 3.9 build for
+    # setup-python. The SDK still declares requires-python >= 3.9, so keep
+    # testing it on the last image that provides it.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python: ["3.9", "3.13"]
