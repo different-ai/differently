@@ -540,7 +540,11 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request, p auth.Pri
 	var eff *policy.Effective
 	if p.OrgID != "" {
 		class, _ := s.Config.Classification(s.Config.Defaults.Classification)
-		e := policy.Merge(policy.Input{Policies: s.Scheduler.Policies(r.Context(), p.OrgID, p.ProjectID), Classification: class})
+		policies, err := s.Scheduler.Policies(r.Context(), p.OrgID, p.ProjectID)
+		if err != nil {
+			return s.placementUnavailable(err)
+		}
+		e := policy.Merge(policy.Input{Policies: policies, Classification: class})
 		eff = &e
 	}
 	active, _ := s.Store.PoolActive(r.Context())

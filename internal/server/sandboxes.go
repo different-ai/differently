@@ -115,7 +115,11 @@ func (s *Server) admit(w http.ResponseWriter, r *http.Request, p auth.Principal,
 	}
 	// Fail fast with a precise error when no pool could ever take this.
 	active, _ := s.Store.PoolActive(ctx)
-	if res := policy.Decide(s.Scheduler.PlacementInput(ctx, rec, active)); res.Err != nil {
+	in, err := s.Scheduler.PlacementInput(ctx, rec, active)
+	if err != nil {
+		return s.placementUnavailable(err)
+	}
+	if res := policy.Decide(in); res.Err != nil {
 		return res.Err
 	}
 	out, existed, err := s.Store.AdmitSandbox(ctx, rec, store.Admission{OrgQuota: org.Quota, ProjectQuota: proj.Quota})
@@ -132,6 +136,14 @@ func (s *Server) admit(w http.ResponseWriter, r *http.Request, p auth.Principal,
 	s.Scheduler.Wake()
 	writeJSON(w, http.StatusAccepted, out.Sandbox)
 	return nil
+}
+
+// placementUnavailable reports that placement could not be evaluated because
+// a policy or snapshot read failed. The cause is logged, not returned: it can
+// name internal hosts.
+func (s *Server) placementUnavailable(err error) error {
+	s.Log.Warn("placement input unavailable", "err", err)
+	return api.Errorf(api.CodeProviderUnavailable, "placement policy could not be read; nothing was changed, retry shortly")
 }
 
 func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.CreateSandboxRequest) (store.SandboxRecord, error) {
@@ -497,7 +509,11 @@ func (s *Server) explainPlacement(w http.ResponseWriter, r *http.Request, p auth
 	out := map[string]any{"sandboxId": rec.ID, "status": rec.Status, "pool": rec.Pool, "trust": rec.Trust, "decision": rec.Decision}
 	if rec.Status == api.StatusQueued {
 		active, _ := s.Store.PoolActive(r.Context())
-		out["current"] = policy.Decide(s.Scheduler.PlacementInput(r.Context(), rec, active)).Decision
+		in, err := s.Scheduler.PlacementInput(r.Context(), rec, active)
+		if err != nil {
+			return s.placementUnavailable(err)
+		}
+		out["current"] = policy.Decide(in).Decision
 	}
 	writeJSON(w, 200, out)
 	return nil
