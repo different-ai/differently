@@ -25,8 +25,8 @@ jobs:
           go-version-file: go.mod
       - name: gofmt
         run: make fmt-check
-      - name: vet
-        run: go vet ./...
+      - name: vet (including the e2e and live test files, which are not run here)
+        run: make vet
       - name: test
         run: go test -race -count=1 -coverprofile=coverage.out ./...
       - name: cross-build linux amd64/arm64
