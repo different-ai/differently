@@ -6,6 +6,15 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Tests
+
+- The server acceptance scenarios (`internal/server`) run on Postgres as well
+  as the memory store: every pull request runs them against Postgres 17 in
+  the `postgres conformance and acceptance` job, and `make test-postgres`
+  runs them locally. They used to run only on the memory store, which
+  production does not use. The first run found no defect. A run that is meant
+  to use Postgres now fails, instead of skipping, when it has no database.
+
 ## [0.1.0-alpha.3] — 2026-11-10
 
 Third alpha, published as a GitHub pre-release. Not for production. It is
