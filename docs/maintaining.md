@@ -209,8 +209,10 @@ What the releases so far have shown:
   (`git tag -s vX.Y.Z-alpha.N -m vX.Y.Z-alpha.N <merge commit>`); the release
   workflow takes every version from the tag. `checksums.txt` covers the
   binary archives, not the chart.
-- A release prep PR changes the CHANGELOG and the version strings in the
-  docs and on the website (`site/src/pages/index.astro`). Merge it and push
+- A release prep PR changes the CHANGELOG, the chart's `appVersion`
+  (`deploy/helm/differently/Chart.yaml`, the image tag a checkout install
+  pulls) and the version strings in the docs and on the website
+  (`site/src/pages/index.astro`). Merge it and push
   the tag one after the other, so the website never names a release that
   is not published yet.
 - `main` follows `pre-release` through a PR titled

@@ -6,6 +6,43 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.3] — 2026-11-10
+
+Third alpha, published as a GitHub pre-release. Not for production. It is
+mostly a correctness release: a review of the code found ten defects in
+placement, the scheduler, the reconciler and the clients, and each is fixed
+with a test that fails on the old behaviour. The default build is cut to the
+adapters that have run against real backends, and the release workflow now
+runs the checks before it publishes.
+
+What has not run for this release: the end-to-end suite and the live adapter
+tests. They last ran on the code before these changes (see `Verified` under
+0.1.0-alpha.2 and the sections below). The fixes are covered by in-process
+tests and, for the store, by the Postgres conformance job in CI.
+
+Upgrading from 0.1.0-alpha.2:
+
+- A config file or API call that names one of the 13 experimental adapter
+  kinds is refused by the published image (first section below).
+- A client that lists sandboxes by status needs to add `pausing`.
+- `PATCH /v1/sandboxes/{id}` with `ttlSeconds: 0` answers 400; use `DELETE`.
+
+### Documentation and CI
+
+- The SDK READMEs install the SDKs from this repository. Neither is
+  published: `pip install differently` installs an unrelated project of that
+  name, and `npm install @differently/sdk` finds nothing. Their method
+  tables no longer list `admin.agents.list`, which does not exist.
+- `make vet` and CI compile and vet the end-to-end and live test files
+  (`-tags "e2e live"`), which no job runs, so they cannot stop compiling
+  unnoticed.
+- The release workflow runs gofmt, vet, the Go tests (default and
+  experimental builds) and the Helm lint before it publishes binaries, the
+  chart or images.
+- The chart's `appVersion` names this release, so installing the chart from
+  a checkout pulls an image that exists. It used to name `0.1.0`, which was
+  never published; the air-gapped and day-2 guides named the same tag.
+
 ### Changed (breaking): the default build holds only the verified adapters
 
 The published image, the release binaries and `make build` now contain the
@@ -549,6 +586,7 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.2...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.3...pre-release
+[0.1.0-alpha.3]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.1

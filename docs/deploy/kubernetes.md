@@ -9,7 +9,7 @@ Cloud-specific notes are in [aws.md](aws.md), [gcp.md](gcp.md) and
 [bare-metal.md](bare-metal.md).
 
 Status: **documented**. These steps have not been run on a real cluster or
-against a live OpenSandbox server. The chart (version 0.2.0) passes `helm lint`
+against a live OpenSandbox server. The chart (version 0.3.0) passes `helm lint`
 and `helm template` locally for the value sets in `deploy/helm/differently/ci/`.
 
 The examples use namespace `differently`, release `dly` and the chart from
