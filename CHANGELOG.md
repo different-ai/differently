@@ -79,6 +79,11 @@ None has run against a live backend.
   containing "localhost", and not to `127.0.0.1`.
 - A streamed exec through the Go client (`differently sandbox exec`) is no
   longer cut off after ten minutes.
+- The audit views show the latest events. `differently usage audit`, the
+  dashboard and the console asked for the first page, which is the oldest
+  events, so anything after the first 100 or 200 never appeared.
+  `GET /v1/audit-events` takes `order=desc` (newest first) and `beforeSeq`;
+  the TypeScript and Python SDKs take `order` and `beforeSeq`/`before_seq`.
 - CI: the Python SDK job runs on `ubuntu-24.04`, the last runner image with
   a Python 3.9 build; on `ubuntu-latest` it failed at setup.
 

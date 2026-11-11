@@ -737,9 +737,13 @@ func (s *Store) ListAudit(ctx context.Context, f store.AuditFilter) ([]api.Audit
 	if limit <= 0 {
 		limit = 1 << 30
 	}
+	order := "ORDER BY seq"
+	if f.Desc {
+		order = "ORDER BY seq DESC"
+	}
 	return listDocs[api.AuditEvent](ctx, s.pool, `SELECT doc FROM audit_events
-		WHERE seq > $1 AND ($2 = '' OR org_id = $2) AND ($3 = '' OR resource = $3) AND ($4 = '' OR action = $4)
-		ORDER BY seq LIMIT $5`, f.AfterSeq, f.OrgID, f.Resource, f.Action, limit)
+		WHERE seq > $1 AND ($6 <= 0 OR seq < $6) AND ($2 = '' OR org_id = $2) AND ($3 = '' OR resource = $3) AND ($4 = '' OR action = $4)
+		`+order+` LIMIT $5`, f.AfterSeq, f.OrgID, f.Resource, f.Action, limit, f.BeforeSeq)
 }
 
 // TryLeader holds a session advisory lock on a dedicated connection. If the

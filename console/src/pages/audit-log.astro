@@ -15,7 +15,7 @@ import PageHeader from '../components/PageHeader.astro';
 
   const c = client();
   void section('#list', async () => {
-    const page = await c.auditEvents.list({ limit: 200 });
+    const page = await c.auditEvents.list({ limit: 200, order: 'desc' });
     const events = [...page.items].sort((a, b) => b.seq - a.seq);
     return table<AuditEvent>([
       { label: 'Time', cell: (e) => el('span', { class: 'muted' }, date(e.time)) },

@@ -247,8 +247,14 @@ paths:
     get:
       tags: [Usage and audit]
       summary: List audit events in sequence order (audit:read)
+      description: >-
+        Oldest first by default: pass the page's nextCursor as afterSeq for the
+        next page. With order=desc the newest events come first, and nextCursor
+        is the beforeSeq of the next, older page.
       parameters:
-        - { name: afterSeq, in: query, schema: { type: integer } }
+        - { name: afterSeq, in: query, schema: { type: integer }, description: Only events after this sequence number }
+        - { name: beforeSeq, in: query, schema: { type: integer }, description: Only events before this sequence number }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc], default: asc }, description: desc returns the newest events first }
         - { name: resource, in: query, schema: { type: string } }
         - { name: action, in: query, schema: { type: string } }
         - { $ref: "#/components/parameters/Limit" }

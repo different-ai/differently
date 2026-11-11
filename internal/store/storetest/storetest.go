@@ -3,6 +3,7 @@ package storetest
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -323,6 +324,30 @@ func auditChain(t *testing.T, s store.Store) {
 	}
 	if res := audit.Verify(events); !res.OK || res.Events != 5 {
 		t.Fatalf("chain %+v", res)
+	}
+	// Newest first: a limit keeps the latest events, and BeforeSeq pages back.
+	seqs := func(f store.AuditFilter) (out []int64) {
+		t.Helper()
+		list, err := s.ListAudit(ctx, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ev := range list {
+			out = append(out, ev.Seq)
+		}
+		return out
+	}
+	if got := seqs(store.AuditFilter{Desc: true, Limit: 2}); !slices.Equal(got, []int64{5, 4}) {
+		t.Fatalf("newest two events: %v, want [5 4]", got)
+	}
+	if got := seqs(store.AuditFilter{Desc: true, Limit: 2, BeforeSeq: 4}); !slices.Equal(got, []int64{3, 2}) {
+		t.Fatalf("the page before 4: %v, want [3 2]", got)
+	}
+	if got := seqs(store.AuditFilter{AfterSeq: 1, BeforeSeq: 4}); !slices.Equal(got, []int64{2, 3}) {
+		t.Fatalf("between 1 and 4, oldest first: %v, want [2 3]", got)
+	}
+	if got := seqs(store.AuditFilter{Limit: 2}); !slices.Equal(got, []int64{1, 2}) {
+		t.Fatalf("default order: %v, want [1 2]", got)
 	}
 }
 
