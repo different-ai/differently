@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 package northflank
 
 import (

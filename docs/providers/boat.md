@@ -1,5 +1,10 @@
 # Boat
 
+> **Experimental adapter.** It is not in the default `differently-server`
+> build or the published image. It needs a server built with
+> `-tags experimental_adapters`: see
+> [what the server contains](README.md#what-the-server-contains).
+
 | | |
 |---|---|
 | Status | **Tested with a fake server** (2026-10-28): implemented from Boat's published API, not run against Boat |

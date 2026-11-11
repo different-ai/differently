@@ -62,7 +62,7 @@
       "required": ["name", "adapter"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
-        "adapter": {"type": "string", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "vercel", "fly", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel"]},
+        "adapter": {"type": "string", "description": "opensandbox, remote, daytona and freestyle are in the default image; the other kinds need server.experimentalAdapters and an image built with -tags experimental_adapters.", "enum": ["opensandbox", "remote", "daytona", "freestyle", "fake", "vercel", "fly", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel"]},
         "trust": {"type": "string", "enum": ["private", "external"]},
         "region": {"type": "string"},
         "labels": {"$ref": "#/definitions/stringMap"},
@@ -437,6 +437,7 @@
       "additionalProperties": false,
       "properties": {
         "image": {"$ref": "#/definitions/image"},
+        "experimentalAdapters": {"type": "boolean", "description": "Set when server.image was built with -tags experimental_adapters; allows pools of the experimental adapter kinds."},
         "replicas": {"type": "integer", "minimum": 0},
         "containerPort": {"type": "integer", "minimum": 1, "maximum": 65535},
         "preflight": {"type": "object", "additionalProperties": false, "properties": {"enabled": {"type": "boolean"}}},

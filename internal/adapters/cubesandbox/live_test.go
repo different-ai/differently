@@ -1,4 +1,4 @@
-//go:build live
+//go:build live && experimental_adapters
 
 package cubesandbox
 
@@ -6,7 +6,7 @@ package cubesandbox
 // docs/providers/cubesandbox.md):
 //
 //	CUBE_API_URL=http://<node>:3000 CUBE_TEMPLATE_ID=<template> \
-//	CUBE_SANDBOX_URL=http://<node>:80 go test -tags live -v -run TestLiveCubeSandbox ./internal/adapters/cubesandbox/
+//	CUBE_SANDBOX_URL=http://<node>:80 go test -tags live,experimental_adapters -v -run TestLiveCubeSandbox ./internal/adapters/cubesandbox/
 //
 // Settings: CUBE_API_KEY (when CubeAPI has auth on), CUBE_SANDBOX_URL
 // (CubeProxy, for header routing; without it, host routing through

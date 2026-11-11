@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package pyshell runs Differently exec requests on code-interpreter
 // backends that execute Python rather than shell commands. The request
 // becomes a short Python program that runs the command with subprocess,

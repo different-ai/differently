@@ -19,7 +19,7 @@ import { providerKinds } from '../lib/providers';
         <label class="field"><span>Provider</span>
           <select name="kind" id="kind">{providerKinds.map((k) => <option value={k.kind}>{k.label}</option>)}</select>
         </label>
-        <label class="field"><span>Pool name</span><input type="text" name="name" required pattern="[a-z0-9][a-z0-9-]{0,62}" placeholder="e.g. e2b" /></label>
+        <label class="field"><span>Pool name</span><input type="text" name="name" required pattern="[a-z0-9][a-z0-9-]{0,62}" placeholder="e.g. daytona" /></label>
       </div>
       <label class="field"><span>Trust</span>
         <select name="trust" id="trust"><option value="external">External: someone else runs it</option><option value="private">Private: you run it</option></select>

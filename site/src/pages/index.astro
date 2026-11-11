@@ -131,14 +131,14 @@ const verified = [
   ['Recorded runtimes', 'Real OpenSandbox responses from the Docker, Kubernetes and Fast Sandbox runtimes are replayed in every go test.'],
   ['OpenWork', "Workbot computers run through Differently as a sandbox gateway, behind a flag: commands with Python tools, files, pause and resume, and Workbot's desktop on Fast Sandbox microVMs."],
   ['Failure isolation', 'An image that cannot be pulled fails that sandbox only; the shared pool stays healthy.'],
-  ['agent-sandbox', 'The adapter runs against a Kubernetes cluster (kind, runc).'],
+  ['agent-sandbox', 'The experimental adapter runs against a Kubernetes cluster (kind, runc).'],
   ['Daytona and Freestyle', 'The adapters run against live accounts: exec, files, port URLs, stop/start and snapshots on both, and egress policy, pause/resume, memory snapshots and fork on Freestyle.'],
   ['Fast Sandbox', "Firecracker microVMs on Azure: the end-to-end suite passes on the microVM pool, and Workbot's desktop streams over a port URL, pauses and resumes with its memory (a pause takes minutes), idles and wakes on a request."],
 ];
 const notVerified = [
   'Node drains, and more than one KVM node',
   'Managed EKS, GKE and AKS clusters',
-  'The other 12 provider adapters against live accounts; each is tested against a fake of its published API',
+  'The other 12 provider adapters against live accounts; each is tested against a fake of its published API, is experimental and is left out of the published build',
 ];
 const inProgress: string[] = [];
 
@@ -152,7 +152,7 @@ const features = [
   {
     k: '01',
     title: 'Provider adapters',
-    body: '16 built-in adapters, from self-hosted OpenSandbox to E2B, Vercel and the AWS, Azure and Google Cloud sandbox services, plus a plugin protocol for any other backend. Operators change where work goes; applications keep the same API.',
+    body: 'OpenSandbox, Daytona and Freestyle adapters in every build, a plugin protocol for any other backend, and 13 experimental adapters (E2B, Vercel, the AWS, Azure and Google Cloud sandbox services and more) you can compile in. Operators change where work goes; applications keep the same API.',
     href: '/docs/providers/',
     cta: 'Provider catalog',
   },
@@ -204,7 +204,7 @@ const added = [
   ['Multi-tenancy', 'Organizations, projects and scoped API keys. OpenSandbox has one server-wide key.'],
   ['Quotas and fair queueing', 'Usage derived from state, enforced at admission, queued fairly across tenants.'],
   ['Policy-gated placement', 'Global, org and project policy plus data classification decide which pool may run each sandbox. External pools fail closed.'],
-  ['Many backends, one API', '16 built-in provider adapters and plugins behind one contract and one SDK.'],
+  ['Many backends, one API', 'OpenSandbox, Daytona, Freestyle and plugins behind one contract and one SDK, with 13 more experimental adapters.'],
   ['Placement explanations', 'Every decision records the pools considered, the ones rejected and why.'],
   ['Audit and trust report', 'A tamper-evident audit chain and one report of endpoints, credentials by reference, external placements and limits.'],
   ['Capacity that follows use', 'A paused microVM gives its pool slot back; resumes queue on a full pool, and preemption makes room for waiting work.'],
@@ -225,7 +225,7 @@ const compare = [
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Differently · Open-source sandbox orchestration</title>
-    <meta name="description" content="Open-source, self-hosted control plane for sandboxes: one API, quotas, policy-based placement and audit across OpenSandbox, 15 more provider adapters and plugins." />
+    <meta name="description" content="Open-source, self-hosted control plane for sandboxes: one API, quotas, policy-based placement and audit across OpenSandbox, Daytona, Freestyle and plugins." />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -266,7 +266,7 @@ const compare = [
         <h1>Everyone builds sandboxes.<br /><em>We orchestrate them.</em></h1>
         <p class="lede">
           Differently is an open-source control plane for sandboxes. It runs on any cloud or on bare metal
-          and places each sandbox on OpenSandbox, E2B, Daytona, a cloud provider's sandbox service or a plugin,
+          and places each sandbox on OpenSandbox, Daytona, Freestyle or a plugin,
           according to placement policy. Applications use one API; quotas, placement decisions and audit live in the control plane.
         </p>
         <div class="ctas">
@@ -315,7 +315,7 @@ const compare = [
             <g class="node"><rect x="260" y="270" width="130" height="56" rx="12" /><text x="325" y="304">Postgres</text></g>
             <g class="node"><rect x="490" y="64" width="230" height="84" rx="12" /><text x="605" y="98">OpenSandbox</text><text x="605" y="122" class="sub">Docker · Kubernetes runtime</text></g>
             <g class="node"><rect x="490" y="176" width="230" height="84" rx="12" /><text x="605" y="210">OpenSandbox</text><text x="605" y="234" class="sub">Fast Sandbox microVMs</text></g>
-            <g class="node ext"><rect x="790" y="140" width="154" height="80" rx="12" /><text x="867" y="174">Providers</text><text x="867" y="196" class="sub">E2B · Daytona · cloud</text></g>
+            <g class="node ext"><rect x="790" y="140" width="154" height="80" rx="12" /><text x="867" y="174">Providers</text><text x="867" y="196" class="sub">Daytona · Freestyle</text></g>
 
             <path class="edge" d="M156 180H226" marker-end="url(#arr)" />
             <text class="elabel" x="191" y="166">one API</text>

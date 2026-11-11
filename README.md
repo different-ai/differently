@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/differently-splash-dark.svg">
-    <img alt="Differently: your apps and agents call one API; differently-server handles tenancy, quotas, policy and audit, and places each sandbox on OpenSandbox or your own backend inside your infrastructure, or on a managed provider such as E2B or Daytona only if policy allows" src="docs/assets/differently-splash-light.svg" width="100%">
+    <img alt="Differently: your apps and agents call one API; differently-server handles tenancy, quotas, policy and audit, and places each sandbox on OpenSandbox or your own backend inside your infrastructure, or on a managed provider such as Daytona or Freestyle only if policy allows" src="docs/assets/differently-splash-light.svg" width="100%">
   </picture>
 </p>
 
@@ -30,10 +30,12 @@ account of it:
 
 - by default on [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox)
   on your own Docker hosts, Kubernetes clusters or microVM nodes;
-- on [15 other built-in provider adapters](docs/providers/README.md), from
-  E2B, Daytona and Vercel to the AWS, Azure and Google Cloud sandbox
-  services, or a plugin for any other backend, only where your policies
-  allow it.
+- on Daytona or Freestyle, or a plugin for any other backend, only where
+  your policies allow it;
+- on 13 more [provider adapters](docs/providers/README.md#what-the-server-contains),
+  from E2B and Vercel to the AWS, Azure and Google Cloud sandbox services,
+  which are experimental: tested against fake servers and left out of the
+  published build unless you compile them in.
 
 Apache-2.0, fully self-hosted, no telemetry. Built by the
 [OpenWork](https://github.com/different-ai) team.
@@ -145,7 +147,8 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 - the published `v0.1.0-alpha.1` chart and images install from public
   artifacts alone;
 - real OpenSandbox responses are recorded and replayed in every `go test`;
-- the `agent-sandbox` adapter against a Kubernetes cluster (kind);
+- the experimental `agent-sandbox` adapter against a Kubernetes cluster
+  (kind);
 - the Daytona (container class) and Freestyle adapters against live
   accounts: exec, files, port URLs, stop/start and snapshots on both, and
   egress policy, pause/resume, memory snapshots and fork on Freestyle;
@@ -161,7 +164,10 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 - node drains, and more than one KVM node;
 - managed EKS, GKE and AKS;
 - the other 12 provider adapters against live accounts: each is tested
-  against a fake of its provider's published API.
+  against a fake of its provider's published API. These 12 and
+  `agent-sandbox` are experimental and not in the published image or
+  binaries; a server built with `-tags experimental_adapters` has them
+  ([what the server contains](docs/providers/README.md#what-the-server-contains)).
 
 Each of the 26 providers has a page with its tested status, capabilities and
 configuration in the [provider catalog](docs/providers/README.md). The
@@ -179,8 +185,11 @@ against global, organization and project policy, ranks what is left, and
 records why. Adapters talk to the backends:
 
 - `opensandbox`, the default private runtime;
-- 15 more provider adapters, from `agent-sandbox` and `cubesandbox` you run
-  to `e2b`, `daytona`, `vercel` and the cloud providers' sandbox services
+- `daytona` and `freestyle`, managed providers that receive work only when
+  policy allows it;
+- 13 experimental adapters behind the `experimental_adapters` build tag,
+  from `agent-sandbox` and `cubesandbox` you run to `e2b`, `vercel` and the
+  cloud providers' sandbox services
   ([provider catalog](docs/providers/README.md));
 - `remote`, any service speaking the [adapter protocol](docs/adapters/specification.md).
 

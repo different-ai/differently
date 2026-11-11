@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package vercel adapts Vercel Sandbox's REST API.
 //
 // Vercel runs every sandbox as a Firecracker microVM it operates, so pools on

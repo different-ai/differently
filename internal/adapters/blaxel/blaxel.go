@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package blaxel adapts Blaxel's hosted sandbox API.
 //
 // Blaxel is hosted-only, so pools on this adapter are always TrustExternal.

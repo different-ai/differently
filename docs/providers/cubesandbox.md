@@ -1,5 +1,10 @@
 # CubeSandbox
 
+> **Experimental adapter.** It is not in the default `differently-server`
+> build or the published image. It needs a server built with
+> `-tags experimental_adapters`: see
+> [what the server contains](README.md#what-the-server-contains).
+
 | | |
 |---|---|
 | Status | **Tested with a fake server** (implemented from CubeSandbox's API source and OpenAPI document, not run against CubeSandbox; see [How it was tested](#how-it-was-tested)) |
@@ -122,8 +127,8 @@ With Differently's Helm chart, server egress is restricted by default
   field (proto3 JSON), a missing binary (127), a timeout (124), stdin,
   streaming, files, host and path port URLs, health with a missing template
   and a rejected key.
-- **Live:** not run. `live_test.go` (`go test -tags live -run
-  TestLiveCubeSandbox`, settings in the file) is ready for a host. The
+- **Live:** not run. `live_test.go` (`go test -tags live,experimental_adapters
+  -run TestLiveCubeSandbox`, settings in the file) is ready for a host. The
   one-click install needs a dedicated Linux host with `/dev/kvm`, at least
   7.5 GiB of memory (its preflight), XFS at `/data/cubelet`, about 50 GB of
   disk, root and Docker. On arm64 the bundle is installed by hand, and

@@ -6,6 +6,38 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Changed (breaking): the default build holds only the verified adapters
+
+The published image, the release binaries and `make build` now contain the
+`opensandbox`, `daytona` and `freestyle` adapters, the `remote` plugin
+protocol and the dev-mode `devhost` and `fake`. The other 13 adapter kinds
+are experimental and compile in only with the Go build tag
+`experimental_adapters`: `agent-sandbox`, `cubesandbox`, `e2b`, `boat`,
+`morph`, `vercel`, `fly`, `blaxel`, `aws-agentcore`, `azure-sandboxes`,
+`azure-sessions`, `gcp-sandboxes` and `northflank`. Apart from
+`agent-sandbox`, which ran live on a kind cluster, they have only been
+tested against fake servers. No adapter code was removed, and CI still
+builds, vets and tests it with the tag.
+
+- **If you use one of the 13 kinds**, the next published image will not
+  start with a config file that names it: the error names the pool, the
+  kind and the build tag. A pool of such a kind added earlier through the
+  API stays registered and reports `unavailable` with the same reason.
+  Build the server with `go build -tags experimental_adapters`, or the image
+  with `--build-arg GO_TAGS=experimental_adapters`
+  ([provider catalog](docs/providers/README.md#what-the-server-contains)).
+- `POST /v1/admin/pools` answers 400 `invalid_request` for these kinds on a
+  default build.
+- Helm: pools of these kinds are refused unless `server.experimentalAdapters`
+  is `true`, which you set together with a `server.image` built with the
+  tag.
+- The dashboard, the console and `differently admin pool add --help` list
+  only the default kinds. Experimental pools are added in the config file,
+  with the CLI or through the API.
+- `make verify` and CI gained `make experimental` (build, vet and test with
+  the tag). The live tests of `agent-sandbox` and `cubesandbox` now need
+  `-tags live,experimental_adapters`.
+
 ### Fixed (placement, scheduler and clients)
 
 Found by reading the code, each with a test that fails on the old behaviour.

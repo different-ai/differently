@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package fly adapts Fly.io's Machines API.
 //
 // Fly.io runs each machine as a Firecracker microVM on its own hosts, so

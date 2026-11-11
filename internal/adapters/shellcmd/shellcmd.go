@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package shellcmd builds POSIX shell scripts for backends whose only
 // primitive is "run this command line": the exec request's working
 // directory, environment, stdin and timeout become part of the script, and
