@@ -21,7 +21,7 @@ control plane does with it.
 | Public API (a route, a field, an error) | `pkg/api`, `internal/server`, `api/openapi.yaml`, the SDKs | `internal/server` tests (the OpenAPI test keeps the router and spec in sync); SDK tests |
 | Placement, policy, classification | `internal/policy`, `internal/scheduler` | `internal/server/server_test.go` (acceptance scenarios A–L) |
 | Slots, the resume queue, preemption, lifecycle limits | `internal/scheduler/capacity.go`, `internal/store` (`HoldsPoolSlot`, `ReclaimSlot`), the model in `internal/capsim` | The capacity tests named in [capacity.md](scheduling/capacity.md); store conformance through both stores; rerun `go run ./cmd/differently-capsim` when a strategy changes |
-| Quotas, admission, activation | `internal/store` (memory and Postgres) | `internal/store/storetest` through both stores; `make test-postgres` |
+| Quotas, admission, activation | `internal/store` (memory and Postgres) | `internal/store/storetest` through both stores, and the acceptance scenarios in `internal/server` on either store; `make test-postgres` |
 | Reconciliation and recovery | `internal/scheduler` (`Reconcile`, `retry`) | Server tests using the fake backend; the e2e drift test |
 | A backend's behaviour | `internal/adapters/<kind>` | Its fake-server tests; for OpenSandbox also the recordings ([below](#recordings-real-backends-replayed-in-go-test)) |
 | A new provider kind | The adapter, then every registration list in [the provider catalog's checklist](providers/README.md#add-a-built-in-adapter) | `TestEveryAdapterKindHasATrustRule`, `TestRegisteredKindsMatchConfig`; its fake-server tests, which run only with `-tags experimental_adapters` (`make experimental`) |
@@ -53,7 +53,7 @@ the one before; repeating a rung for reassurance adds nothing.
 |---|---|---|
 | Package tests | `go test ./internal/adapters/opensandbox/` (or the package you changed) | Every change, while iterating |
 | CI locally | `make verify` | Before every push: gofmt, vet, tests with `-race`, the same again with the experimental adapters (`make experimental`: build, vet and test with `-tags experimental_adapters`), SDK tests, Helm lint |
-| Postgres store | `make test-postgres` (needs Docker) | Changes in `internal/store` |
+| Postgres store | `make test-postgres` (Docker, or `DIFFERENTLY_TEST_POSTGRES_URL` for a database you already run): the conformance suite and the server acceptance scenarios | Changes in `internal/store`, `internal/server` or `internal/scheduler` |
 | Recorded runtimes | part of `go test` (`TestReplayRecordings`) | Any OpenSandbox adapter change: real responses from the Docker and Kubernetes runtimes, no server |
 | Live adapter | `OPENSANDBOX_URL=… go test -tags live -run TestLiveOpenSandbox ./internal/adapters/opensandbox/`; for the managed providers `DAYTONA_API_KEY=… go test -tags live -run TestLiveDaytona ./internal/adapters/daytona/` and `FREESTYLE_API_KEY=… go test -tags live -run TestLiveFreestyle ./internal/adapters/freestyle/` (a few small sandboxes, all deleted) | A new OpenSandbox call or version; re-recording; any Daytona or Freestyle adapter change |
 | Real stack, local | `make e2e-prepare e2e-up e2e` | Behaviour across the API, scheduler, store and a real OpenSandbox server |

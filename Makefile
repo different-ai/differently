@@ -43,13 +43,22 @@ experimental:
 	go vet -tags "$(EXPERIMENTAL_TAG) e2e live" ./...
 	go test -race -count=1 -tags $(EXPERIMENTAL_TAG) ./...
 
-# Runs the store conformance suite against a disposable Postgres container.
+# Runs the store conformance suite and the server acceptance scenarios against
+# Postgres. With DIFFERENTLY_TEST_POSTGRES_URL set it uses that database (each
+# test gets its own schema); otherwise it starts a disposable container.
+# The packages run one after another (-p 1): scheduler leadership is a single
+# advisory lock per database. A missing database fails the run, never skips it.
+PG_TEST := DIFFERENTLY_TEST_POSTGRES_REQUIRED=1 go test -race -count=1 -p 1 ./internal/store/postgres/ ./internal/server/
 test-postgres:
+ifdef DIFFERENTLY_TEST_POSTGRES_URL
+	$(PG_TEST)
+else
 	@docker rm -f differently-pg-test >/dev/null 2>&1 || true
 	docker run -d --rm --name differently-pg-test -p $(PG_PORT):5432 -e POSTGRES_PASSWORD=test postgres:17-alpine >/dev/null
 	@for i in $$(seq 1 30); do docker exec differently-pg-test pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
-	DIFFERENTLY_TEST_POSTGRES_URL=postgres://postgres:test@localhost:$(PG_PORT)/postgres?sslmode=disable go test -count=1 ./internal/store/postgres/; \
+	DIFFERENTLY_TEST_POSTGRES_URL=postgres://postgres:test@localhost:$(PG_PORT)/postgres?sslmode=disable $(PG_TEST); \
 		status=$$?; docker rm -f differently-pg-test >/dev/null; exit $$status
+endif
 
 sdk-test:
 	cd sdk/typescript && npm ci --no-audit --no-fund && npm test

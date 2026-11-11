@@ -45,8 +45,10 @@ jobs:
       - name: build, vet and test with -tags experimental_adapters
         run: make experimental
 
+  # The store conformance suite and the server acceptance scenarios, both
+  # against a real Postgres. A missing database fails the run, never skips it.
   postgres:
-    name: postgres conformance
+    name: postgres conformance and acceptance
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -61,7 +63,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go test -count=1 ./internal/store/postgres/
+      - run: make test-postgres
         env:
           DIFFERENTLY_TEST_POSTGRES_URL: postgres://postgres:test@localhost:5432/postgres?sslmode=disable
 

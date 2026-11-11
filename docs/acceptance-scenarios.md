@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | 2026-10-28, after the move to OpenSandbox removed the Firecracker node agent. Every test named below exists on this branch. CI runs the Go tests, including the Postgres conformance suite (`internal/store/postgres` `TestConformance`) in its `postgres conformance` job. |
+| Status | 2026-10-28, after the move to OpenSandbox removed the Firecracker node agent. Every test named below exists on this branch. CI runs the Go tests on the memory store, and its `postgres conformance and acceptance` job runs the Postgres conformance suite (`internal/store/postgres` `TestConformance`) and every scenario test in `internal/server` again on Postgres 17. |
 | Evidence level | The server tests run in-process with fake backends. The `opensandbox` adapter is also checked against a real OpenSandbox server (release 1.2.0, Docker runtime, arm64 on Colima) by `TestLiveOpenSandbox`. The [end-to-end suite](../test/e2e/README.md) runs the real control plane (Postgres and `differently-server`) against a real OpenSandbox server with the Docker runtime and passed 10/10 on arm64 Colima on 2026-10-28. Earlier end-to-end results on real Firecracker microVMs tested the removed agent and no longer apply. OpenSandbox's Kubernetes and Fast Sandbox runtimes, cloud KVM, and live Daytona or Freestyle accounts are not validated. |
 
 Scenario definitions follow the product brief. Stateful sandbox behaviour and

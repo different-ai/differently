@@ -27,7 +27,8 @@ make verify
 It runs gofmt, go vet, Go tests with `-race`, the same build, vet and tests
 with `-tags experimental_adapters` (`make experimental`), the SDK tests and
 the Helm lint, including the replay of recorded OpenSandbox runtimes. For changes touching
-`internal/store/postgres`, also run `make test-postgres`. For `console/`, run
+`internal/store` or `internal/server`, also run `make test-postgres` (the
+store conformance suite and the server acceptance scenarios on Postgres). For `console/`, run
 `npm run typecheck && npm run build && npm run build:server` there; for
 `site/` or any page it publishes from `docs/`, `npm run build` in `site/`
 (it fails on a broken link). For anything a real
