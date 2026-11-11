@@ -105,13 +105,15 @@ make e2e                   # optional: the end-to-end tests
 images from the [latest release](https://github.com/different-ai/differently/releases).
 
 Then call it from code ([TypeScript](sdk/typescript), [Python](sdk/python),
-[Go](pkg/client)):
+[Go](pkg/client)). The SDKs are not on npm or PyPI yet; each README says how
+to install it from this repository.
 
 ```ts
 import { Differently } from "@differently/sdk";
 
 const differently = new Differently({ apiKey: process.env.DIFFERENTLY_API_KEY });
 const sandbox = await differently.sandboxes.create({
+  // projectId: "prj_default", // needed with an operator key, such as the dev token
   profile: "small",
   placement: { strategy: "private-first", external: "never" },
 });
