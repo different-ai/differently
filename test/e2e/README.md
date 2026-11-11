@@ -32,6 +32,10 @@ the trust report.
 
 ## Run
 
+CI runs this suite on every pull request (the `end-to-end (docker runtime)`
+job in `.github/workflows/ci.yml`), with the stack below on a GitHub-hosted
+Linux runner. To run it yourself:
+
 ```bash
 make e2e-prepare   # build differently-server:e2e, pull execd and the sandbox image
 make e2e-up        # Postgres, OpenSandbox (:18091), server (:18090), metrics (:19091)
@@ -115,6 +119,7 @@ them precisely instead.
 | 2026-10-28 | k3s v1.36.5 on an Azure `Standard_D8s_v6`, x86_64; Differently from its Helm chart with embedded PostgreSQL | server, controller and `execd` release-1.2.0, Kubernetes runtime, no snapshot registry | 12/12 passed (pause and snapshots checked as refusals); sandboxes running in about 1.4–2.7 s; an unpullable image retries after OpenSandbox's 60 s pod-ready timeout with the pool healthy |
 | 2026-10-29 | same Azure VM; pool `opensandbox-microvm` (`runtime: fastsandbox`), template `tpl-1cbcfa94` (1 vCPU, 1 GiB, guest kernel 6.18.36+) | server, Fast Sandbox and `execd` release-1.2.0 | **Partial run**, stopped when the VM was deallocated. Sandboxes running in about 1.3 s; files and pause/resume passed (pause about 52 s for 1 GiB); sandbox env and a template other than the pool's are refused precisely (the tests now expect that). Fork failed with a bare 422 from OpenSandbox on restore, not yet diagnosed. Port URL, idle wake, memory kept and the desktop stream did not run |
 | 2026-10-29 | Azure, two-node k3s (`Standard_D8s_v6` + `Standard_D16s_v6` KVM node), Postgres Flexible Server, two server replicas | server 1.2.0, Fast Sandbox with a 6.18.36 guest kernel with nftables; pool `runtime: fastsandbox` with OpenWork's Workbot desktop template | 14/14 run passed (desktop, unpullable-image, idle-sweep and switching tests not run); pause about 3–4 min for the 4 GiB desktop, idle wake by a port request 2.3 s |
+| 2026-11-10 | GitHub-hosted runner, Ubuntu 26.04, x86_64 (CI job `end-to-end (docker runtime)`) | server 1.2.0, `execd` release-1.2.0, Docker runtime | 16 passed, 2 skipped (no desktop image; no microVM pool), in about 2 minutes; the first run on the code of `v0.1.0-alpha.3` and the first on x86_64 with the Docker runtime |
 
 Not covered yet:
 
