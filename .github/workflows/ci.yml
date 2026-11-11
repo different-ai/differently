@@ -126,7 +126,7 @@ jobs:
   # OpenSandbox server on the Docker runtime, driven through the public API
   # (test/e2e). Sandboxes are containers here, so this proves orchestration,
   # not microVM isolation; tests for what this runtime lacks skip themselves.
-  # Not yet in the approve job's needs: it has to prove itself stable first.
+  # The approve job waits for it: it passed twice in a row before it was added.
   e2e:
     name: end-to-end (docker runtime)
     runs-on: ubuntu-latest
@@ -224,7 +224,7 @@ jobs:
   # again. It approves what CI checked, not what a reviewer read.
   approve:
     name: approve when CI passes
-    needs: [go, go-experimental, postgres, sdk-typescript, console, sdk-python, helm, images, dco, release-source]
+    needs: [go, go-experimental, postgres, e2e, sdk-typescript, console, sdk-python, helm, images, dco, release-source]
     if: >-
       always() &&
       github.event_name == 'pull_request' &&
