@@ -90,7 +90,7 @@ Every commit needs a `Signed-off-by` line (`git commit -s`) certifying the
 ```bash
 make build            # bin/differently-server, bin/differently
 make test             # Go unit and integration tests with -race
-make test-postgres    # store conformance suite against a throwaway Postgres container
+make test-postgres    # store conformance and server acceptance tests against Postgres (a throwaway container, or DIFFERENTLY_TEST_POSTGRES_URL)
 make sdk-test         # TypeScript and Python SDK tests
 make helm-lint        # chart lint and template against ci/ value sets
 make verify           # everything CI runs
