@@ -604,8 +604,13 @@ func (m *Memory) ListAudit(_ context.Context, f AuditFilter) ([]api.AuditEvent, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []api.AuditEvent
-	for _, ev := range m.audit {
+	for i := range m.audit {
+		ev := m.audit[i]
+		if f.Desc {
+			ev = m.audit[len(m.audit)-1-i]
+		}
 		if ev.Seq <= f.AfterSeq ||
+			(f.BeforeSeq > 0 && ev.Seq >= f.BeforeSeq) ||
 			(f.OrgID != "" && ev.OrgID != f.OrgID) ||
 			(f.Resource != "" && ev.Resource != f.Resource) ||
 			(f.Action != "" && ev.Action != f.Action) {

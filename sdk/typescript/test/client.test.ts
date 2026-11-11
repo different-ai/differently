@@ -181,6 +181,17 @@ test("audit events iterate with afterSeq", async () => {
   assert.equal(second?.query.get("action"), "sandbox.create");
 });
 
+test("audit events list the newest first with order desc", async () => {
+  const event = (seq: number) => ({ seq, time: "t", actor: "k", action: "sandbox.create", resource: "sbx", outcome: "ok", prevHash: "", hash: "" });
+  mock.on("GET /v1/audit-events", reply(200, { items: [event(9), event(8)], nextCursor: "8" }));
+  const page = await client.auditEvents.list({ order: "desc", limit: 2, beforeSeq: 10 });
+  assert.deepEqual(page.items.map((e) => e.seq), [9, 8]);
+  assert.equal(page.nextCursor, "8");
+  const [call] = mock.calls("GET /v1/audit-events");
+  assert.equal(call?.query.get("order"), "desc");
+  assert.equal(call?.query.get("beforeSeq"), "10");
+});
+
 test("admin namespace", async () => {
   const org = { id: "org_1", name: "Acme", suspended: true, quota: {}, createdAt: "t" };
   mock.on("POST /v1/admin/organizations", reply(201, { organization: { ...org, suspended: false }, project: { id: "prj_1" } }));

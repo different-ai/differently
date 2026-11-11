@@ -89,7 +89,11 @@ type AuditFilter struct {
 	Resource string
 	Action   string
 	AfterSeq int64
-	Limit    int
+	// BeforeSeq, when positive, keeps only events with a lower sequence.
+	BeforeSeq int64
+	// Desc returns the newest events first, so a limit keeps the latest.
+	Desc  bool
+	Limit int
 }
 
 // Admission is the input to AdmitSandbox.

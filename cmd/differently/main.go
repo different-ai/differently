@@ -672,7 +672,7 @@ func usageCmd() *cobra.Command {
 	cmd.Flags().String("group-by", "pool", "pool, project, org or trust")
 	cmd.AddCommand(
 		&cobra.Command{Use: "quota", Short: "Show quota and current consumption", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/quotas", nil) }},
-		&cobra.Command{Use: "audit", Short: "List audit events", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/audit-events?limit=100", nil) }},
+		&cobra.Command{Use: "audit", Short: "List the latest audit events, newest first", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/audit-events?limit=100&order=desc", nil) }},
 	)
 	return cmd
 }

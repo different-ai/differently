@@ -498,6 +498,13 @@ export interface ListAuditEventsParams {
   action?: string;
   /** Return events with a sequence number greater than this. */
   afterSeq?: number;
+  /** Return events with a sequence number lower than this. */
+  beforeSeq?: number;
+  /**
+   * "desc" returns the newest events first; the page's nextCursor is then the
+   * beforeSeq of the next, older page. Default "asc".
+   */
+  order?: "asc" | "desc";
   /** Page size, 1-1000 (server default 100). */
   limit?: number;
   /** Operator keys only. */

@@ -417,7 +417,16 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request, p auth.Princi
 	if err := p.Require(auth.ScopeAuditRead); err != nil {
 		return err
 	}
-	f := store.AuditFilter{OrgID: p.OrgID, Resource: r.URL.Query().Get("resource"), Action: r.URL.Query().Get("action"), AfterSeq: int64(queryInt(r, "afterSeq", 0)), Limit: min(max(queryInt(r, "limit", 100), 1), 1000)}
+	f := store.AuditFilter{OrgID: p.OrgID, Resource: r.URL.Query().Get("resource"), Action: r.URL.Query().Get("action"), AfterSeq: int64(queryInt(r, "afterSeq", 0)), BeforeSeq: int64(queryInt(r, "beforeSeq", 0)), Limit: min(max(queryInt(r, "limit", 100), 1), 1000)}
+	// order=desc returns the newest events first, so one page is the latest
+	// activity; its nextCursor is the beforeSeq of the next, older page.
+	switch r.URL.Query().Get("order") {
+	case "", "asc":
+	case "desc":
+		f.Desc = true
+	default:
+		return api.Errorf(api.CodeInvalidRequest, "order must be asc or desc")
+	}
 	if p.Operator() {
 		f.OrgID = r.URL.Query().Get("orgId")
 	}

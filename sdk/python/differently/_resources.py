@@ -146,17 +146,30 @@ class AuditEvents:
         resource: Optional[str] = None,
         action: Optional[str] = None,
         after_seq: Optional[int] = None,
+        before_seq: Optional[int] = None,
+        order: Optional[str] = None,
         limit: Optional[int] = None,
         org_id: Optional[str] = None,
     ) -> Page[AuditEvent]:
-        """Returns one page in ascending sequence order."""
-        query = {"resource": resource, "action": action, "afterSeq": after_seq, "limit": limit, "orgId": org_id}
+        """Returns one page, oldest first by default.
+
+        ``order="desc"`` returns the newest events first; the page's
+        ``next_cursor`` is then the ``before_seq`` of the next, older page.
+        """
+        query = {
+            "resource": resource, "action": action, "afterSeq": after_seq, "beforeSeq": before_seq,
+            "order": order, "limit": limit, "orgId": org_id,
+        }
         page = self._http.json("GET", "/v1/audit-events", query=query)
         return Page(items=page.get("items") or [], next_cursor=page.get("nextCursor") or None)
 
     def iterate(self, **filters: Any) -> Iterator[AuditEvent]:
-        """Yields every matching event, following pagination. Takes ``list``'s filters."""
+        """Yields every matching event from oldest to newest, following pagination.
+
+        Takes ``list``'s filters; ``order`` is always ascending here.
+        """
         after_seq = filters.pop("after_seq", None)
+        filters.pop("order", None)
         while True:
             page = self.list(after_seq=after_seq, **filters)
             yield from page.items

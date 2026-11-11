@@ -70,10 +70,10 @@ const views = {
     return `<h1>Usage</h1><p class="tag">${esc(u.note)}</p>${table(["Pool", "Sandboxes", "Run hours", "vCPU hours", "Est. cost"], u.lines.map((l) => [esc(l.key), l.sandboxes, (l.runSeconds / 3600).toFixed(2), (l.cpuSeconds / 3600).toFixed(2), l.estimatedCost.toFixed(4)]))}`;
   },
   async audit() {
-    const ev = await call("GET", "/v1/audit-events?limit=200");
+    const ev = await call("GET", "/v1/audit-events?limit=200&order=desc");
     const verify = me.operator ? await call("GET", "/v1/admin/audit/verify") : null;
     return `<h1>Audit</h1>${verify ? `<p>Hash chain: ${verify.ok ? "<span class='ok'>intact</span>" : `<span class='bad'>broken at ${verify.brokenAt}: ${esc(verify.problem)}</span>`} (${verify.events} events)</p>` : ""}
-      ${table(["#", "Time", "Actor", "Action", "Resource", "Details"], ev.items.slice().reverse().map((e) => [e.seq, esc(new Date(e.time).toLocaleString()), esc(e.actor), esc(e.action), `<code>${esc(e.resource)}</code>`, `<code>${esc(JSON.stringify(e.details || {}))}</code>`]))}`;
+      ${table(["#", "Time", "Actor", "Action", "Resource", "Details"], ev.items.map((e) => [e.seq, esc(new Date(e.time).toLocaleString()), esc(e.actor), esc(e.action), `<code>${esc(e.resource)}</code>`, `<code>${esc(JSON.stringify(e.details || {}))}</code>`]))}`;
   },
   async keys() {
     const [keys, orgs] = await Promise.all([call("GET", "/v1/api-keys"), me.operator ? call("GET", "/v1/admin/organizations") : null]);
