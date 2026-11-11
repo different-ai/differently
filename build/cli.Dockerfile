@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       -ldflags "-s -w -X github.com/different-ai/differently/internal/version.Version=${VERSION} -X github.com/different-ai/differently/internal/version.Commit=${COMMIT}" \
       -o /out/differently ./cmd/differently
 
-FROM alpine:3.22
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates && adduser -D -u 65532 -g 65532 nonroot
 COPY --from=build /out/differently /usr/local/bin/differently
 USER 65532:65532
