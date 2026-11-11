@@ -8,12 +8,14 @@ picks the pool; the SDK never needs to know which backend runs the sandbox.
 
 ## Install
 
-```sh
-npm install @differently/sdk
-```
+The SDK is not on npm yet (`npm install @differently/sdk` finds nothing).
+Build it from a checkout of this repository and install that folder:
 
-Until the package is published, install from a checkout:
-`npm install ./sdk/typescript` (run `npm run build` there first).
+```sh
+git clone https://github.com/different-ai/differently.git
+(cd differently/sdk/typescript && npm ci && npm run build)
+npm install ./differently/sdk/typescript
+```
 
 ## Quickstart
 
@@ -96,12 +98,12 @@ POSTs are never retried.
 | `Sandbox` handle | `exec`, `execStream`, `files.list/read/readText/write`, `stop`, `start`, `pause`, `resume`, `snapshot`, `fork`, `exposePort`, `explainPlacement`, `refresh`, `update`, `wait`, `delete` |
 | `snapshots` | `list`, `get`, `delete` |
 | `projects` | `list`, `create`, `get`, `delete` |
-| `apiKeys` | `list`, `create`, `revoke` |
+| `apiKeys` | `list`, `create`, `get`, `rotate`, `revoke` |
 | `quotas`, `usage` | `get` |
 | `auditEvents` | `list`, `iterate` |
 | `policies` | `list`, `put`, `delete` |
 | `capabilities`, `profiles`, `templates`, `classifications` | `list` |
-| `admin` | `organizations.{list,create,get,update,suspend,resume}`, `projects.setQuota`, `pools.{list,get,create,update,drain,undrain,delete}`, `agents.list`, `trustReport`, `verifyAudit`, `terminateSandbox`, `reconcile` |
+| `admin` | `organizations.{list,create,get,update,suspend,resume}`, `projects.setQuota`, `pools.{list,get,create,update,drain,undrain,use,delete}`, `secrets.{list,put,delete}`, `trustReport`, `verifyAudit`, `terminateSandbox`, `reconcile` |
 | client | `me`, `version` |
 
 `list` returns one page (`{ items, nextCursor }`); `iterate` walks every page.
