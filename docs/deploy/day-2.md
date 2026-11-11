@@ -164,7 +164,7 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: migrate
-          image: ghcr.io/different-ai/differently-server:0.1.0
+          image: ghcr.io/different-ai/differently-server:0.1.0-alpha.3
           args: ["migrate", "--config", "/etc/differently/config.yaml"]
           env:
             - name: DIFFERENTLY_DATABASE_URL
