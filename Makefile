@@ -94,6 +94,7 @@ e2e-prepare:
 	docker build -q -f build/server.Dockerfile -t differently-server:e2e . >/dev/null
 	docker pull -q opensandbox/execd:release-1.2.0 >/dev/null
 	docker pull -q debian:bookworm-slim >/dev/null
+	docker pull -q python:3.12-slim >/dev/null
 
 e2e-up:
 	docker compose -f $(E2E_COMPOSE) up -d --force-recreate --wait

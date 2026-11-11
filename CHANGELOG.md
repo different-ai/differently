@@ -14,6 +14,12 @@ All notable changes are recorded here. The format follows
   runs them locally. They used to run only on the memory store, which
   production does not use. The first run found no defect. A run that is meant
   to use Postgres now fails, instead of skipping, when it has no database.
+- CI runs the end-to-end suite (`test/e2e`) on every pull request: Postgres,
+  `differently-server` and an OpenSandbox 1.2.0 server on the Docker runtime,
+  driven through the public API. It had only been run by hand, and not at all
+  for 0.1.0-alpha.3; its first CI run, on that release's code, passed 16
+  tests and skipped the two that need a desktop image or a microVM pool. The
+  Kubernetes and Fast Sandbox runtimes are still run by hand.
 
 ## [0.1.0-alpha.3] — 2026-11-10
 

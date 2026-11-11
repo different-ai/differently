@@ -56,11 +56,13 @@ the one before; repeating a rung for reassurance adds nothing.
 | Postgres store | `make test-postgres` (Docker, or `DIFFERENTLY_TEST_POSTGRES_URL` for a database you already run): the conformance suite and the server acceptance scenarios | Changes in `internal/store`, `internal/server` or `internal/scheduler` |
 | Recorded runtimes | part of `go test` (`TestReplayRecordings`) | Any OpenSandbox adapter change: real responses from the Docker and Kubernetes runtimes, no server |
 | Live adapter | `OPENSANDBOX_URL=… go test -tags live -run TestLiveOpenSandbox ./internal/adapters/opensandbox/`; for the managed providers `DAYTONA_API_KEY=… go test -tags live -run TestLiveDaytona ./internal/adapters/daytona/` and `FREESTYLE_API_KEY=… go test -tags live -run TestLiveFreestyle ./internal/adapters/freestyle/` (a few small sandboxes, all deleted) | A new OpenSandbox call or version; re-recording; any Daytona or Freestyle adapter change |
-| Real stack, local | `make e2e-prepare e2e-up e2e` | Behaviour across the API, scheduler, store and a real OpenSandbox server |
+| Real stack, local and in CI | `make e2e-prepare e2e-up e2e`; CI's `end-to-end (docker runtime)` job runs the same on every PR | Behaviour across the API, scheduler, store and a real OpenSandbox server on the Docker runtime |
 | Real stack, a real cluster | the e2e suite pointed at an install ([test/e2e](../test/e2e/README.md#run-against-another-deployment)) | Helm, NetworkPolicy, the Kubernetes and Fast Sandbox runtimes, upgrades |
 
-CI runs the first four on every PR. The live, e2e and cluster rungs need a
-server and are run by hand; record what ran, where and with which versions in
+CI runs the first four on every PR, and the real stack on the Docker
+runtime. The live and cluster rungs, and the e2e suite on the Kubernetes and
+Fast Sandbox runtimes, need a server and are run by hand; record what ran,
+where and with which versions in
 [test/e2e/README.md](../test/e2e/README.md) and
 [test/opensandbox/README.md](../test/opensandbox/README.md), and say in the
 PR what did not run.
