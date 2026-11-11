@@ -15,7 +15,23 @@ permissions:
   attestations: write
 
 jobs:
+  # Nothing is published from a tag whose code does not pass the checks CI
+  # runs: a tag can be pushed on any commit, checked or not.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt, vet and tests (default and experimental builds)
+        run: make fmt-check vet test experimental
+      - uses: azure/setup-helm@v4
+      - name: helm lint
+        run: make helm-lint
+
   binaries:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +82,7 @@ jobs:
             dist/differently.spdx.json
 
   images:
+    needs: verify
     runs-on: ubuntu-latest
     strategy:
       matrix:
