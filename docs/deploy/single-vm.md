@@ -10,7 +10,7 @@ command that creates the VM differs.
 > OpenSandbox 1.2.0 and Differently `v0.1.0-alpha.1`. A sandbox ran within
 > about 2 s, and the end-to-end suite passed 12/12 against this setup; with
 > a snapshot registry, the ingress gateway and egress policy added
-> (2026-10-29), it passed 14/14. The commands below install `v0.1.0-alpha.2`,
+> (2026-10-29), it passed 14/14. The commands below install `v0.1.0-alpha.3`,
 > which has not itself been installed on this setup yet. The AWS, Google
 > Cloud and bare-metal commands are the equivalent steps, not yet run there.
 
@@ -120,7 +120,7 @@ configToml: |
   host = "0.0.0.0"
   port = 80
   api_key = "$OSB_KEY"
-  max_sandbox_timeout_seconds = 86400   # the longest sandbox TTL OpenSandbox accepts
+  max_sandbox_timeout_seconds = 2592000 # the longest TTL OpenSandbox accepts: above any client's (OpenWork: 14 days)
   [log]
   level = "INFO"
   [runtime]
@@ -156,7 +156,7 @@ Use the chart and images from the
 [latest release](https://github.com/different-ai/differently/releases):
 
 ```bash
-VERSION=0.1.0-alpha.2
+VERSION=0.1.0-alpha.3
 curl -fsSLO https://github.com/different-ai/differently/releases/download/v$VERSION/differently-$VERSION.tgz
 
 kubectl create namespace differently
@@ -201,7 +201,7 @@ kubectl -n differently port-forward svc/differently-server 8080:8080 &
 ```
 
 From your laptop, tunnel to it (`ssh -L 8080:localhost:8080 <vm>`) and use
-the CLI from the same release (`differently_v0.1.0-alpha.2_<os>_<arch>.tar.gz`):
+the CLI from the same release (`differently_v0.1.0-alpha.3_<os>_<arch>.tar.gz`):
 
 ```bash
 export DIFFERENTLY_URL=http://localhost:8080 DIFFERENTLY_API_KEY="$(cat operator-token)"

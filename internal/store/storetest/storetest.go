@@ -3,6 +3,7 @@ package storetest
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -19,6 +20,7 @@ func Run(t *testing.T, newStore func(t *testing.T) store.Store) {
 	t.Run("ConcurrentAdmissionRespectsQueueLimit", func(t *testing.T) { concurrentAdmission(t, newStore(t)) })
 	t.Run("ConcurrentActivationRespectsQuota", func(t *testing.T) { concurrentActivation(t, newStore(t)) })
 	t.Run("PoolConcurrencyCap", func(t *testing.T) { poolCap(t, newStore(t)) })
+	t.Run("ReleasedSlotsAndReclaim", func(t *testing.T) { releasedSlots(t, newStore(t)) })
 	t.Run("Idempotency", func(t *testing.T) { idempotency(t, newStore(t)) })
 	t.Run("Secrets", func(t *testing.T) { secrets(t, newStore(t)) })
 	t.Run("FairOrderAcrossOrgs", func(t *testing.T) { fairOrder(t, newStore(t)) })
@@ -149,6 +151,76 @@ func poolCap(t *testing.T, s store.Store) {
 	}
 }
 
+// releasedSlots: a paused sandbox that released its slot does not count
+// toward the pool's cap, and two concurrent resumes racing for the one free
+// slot get it exactly once.
+func releasedSlots(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	_, p := seed(t, s, "org-rs")
+	// The server writes a row for every pool at startup; Postgres serializes
+	// a pool's slots by locking it, so without one the reclaims below race.
+	if err := s.UpsertPool(ctx, api.Pool{Name: "ck", Adapter: "fake"}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	var ids []string
+	for i := 0; i < 3; i++ {
+		rec, _, err := s.AdmitSandbox(ctx, sandbox(p, 1), store.Admission{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, rec.ID)
+	}
+	for _, sid := range ids[:2] {
+		if _, err := s.ActivateSandbox(ctx, sid, store.Activation{Pool: "ck", MaxConcurrency: 2, Now: now}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.UpdateSandbox(ctx, sid, func(r *store.SandboxRecord) error {
+			r.Status, r.SlotReleased = api.StatusPaused, true
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.ActivateSandbox(ctx, ids[2], store.Activation{Pool: "ck", MaxConcurrency: 2, Now: now}); err != nil {
+		t.Fatalf("released slots should not count: %v", err)
+	}
+	if counts, _ := s.PoolActive(ctx); counts["ck"] != 1 {
+		t.Fatalf("pool active %v, want 1", counts)
+	}
+	// A pause in progress has not given its slot back yet.
+	if _, err := s.UpdateSandbox(ctx, ids[2], func(r *store.SandboxRecord) error {
+		r.Status = api.StatusPausing
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if counts, _ := s.PoolActive(ctx); counts["ck"] != 1 {
+		t.Fatalf("pool active %v with one pausing, want 1", counts)
+	}
+	var ok atomic.Int32
+	var wg sync.WaitGroup
+	for _, sid := range ids[:2] {
+		wg.Add(1)
+		go func(sid string) {
+			defer wg.Done()
+			_, err := s.ReclaimSlot(ctx, sid, 2, now)
+			if err == nil {
+				ok.Add(1)
+			} else if !api.IsCode(err, "insufficient_capacity") {
+				t.Errorf("unexpected %v", err)
+			}
+		}(sid)
+	}
+	wg.Wait()
+	if ok.Load() != 1 {
+		t.Fatalf("reclaimed %d slots, want 1", ok.Load())
+	}
+	if counts, _ := s.PoolActive(ctx); counts["ck"] != 2 {
+		t.Fatalf("pool active %v, want 2", counts)
+	}
+}
+
 func idempotency(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	_, p := seed(t, s, "org-d")
@@ -252,6 +324,30 @@ func auditChain(t *testing.T, s store.Store) {
 	}
 	if res := audit.Verify(events); !res.OK || res.Events != 5 {
 		t.Fatalf("chain %+v", res)
+	}
+	// Newest first: a limit keeps the latest events, and BeforeSeq pages back.
+	seqs := func(f store.AuditFilter) (out []int64) {
+		t.Helper()
+		list, err := s.ListAudit(ctx, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ev := range list {
+			out = append(out, ev.Seq)
+		}
+		return out
+	}
+	if got := seqs(store.AuditFilter{Desc: true, Limit: 2}); !slices.Equal(got, []int64{5, 4}) {
+		t.Fatalf("newest two events: %v, want [5 4]", got)
+	}
+	if got := seqs(store.AuditFilter{Desc: true, Limit: 2, BeforeSeq: 4}); !slices.Equal(got, []int64{3, 2}) {
+		t.Fatalf("the page before 4: %v, want [3 2]", got)
+	}
+	if got := seqs(store.AuditFilter{AfterSeq: 1, BeforeSeq: 4}); !slices.Equal(got, []int64{2, 3}) {
+		t.Fatalf("between 1 and 4, oldest first: %v, want [2 3]", got)
+	}
+	if got := seqs(store.AuditFilter{Limit: 2}); !slices.Equal(got, []int64{1, 2}) {
+		t.Fatalf("default order: %v, want [1 2]", got)
 	}
 }
 

@@ -85,7 +85,8 @@ terminated like running ones.
 sandbox is `Paused`; `resume` waits for `Running` and then for `execd` to
 answer again. A paused sandbox keeps reserving CPU and memory in the tenant's
 quota and its pool concurrency slot. Exec and file operations on a paused
-sandbox return `409 invalid_state`.
+or `pausing` sandbox return `409 invalid_state`
+([what a pause in progress means](scheduling/capacity.md#pausing)).
 
 Whether process memory survives a pause depends on the runtime. The live test
 checks that files survive pause and resume on the Docker runtime; it does not
@@ -179,7 +180,7 @@ sequenceDiagram
 | Snapshots between adapters | Refs are adapter-specific (OpenSandbox snapshot ID, Daytona snapshot name, Freestyle snapshot ID) | Placement pins restores to the snapshot's pool |
 | Memory state between runtimes, versions or CPU types | Each runtime has its own snapshot format and compatibility rules | Restore on matching hosts |
 | Network identity | Each sandbox gets its address from the runtime | Applications must not depend on the sandbox IP |
-| Provider-side lifetimes | OpenSandbox `timeout`, Daytona `ttlMinutes` and Freestyle `ttlSeconds` are set once at create | Extending a sandbox's TTL with `PATCH` does not update the backstop; the backend may delete it earlier and the reconciler then marks it failed (known issue) |
+| Provider-side lifetimes | OpenSandbox `timeout`, Daytona `ttlMinutes` and Freestyle `ttlSeconds` are set once at create, to the TTL plus five minutes so that Differently's own expiry runs first | Extending a sandbox's TTL with `PATCH` does not update the backstop; the backend may delete it earlier and the reconciler then marks it failed (known issue) |
 
 ## 9. Memory snapshot plan
 

@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package cloudhttp calls cloud providers' sandbox APIs with cloud IAM
 // credentials: Microsoft Entra ID tokens, Google OAuth 2.0 tokens and AWS
 // Signature Version 4. It uses only the standard library, so the cloud

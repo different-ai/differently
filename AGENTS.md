@@ -11,9 +11,11 @@ for humans).
 - Never push to or open feature PRs against `main`; releases reach `main` only
   through a release PR (see CONTRIBUTING.md).
 - When CI is green you may merge your own PR into `pre-release`
-  (`gh pr merge --squash`), or queue it with `--auto`. CI's `approve when CI
-  passes` job approves same-repository PRs once every job is green; that
-  approval is what `main`'s ruleset needs for release PRs.
+  (`gh pr merge --squash`). `pre-release` has no required checks, so
+  `--auto` cannot wait for CI there: check the run, then merge. CI's
+  `approve when CI passes` job approves same-repository PRs once every job
+  is green; that approval is what `main`'s ruleset needs for release and
+  sync PRs ([releasing](docs/maintaining.md#releasing)).
 - One focused outcome per PR, Conventional Commit title, `git commit -s`.
 
 ## Before you push
@@ -22,9 +24,13 @@ for humans).
 make verify
 ```
 
-It runs gofmt, go vet, Go tests with `-race`, the SDK tests and the Helm lint,
-including the replay of recorded OpenSandbox runtimes. For changes touching
-`internal/store/postgres`, also run `make test-postgres`. For anything a real
+It runs gofmt, go vet, Go tests with `-race`, the same build, vet and tests
+with `-tags experimental_adapters` (`make experimental`), the SDK tests and
+the Helm lint, including the replay of recorded OpenSandbox runtimes. For changes touching
+`internal/store/postgres`, also run `make test-postgres`. For `console/`, run
+`npm run typecheck && npm run build && npm run build:server` there; for
+`site/` or any page it publishes from `docs/`, `npm run build` in `site/`
+(it fails on a broken link). For anything a real
 backend or cluster could break, pick the cheapest rung of the verification
 ladder in [docs/maintaining.md](docs/maintaining.md#prove-a-change-at-the-right-cost)
 that covers it, and say in the PR what did not run.
@@ -32,19 +38,32 @@ that covers it, and say in the PR what did not run.
 ## Map
 
 - Contracts: `pkg/api` (wire types and error codes), `pkg/adapter`
-  (backend contract), `api/openapi.yaml` (HTTP).
+  (backend contract), `api/openapi.yaml` (HTTP). A new field or route also
+  goes into both SDKs (`sdk/typescript`, `sdk/python`) and, where people
+  see it, the dashboard and the console.
 - Placement and security decisions: `internal/policy`, `internal/auth`,
   `internal/store` (atomic admission/activation). Treat changes here as
   security-sensitive and keep the tests in `internal/server/server_test.go`
   (acceptance scenarios A–L) green.
 - Backends: `internal/adapters/*` (`opensandbox` is the default private
   runtime; Differently runs no sandboxes itself), `internal/wiring` (adapter
-  factories), `internal/pools`. The real-stack suite is `test/e2e`
+  factories), `internal/pools`. The default build holds `opensandbox`,
+  `daytona`, `freestyle`, `remote`, `devhost` and `fake`. Every other
+  adapter, and the `cloudhttp`, `pyshell` and `shellcmd` helpers, carries
+  `//go:build experimental_adapters`: a plain `go build`, `go vet` or
+  `go test` does not see them, so use `make experimental` when you touch
+  them or anything they share (`httpx`, `pkg/adapter`). The real-stack suite is `test/e2e`
   (`make e2e-prepare e2e-up e2e`, or against any install).
 - Recorded runtimes: `internal/adapters/opensandbox/testdata/recordings`,
   replayed by `TestReplayRecordings`; re-record with the live test after an
   OpenSandbox upgrade or a new adapter call.
 - Stored credentials: `internal/secrets` (sealed values, `secret:` refs).
+- Capacity: `internal/scheduler/capacity.go` (slots, resume queue,
+  preemption, lifecycle limits) and its model `internal/capsim`
+  ([capacity](docs/scheduling/capacity.md)).
+- Interfaces: `internal/dashboard` (the built-in dashboard), `console/` (the
+  separate admin app, static or on Node with sign-in), `site/` (the website;
+  its docs sync from `docs/**`).
 - How to change, prove, re-record, optimise and release:
   [docs/maintaining.md](docs/maintaining.md).
 - Docs that must stay truthful: `docs/feature-parity.md`, `docs/roadmap.md`,

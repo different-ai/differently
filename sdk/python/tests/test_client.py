@@ -176,6 +176,16 @@ class ClientTests(unittest.TestCase):
         second = self.mock.calls("GET /v1/audit-events")[1]
         self.assertEqual((second.param("afterSeq"), second.param("action")), ("2", "sandbox.create"))
 
+    def test_audit_events_list_newest_first(self) -> None:
+        def event(seq):
+            return {"seq": seq, "time": "t", "actor": "k", "action": "sandbox.create", "resource": "sbx", "outcome": "ok", "prevHash": "", "hash": ""}
+
+        self.mock.on("GET /v1/audit-events", reply(200, {"items": [event(9), event(8)], "nextCursor": "8"}))
+        page = self.client.audit_events.list(order="desc", limit=2, before_seq=10)
+        self.assertEqual(([ev["seq"] for ev in page.items], page.next_cursor), ([9, 8], "8"))
+        call = self.mock.calls("GET /v1/audit-events")[0]
+        self.assertEqual((call.param("order"), call.param("beforeSeq")), ("desc", "10"))
+
     def test_admin_namespace(self) -> None:
         org = {"id": "org_1", "name": "Acme", "suspended": True, "quota": {}, "createdAt": "t"}
         self.mock.on("POST /v1/admin/organizations", reply(201, {"organization": org, "project": {"id": "prj_1"}}))

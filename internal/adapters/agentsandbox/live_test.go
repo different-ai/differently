@@ -1,4 +1,4 @@
-//go:build live
+//go:build live && experimental_adapters
 
 package agentsandbox
 
@@ -7,7 +7,7 @@ package agentsandbox
 //
 //	AGENTSANDBOX_API_SERVER=https://127.0.0.1:6443 AGENTSANDBOX_CA_FILE=ca.crt \
 //	AGENTSANDBOX_TOKEN=$(kubectl -n dly create token differently) \
-//	go test -tags live -v -run TestLiveAgentSandbox ./internal/adapters/agentsandbox/
+//	go test -tags live,experimental_adapters -v -run TestLiveAgentSandbox ./internal/adapters/agentsandbox/
 //
 // Settings: AGENTSANDBOX_NAMESPACE (default dly), AGENTSANDBOX_IMAGE (default
 // debian:bookworm-slim), AGENTSANDBOX_VOLUME_SIZE (enables stop/start, default

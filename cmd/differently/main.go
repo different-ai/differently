@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"os/signal"
@@ -58,8 +59,8 @@ func load() settings {
 	if s.URL == "" {
 		s.URL = "http://localhost:8080"
 	}
-	// Local dev servers write an operator token; use it for localhost.
-	if s.APIKey == "" && strings.Contains(s.URL, "localhost") {
+	// Local dev servers write an operator token; use it for this machine only.
+	if s.APIKey == "" && isLoopbackURL(s.URL) {
 		home, _ := os.UserHomeDir()
 		if b, err := os.ReadFile(filepath.Join(home, ".differently", "dev", "token")); err == nil {
 			s.APIKey = strings.TrimSpace(string(b))
@@ -69,6 +70,23 @@ func load() settings {
 		}
 	}
 	return s
+}
+
+// isLoopbackURL reports whether raw points at this machine: localhost, a
+// *.localhost name or a loopback address. The dev operator token is sent
+// nowhere else; a host that merely contains "localhost" (for example
+// localhost.example.com) is someone else's server.
+func isLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func cli() *client.Client {
@@ -614,7 +632,7 @@ func poolAddCmd() *cobra.Command {
 		return raw("POST", "/v1/admin/pools", body)
 	}}
 	f := cmd.Flags()
-	f.StringVar(&adapterKind, "adapter", "", "opensandbox, daytona, freestyle, remote, vercel, fly, agent-sandbox, cubesandbox, aws-agentcore, azure-sandboxes, azure-sessions, gcp-sandboxes, northflank, boat, e2b, morph or blaxel")
+	f.StringVar(&adapterKind, "adapter", "", "opensandbox, daytona, freestyle or remote; a server built with -tags experimental_adapters has more (docs/providers)")
 	f.StringVar(&trust, "trust", "", "external (someone else runs it) or private (you do); managed providers are always external, self-hostable kinds must set one")
 	f.StringArrayVar(&settings, "config", nil, "adapter setting key=value (repeatable), e.g. apiURL=https://app.daytona.io/api")
 	f.StringVar(&region, "region", "", "region label")
@@ -654,7 +672,7 @@ func usageCmd() *cobra.Command {
 	cmd.Flags().String("group-by", "pool", "pool, project, org or trust")
 	cmd.AddCommand(
 		&cobra.Command{Use: "quota", Short: "Show quota and current consumption", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/quotas", nil) }},
-		&cobra.Command{Use: "audit", Short: "List audit events", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/audit-events?limit=100", nil) }},
+		&cobra.Command{Use: "audit", Short: "List the latest audit events, newest first", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/audit-events?limit=100&order=desc", nil) }},
 	)
 	return cmd
 }

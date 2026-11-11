@@ -151,18 +151,18 @@ export class AuditEvents {
     this.#http = http;
   }
 
-  /** Returns one page in ascending sequence order. */
+  /** Returns one page, oldest first unless `order: "desc"` asks for the newest. */
   async list(params: ListAuditEventsParams = {}): Promise<Page<AuditEvent>> {
     const page = await this.#http.json<Page<AuditEvent>>({ method: "GET", path: "/v1/audit-events", query: { ...params } });
     const items = page.items ?? [];
     return page.nextCursor ? { items, nextCursor: page.nextCursor } : { items };
   }
 
-  /** Yields every matching event, following pagination. */
+  /** Yields every matching event from oldest to newest, following pagination. */
   async *iterate(params: ListAuditEventsParams = {}): AsyncGenerator<AuditEvent, void, undefined> {
     let afterSeq = params.afterSeq;
     for (;;) {
-      const page = await this.list({ ...params, afterSeq });
+      const page = await this.list({ ...params, order: "asc", afterSeq });
       yield* page.items;
       if (!page.nextCursor) return;
       afterSeq = Number(page.nextCursor);

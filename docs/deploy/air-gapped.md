@@ -22,8 +22,8 @@ network, is for its documentation to answer; it has not been checked here.
 
 | Image | Needed for |
 |---|---|
-| `ghcr.io/different-ai/differently-server:0.1.0` | Control plane, migrations, preflight |
-| `ghcr.io/different-ai/differently-cli:0.1.0` | `helm test` only |
+| `ghcr.io/different-ai/differently-server:0.1.0-alpha.3` | Control plane, migrations, preflight |
+| `ghcr.io/different-ai/differently-cli:0.1.0-alpha.3` | `helm test` only |
 | `docker.io/library/postgres:17` | Only with the evaluation-only `postgresql.embedded` |
 | `docker.io/library/busybox:1.37` | Only for the `kubectl debug` checks in these guides |
 | OpenSandbox's server, `execd` and other component images | Your OpenSandbox installation; see step 3 |
@@ -35,9 +35,9 @@ Copy by digest so the internal tags point at exactly what you reviewed. Use
 ```sh
 REG=registry.internal.example.com
 for img in differently-server differently-cli; do
-  skopeo copy --all docker://ghcr.io/different-ai/$img:0.1.0 docker://$REG/different-ai/$img:0.1.0
+  skopeo copy --all docker://ghcr.io/different-ai/$img:0.1.0-alpha.3 docker://$REG/different-ai/$img:0.1.0-alpha.3
 done
-skopeo inspect docker://$REG/different-ai/differently-server:0.1.0 | jq -r .Digest
+skopeo inspect docker://$REG/different-ai/differently-server:0.1.0-alpha.3 | jq -r .Digest
 ```
 
 `global.imageRegistry` replaces only the registry part of each image, so keep
@@ -48,9 +48,9 @@ production.
 ## 2. Mirror the chart
 
 ```sh
-helm package deploy/helm/differently                 # differently-0.2.0.tgz
-helm push differently-0.2.0.tgz oci://$REG/charts    # or copy the .tgz across the gap
-helm show chart oci://$REG/charts/differently --version 0.2.0
+helm package deploy/helm/differently                 # differently-0.3.0.tgz
+helm push differently-0.3.0.tgz oci://$REG/charts    # or copy the .tgz across the gap
+helm show chart oci://$REG/charts/differently --version 0.3.0
 ```
 
 ## 3. Mirror and configure OpenSandbox
@@ -102,7 +102,7 @@ networkPolicy:
 ```
 
 ```sh
-helm install dly oci://$REG/charts/differently --version 0.2.0 -n differently -f values-airgap.yaml
+helm install dly oci://$REG/charts/differently --version 0.3.0 -n differently -f values-airgap.yaml
 ```
 
 With providers disabled, the server NetworkPolicy has no TCP 443 egress rule;

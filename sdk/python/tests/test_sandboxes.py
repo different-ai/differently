@@ -249,6 +249,14 @@ class SandboxTests(unittest.TestCase):
         self.assertEqual(sandbox.labels, {"team": "ml"})
         self.assertEqual(self.mock.calls("PATCH /v1/sandboxes/sbx_1")[0].json(), {"labels": {"team": "ml"}})
 
+    def test_update_sends_lifecycle_limits_and_keeps_false(self) -> None:
+        self.mock.on("PATCH /v1/sandboxes/sbx_1", reply(200, sandbox_info(maxRunSeconds=3600, preemptible=False)))
+        self.client.sandboxes.update("sbx_1", max_run_seconds=3600, max_paused_seconds=-1, preemptible=False)
+        self.assertEqual(
+            self.mock.calls("PATCH /v1/sandboxes/sbx_1")[0].json(),
+            {"maxRunSeconds": 3600, "maxPausedSeconds": -1, "preemptible": False},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

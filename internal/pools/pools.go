@@ -6,12 +6,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"reflect"
 	"sync"
 	"time"
 
+	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/internal/policy"
 	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/pkg/adapter"
@@ -103,7 +105,9 @@ func (m *Manager) Sync(pools []api.Pool) {
 	for _, p := range pools {
 		seen[p.Name] = true
 		old, ok := m.entries[p.Name]
-		if ok && old.adapter != nil && sameBuild(old.pool, p) && old.credFP == fps[p.Name] {
+		if ok && old.adapter != nil && sameBuild(old.pool, p) && (old.credFP == fps[p.Name] || fps[p.Name] == fpUnreadable) {
+			// An unreadable credential is not a changed one: the adapter that
+			// works keeps the value it was built with until a read succeeds.
 			old.pool = p
 			continue
 		}
@@ -113,7 +117,9 @@ func (m *Manager) Sync(pools []api.Pool) {
 		}
 		e := &entry{pool: p, credFP: fps[p.Name]}
 		if f := factoryFor(p.Adapter); f == nil {
-			e.buildErr = fmt.Errorf("adapter kind %q is not available in this build", p.Adapter)
+			// A pool stored by a build that had the kind (an experimental
+			// adapter, say) stays registered and reports why it cannot run.
+			e.buildErr = errors.New(config.UnavailableAdapter(p.Adapter))
 		} else if a, err := f(p, m.deps); err != nil {
 			e.buildErr = err
 		} else {
@@ -154,6 +160,15 @@ func (m *Manager) Recheck() {
 	m.Sync(list)
 }
 
+// Fingerprints for a credential that could not be resolved. Gone (a deleted
+// secret or file) takes the pool's adapter down, as a removed credential
+// should. Unreadable (the store or the file could not be read just now) says
+// nothing about the value, so it must not tear down a working adapter.
+const (
+	fpGone       = "unresolved"
+	fpUnreadable = "unreadable"
+)
+
 // fingerprint identifies a pool's current credential value without keeping
 // it. Without a resolver, only a changed reference counts as a change.
 func (m *Manager) fingerprint(p api.Pool) string {
@@ -161,11 +176,15 @@ func (m *Manager) fingerprint(p api.Pool) string {
 		return ""
 	}
 	v, err := m.deps.Resolve(p.CredentialRef)
-	if err != nil {
-		return "unresolved"
+	switch {
+	case err == nil:
+		sum := sha256.Sum256([]byte(v))
+		return hex.EncodeToString(sum[:8])
+	case api.IsCode(err, api.CodeNotFound) || errors.Is(err, fs.ErrNotExist):
+		return fpGone
 	}
-	sum := sha256.Sum256([]byte(v))
-	return hex.EncodeToString(sum[:8])
+	m.deps.Logger.Warn("pool credential could not be read; keeping the adapter as built", "pool", p.Name, "err", err)
+	return fpUnreadable
 }
 
 func sameBuild(a, b api.Pool) bool {

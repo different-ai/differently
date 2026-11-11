@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 package agentsandbox
 
 // A small Kubernetes API client on the standard library: JSON requests with

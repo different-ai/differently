@@ -291,7 +291,7 @@ func TestOpenSandboxLifecycleExecFiles(t *testing.T) {
 	}
 	sent := f.boxes[inst.Ref]["request"].(map[string]any)
 	limits := sent["resourceLimits"].(map[string]any)
-	if limits["cpu"] != "2" || limits["memory"] != "1024Mi" || sent["timeout"].(float64) != 60 || sent["image"].(map[string]any)["uri"] != "python:3.12-slim" {
+	if limits["cpu"] != "2" || limits["memory"] != "1024Mi" || sent["timeout"].(float64) != 30+backstopGrace || sent["image"].(map[string]any)["uri"] != "python:3.12-slim" {
 		t.Fatalf("create body %v", sent)
 	}
 	if again, err := a.Create(ctx, req); err != nil || again.Ref != inst.Ref || f.creates != 1 {
@@ -425,6 +425,43 @@ func TestOpenSandboxCredentialsAndConfig(t *testing.T) {
 	}
 }
 
+// A resume during a Fast Sandbox pause calls it off: the runtime still serves,
+// so resuming waits for it and for execd as after any other resume.
+func TestOpenSandboxFastSandboxCallsOffPauses(t *testing.T) {
+	f := newFake(t)
+	f.direct = true
+	ctx := context.Background()
+	opts, err := FromConfig(map[string]string{"apiURL": f.srv.URL + "/v1", "runtime": "fastsandbox", "templateId": "tpl_1"}, api.TrustPrivate, apiKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(opts)
+	if !a.CancelsPause() {
+		t.Fatal("Fast Sandbox calls pauses off")
+	}
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_1", Installation: "inst", Template: "tpl_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.boxes[in.Ref]["status"] = map[string]any{"state": "Pausing"}
+	f.mu.Unlock()
+	if err := a.Resume(ctx, in.Ref); err != nil || f.resumes != 1 {
+		t.Fatalf("resume during a pause: %v (resumes %d)", err, f.resumes)
+	}
+	if got, _ := a.Get(ctx, in.Ref); got.State != adapter.StateRunning {
+		t.Fatalf("after calling the pause off: %+v", got)
+	}
+
+	docker, err := FromConfig(map[string]string{"apiURL": f.srv.URL + "/v1", "runtime": "docker"}, api.TrustPrivate, apiKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if New(docker).CancelsPause() {
+		t.Fatal("only Fast Sandbox calls pauses off")
+	}
+}
+
 // Fast Sandbox: template-mode creates, OpenSandbox's native idle policy from
 // Differently's idle timeout, execd reached directly so the gateway sees the
 // traffic, and a sandbox the idle policy paused woken on the next call.
@@ -459,7 +496,7 @@ func TestOpenSandboxFastSandbox(t *testing.T) {
 	}
 	a := New(o)
 	caps, _ := a.Capabilities(ctx)
-	if got := strings.Join(caps.Features, ","); got != "exec,exec.stream,files,lifecycle.pause-resume,snapshots.disk,fork,isolation.microvm" {
+	if got := strings.Join(caps.Features, ","); got != "exec,exec.stream,files,lifecycle.pause-resume,lifecycle.pause-checkpoint,snapshots.disk,fork,isolation.microvm" {
 		t.Fatalf("features %s", got)
 	}
 	if !a.IdlesNatively() || o.UseServerProxy {
@@ -514,7 +551,8 @@ func TestOpenSandboxFastSandbox(t *testing.T) {
 		t.Fatalf("paused microVM reported as %s", got.State)
 	}
 
-	// No idle timeout: no policy, and a TTL becomes the timeout.
+	// No idle timeout: no policy, and the TTL plus the backstop grace becomes
+	// the timeout, so Differently's own expiry runs first.
 	in2, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_2", Installation: "inst", TTLSeconds: 600, Template: "tpl_2"})
 	if err != nil {
 		t.Fatal(err)
@@ -522,7 +560,7 @@ func TestOpenSandboxFastSandbox(t *testing.T) {
 	f.mu.Lock()
 	req = f.boxes[in2.Ref]["request"].(map[string]any)
 	f.mu.Unlock()
-	if _, ok := req["lifecycle"]; ok || req["timeout"] != float64(600) || req["templateId"] != "tpl_2" {
+	if _, ok := req["lifecycle"]; ok || req["timeout"] != float64(600+backstopGrace) || req["templateId"] != "tpl_2" {
 		t.Fatalf("create without idle %v", req)
 	}
 

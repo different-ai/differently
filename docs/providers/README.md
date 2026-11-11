@@ -20,20 +20,52 @@ code and published documentation.
 
 ## Providers
 
-26 providers are covered: 16 with a built-in adapter, 8 reachable through a
-[remote plugin](remote.md), and 2 that cannot be supported. Four of the 16
-have run live; the rest are implemented from published APIs and tested
-against fakes of them. "Persists" means stop/start keeps the disk or pause
-keeps memory; "Snapshots" are disk unless marked memory.
+26 providers are covered: 16 with an adapter in this repository, 8 reachable
+through a [remote plugin](remote.md), and 2 that cannot be supported.
 
-### Built-in adapters
+### What the server contains
+
+The published image, the release binaries and `make build` contain three
+provider adapters, each verified against a real backend: `opensandbox`,
+`daytona` and `freestyle`. They also contain [`remote`](remote.md), the
+plugin protocol, and the dev-mode `devhost`.
+
+The other 13 adapters are **experimental**. Their code and tests are in the
+repository and CI builds and tests them, but they are compiled into the
+server only with the Go build tag `experimental_adapters`. Twelve have been
+tested only against fake servers; `agent-sandbox` also ran live once, on a
+kind cluster. A server built without the tag refuses a pool of one of these
+kinds, in the config file and through the API, with an error that names the
+tag.
+
+To use an experimental adapter, build the server yourself:
+
+```sh
+go build -tags experimental_adapters ./cmd/differently-server
+# or the image:
+docker build -f build/server.Dockerfile --build-arg GO_TAGS=experimental_adapters \
+  -t registry.example.com/differently-server:experimental .
+```
+
+With the Helm chart, point `server.image` at that image and set
+`server.experimentalAdapters=true`; otherwise the chart refuses pools of
+these kinds. The dashboard and the console offer only the default kinds, so
+add an experimental pool in the config file, with
+`differently admin pool add` or with `POST /v1/admin/pools`.
+
+### In the default build
 
 | Provider | Status | Trust |
 |---|---|---|
 | [OpenSandbox](opensandbox.md) `opensandbox` | **Verified live**: Docker and Kubernetes runtimes, 2026-10-29 | declared |
-| [agent-sandbox](agent-sandbox.md) `agent-sandbox` | **Verified live**: kind cluster, runc, 2026-10-28 | declared |
 | [Daytona](daytona.md) `daytona` | **Verified live**: container class, 2026-10-29 (VM class not run) | external |
 | [Freestyle](freestyle.md) `freestyle` | **Verified live**: default snapshot, 2026-10-29 | external |
+
+### Experimental: build tag `experimental_adapters`
+
+| Provider | Status | Trust |
+|---|---|---|
+| [agent-sandbox](agent-sandbox.md) `agent-sandbox` | **Verified live**: kind cluster, runc, 2026-10-28 | declared |
 | [E2B](e2b.md) `e2b` | Tested with a fake server | declared |
 | [Boat](boat.md) `boat` | Tested with a fake server | external |
 | [Morph Cloud](morph.md) `morph` | Tested with a fake server | external |
@@ -57,26 +89,27 @@ Cloud, Northflank BYOC).
 
 "Keeps state" is stop/start that keeps the disk, or pause that keeps memory.
 "Snapshots" is what a snapshot captures; "+ fork" means a new sandbox can
-start from one.
+start from one. "Build" is `default` for the adapters in every server and
+`tag` for the experimental ones.
 
-| Provider | Isolation | Keeps state | Snapshots | Port URLs |
-|---|---|---|---|---|
-| OpenSandbox | container or microVM | stop/start or pause, by runtime | disk + fork | signed |
-| agent-sandbox | RuntimeClass | stop/start (volume) | — | in-cluster |
-| Daytona | container or VM | stop/start; pause on VMs | disk + fork (memory on VMs) | signed |
-| Freestyle | microVM | stop/start, pause | memory + fork | public |
-| E2B | microVM | pause | memory + fork | public, opt-in |
-| Boat | VM | stop/start | disk + fork | token or public |
-| Morph Cloud | VM | pause | memory + fork | public |
-| Vercel Sandbox | microVM | stop/start | disk + fork | public |
-| Fly.io Machines | microVM | stop/start, suspend | — | — |
-| Blaxel | microVM | auto standby | — | token |
-| CubeSandbox | microVM | pause | memory + fork | opt-in |
-| AWS AgentCore | microVM | — | — | — |
-| Azure Sandboxes | managed | stop/start | disk + fork | public |
-| Azure sessions | Hyper-V | — | — | — |
-| Google Cloud sandboxes | container | stop/start | memory + fork | — |
-| Northflank | microVM or gVisor | — | — | public |
+| Provider | Build | Isolation | Keeps state | Snapshots | Port URLs |
+|---|---|---|---|---|---|
+| OpenSandbox | default | container or microVM | stop/start or pause, by runtime | disk + fork | signed |
+| agent-sandbox | tag | RuntimeClass | stop/start (volume) | — | in-cluster |
+| Daytona | default | container or VM | stop/start; pause on VMs | disk + fork (memory on VMs) | signed |
+| Freestyle | default | microVM | stop/start, pause | memory + fork | public |
+| E2B | tag | microVM | pause | memory + fork | public, opt-in |
+| Boat | tag | VM | stop/start | disk + fork | token or public |
+| Morph Cloud | tag | VM | pause | memory + fork | public |
+| Vercel Sandbox | tag | microVM | stop/start | disk + fork | public |
+| Fly.io Machines | tag | microVM | stop/start, suspend | — | — |
+| Blaxel | tag | microVM | auto standby | — | token |
+| CubeSandbox | tag | microVM | pause | memory + fork | opt-in |
+| AWS AgentCore | tag | microVM | — | — | — |
+| Azure Sandboxes | tag | managed | stop/start | disk + fork | public |
+| Azure sessions | tag | Hyper-V | — | — | — |
+| Google Cloud sandboxes | tag | container | stop/start | memory + fork | — |
+| Northflank | tag | microVM or gVisor | — | — | public |
 
 Every adapter offers exec and files. Streamed exec, stdin, egress control and
 size limits differ: each page has the full table.
@@ -132,23 +165,38 @@ would wrap.
    image or request, `insufficient_capacity` for 429 and capacity errors, and
    `provider_unavailable` for outages and rejected credentials. Advertise
    only features that work.
-2. Register it:
-   - the factory in `internal/wiring/wiring.go`;
-   - `KnownAdapters` in `internal/config/config.go`, and **exactly one**
-     trust list there: `externalKinds` for a managed provider (its pools are
-     always `external`), or `declaredTrustKinds` for a self-hostable runtime
-     (its pools must say who operates it). `TestEveryAdapterKindHasATrustRule`
-     fails until you choose, so a new kind can never be treated as private
-     by omission;
-   - the adapter enum in `deploy/helm/differently/values.schema.json`;
-   - the `--adapter` help in `cmd/differently/main.go` and the `kinds`
-     table in `internal/dashboard/static/app.js`, so operators can add it
-     without a config file.
+2. Register it. A new adapter starts as experimental, behind the build tag:
+   - `//go:build experimental_adapters` as the first line of every file in
+     the package, tests included;
+   - the factory in `internal/wiring/wiring_experimental.go`;
+   - `ExperimentalAdapters` in `internal/config/config.go`, and **exactly
+     one** trust list there: `externalKinds` for a managed provider (its
+     pools are always `external`), or `declaredTrustKinds` for a
+     self-hostable runtime (its pools must say who operates it).
+     `TestEveryAdapterKindHasATrustRule` fails until you choose, so a new
+     kind can never be treated as private by omission, and
+     `TestRegisteredKindsMatchConfig` fails if the factory and the list
+     disagree;
+   - the adapter enum in `deploy/helm/differently/values.schema.json` and
+     the experimental list in the chart's `differently.validate` helper
+     (`templates/_helpers.tpl`).
+
+   `make experimental` builds, vets and tests with the tag; `make verify`
+   and CI run it. Adapters written in parallel all edit these lists, so
+   their PRs conflict with each other. The resolution is always the union
+   of both sides.
+
+   Moving an adapter into the default build is a separate change and a
+   maintainers' decision; it needs **Verified live** status first. Drop the
+   build tag, move the factory to `internal/wiring/wiring.go` and the kind to
+   `DefaultAdapters`, and add it to the `--adapter` help in
+   `cmd/differently/main.go`, the `kinds` table in
+   `internal/dashboard/static/app.js` and `console/src/lib/providers.ts`.
 3. Write `docs/providers/<kind>.md` from the template below, and add a row
    here.
 4. When you have an account or a running install, run the adapter's live
-   test (`go test -tags live`, as `agent-sandbox`, `daytona` and `freestyle`
-   have) and drive a pool on it through a Differently server, or run the
+   test (`go test -tags live,experimental_adapters`; `daytona` and
+   `freestyle` have one to follow) and drive a pool on it through a Differently server, or run the
    [end-to-end suite](../../test/e2e/README.md) against it where it fits.
    Record what ran on the page. Until then, the status stays
    **Tested with a fake server**.
@@ -184,7 +232,7 @@ sandboxes go with `differently admin pool use <pool>`.
 | | |
 |---|---|
 | Status | one of the four statuses, with the date and what ran |
-| Adapter | `<kind>` (`internal/adapters/<kind>`), or none |
+| Adapter | `<kind>` (`internal/adapters/<kind>`), or none; say if it is experimental (build tag) |
 | Trust | external (provider-managed) or declared (self-hostable) |
 | Isolation | what the provider documents (microVM, gVisor, container…) |
 | API checked | docs or OpenAPI URL, and the date read |

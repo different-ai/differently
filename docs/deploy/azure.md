@@ -1,7 +1,9 @@
 # Azure (AKS)
 
 > **Quickest path:** a single Azure VM with k3s, following
-> [One Linux VM on any cloud](single-vm.md). Use this page when you run a
+> [One Linux VM on any cloud](single-vm.md). For Fast Sandbox microVMs and
+> managed services on VMs, see the verified
+> [Azure VMs with Fast Sandbox](azure-vms.md). Use this page when you run a
 > managed Kubernetes cluster.
 
 Status: **unverified, experimental**. No step here has been run.

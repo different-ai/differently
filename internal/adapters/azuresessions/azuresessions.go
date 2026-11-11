@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package azuresessions adapts Azure Container Apps dynamic sessions in a
 // Python code-interpreter session pool: each Differently sandbox is one
 // session, named by its identifier.

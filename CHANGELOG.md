@@ -6,6 +6,190 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.3] — 2026-11-10
+
+Third alpha, published as a GitHub pre-release. Not for production. It is
+mostly a correctness release: a review of the code found ten defects in
+placement, the scheduler, the reconciler and the clients, and each is fixed
+with a test that fails on the old behaviour. The default build is cut to the
+adapters that have run against real backends, and the release workflow now
+runs the checks before it publishes.
+
+What has not run for this release: the end-to-end suite and the live adapter
+tests. They last ran on the code before these changes (see `Verified` under
+0.1.0-alpha.2 and the sections below). The fixes are covered by in-process
+tests and, for the store, by the Postgres conformance job in CI.
+
+Upgrading from 0.1.0-alpha.2:
+
+- A config file or API call that names one of the 13 experimental adapter
+  kinds is refused by the published image (first section below).
+- A client that lists sandboxes by status needs to add `pausing`.
+- `PATCH /v1/sandboxes/{id}` with `ttlSeconds: 0` answers 400; use `DELETE`.
+
+### Documentation and CI
+
+- The SDK READMEs install the SDKs from this repository. Neither is
+  published: `pip install differently` installs an unrelated project of that
+  name, and `npm install @differently/sdk` finds nothing. Their method
+  tables no longer list `admin.agents.list`, which does not exist.
+- `make vet` and CI compile and vet the end-to-end and live test files
+  (`-tags "e2e live"`), which no job runs, so they cannot stop compiling
+  unnoticed.
+- The release workflow runs gofmt, vet, the Go tests (default and
+  experimental builds) and the Helm lint before it publishes binaries, the
+  chart or images.
+- The chart's `appVersion` names this release, so installing the chart from
+  a checkout pulls an image that exists. It used to name `0.1.0`, which was
+  never published; the air-gapped and day-2 guides named the same tag.
+
+### Changed (breaking): the default build holds only the verified adapters
+
+The published image, the release binaries and `make build` now contain the
+`opensandbox`, `daytona` and `freestyle` adapters, the `remote` plugin
+protocol and the dev-mode `devhost` and `fake`. The other 13 adapter kinds
+are experimental and compile in only with the Go build tag
+`experimental_adapters`: `agent-sandbox`, `cubesandbox`, `e2b`, `boat`,
+`morph`, `vercel`, `fly`, `blaxel`, `aws-agentcore`, `azure-sandboxes`,
+`azure-sessions`, `gcp-sandboxes` and `northflank`. Apart from
+`agent-sandbox`, which ran live on a kind cluster, they have only been
+tested against fake servers. No adapter code was removed, and CI still
+builds, vets and tests it with the tag.
+
+- **If you use one of the 13 kinds**, the next published image will not
+  start with a config file that names it: the error names the pool, the
+  kind and the build tag. A pool of such a kind added earlier through the
+  API stays registered and reports `unavailable` with the same reason.
+  Build the server with `go build -tags experimental_adapters`, or the image
+  with `--build-arg GO_TAGS=experimental_adapters`
+  ([provider catalog](docs/providers/README.md#what-the-server-contains)).
+- `POST /v1/admin/pools` answers 400 `invalid_request` for these kinds on a
+  default build.
+- Helm: pools of these kinds are refused unless `server.experimentalAdapters`
+  is `true`, which you set together with a `server.image` built with the
+  tag.
+- The dashboard, the console and `differently admin pool add --help` list
+  only the default kinds. Experimental pools are added in the config file,
+  with the CLI or through the API.
+- `make verify` and CI gained `make experimental` (build, vet and test with
+  the tag). The live tests of `agent-sandbox` and `cubesandbox` now need
+  `-tags live,experimental_adapters`.
+
+### Fixed (placement, scheduler and clients)
+
+Found by reading the code, each with a test that fails on the old behaviour.
+None has run against a live backend.
+
+- Placement no longer treats a policy it could not read as a policy that
+  does not exist. During a database error, a sandbox whose organization sets
+  `external: never` or denies a pool could be placed with that scope left
+  out. The sandbox now stays queued, and create, the placement explanation
+  and `GET /v1/capabilities` answer 503 `provider_unavailable`.
+- The reconciler never deletes or adopts a backend instance that carries no
+  sandbox ID. The `daytona` and `freestyle` adapters check ownership
+  themselves instead of trusting the provider's label or metadata filter,
+  and Daytona's create reuses a sandbox only when its label carries the ID.
+  A provider that ignored the filter would have had every sandbox in the
+  account deleted as an orphan. The other provider adapters still rely on
+  their backend's filter for the installation match.
+- A negative `ttlSeconds` on create is rejected; it used to pass the
+  `maxTTLSeconds` quota and give a sandbox with no expiry. A `PATCH` must set
+  a positive `ttlSeconds`: 0 used to delete the sandbox within a second and
+  now answers 400, so a client that ended sandboxes that way needs `DELETE`.
+- A pool that stops answering no longer slows placement on the others. Pool
+  probes and the reconciler ran on the scheduler loop and held it for their
+  timeouts (5 s per probe, 30 s per list); they now run beside it.
+- A delete or a TTL extension that lands while the scheduler is deciding now
+  wins. Expiry, the reconciler's "failed" and crash adoption wrote the status
+  without reading the record again, so an extended sandbox could still be
+  expired and a deleted one could come back as running.
+- OpenSandbox, Daytona and Freestyle are given the TTL plus five minutes as
+  their own deletion deadline. Theirs counts from the create request and
+  Differently's from the moment the sandbox is ready, so the backend deleted
+  first and the sandbox ended as failed instead of expired.
+- A pool keeps its working adapter when its credential cannot be read for a
+  moment. One failed read used to leave the pool without an adapter until a
+  later refresh. A deleted secret or file still takes the pool down, and a
+  changed value still rebuilds the adapter.
+- The CLI uses the dev server's operator token only for `localhost`,
+  `*.localhost` and loopback addresses. It used to send it to any URL
+  containing "localhost", and not to `127.0.0.1`.
+- A streamed exec through the Go client (`differently sandbox exec`) is no
+  longer cut off after ten minutes.
+- The audit views show the latest events. `differently usage audit`, the
+  dashboard and the console asked for the first page, which is the oldest
+  events, so anything after the first 100 or 200 never appeared.
+  `GET /v1/audit-events` takes `order=desc` (newest first) and `beforeSeq`;
+  the TypeScript and Python SDKs take `order` and `beforeSeq`/`before_seq`.
+- CI: the Python SDK job runs on `ubuntu-24.04`, the last runner image with
+  a Python 3.9 build; on `ubuntu-latest` it failed at setup.
+
+### Fixed (lifecycle)
+
+- A sandbox being paused reports the new status `pausing` instead of `running`
+  and refuses exec, file and port calls. A Fast Sandbox VM runs on for minutes
+  after its memory dump, and what it did then was lost on resume while every
+  call reported success. A resume during a pause calls it off on Fast Sandbox,
+  keeping the sandbox as it is; on other backends it waits for the pause. A
+  client that lists sandboxes by status needs to add `pausing`.
+- Idle preemption no longer pauses sandboxes in use. Without an idle timeout of
+  their own their activity was never recorded, so they all looked idle a minute
+  after starting, and a running command now counts as activity until it ends.
+
+### Added (capacity)
+
+- A paused sandbox on a pool that checkpoints on pause
+  (`lifecycle.pause-checkpoint`: OpenSandbox Fast Sandbox, Freestyle) gives
+  its slot back. Resuming takes one again; on a full pool the resume waits in
+  a queue (202) and runs when a slot frees.
+- Pool preemption (`preemption.mode: idle | lru`) pauses running sandboxes to
+  make room for waiting work; `preemptible: false` opts a sandbox out.
+- Lifecycle limits `maxRunSeconds` and `maxPausedSeconds` (request, `PATCH`
+  and operator defaults).
+- Capacity metrics (`differently_pool_slots`, `differently_resume_wait_seconds`,
+  `differently_preemptions_total` and more) and a capacity model,
+  `cmd/differently-capsim`, with results in `docs/scheduling/capacity.md`.
+- The TypeScript and Python SDKs take `maxRunSeconds`, `maxPausedSeconds`
+  and `preemptible` on create and update, and return `pausedAt`,
+  `slotReleased`, `resumeRequestedAt`, and a pool's `preemption` and
+  `released`. The console marks queued resumes, released slots and idle
+  sandboxes, and the Providers page counts paused sandboxes that hold no slot.
+- `differently_pause_seconds{pool}`: how long each pause Differently asks for
+  takes on its backend, the time a checkpointing pool needs to free a slot.
+- `differently-capsim -pause` and `-resume`; the Workbot model's pause is the
+  measured 182 s.
+
+### Documentation
+
+- `docs/research/fast-sandbox-pause-time.md`: where a Workbot desktop's
+  pause on Fast Sandbox spends its time (memory dump, a checksum pass that
+  reads the whole checkpoint back, a single-stream upload, all limited by
+  the state-root disk), what was measured before and after leaving templates
+  sparse (median 216 s → 180 s, resumes unchanged, state kept), ranked
+  candidates, and two Fast Sandbox patches (sparse pull, parallel multipart
+  upload). The pools guide gains "Shortening pauses"; `test/pause` holds the
+  harness that measured it.
+- `docs/research/fast-sandbox-shared-image-cache.patch`: stops Fast Sandbox's
+  image cache GC deleting the checkpoints paused sandboxes resume from, which
+  turned a 2 s resume into two minutes.
+- `docs/deploy/azure-vms.md`: a verified install on two Azure VMs with Fast
+  Sandbox microVMs, managed Postgres, ACR and Key Vault, serving OpenWork's
+  Workbot computers, and what it took (guest kernel, template registry,
+  Key Vault CSI on VMs, ACR token scopes, sandbox network policy).
+- The OpenWork guide records the end-to-end run, Freestyle template slugs
+  and OpenSandbox's maximum timeout; the e2e suite runs on installs with
+  several pools and replicas, and gives Fast Sandbox checkpoints time.
+- The README, roadmap, feature parity, end-to-end and keys pages, and the
+  website now state the same verified results: the end-to-end suite on a
+  Fast Sandbox pool, two-node k3s, and stored provider keys in use on Azure.
+  The website lists capacity and the admin console, and its sidebar gains
+  Capacity, Keys and providers, OpenWork and Maintaining.
+- `AGENTS.md` and `docs/maintaining.md` record what building and releasing
+  taught so far: where capacity, the console and the website live and how to
+  check them, the lists a new provider kind touches, new traps (Fast Sandbox
+  clock and checkpoints, template builds, zero times, CI on conflicting PRs),
+  and how release tags and `main` syncs are done.
+
 ### Added (admin console)
 
 - `console/`: an admin app built with Astro, separate from the server. It has
@@ -402,6 +586,7 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.2...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.3...pre-release
+[0.1.0-alpha.3]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.1

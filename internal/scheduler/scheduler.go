@@ -41,7 +41,9 @@ const RetryDelay = 2 * time.Second
 
 // Scheduler runs dispatch, provisioning, termination and reconciliation.
 type Scheduler struct {
-	sweeping atomic.Bool // an idle sweep is running
+	sweeping    atomic.Bool // an idle sweep is running
+	refreshing  atomic.Bool // a pool probe pass is running
+	reconciling atomic.Bool // a reconcile pass is running
 
 	Store        store.Store
 	Pools        *pools.Manager
@@ -53,11 +55,15 @@ type Scheduler struct {
 	// ReconcileGrace is how long the reconciler leaves a sandbox alone after
 	// it changed, so it never races a lifecycle operation.
 	ReconcileGrace time.Duration
+	// RefreshInterval is how often pools are probed; zero means 5 seconds.
+	RefreshInterval time.Duration
 
-	wake     chan struct{}
-	mu       sync.Mutex
-	inflight map[string]bool
-	wg       sync.WaitGroup
+	wake chan struct{}
+	mu   sync.Mutex
+	// preempting counts victims still pausing, per pool.
+	preempting map[string]int
+	inflight   map[string]bool
+	wg         sync.WaitGroup
 }
 
 // New returns a scheduler.
@@ -65,7 +71,7 @@ func New(st store.Store, pm *pools.Manager, cfg config.Config, installation stri
 	return &Scheduler{
 		Store: st, Pools: pm, Config: cfg, Installation: installation, Audit: rec, Log: log,
 		Now: func() time.Time { return time.Now().UTC() }, ReconcileGrace: 30 * time.Second,
-		wake: make(chan struct{}, 1), inflight: map[string]bool{},
+		wake: make(chan struct{}, 1), inflight: map[string]bool{}, preempting: map[string]int{},
 	}
 }
 
@@ -78,32 +84,49 @@ func (s *Scheduler) Wake() {
 }
 
 // Run loops until ctx ends.
+//
+// Only dispatch runs on the loop itself. Pool probes and the reconciler call
+// backends, and one that does not answer holds its caller until a timeout (5 s
+// per probe, 30 s per list), so they run beside the loop: an unreachable pool
+// must not slow placement on the others.
 func (s *Scheduler) Run(ctx context.Context) {
+	every := s.RefreshInterval
+	if every <= 0 {
+		every = 5 * time.Second
+	}
 	tick := time.NewTicker(time.Duration(s.Config.Scheduler.IntervalMs) * time.Millisecond)
-	refresh := time.NewTicker(5 * time.Second)
+	refresh := time.NewTicker(every)
 	reconcile := time.NewTicker(time.Duration(s.Config.Scheduler.ReconcileIntervalSecs) * time.Second)
 	defer tick.Stop()
 	defer refresh.Stop()
 	defer reconcile.Stop()
-	s.Pools.Refresh(ctx)
+	s.Pools.Refresh(ctx) // the first tick needs a view of every pool
 	for {
 		select {
 		case <-ctx.Done():
 			s.wg.Wait()
 			return
 		case <-refresh.C:
-			s.Pools.Refresh(ctx)
+			if s.refreshing.CompareAndSwap(false, true) {
+				go func() {
+					defer s.refreshing.Store(false)
+					s.Pools.Refresh(ctx)
+				}()
+			}
 			continue
 		case <-reconcile.C:
-			if s.leader(ctx) {
-				s.Reconcile(ctx)
-				if s.sweeping.CompareAndSwap(false, true) {
-					// Stops can take seconds each: never hold up the loop.
-					go func() {
+			if s.leader(ctx) && s.reconciling.CompareAndSwap(false, true) {
+				go func() {
+					s.Reconcile(ctx)
+					s.reconciling.Store(false)
+					// Stops can take seconds each, so the sweep does not hold
+					// up the next reconcile pass either.
+					if s.sweeping.CompareAndSwap(false, true) {
 						defer s.sweeping.Store(false)
 						s.SweepIdle(ctx)
-					}()
-				}
+						s.EnforceLifecycle(ctx)
+					}
+				}()
 			}
 			continue
 		case <-tick.C:
@@ -127,49 +150,70 @@ func (s *Scheduler) leader(ctx context.Context) bool {
 func (s *Scheduler) Tick(ctx context.Context) {
 	s.dispatch(ctx)
 	s.startProvisioning(ctx)
+	demand := s.resumeQueued(ctx)
+	if demand == nil {
+		demand = map[string]int{}
+	}
+	s.createDemand(ctx, demand)
+	s.makeRoom(ctx, demand)
 	s.terminate(ctx)
 	s.expire(ctx)
+	s.observeSlots(ctx)
 }
 
 // Drain waits for in-flight provisioning and termination.
 func (s *Scheduler) Drain() { s.wg.Wait() }
 
 // Policies returns the placement policies that apply to a tenant: global,
-// then the organization's and the project's when they exist.
-func (s *Scheduler) Policies(ctx context.Context, orgID, projectID string) []api.PlacementPolicy {
-	return s.policies(ctx, orgID, projectID)
-}
-
-func (s *Scheduler) policies(ctx context.Context, orgID, projectID string) []api.PlacementPolicy {
+// then the organization's and the project's when they exist. A policy that
+// cannot be read is an error, never an absent policy: placing with a scope
+// left out could run work where that scope forbids it.
+func (s *Scheduler) Policies(ctx context.Context, orgID, projectID string) ([]api.PlacementPolicy, error) {
 	global := s.Config.Policy
-	if p, ok, _ := s.Store.GetPolicy(ctx, "global"); ok {
+	if p, ok, err := s.Store.GetPolicy(ctx, "global"); err != nil {
+		return nil, fmt.Errorf("read placement policy global: %w", err)
+	} else if ok {
 		global = p
 	}
 	out := []api.PlacementPolicy{global}
 	for _, scope := range []string{"org:" + orgID, "project:" + projectID} {
-		if p, ok, _ := s.Store.GetPolicy(ctx, scope); ok {
+		p, ok, err := s.Store.GetPolicy(ctx, scope)
+		if err != nil {
+			return nil, fmt.Errorf("read placement policy %s: %w", scope, err)
+		}
+		if ok {
 			out = append(out, p)
 		}
 	}
-	return out
+	return out, nil
 }
 
-// PlacementInput assembles the policy input for a sandbox.
-func (s *Scheduler) PlacementInput(ctx context.Context, rec store.SandboxRecord, active map[string]int) policy.Input {
+// PlacementInput assembles the policy input for a sandbox. It fails rather
+// than decide on a partial read of the policies or of the snapshot that pins
+// the sandbox to a pool.
+func (s *Scheduler) PlacementInput(ctx context.Context, rec store.SandboxRecord, active map[string]int) (policy.Input, error) {
+	policies, err := s.Policies(ctx, rec.OrgID, rec.ProjectID)
+	if err != nil {
+		return policy.Input{}, err
+	}
 	class, _ := s.Config.Classification(rec.Classification)
 	in := policy.Input{
-		Sandbox: rec.Sandbox, Policies: s.policies(ctx, rec.OrgID, rec.ProjectID), Classification: class,
+		Sandbox: rec.Sandbox, Policies: policies, Classification: class,
 		Pools: s.Pools.Views(active), ExcludedPools: rec.ExcludedPools, Now: s.Now(),
 	}
 	if rec.FromSnapshot != "" {
-		if snap, err := s.Store.GetSnapshot(ctx, rec.FromSnapshot); err == nil {
+		snap, err := s.Store.GetSnapshot(ctx, rec.FromSnapshot)
+		switch {
+		case err == nil:
 			in.PinnedPool = snap.Pool
+		case !api.IsCode(err, api.CodeNotFound):
+			return policy.Input{}, fmt.Errorf("read snapshot %s: %w", rec.FromSnapshot, err)
 		}
 	}
 	if t, ok := s.Config.Template(rec.Template); ok && rec.Template != "" {
 		in.Template = &t
 	}
-	return in
+	return in, nil
 }
 
 func (s *Scheduler) dispatch(ctx context.Context) {
@@ -199,7 +243,13 @@ func (s *Scheduler) dispatch(ctx context.Context) {
 		if err != nil {
 			continue
 		}
-		in := s.PlacementInput(ctx, rec, active)
+		in, err := s.PlacementInput(ctx, rec, active)
+		if err != nil {
+			// Fail closed: leave it queued until the policies can be read.
+			s.Log.Warn("placement input unavailable; sandbox stays queued", "sandbox", rec.ID, "err", err)
+			s.wait(ctx, rec.ID, "waiting: placement policy could not be read", nil)
+			continue
+		}
 		res := policy.Decide(in)
 		if (res.Err != nil || len(res.Ranked) == 0) && len(in.ExcludedPools) > 0 {
 			// Every other pool is out: retry the pools that failed before.
@@ -287,7 +337,14 @@ func (s *Scheduler) wait(ctx context.Context, sid, reason string, dec *api.Place
 }
 
 func (s *Scheduler) fail(ctx context.Context, sid, reason string, dec *api.PlacementDecision) {
+	// The caller decided on a record it read earlier. A sandbox that ended or
+	// was deleted since keeps that outcome: the terminator still has to remove
+	// its backend instance, and "failed" would hide the delete.
+	failed := false
 	rec, err := s.Store.UpdateSandbox(ctx, sid, func(r *store.SandboxRecord) error {
+		if failed = !r.Status.Terminal() && r.Status != api.StatusTerminating; !failed {
+			return nil
+		}
 		now := s.Now()
 		stopClock(r, now)
 		r.Status, r.StatusReason, r.EndedAt, r.UpdatedAt = api.StatusFailed, reason, &now, now
@@ -296,7 +353,7 @@ func (s *Scheduler) fail(ctx context.Context, sid, reason string, dec *api.Place
 		}
 		return nil
 	})
-	if err == nil {
+	if err == nil && failed {
 		metrics.Transitions.WithLabelValues(string(api.StatusFailed), rec.Pool).Inc()
 		s.Audit.Record(ctx, api.AuditEvent{Actor: "scheduler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.failed", Resource: sid, Outcome: "failure", Details: map[string]string{"reason": reason}})
 	}
@@ -483,10 +540,20 @@ func (s *Scheduler) expire(ctx context.Context) {
 		if rec.ExpiresAt == nil || rec.ExpiresAt.After(now) {
 			continue
 		}
-		_, _ = s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+		// Check again under the row lock: the TTL may have been extended, or
+		// the sandbox deleted or failed, since the list was read.
+		expired := false
+		_, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+			live := r.Status == api.StatusRunning || r.Status == api.StatusPaused || r.Status == api.StatusStopped
+			if expired = live && r.ExpiresAt != nil && !r.ExpiresAt.After(now); !expired {
+				return nil
+			}
 			r.Status, r.StatusReason, r.UpdatedAt = api.StatusTerminating, "ttl expired", now
 			return nil
 		})
+		if err != nil || !expired {
+			continue
+		}
 		s.Audit.Record(ctx, api.AuditEvent{Actor: "scheduler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.expired", Resource: rec.ID})
 	}
 }
@@ -533,16 +600,22 @@ func (s *Scheduler) idle(ctx context.Context, rec store.SandboxRecord) {
 	if err != nil {
 		return
 	}
-	to, action := api.StatusPaused, "pause"
+	to, from, action := api.StatusPaused, api.StatusPausing, "pause"
+	reason := func() string {
+		return fmt.Sprintf("%s after %d s idle; the next exec, file, port or keepalive call wakes it", action, rec.IdleTimeoutSeconds)
+	}
 	switch pz, pausable := a.(adapter.Pauser); {
 	case pausable && s.Pools.Supports(ctx, rec.Pool, adapter.FeaturePauseResume):
-		err = pz.Pause(ctx, rec.BackendRef)
+		err = s.Pause(ctx, pz, rec, func(r *store.SandboxRecord) {
+			now := s.Now()
+			r.IdledAt, r.StatusReason = &now, reason()
+		})
 	case s.Pools.Supports(ctx, rec.Pool, adapter.FeatureStopStart):
 		l, ok := a.(adapter.Lifecycle)
 		if !ok {
 			return
 		}
-		to, action = api.StatusStopped, "stop"
+		to, from, action = api.StatusStopped, api.StatusRunning, "stop"
 		err = l.Stop(ctx, rec.BackendRef)
 	default:
 		return
@@ -552,19 +625,23 @@ func (s *Scheduler) idle(ctx context.Context, rec store.SandboxRecord) {
 		return
 	}
 	now := s.Now()
+	releases := s.ReleasesSlot(ctx, rec.Pool)
 	out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
-		if r.Status != api.StatusRunning {
+		if r.Status != from {
 			return api.Errorf(api.CodeConflict, "sandbox changed to %s during the idle %s", r.Status, action)
 		}
-		stopClock(r, now)
 		r.Status, r.UpdatedAt, r.IdledAt = to, now, &now
-		r.StatusReason = fmt.Sprintf("%s after %d s idle; the next exec, file, port or keepalive call wakes it", action, rec.IdleTimeoutSeconds)
+		MarkPaused(r, now, releases)
+		r.StatusReason = reason()
 		return nil
 	})
 	if err != nil {
 		return
 	}
 	metrics.Reconciled.WithLabelValues("idle_"+action, rec.Pool).Inc()
+	if out.SlotReleased {
+		s.SlotFreed(ctx)
+	}
 	s.Audit.Record(ctx, api.AuditEvent{Actor: "scheduler", OrgID: out.OrgID, ProjectID: out.ProjectID, Action: "sandbox.idled", Resource: out.ID, Details: map[string]string{"pool": out.Pool, "action": action}})
 }
 
@@ -615,15 +692,27 @@ func (s *Scheduler) Reconcile(ctx context.Context) {
 func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.ExecutionAdapter, instances []adapter.Instance) {
 	byRef := map[string]adapter.Instance{}
 	bySandbox := map[string]adapter.Instance{}
+	// Only instances that carry a sandbox ID are Differently's to manage. One
+	// without it was not created here (or the backend ignored the ownership
+	// filter and returned its whole account): it is never adopted or deleted.
+	owned := make([]adapter.Instance, 0, len(instances))
 	for _, in := range instances {
 		byRef[in.Ref] = in
+		if in.SandboxID == "" {
+			continue
+		}
 		bySandbox[in.SandboxID] = in
+		owned = append(owned, in)
+	}
+	if n := len(instances) - len(owned); n > 0 {
+		metrics.Reconciled.WithLabelValues("unowned_skipped", pool).Add(float64(n))
+		s.Log.Warn("reconcile left alone backend instances that carry no sandbox ID", "pool", pool, "count", n)
 	}
 	// Orphans: backend instances whose sandbox is gone, terminal or elsewhere.
 	// "Elsewhere" means placed on another pool with a different instance: two
 	// pools can front the same backend (one OpenSandbox server registered
 	// twice), so each sees the other's live instances and must leave them be.
-	for _, in := range instances {
+	for _, in := range owned {
 		rec, err := s.Store.GetSandbox(ctx, in.SandboxID)
 		elsewhere := rec.Pool != pool && in.Ref != rec.BackendRef && rec.Status != api.StatusQueued && rec.Status != api.StatusProvisioning
 		orphan := api.IsCode(err, api.CodeNotFound) || (err == nil && (rec.Status.Terminal() || elsewhere))
@@ -637,7 +726,7 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 		metrics.Reconciled.WithLabelValues("orphan_deleted", pool).Inc()
 		s.Audit.Record(ctx, api.AuditEvent{Actor: "reconciler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "reconcile.orphan_deleted", Resource: in.SandboxID, Details: map[string]string{"pool": pool, "ref": in.Ref}})
 	}
-	recs, err := s.Store.ListSandboxes(ctx, store.SandboxFilter{Pool: pool, Statuses: []api.SandboxStatus{api.StatusProvisioning, api.StatusRunning, api.StatusPaused, api.StatusStopped}})
+	recs, err := s.Store.ListSandboxes(ctx, store.SandboxFilter{Pool: pool, Statuses: []api.SandboxStatus{api.StatusProvisioning, api.StatusRunning, api.StatusPausing, api.StatusPaused, api.StatusStopped}})
 	if err != nil {
 		return
 	}
@@ -651,9 +740,15 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 			}
 			stale := rec.ProvisionStartedAt == nil || now.Sub(*rec.ProvisionStartedAt) > timeout
 			if in, ok := bySandbox[rec.ID]; ok && stale {
-				// Created before a crash: adopt it.
+				// Created before a crash: adopt it, unless it was deleted
+				// since the list was read (the terminator then needs the ref).
+				adopted := false
 				_, _ = s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
-					r.BackendRef, r.Status, r.RunningSince, r.UpdatedAt = in.Ref, api.StatusRunning, &now, now
+					r.BackendRef = in.Ref
+					if adopted = r.Status == api.StatusProvisioning; !adopted {
+						return nil
+					}
+					r.Status, r.RunningSince, r.UpdatedAt = api.StatusRunning, &now, now
 					if r.StartedAt == nil {
 						r.StartedAt = &now
 					}
@@ -663,7 +758,9 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 					}
 					return nil
 				})
-				metrics.Reconciled.WithLabelValues("adopted", pool).Inc()
+				if adopted {
+					metrics.Reconciled.WithLabelValues("adopted", pool).Inc()
+				}
 			} else if stale {
 				s.release(rec.ID)
 				s.retry(ctx, rec, adapter.Unavailable(errString("provisioning interrupted")))
@@ -692,7 +789,14 @@ func (s *Scheduler) reconcilePool(ctx context.Context, pool string, a adapter.Ex
 // it idled (so the next call wakes it), and a backend wake of an idled
 // sandbox (traffic through the backend's gateway) marks it running again.
 func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.SandboxRecord, in adapter.Instance) {
-	if (rec.Status != api.StatusRunning && rec.Status != api.StatusPaused) || s.isInflight(rec.ID) || s.recentlyChanged(rec) {
+	if s.isInflight(rec.ID) || s.recentlyChanged(rec) {
+		return
+	}
+	if rec.Status == api.StatusPausing {
+		s.reconcilePausing(ctx, pool, rec, in)
+		return
+	}
+	if rec.Status != api.StatusRunning && rec.Status != api.StatusPaused {
 		return
 	}
 	switch in.State {
@@ -714,18 +818,22 @@ func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.S
 		if rec.Status != api.StatusRunning || rec.IdleTimeoutSeconds <= 0 || !s.idlesNatively(pool) {
 			return
 		}
+		releases := s.ReleasesSlot(ctx, pool)
 		out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
 			if r.Status != api.StatusRunning {
 				return nil
 			}
 			now := s.Now()
-			stopClock(r, now)
 			r.Status, r.UpdatedAt, r.IdledAt = api.StatusPaused, now, &now
+			MarkPaused(r, now, releases)
 			r.StatusReason = fmt.Sprintf("paused by the backend after %d s idle; the next exec, file, port or keepalive call wakes it", rec.IdleTimeoutSeconds)
 			return nil
 		})
 		if err == nil && out.Status == api.StatusPaused {
 			metrics.Reconciled.WithLabelValues("idle_pause", pool).Inc()
+			if out.SlotReleased {
+				s.SlotFreed(ctx)
+			}
 			s.Audit.Record(ctx, api.AuditEvent{Actor: "reconciler", OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.idled", Resource: rec.ID, Details: map[string]string{"pool": pool, "action": "pause", "by": "backend"}})
 		}
 	case adapter.StateRunning:
@@ -736,9 +844,11 @@ func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.S
 			if r.Status != api.StatusPaused || r.IdledAt == nil {
 				return nil
 			}
-			now := s.Now()
-			r.Status, r.UpdatedAt, r.IdledAt, r.StatusReason = api.StatusRunning, now, nil, ""
-			r.RunningSince, r.LastActivityAt = &now, &now
+			// A wake through the backend's own gateway takes a slot back
+			// without asking; a full pool shows it as overcommitted until
+			// preemption or a pause frees one.
+			MarkRunning(r, s.Now())
+			r.StatusReason = ""
 			return nil
 		})
 		if err == nil && out.Status == api.StatusRunning {
@@ -748,6 +858,35 @@ func (s *Scheduler) reconcileState(ctx context.Context, pool string, rec store.S
 	case adapter.StateError:
 		s.fail(ctx, rec.ID, "backend instance failed: "+in.Message, nil)
 		metrics.Reconciled.WithLabelValues("failed", pool).Inc()
+	}
+}
+
+// reconcilePausing settles a pause whose waiter is gone: the replica that
+// asked for it stopped while the backend went on. A backend that finished
+// makes the sandbox paused. One still running is left until no waiter can be
+// left, since a retried pause reads as running between its attempts.
+func (s *Scheduler) reconcilePausing(ctx context.Context, pool string, rec store.SandboxRecord, in adapter.Instance) {
+	switch {
+	case in.State == adapter.StatePaused:
+		releases := s.ReleasesSlot(ctx, pool)
+		out, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {
+			if r.Status != api.StatusPausing {
+				return nil
+			}
+			now := s.Now()
+			r.Status, r.UpdatedAt = api.StatusPaused, now
+			MarkPaused(r, now, releases)
+			return nil
+		})
+		if err == nil && out.Status == api.StatusPaused {
+			metrics.Reconciled.WithLabelValues("pause_finished", pool).Inc()
+			if out.SlotReleased {
+				s.SlotFreed(ctx)
+			}
+		}
+	case in.State == adapter.StateRunning && s.Now().Sub(rec.UpdatedAt) > LifecycleTimeout:
+		s.abortPause(ctx, rec.ID)
+		metrics.Reconciled.WithLabelValues("pause_abandoned", pool).Inc()
 	}
 }
 

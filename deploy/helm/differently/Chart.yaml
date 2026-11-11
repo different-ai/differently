@@ -6,7 +6,7 @@ description: >-
   OpenSandbox server, installed separately, as its default private pool.
 type: application
 version: 0.3.0
-appVersion: "0.1.0"
+appVersion: "0.1.0-alpha.3"
 kubeVersion: ">=1.29.0-0"
 home: https://github.com/different-ai/differently
 sources:

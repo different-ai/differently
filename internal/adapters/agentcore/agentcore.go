@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package agentcore adapts Amazon Bedrock AgentCore Code Interpreter: each
 // Differently sandbox is one code-interpreter session.
 //

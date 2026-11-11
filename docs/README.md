@@ -24,6 +24,7 @@ two-minute local quickstart.
 |---|---|
 | [Deployment overview and support matrix](deploy/README.md) | Where to run it, and what is tested, documented or unverified |
 | [One Linux VM on any cloud](deploy/single-vm.md) | The quickest team setup: k3s, OpenSandbox and Differently on Azure, AWS, Google Cloud or bare metal |
+| [Azure VMs serving OpenWork](deploy/azure-vms.md) | A verified two-VM install with Fast Sandbox microVMs, managed Postgres, a registry and Key Vault, and Freestyle and Daytona as external pools |
 | [Prerequisites](deploy/prerequisites.md) | Cluster, Postgres and an OpenSandbox server (or another backend) |
 | [Kubernetes (existing cluster)](deploy/kubernetes.md) | Helm install to first sandbox |
 | [AWS](deploy/aws.md) · [GCP](deploy/gcp.md) · [Azure](deploy/azure.md) · [Bare metal](deploy/bare-metal.md) | Environment-specific notes |
@@ -38,11 +39,13 @@ two-minute local quickstart.
 | [Feature parity](feature-parity.md) | Differently vs Boat, Daytona, Freestyle, E2B, OpenSandbox; backend capability matrix |
 | [Competitive landscape](competitive-landscape.md) | Ownership models and where Differently fits |
 | [OpenSandbox spike](research/opensandbox-spike.md) | What OpenSandbox offers as a backend or foundation, observed and read |
+| [Fast Sandbox pause time](research/fast-sandbox-pause-time.md) | Where a desktop's pause spends its time, what cut it, and the upstream patches for the rest |
 | [Architecture RFC](architecture/README.md) | Layers, components, request lifecycle, state machine, HA |
 | [Security and trust model](security/trust-model.md) | Threats, boundaries, enforced controls, residual risks |
 | [Adapter specification](adapters/specification.md) | The backend contract and the HTTP plugin protocol |
 | [Maintaining and improving Differently](maintaining.md) | For agents and maintainers: where to change what, the verification ladder, recorded runtimes, performance, traps |
 | [Placement policy](scheduling/placement-policy.md) | Merge rules, strategies, overflow, quotas, fairness |
+| [Capacity](scheduling/capacity.md) | Pool slots, paused sandboxes that give theirs back, the resume queue, preemption and lifecycle limits, with a model of real usage |
 | [Storage and lifecycle](storage-and-lifecycle.md) | Persistence, snapshots, fork, portability limits |
 | [Reliability and performance](reliability-and-performance.md) | SLOs, benchmarks to run, chaos tests |
 | [Acceptance scenarios](acceptance-scenarios.md) | Scenarios A–L and the tests that cover them |

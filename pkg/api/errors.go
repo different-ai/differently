@@ -58,7 +58,7 @@ func (e *Error) HTTPStatus() int {
 		return http.StatusUnprocessableEntity
 	case CodeUnsupportedOperation:
 		return http.StatusNotImplemented
-	case CodeProviderUnavailable:
+	case CodeProviderUnavailable, "insufficient_capacity":
 		return http.StatusServiceUnavailable
 	}
 	return http.StatusInternalServerError

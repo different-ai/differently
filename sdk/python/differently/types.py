@@ -12,7 +12,15 @@ from typing import Dict, Generic, List, Literal, Optional, TypedDict, TypeVar
 T = TypeVar("T")
 
 SandboxStatus = Literal[
-    "queued", "provisioning", "running", "stopped", "paused", "terminating", "terminated", "failed"
+    "queued",
+    "provisioning",
+    "running",
+    "stopped",
+    "pausing",
+    "paused",
+    "terminating",
+    "terminated",
+    "failed",
 ]
 ExternalMode = Literal["never", "overflow", "allowed"]
 PlacementStrategy = Literal["private-first", "cost", "spread"]
@@ -92,6 +100,12 @@ class SandboxInfo(_SandboxRequired, total=False):
     idleTimeoutSeconds: int
     lastActivityAt: str
     idledAt: str
+    maxRunSeconds: int
+    maxPausedSeconds: int
+    preemptible: bool
+    pausedAt: str
+    slotReleased: bool
+    resumeRequestedAt: str
     fromSnapshot: str
     startedAt: str
     endedAt: str
@@ -274,6 +288,8 @@ class Pool(_PoolRequired, total=False):
     capabilities: List[str]
     health: Dict[str, str]
     capacity: Dict[str, object]
+    preemption: Dict[str, object]
+    released: int
 
 
 class _PoolCapabilitiesRequired(TypedDict):

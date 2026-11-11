@@ -19,12 +19,15 @@ import (
 // change is still in progress, a repeated delete during it is a 409, a
 // command timeout is a 408, and snapshots are deleted by id only.
 type fakeDaytona struct {
-	mu        sync.Mutex
-	creates   int
-	boxes     map[string]map[string]any
-	files     map[string][]byte
-	snapshots map[string]map[string]any // by name
-	srv       *httptest.Server
+	mu      sync.Mutex
+	creates int
+	// ignoreFilter makes the list return the whole account, as a provider
+	// that dropped or renamed the labels parameter would.
+	ignoreFilter bool
+	boxes        map[string]map[string]any
+	files        map[string][]byte
+	snapshots    map[string]map[string]any // by name
+	srv          *httptest.Server
 }
 
 // settle is what one GET later finds for a state in progress.
@@ -113,7 +116,7 @@ func newFake(t *testing.T) *fakeDaytona {
 					match = false
 				}
 			}
-			if match {
+			if match || f.ignoreFilter {
 				items = append(items, b)
 			}
 		}
@@ -280,5 +283,33 @@ func TestDaytonaErrorMapping(t *testing.T) {
 	}
 	if _, err := a.Create(context.Background(), adapter.CreateRequest{ID: "sbx_2"}); !api.IsCode(err, adapter.CodeInsufficientCapacity) {
 		t.Fatalf("429 should requeue as insufficient capacity: %v", err)
+	}
+}
+
+// The reconciler deletes what List returns and the control plane does not
+// know, so List and Create must check ownership themselves: a provider that
+// ignores the label filter returns every sandbox in the account.
+func TestDaytonaIgnoresSandboxesItDoesNotOwn(t *testing.T) {
+	f := newFake(t)
+	f.ignoreFilter = true
+	f.boxes["stranger"] = map[string]any{"id": "stranger", "state": "started", "labels": map[string]any{"team": "payments"}, "target": "us"}
+	f.boxes["other-install"] = map[string]any{"id": "other-install", "state": "started", "target": "us",
+		"labels": map[string]any{adapter.LabelInstallation: "inst_other", adapter.LabelSandboxID: "sbx_theirs"}}
+	a := New(Options{APIURL: f.srv.URL + "/api", APIKey: "k", Snapshot: "daytona-small"})
+	ctx := context.Background()
+
+	inst, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_1", Installation: "inst_1", Resources: api.Resources{CPU: 1, MemoryMiB: 1024}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.creates != 1 || inst.Ref == "stranger" || inst.Ref == "other-install" {
+		t.Fatalf("create adopted a sandbox it does not own: %+v (creates %d)", inst, f.creates)
+	}
+	list, err := a.List(ctx, "inst_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].SandboxID != "sbx_1" {
+		t.Fatalf("list returned sandboxes of other owners: %+v", list)
 	}
 }

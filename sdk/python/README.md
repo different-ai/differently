@@ -8,11 +8,16 @@ picks the pool; the SDK never needs to know which backend runs the sandbox.
 
 ## Install
 
+The SDK is not on PyPI yet. Install it from this repository:
+
 ```sh
-pip install differently
+pip install "git+https://github.com/different-ai/differently.git#subdirectory=sdk/python"
 ```
 
-Until the package is published, install from a checkout: `pip install ./sdk/python`.
+or from a checkout: `pip install ./sdk/python`.
+
+Do not run `pip install differently`: that name on PyPI belongs to an
+unrelated project.
 
 ## Quickstart
 
@@ -104,12 +109,12 @@ and other POSTs are never retried.
 | `Sandbox` handle | `exec`, `exec_stream`, `files.list/read/read_text/write`, `stop`, `start`, `pause`, `resume`, `snapshot`, `fork`, `expose_port`, `explain_placement`, `refresh`, `update`, `wait`, `delete` |
 | `snapshots` | `list`, `get`, `delete` |
 | `projects` | `list`, `create`, `get`, `delete` |
-| `api_keys` | `list`, `create`, `revoke` |
+| `api_keys` | `list`, `create`, `get`, `rotate`, `revoke` |
 | `quotas`, `usage` | `get` |
 | `audit_events` | `list`, `iterate` |
 | `policies` | `list`, `put`, `delete` |
 | `capabilities`, `profiles`, `templates`, `classifications` | `list` |
-| `admin` | `organizations.{list,create,get,update,suspend,resume}`, `projects.set_quota`, `pools.{list,get,create,update,drain,undrain,delete}`, `agents.list`, `trust_report`, `verify_audit`, `terminate_sandbox`, `reconcile` |
+| `admin` | `organizations.{list,create,get,update,suspend,resume}`, `projects.set_quota`, `pools.{list,get,create,update,drain,undrain,use,delete}`, `secrets.{list,put,delete}`, `trust_report`, `verify_audit`, `terminate_sandbox`, `reconcile` |
 | client | `me`, `version` |
 
 Keyword arguments are snake_case. Records come back as plain dicts keyed exactly

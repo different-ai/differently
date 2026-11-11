@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package boat adapts Boat's hosted sandbox API (/api/v1).
 //
 // Boat is hosted-only, so pools on this adapter are always TrustExternal.

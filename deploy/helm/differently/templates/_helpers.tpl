@@ -397,6 +397,9 @@ Validation. Fails the render with an actionable message. The server's
 {{- if eq .adapter "devhost" -}}
 {{- fail (printf "Pool %q: the devhost adapter has no isolation and is not supported by this chart." .name) -}}
 {{- end -}}
+{{- if and (has .adapter (list "vercel" "fly" "agent-sandbox" "cubesandbox" "aws-agentcore" "azure-sandboxes" "azure-sessions" "gcp-sandboxes" "northflank" "boat" "e2b" "morph" "blaxel")) (not $.Values.server.experimentalAdapters) -}}
+{{- fail (printf "Pool %q uses the experimental %s adapter, which the default differently-server image does not contain. Build an image with -tags experimental_adapters, point server.image at it and set server.experimentalAdapters=true." .name .adapter) -}}
+{{- end -}}
 {{- if eq .adapter "opensandbox" -}}
 {{- if not (has (.trust | default "") (list "private" "external")) -}}
 {{- fail (printf "Pool %q uses the opensandbox adapter: set trust to private (you operate the server) or external (someone else does)." .name) -}}

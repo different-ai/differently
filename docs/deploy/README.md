@@ -34,9 +34,11 @@ Pools are where sandboxes run:
 - **`opensandbox`:** an OpenSandbox server. `trust` must be declared:
   `private` if you operate the server and its runtime, `external` if someone
   else does.
-- **Managed providers** (`daytona`, `freestyle`, `e2b`, `vercel` and the
-  others in the [provider catalog](../providers/README.md)): optional
-  capacity someone else runs. Managed kinds are always `trust=external`, and
+- **Managed providers** (`daytona` and `freestyle`; adapters for others,
+  such as `e2b` and `vercel`, are experimental and need a server built with
+  `-tags experimental_adapters`, see the
+  [provider catalog](../providers/README.md#what-the-server-contains)):
+  optional capacity someone else runs. Managed kinds are always `trust=external`, and
   sandboxes are placed on them only when policy allows it.
 - **`remote`:** an out-of-process adapter plugin speaking the
   [adapter protocol](../adapters/specification.md). Its trust is the
@@ -94,6 +96,7 @@ are OpenSandbox prerequisites for that runtime.
 | [aws.md](aws.md) | EKS, with `.metal` or nested-virtualization node groups for Fast Sandbox (Terraform in `deploy/terraform/aws`) |
 | [gcp.md](gcp.md) | GKE Standard, with a nested-virtualization node pool for Fast Sandbox |
 | [azure.md](azure.md) | AKS, with nested-virtualization-capable sizes for Fast Sandbox (experimental) |
+| [azure-vms.md](azure-vms.md) | Two Azure VMs with k3s: Fast Sandbox microVMs, managed Postgres, ACR and Key Vault (verified for OpenWork) |
 | [bare-metal.md](bare-metal.md) | k3s, RKE2, Talos, and an OpenSandbox server on a plain Linux host |
 | [air-gapped.md](air-gapped.md) | Mirroring images and the chart; running with no external egress |
 | [day-2.md](day-2.md) | Upgrade, rollback, migrations, backup and restore, certificates, replacing a backend, uninstall |
@@ -146,8 +149,8 @@ Postgres against a real OpenSandbox server with the Docker runtime and passed
 |---|---|---|---|
 | OpenSandbox 1.2.0 with the Docker runtime (Docker Compose on Colima, arm64) | Containers on one Docker host | **tested** (end-to-end suite 14/14, 2026-10-29) | Checks the API contract, not isolation: containers share the host kernel |
 | Single-node k3s on an Azure VM, Differently's chart plus OpenSandbox's charts | OpenSandbox Kubernetes runtime (pods) | **tested** (end-to-end suite 14/14, 2026-10-29) | [single-vm.md](single-vm.md). Stop/start, snapshots, fork, port URLs and egress need the [Kubernetes runtime setup](../guides/opensandbox-pools.md#kubernetes-runtime-snapshot-registry-signed-ports-and-egress) |
-| Any conformant Kubernetes 1.29+, Differently's chart plus an OpenSandbox server | Whatever OpenSandbox runs | documented | [kubernetes.md](kubernetes.md); multi-node not yet run ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
-| OpenSandbox Fast Sandbox on KVM nodes | Firecracker microVMs | **ran live** on one node: single-node k3s on Azure Standard_D8s_v6 (nested KVM), 2026-10-29 | Recorded adapter scenario and a streamed desktop; the end-to-end suite has not run. Needs an XFS reflink state root with room ([pools guide](../guides/opensandbox-pools.md#measured-on-a-workbot-desktop)). [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter), [backlog E18](../backlog.md#e18-fast-sandbox-spike) |
+| Any conformant Kubernetes 1.29+, Differently's chart plus an OpenSandbox server | Whatever OpenSandbox runs | documented | [kubernetes.md](kubernetes.md); a two-node k3s cluster ran on Azure ([azure-vms.md](azure-vms.md)); managed clusters and node drains not yet run ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
+| OpenSandbox Fast Sandbox on KVM nodes | Firecracker microVMs | **ran live** on Azure (nested KVM), 2026-10-29: single-node k3s on Standard_D8s_v6, then two-node k3s with a Standard_D16s_v6 KVM node ([azure-vms.md](azure-vms.md)) | Recorded adapter scenario, the end-to-end suite on the microVM pool, and Workbot's desktop through OpenWork's runner; node drains not run. Needs an XFS reflink state root with room ([pools guide](../guides/opensandbox-pools.md#measured-on-a-workbot-desktop)). [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter), [backlog E18](../backlog.md#e18-fast-sandbox-spike) |
 | AWS EKS, `.metal` node group (Fast Sandbox) | Bare metal | unverified | Matches Firecracker's tested platforms. The Terraform module is **unvalidated** |
 | AWS EKS, nested-virtualization node group (Fast Sandbox) | `NestedVirtualization` CPU option (M7i/M8i/C7i/C8i/R7i/R8i…) | unverified | EKS managed node group support was reported fixed in 2026. Firecracker calls nested a development setup |
 | AWS with Karpenter (Fast Sandbox) | `EC2NodeClass` nested virtualization (v1.13.0+) | unverified | Not covered by the Terraform module |

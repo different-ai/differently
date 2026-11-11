@@ -58,6 +58,20 @@ func (c *Client) Do(ctx context.Context, method, path string, in, out any, heade
 }
 
 func (c *Client) send(ctx context.Context, method, path string, in any, header ...http.Header) (*http.Response, error) {
+	return c.sendVia(c.HTTP, ctx, method, path, in, header...)
+}
+
+// streaming returns the HTTP client for a response that is read for as long
+// as a command runs: the same transport and settings without the overall
+// timeout, which would cut the stream however alive it is. The caller's
+// context bounds it instead.
+func (c *Client) streaming() *http.Client {
+	h := *c.HTTP
+	h.Timeout = 0
+	return &h
+}
+
+func (c *Client) sendVia(hc *http.Client, ctx context.Context, method, path string, in any, header ...http.Header) (*http.Response, error) {
 	var body []byte
 	ct := ""
 	switch v := in.(type) {
@@ -92,7 +106,7 @@ func (c *Client) send(ctx context.Context, method, path string, in any, header .
 				}
 			}
 		}
-		resp, err := c.HTTP.Do(req)
+		resp, err := hc.Do(req)
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +197,7 @@ func (c *Client) Exec(ctx context.Context, id string, req api.ExecRequest) (api.
 // ExecStream runs a command and calls fn for each output event. It returns
 // the exit code.
 func (c *Client) ExecStream(ctx context.Context, id string, req api.ExecRequest, fn func(api.ExecEvent)) (int, error) {
-	resp, err := c.send(ctx, http.MethodPost, "/v1/sandboxes/"+url.PathEscape(id)+"/exec?stream=1", req)
+	resp, err := c.sendVia(c.streaming(), ctx, http.MethodPost, "/v1/sandboxes/"+url.PathEscape(id)+"/exec?stream=1", req)
 	if err != nil {
 		return -1, err
 	}

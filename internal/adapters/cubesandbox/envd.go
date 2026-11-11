@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 package cubesandbox
 
 // envd is E2B's agent inside each sandbox (CubeSandbox builds it from

@@ -569,7 +569,7 @@ func (s *Store) ActivateSandbox(ctx context.Context, sid string, act store.Activ
 		}
 		if act.MaxConcurrency > 0 {
 			var n int
-			if err := tx.QueryRow(ctx, "SELECT count(*) FROM sandboxes WHERE pool = $1 AND status IN ('provisioning','running','paused','stopped','terminating')", act.Pool).Scan(&n); err != nil {
+			if err := tx.QueryRow(ctx, "SELECT count(*) FROM sandboxes WHERE pool = $1 AND "+store.SlotHolders, act.Pool).Scan(&n); err != nil {
 				return err
 			}
 			if n >= act.MaxConcurrency {
@@ -634,8 +634,47 @@ func (s *Store) Usage(ctx context.Context, orgID, projectID string) (api.QuotaUs
 	return tally(ctx, s.pool, orgID, projectID)
 }
 
+func (s *Store) ReclaimSlot(ctx context.Context, sid string, maxConcurrency int, now time.Time) (store.SandboxRecord, error) {
+	var out store.SandboxRecord
+	err := s.tx(ctx, func(tx pgx.Tx) error {
+		var pool string
+		if err := tx.QueryRow(ctx, "SELECT pool FROM sandboxes WHERE id = $1", sid).Scan(&pool); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return store.NotFound("sandbox", sid)
+			}
+			return err
+		}
+		// Lock order everywhere: organization, then pool, then sandbox. Only
+		// the pool's row serializes concurrency checks here.
+		if _, err := tx.Exec(ctx, "SELECT 1 FROM pools WHERE name = $1 FOR UPDATE", pool); err != nil {
+			return err
+		}
+		r, err := getDoc[store.SandboxRecord](ctx, tx, "sandbox", sid, "SELECT doc FROM sandboxes WHERE id = $1 FOR UPDATE", sid)
+		if err != nil {
+			return err
+		}
+		out = r
+		if !r.SlotReleased {
+			return nil
+		}
+		if maxConcurrency > 0 {
+			var n int
+			if err := tx.QueryRow(ctx, "SELECT count(*) FROM sandboxes WHERE pool = $1 AND "+store.SlotHolders, pool).Scan(&n); err != nil {
+				return err
+			}
+			if n >= maxConcurrency {
+				return store.InsufficientCapacity(pool)
+			}
+		}
+		r.SlotReleased, r.UpdatedAt = false, now
+		out = r
+		return saveSandbox(ctx, tx, r)
+	})
+	return out, err
+}
+
 func (s *Store) PoolActive(ctx context.Context) (map[string]int, error) {
-	rows, err := s.pool.Query(ctx, "SELECT pool, count(*) FROM sandboxes WHERE pool <> '' AND status IN ('provisioning','running','paused','stopped','terminating') GROUP BY pool")
+	rows, err := s.pool.Query(ctx, "SELECT pool, count(*) FROM sandboxes WHERE pool <> '' AND "+store.SlotHolders+" GROUP BY pool")
 	if err != nil {
 		return nil, err
 	}
@@ -698,9 +737,13 @@ func (s *Store) ListAudit(ctx context.Context, f store.AuditFilter) ([]api.Audit
 	if limit <= 0 {
 		limit = 1 << 30
 	}
+	order := "ORDER BY seq"
+	if f.Desc {
+		order = "ORDER BY seq DESC"
+	}
 	return listDocs[api.AuditEvent](ctx, s.pool, `SELECT doc FROM audit_events
-		WHERE seq > $1 AND ($2 = '' OR org_id = $2) AND ($3 = '' OR resource = $3) AND ($4 = '' OR action = $4)
-		ORDER BY seq LIMIT $5`, f.AfterSeq, f.OrgID, f.Resource, f.Action, limit)
+		WHERE seq > $1 AND ($6 <= 0 OR seq < $6) AND ($2 = '' OR org_id = $2) AND ($3 = '' OR resource = $3) AND ($4 = '' OR action = $4)
+		`+order+` LIMIT $5`, f.AfterSeq, f.OrgID, f.Resource, f.Action, limit, f.BeforeSeq)
 }
 
 // TryLeader holds a session advisory lock on a dedicated connection. If the

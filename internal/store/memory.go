@@ -454,12 +454,12 @@ func (m *Memory) ActivateSandbox(_ context.Context, sid string, act Activation) 
 	if act.MaxConcurrency > 0 {
 		n := 0
 		for _, o := range m.sandboxes {
-			if o.Pool == act.Pool && HoldsPoolSlot(o.Status) {
+			if o.Pool == act.Pool && HoldsPoolSlot(o) {
 				n++
 			}
 		}
 		if n >= act.MaxConcurrency {
-			return s, &api.Error{Code: "insufficient_capacity", Message: "pool " + act.Pool + " is at its concurrency limit"}
+			return s, InsufficientCapacity(act.Pool)
 		}
 	}
 	s = clone(s)
@@ -502,6 +502,33 @@ func (m *Memory) ReserveCompute(_ context.Context, sid string, from, to api.Sand
 	return s, nil
 }
 
+func (m *Memory) ReclaimSlot(_ context.Context, sid string, maxConcurrency int, now time.Time) (SandboxRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sandboxes[sid]
+	if !ok {
+		return s, NotFound("sandbox", sid)
+	}
+	if !s.SlotReleased {
+		return clone(s), nil
+	}
+	if maxConcurrency > 0 {
+		n := 0
+		for _, o := range m.sandboxes {
+			if o.Pool == s.Pool && HoldsPoolSlot(o) {
+				n++
+			}
+		}
+		if n >= maxConcurrency {
+			return clone(s), InsufficientCapacity(s.Pool)
+		}
+	}
+	s = clone(s)
+	s.SlotReleased, s.UpdatedAt = false, now
+	m.sandboxes[sid] = clone(s)
+	return s, nil
+}
+
 func (m *Memory) Usage(_ context.Context, orgID, projectID string) (api.QuotaUsage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -513,7 +540,7 @@ func (m *Memory) PoolActive(context.Context) (map[string]int, error) {
 	defer m.mu.Unlock()
 	out := map[string]int{}
 	for _, s := range m.sandboxes {
-		if s.Pool != "" && HoldsPoolSlot(s.Status) {
+		if s.Pool != "" && HoldsPoolSlot(s) {
 			out[s.Pool]++
 		}
 	}
@@ -577,8 +604,13 @@ func (m *Memory) ListAudit(_ context.Context, f AuditFilter) ([]api.AuditEvent, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []api.AuditEvent
-	for _, ev := range m.audit {
+	for i := range m.audit {
+		ev := m.audit[i]
+		if f.Desc {
+			ev = m.audit[len(m.audit)-1-i]
+		}
 		if ev.Seq <= f.AfterSeq ||
+			(f.BeforeSeq > 0 && ev.Seq >= f.BeforeSeq) ||
 			(f.OrgID != "" && ev.OrgID != f.OrgID) ||
 			(f.Resource != "" && ev.Resource != f.Resource) ||
 			(f.Action != "" && ev.Action != f.Action) {

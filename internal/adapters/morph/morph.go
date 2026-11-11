@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package morph adapts Morph Cloud's hosted VM API (/api).
 //
 // Morph Cloud is hosted-only, so pools on this adapter are always

@@ -82,11 +82,12 @@ var KubernetesFeatures = []string{
 
 // FastSandboxFeatures are the defaults with runtime: fastsandbox. Fast Sandbox
 // runs each sandbox in a Firecracker microVM, and its pause checkpoints the VM,
-// so memory and processes survive a pause and resume. snapshots.memory is not
+// so memory and processes survive a pause and resume, and a paused microVM
+// leaves the host (lifecycle.pause-checkpoint). snapshots.memory is not
 // advertised: restoring a new sandbox from a memory snapshot is not verified.
 var FastSandboxFeatures = []string{
 	adapter.FeatureExec, adapter.FeatureExecStream, adapter.FeatureFiles,
-	adapter.FeaturePauseResume, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
+	adapter.FeaturePauseResume, adapter.FeaturePauseCheckpoint, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
 }
 
 // Options configures the adapter. Pool config keys: apiURL (required, the
@@ -151,6 +152,12 @@ type Options struct {
 }
 
 const runtimeFastSandbox = "fastsandbox"
+
+// backstopGrace keeps OpenSandbox's own timeout behind Differently's audited
+// expiry. The timeout starts at the create request and Differently's TTL only
+// when the sandbox is ready, so without it the backend deletes first and the
+// sandbox ends as "failed: backend instance disappeared" instead of expired.
+const backstopGrace = 5 * 60
 
 // FromConfig maps pool config to options.
 func FromConfig(cfg map[string]string, trust, apiKey string) (Options, error) {
@@ -514,7 +521,7 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 			body["entrypoint"] = []string{"tail", "-f", "/dev/null"}
 		}
 		if req.TTLSeconds > 0 {
-			body["timeout"] = max(req.TTLSeconds, 60) // provider-side backstop; minimum 60 s
+			body["timeout"] = req.TTLSeconds + backstopGrace // provider-side backstop
 		}
 		if err := a.call(ctx, http.MethodPost, "/sandboxes", body, &s); err != nil {
 			return adapter.Instance{}, createError(err)
@@ -558,7 +565,7 @@ func (a *Adapter) fastSandboxBody(req adapter.CreateRequest) (map[string]any, er
 		"timeout":  a.opts.DefaultTimeout,
 	}
 	if req.TTLSeconds > 0 {
-		body["timeout"] = max(req.TTLSeconds, 60)
+		body["timeout"] = req.TTLSeconds + backstopGrace
 	}
 	switch {
 	case req.FromSnapshot != "":
@@ -583,6 +590,11 @@ func (a *Adapter) fastSandboxBody(req adapter.CreateRequest) (map[string]any, er
 	}
 	return body, nil
 }
+
+// CancelsPause reports that a resume during a Fast Sandbox pause calls it off:
+// the runtime serves until the checkpoint is durable, and a resume before it is
+// released keeps that runtime.
+func (a *Adapter) CancelsPause() bool { return a.opts.Runtime == runtimeFastSandbox }
 
 // IdlesNatively reports that OpenSandbox pauses idle sandboxes itself and
 // wakes them on access, which Fast Sandbox does when given an idle policy.
@@ -1082,6 +1094,7 @@ var (
 	_ adapter.Streamer         = (*Adapter)(nil)
 	_ adapter.FileSystem       = (*Adapter)(nil)
 	_ adapter.Pauser           = (*Adapter)(nil)
+	_ adapter.PauseCanceller   = (*Adapter)(nil)
 	_ adapter.Lifecycle        = (*Adapter)(nil)
 	_ adapter.Snapshotter      = (*Adapter)(nil)
 	_ adapter.PortExposer      = (*Adapter)(nil)

@@ -1,3 +1,5 @@
+//go:build experimental_adapters
+
 // Package cubesandbox adapts CubeSandbox (github.com/TencentCloud/CubeSandbox,
 // Apache-2.0): KVM microVMs (cube-hypervisor, a Cloud Hypervisor fork) behind
 // an E2B-compatible API.

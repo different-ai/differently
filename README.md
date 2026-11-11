@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/differently-splash-dark.svg">
-    <img alt="Differently: your apps and agents call one API; differently-server handles tenancy, quotas, policy and audit, and places each sandbox on OpenSandbox or your own backend inside your infrastructure, or on a managed provider such as E2B or Daytona only if policy allows" src="docs/assets/differently-splash-light.svg" width="100%">
+    <img alt="Differently: your apps and agents call one API; differently-server handles tenancy, quotas, policy and audit, and places each sandbox on OpenSandbox or your own backend inside your infrastructure, or on a managed provider such as Daytona or Freestyle only if policy allows" src="docs/assets/differently-splash-light.svg" width="100%">
   </picture>
 </p>
 
@@ -30,10 +30,12 @@ account of it:
 
 - by default on [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox)
   on your own Docker hosts, Kubernetes clusters or microVM nodes;
-- on [15 other built-in provider adapters](docs/providers/README.md), from
-  E2B, Daytona and Vercel to the AWS, Azure and Google Cloud sandbox
-  services, or a plugin for any other backend, only where your policies
-  allow it.
+- on Daytona or Freestyle, or a plugin for any other backend, only where
+  your policies allow it;
+- on 13 more [provider adapters](docs/providers/README.md#what-the-server-contains),
+  from E2B and Vercel to the AWS, Azure and Google Cloud sandbox services,
+  which are experimental: tested against fake servers and left out of the
+  published build unless you compile them in.
 
 Apache-2.0, fully self-hosted, no telemetry. Built by the
 [OpenWork](https://github.com/different-ai) team.
@@ -43,10 +45,11 @@ Apache-2.0, fully self-hosted, no telemetry. Built by the
   <br><sub>▶ <a href="https://different-ai.github.io/differently/#video">Watch the 36-second intro</a></sub>
 </p>
 
-> **Pre-release ([`v0.1.0-alpha.2`](https://github.com/different-ai/differently/releases)).**
+> **Pre-release ([`v0.1.0-alpha.3`](https://github.com/different-ai/differently/releases)).**
 > The whole platform is implemented and tested end to end against real
-> OpenSandbox servers (Docker and Kubernetes runtimes). It isn't ready for
-> production workloads yet: see [what is verified](#status).
+> OpenSandbox servers (Docker, Kubernetes and Fast Sandbox microVM
+> runtimes). It isn't ready for production workloads yet: see
+> [what is verified](#status).
 
 ## Why
 
@@ -67,7 +70,8 @@ that layer.
 | **Multi-tenant from day one** | Organizations, projects, scoped API keys with rotation, quotas and fair queueing. |
 | **Provable** | A tamper-evident audit chain, a placement explanation for every sandbox, and an operator trust report. |
 | **Keys stay with you** | Provider keys are stored sealed or by reference. Switch where new sandboxes go with one command. |
-| **Self-hosted, all of it** | API, dashboard, scheduler, queue, audit and metrics run on your infrastructure. No phone-home. |
+| **Capacity that follows use** | Paused microVMs give their pool slot back, resumes queue on a full pool, and preemption and run limits keep pools from filling up. |
+| **Self-hosted, all of it** | API, dashboard and admin console, scheduler, queue, audit and metrics run on your infrastructure. No phone-home. |
 
 ## Get started
 
@@ -92,7 +96,7 @@ Differently and a real OpenSandbox server, as the end-to-end suite runs it:
 
 ```bash
 make e2e-prepare e2e-up    # API on :18090, OpenSandbox on :18091
-make e2e                   # optional: the 12 end-to-end tests
+make e2e                   # optional: the end-to-end tests
 ```
 
 **3. Deploy it for your team.** On [one Linux VM on any cloud](docs/deploy/single-vm.md)
@@ -101,13 +105,15 @@ make e2e                   # optional: the 12 end-to-end tests
 images from the [latest release](https://github.com/different-ai/differently/releases).
 
 Then call it from code ([TypeScript](sdk/typescript), [Python](sdk/python),
-[Go](pkg/client)):
+[Go](pkg/client)). The SDKs are not on npm or PyPI yet; each README says how
+to install it from this repository.
 
 ```ts
 import { Differently } from "@differently/sdk";
 
 const differently = new Differently({ apiKey: process.env.DIFFERENTLY_API_KEY });
 const sandbox = await differently.sandboxes.create({
+  // projectId: "prj_default", // needed with an operator key, such as the dev token
   profile: "small",
   placement: { strategy: "private-first", external: "never" },
 });
@@ -143,22 +149,27 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 - the published `v0.1.0-alpha.1` chart and images install from public
   artifacts alone;
 - real OpenSandbox responses are recorded and replayed in every `go test`;
-- the `agent-sandbox` adapter against a Kubernetes cluster (kind);
+- the experimental `agent-sandbox` adapter against a Kubernetes cluster
+  (kind);
 - the Daytona (container class) and Freestyle adapters against live
   accounts: exec, files, port URLs, stop/start and snapshots on both, and
   egress policy, pause/resume, memory snapshots and fork on Freestyle;
 - [OpenWork](https://github.com/different-ai/openwork)'s Workbot computers run
-  through Differently as a sandbox gateway, behind a flag;
-- Fast Sandbox microVMs on one node: the adapter scenario (recorded), and
+  through Differently as a sandbox gateway, behind a flag, desktops on Fast
+  Sandbox microVMs included, driven by OpenWork's runner;
+- Fast Sandbox microVMs on Azure (two-node k3s with one KVM node): the
+  adapter scenario (recorded), the end-to-end suite on the microVM pool, and
   Workbot's desktop streamed over a port URL, paused and resumed with its
   memory, idled and woken by a request (pause takes minutes).
 
 **Not verified yet:**
-- the end-to-end suite on Fast Sandbox microVMs;
-- multi-node clusters;
+- node drains, and more than one KVM node;
 - managed EKS, GKE and AKS;
 - the other 12 provider adapters against live accounts: each is tested
-  against a fake of its provider's published API.
+  against a fake of its provider's published API. These 12 and
+  `agent-sandbox` are experimental and not in the published image or
+  binaries; a server built with `-tags experimental_adapters` has them
+  ([what the server contains](docs/providers/README.md#what-the-server-contains)).
 
 Each of the 26 providers has a page with its tested status, capabilities and
 configuration in the [provider catalog](docs/providers/README.md). The
@@ -176,8 +187,11 @@ against global, organization and project policy, ranks what is left, and
 records why. Adapters talk to the backends:
 
 - `opensandbox`, the default private runtime;
-- 15 more provider adapters, from `agent-sandbox` and `cubesandbox` you run
-  to `e2b`, `daytona`, `vercel` and the cloud providers' sandbox services
+- `daytona` and `freestyle`, managed providers that receive work only when
+  policy allows it;
+- 13 experimental adapters behind the `experimental_adapters` build tag,
+  from `agent-sandbox` and `cubesandbox` you run to `e2b`, `vercel` and the
+  cloud providers' sandbox services
   ([provider catalog](docs/providers/README.md));
 - `remote`, any service speaking the [adapter protocol](docs/adapters/specification.md).
 
@@ -217,6 +231,7 @@ under a control plane you run. See the
 | `internal/` | Server, scheduler, reconciler, policy, store (memory and Postgres), auth, audit, secrets, adapters |
 | `api/openapi.yaml` | The HTTP API contract (a test keeps it in sync with the router) |
 | `sdk/typescript`, `sdk/python` | Official SDKs |
+| `console/` | The admin console: static files for any host, or Node with sign-in |
 | `deploy/` | Helm chart (control plane only), Terraform (AWS) |
 | `docs/` | Guides, deployment, architecture, security, roadmap |
 | `site/` | The website and docs site |

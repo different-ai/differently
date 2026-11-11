@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -114,7 +115,11 @@ func (s *Server) admit(w http.ResponseWriter, r *http.Request, p auth.Principal,
 	}
 	// Fail fast with a precise error when no pool could ever take this.
 	active, _ := s.Store.PoolActive(ctx)
-	if res := policy.Decide(s.Scheduler.PlacementInput(ctx, rec, active)); res.Err != nil {
+	in, err := s.Scheduler.PlacementInput(ctx, rec, active)
+	if err != nil {
+		return s.placementUnavailable(err)
+	}
+	if res := policy.Decide(in); res.Err != nil {
 		return res.Err
 	}
 	out, existed, err := s.Store.AdmitSandbox(ctx, rec, store.Admission{OrgQuota: org.Quota, ProjectQuota: proj.Quota})
@@ -131,6 +136,14 @@ func (s *Server) admit(w http.ResponseWriter, r *http.Request, p auth.Principal,
 	s.Scheduler.Wake()
 	writeJSON(w, http.StatusAccepted, out.Sandbox)
 	return nil
+}
+
+// placementUnavailable reports that placement could not be evaluated because
+// a policy or snapshot read failed. The cause is logged, not returned: it can
+// name internal hosts.
+func (s *Server) placementUnavailable(err error) error {
+	s.Log.Warn("placement input unavailable", "err", err)
+	return api.Errorf(api.CodeProviderUnavailable, "placement policy could not be read; nothing was changed, retry shortly")
 }
 
 func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.CreateSandboxRequest) (store.SandboxRecord, error) {
@@ -205,11 +218,23 @@ func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.Cre
 			return store.SandboxRecord{}, api.Errorf(api.CodeInvalidRequest, "placement.external must be never, overflow or allowed")
 		}
 	}
+	// A negative TTL would never expire and would slip under maxTTLSeconds.
 	ttl := req.TTLSeconds
-	if ttl == 0 {
+	switch {
+	case ttl < 0:
+		return store.SandboxRecord{}, api.Errorf(api.CodeInvalidRequest, "ttlSeconds must be positive, or 0 for the operator default")
+	case ttl == 0:
 		ttl = s.Config.Defaults.TTLSeconds
 	}
 	idle, err := idleTimeout(req.IdleTimeoutSeconds, s.Config.Defaults.IdleTimeoutSeconds)
+	if err != nil {
+		return store.SandboxRecord{}, err
+	}
+	maxRun, err := lifecycleLimit("maxRunSeconds", req.MaxRunSeconds, s.Config.Defaults.MaxRunSeconds)
+	if err != nil {
+		return store.SandboxRecord{}, err
+	}
+	maxPaused, err := lifecycleLimit("maxPausedSeconds", req.MaxPausedSeconds, s.Config.Defaults.MaxPausedSeconds)
 	if err != nil {
 		return store.SandboxRecord{}, err
 	}
@@ -225,6 +250,7 @@ func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.Cre
 			Resources: resources, Capabilities: caps, Classification: class, Placement: req.Placement, Labels: req.Labels,
 			Priority: req.Priority, TTLSeconds: ttl, CreatedBy: p.Actor(), CreatedAt: now, UpdatedAt: now, FromSnapshot: req.FromSnapshot,
 			IdleTimeoutSeconds: idle, LastActivityAt: &now,
+			MaxRunSeconds: maxRun, MaxPausedSeconds: maxPaused, Preemptible: req.Preemptible == nil || *req.Preemptible,
 		},
 		Env: req.Env, NextAttemptAt: now,
 	}
@@ -316,7 +342,28 @@ func (s *Server) updateSandbox(w http.ResponseWriter, r *http.Request, p auth.Pr
 		}
 		idle = &v
 	}
+	var maxRun, maxPaused *int
+	for _, f := range []struct {
+		name string
+		in   *int
+		def  int
+		out  **int
+	}{{"maxRunSeconds", req.MaxRunSeconds, s.Config.Defaults.MaxRunSeconds, &maxRun}, {"maxPausedSeconds", req.MaxPausedSeconds, s.Config.Defaults.MaxPausedSeconds, &maxPaused}} {
+		if f.in == nil {
+			continue
+		}
+		v, err := lifecycleLimit(f.name, *f.in, f.def)
+		if err != nil {
+			return err
+		}
+		*f.out = &v
+	}
 	if req.TTLSeconds != nil {
+		// The new TTL counts from now, so 0 would expire the sandbox at once
+		// (delete it instead) and a negative one is already in the past.
+		if *req.TTLSeconds <= 0 {
+			return api.Errorf(api.CodeInvalidRequest, "ttlSeconds must be positive; delete the sandbox to end it now")
+		}
 		for _, q := range []api.Quota{org.Quota, proj.Quota} {
 			if q.MaxTTLSeconds > 0 && *req.TTLSeconds > q.MaxTTLSeconds {
 				return api.Errorf(api.CodeQuotaExceeded, "ttl exceeds limit %ds", q.MaxTTLSeconds).With("dimension", "ttlSeconds")
@@ -342,6 +389,15 @@ func (s *Server) updateSandbox(w http.ResponseWriter, r *http.Request, p auth.Pr
 		}
 		if idle != nil {
 			x.IdleTimeoutSeconds = *idle
+		}
+		if maxRun != nil {
+			x.MaxRunSeconds = *maxRun
+		}
+		if maxPaused != nil {
+			x.MaxPausedSeconds = *maxPaused
+		}
+		if req.Preemptible != nil {
+			x.Preemptible = *req.Preemptible
 		}
 		if req.TTLSeconds != nil {
 			x.TTLSeconds = *req.TTLSeconds
@@ -462,10 +518,33 @@ func (s *Server) explainPlacement(w http.ResponseWriter, r *http.Request, p auth
 	out := map[string]any{"sandboxId": rec.ID, "status": rec.Status, "pool": rec.Pool, "trust": rec.Trust, "decision": rec.Decision}
 	if rec.Status == api.StatusQueued {
 		active, _ := s.Store.PoolActive(r.Context())
-		out["current"] = policy.Decide(s.Scheduler.PlacementInput(r.Context(), rec, active)).Decision
+		in, err := s.Scheduler.PlacementInput(r.Context(), rec, active)
+		if err != nil {
+			return s.placementUnavailable(err)
+		}
+		out["current"] = policy.Decide(in).Decision
 	}
 	writeJSON(w, 200, out)
 	return nil
+}
+
+// awaitResume waits up to wakeWait for a queued resume to finish.
+func (s *Server) awaitResume(ctx context.Context, sid string) (store.SandboxRecord, error) {
+	deadline := time.Now().Add(wakeWait)
+	for {
+		rec, err := s.Store.GetSandbox(ctx, sid)
+		if err != nil || rec.Status == api.StatusRunning {
+			return rec, err
+		}
+		if time.Now().After(deadline) || rec.Status != api.StatusPaused && rec.Status != api.StatusPausing {
+			return rec, api.Errorf(scheduler.CodeInsufficientCapacity, "pool %s is full; the sandbox is queued to resume when a slot frees", rec.Pool).With("pool", rec.Pool)
+		}
+		select {
+		case <-ctx.Done():
+			return rec, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 // running returns the sandbox's adapter after checking it is running.
@@ -477,14 +556,18 @@ func (s *Server) running(r *http.Request, p auth.Principal, scope string) (store
 	if err != nil {
 		return rec, nil, err
 	}
-	if rec.IdledAt != nil && (rec.Status == api.StatusStopped || rec.Status == api.StatusPaused) {
+	if rec.IdledAt != nil && (rec.Status == api.StatusStopped || rec.Status == api.StatusPaused || rec.Status == api.StatusPausing) {
 		// Wake on access: the sandbox was stopped or paused for being idle,
 		// not by a caller, so the next call brings it back.
-		action := "start"
-		if rec.Status == api.StatusPaused {
-			action = "resume"
+		action := "resume"
+		if rec.Status == api.StatusStopped {
+			action = "start"
 		}
 		woken, err := s.transition(r.Context(), rec, action)
+		if errors.Is(err, errResumeQueued) {
+			// Wait for the queue to bring it back, briefly.
+			woken, err = s.awaitResume(r.Context(), rec.ID)
+		}
 		if err != nil && !api.IsCode(err, api.CodeConflict) {
 			return rec, nil, err
 		}
@@ -503,17 +586,41 @@ func (s *Server) running(r *http.Request, p auth.Principal, scope string) (store
 	return rec, a, err
 }
 
-// touch records activity for idle auto-stop, at most once per few seconds
-// per sandbox so busy sandboxes do not write on every call.
+// touch records activity for idle auto-stop and idle preemption, at most once
+// per few seconds per sandbox so busy sandboxes do not write on every call.
 func (s *Server) touch(ctx context.Context, rec store.SandboxRecord) {
 	now := s.now()
-	if rec.IdleTimeoutSeconds <= 0 || rec.LastActivityAt != nil && now.Sub(*rec.LastActivityAt) < 5*time.Second {
+	watched := rec.IdleTimeoutSeconds > 0 || rec.Preemptible
+	if !watched || rec.LastActivityAt != nil && now.Sub(*rec.LastActivityAt) < 5*time.Second {
 		return
 	}
 	_, _ = s.Store.UpdateSandbox(ctx, rec.ID, func(x *store.SandboxRecord) error {
 		x.LastActivityAt = &now
 		return nil
 	})
+}
+
+// activeWhile counts a sandbox as active until the returned function runs, so
+// a long command does not look idle and get paused halfway through.
+func (s *Server) activeWhile(ctx context.Context, rec store.SandboxRecord) func() {
+	ctx = context.WithoutCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(s.ActivityBeat)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				s.touch(ctx, rec)
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		s.touch(ctx, rec)
+	}
 }
 
 // keepalive counts as activity, and wakes an idled sandbox. Clients that use
@@ -546,6 +653,21 @@ func idleTimeout(requested, def int) (int, error) {
 	return requested, nil
 }
 
+// lifecycleLimit resolves maxRunSeconds or maxPausedSeconds like the idle
+// timeout: 0 takes the default, -1 turns it off, and anything set is at least
+// 60.
+func lifecycleLimit(name string, requested, def int) (int, error) {
+	switch {
+	case requested == 0:
+		return def, nil
+	case requested == -1:
+		return 0, nil
+	case requested < 60:
+		return 0, api.Errorf(api.CodeInvalidRequest, "%s must be at least 60, or -1 to turn it off", name)
+	}
+	return requested, nil
+}
+
 func unsupported(rec store.SandboxRecord, op string) error {
 	return api.Errorf(api.CodeUnsupportedOperation, "the %s backend of pool %s does not support %s", rec.Adapter, rec.Pool, op).
 		With("operation", op).With("pool", rec.Pool).With("adapter", rec.Adapter)
@@ -556,7 +678,7 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request, p auth.Principal) 
 	if err != nil {
 		return err
 	}
-	defer s.touch(context.WithoutCancel(r.Context()), rec) // a long command was activity throughout
+	defer s.activeWhile(r.Context(), rec)()
 	var req api.ExecRequest
 	if err := decode(r, &req); err != nil {
 		return err
@@ -699,8 +821,13 @@ func (s *Server) writeFile(w http.ResponseWriter, r *http.Request, p auth.Princi
 	return nil
 }
 
-// transitionTimeout bounds one stop, start, pause or resume on a backend.
-const transitionTimeout = 15 * time.Minute
+// errResumeQueued means a resume found its pool full and now waits in the
+// pool's resume queue.
+var errResumeQueued = errors.New("resume queued: the pool is full")
+
+// wakeWait is how long a call that wakes an idled sandbox waits for a slot
+// before answering insufficient_capacity (the resume stays queued).
+const wakeWait = 60 * time.Second
 
 // lifecycle handles stop/start/pause/resume.
 var lifecycleSteps = map[string]struct {
@@ -726,9 +853,24 @@ func (s *Server) lifecycle(action string) handlerFunc {
 			writeJSON(w, 200, rec.Sandbox) // idempotent
 			return nil
 		}
+		if action == "pause" && rec.Status == api.StatusPausing {
+			// Already under way: GET /v1/sandboxes/{id}/wait?status=paused.
+			writeJSON(w, http.StatusAccepted, rec.Sandbox)
+			return nil
+		}
 		out, err := s.transition(r.Context(), rec, action)
+		if errors.Is(err, errResumeQueued) {
+			// The pool is full: the resume waits in its queue and runs as soon
+			// as a slot frees (GET /v1/sandboxes/{id}/wait?status=running).
+			s.audit(r, p, "sandbox.resume_queued", out.ID, out.OrgID, out.ProjectID, map[string]string{"pool": out.Pool})
+			writeJSON(w, http.StatusAccepted, out.Sandbox)
+			return nil
+		}
 		if err != nil {
 			return err
+		}
+		if out.SlotReleased {
+			s.Scheduler.SlotFreed(r.Context())
 		}
 		s.audit(r, p, "sandbox."+action, out.ID, out.OrgID, out.ProjectID, nil)
 		writeJSON(w, 200, out.Sandbox)
@@ -739,14 +881,20 @@ func (s *Server) lifecycle(action string) handlerFunc {
 // transition stops, starts, pauses or resumes a sandbox on its backend and
 // records the new status. A caller's stop or pause clears any idle marker,
 // so the sandbox is not woken by the next call; a start or resume counts as
-// activity.
+// activity. A resume during a pause calls the pause off where the backend can
+// (adapter.PauseCanceller), and otherwise joins the resume queue, which runs
+// it when the pause finishes.
 func (s *Server) transition(ctx context.Context, rec store.SandboxRecord, action string) (store.SandboxRecord, error) {
 	// The change outlives the request: a Fast Sandbox pause writes a full
 	// checkpoint and can take minutes, and a client that stops waiting must
 	// not leave the backend paused while the record still says running.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), transitionTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), scheduler.LifecycleTimeout)
 	defer cancel()
 	st := lifecycleSteps[action]
+	callingOff := action == "resume" && rec.Status == api.StatusPausing
+	if callingOff {
+		st.from = api.StatusPausing
+	}
 	if rec.Status != st.from {
 		return rec, api.Errorf(api.CodeInvalidState, "cannot %s a %s sandbox", action, rec.Status).With("status", string(rec.Status))
 	}
@@ -756,6 +904,28 @@ func (s *Server) transition(ctx context.Context, rec store.SandboxRecord, action
 	}
 	if !s.Pools.Supports(ctx, rec.Pool, st.feature) {
 		return rec, unsupported(rec, st.feature)
+	}
+	if c, ok := a.(adapter.PauseCanceller); callingOff && (!ok || !c.CancelsPause()) {
+		queued, err := s.Scheduler.QueueResume(ctx, rec.ID)
+		if err != nil {
+			return rec, err
+		}
+		return queued, errResumeQueued
+	}
+	if action == "resume" && rec.SlotReleased {
+		// The pause gave the slot back: take one again, or wait for one.
+		reclaimed, err := s.Scheduler.ReclaimSlot(ctx, rec)
+		if api.IsCode(err, scheduler.CodeInsufficientCapacity) {
+			queued, qerr := s.Scheduler.QueueResume(ctx, rec.ID)
+			if qerr != nil {
+				return rec, qerr
+			}
+			return queued, errResumeQueued
+		}
+		if err != nil {
+			return rec, err
+		}
+		rec = reclaimed
 	}
 	if action == "start" {
 		// Starting re-reserves CPU and memory: check quota atomically
@@ -786,7 +956,8 @@ func (s *Server) transition(ctx context.Context, rec store.SandboxRecord, action
 			return rec, unsupported(rec, st.feature)
 		}
 		if action == "pause" {
-			err = pz.Pause(ctx, rec.BackendRef)
+			err = s.Scheduler.Pause(ctx, pz, rec, nil)
+			st.from = api.StatusPausing
 		} else {
 			err = pz.Resume(ctx, rec.BackendRef)
 		}
@@ -800,20 +971,31 @@ func (s *Server) transition(ctx context.Context, rec store.SandboxRecord, action
 				return nil
 			})
 		}
+		if action == "resume" && s.Scheduler.ReleasesSlot(ctx, rec.Pool) {
+			// Still paused: give back the slot this resume took.
+			_, _ = s.Store.UpdateSandbox(ctx, rec.ID, func(x *store.SandboxRecord) error {
+				if x.Status == api.StatusPaused {
+					x.SlotReleased = true
+				}
+				return nil
+			})
+		}
 		return rec, err
 	}
+	releases := st.to == api.StatusPaused && s.Scheduler.ReleasesSlot(ctx, rec.Pool)
 	return s.Store.UpdateSandbox(ctx, rec.ID, func(x *store.SandboxRecord) error {
-		if x.Status == st.to && st.to == api.StatusStopped {
-			return nil // the reconciler saw the backend stop first
+		if x.Status == st.to && st.to != api.StatusRunning {
+			return nil // the reconciler saw the backend stop or pause first
 		}
-		if x.Status != st.from {
+		if x.Status != st.from && !(callingOff && x.Status == api.StatusPaused) {
 			return api.Errorf(api.CodeConflict, "sandbox changed to %s concurrently", x.Status)
 		}
 		now := s.now()
 		if st.to == api.StatusRunning {
-			x.RunningSince, x.LastActivityAt = &now, &now
+			scheduler.MarkRunning(x, now)
 		} else {
-			scheduler.StopClock(x, now)
+			x.Status = st.to
+			scheduler.MarkPaused(x, now, releases)
 		}
 		x.Status, x.UpdatedAt, x.IdledAt, x.StatusReason = st.to, now, nil, ""
 		return nil

@@ -394,6 +394,12 @@ server:
     tag: ""
     digest: ""
     pullPolicy: IfNotPresent
+  # The default image holds the opensandbox, daytona, freestyle and remote
+  # adapters. Every other kind is experimental and needs an image built with
+  # `go build -tags experimental_adapters` (docs/providers/README.md): point
+  # server.image at that image and set this to true, or the chart refuses
+  # pools of those kinds.
+  experimentalAdapters: false
   # Must be 1 with config.store.driver=memory.
   replicas: 1
   containerPort: 8080

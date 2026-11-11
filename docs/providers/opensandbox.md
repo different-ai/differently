@@ -33,8 +33,10 @@ installation guide is [OpenSandbox pools](../guides/opensandbox-pools.md).
 created from a Fast Sandbox template, pause that keeps memory, disk snapshots
 and fork, and OpenSandbox's own idle pause with wake on access. Run live
 on 2026-10-29 (single node, nested KVM) and recorded; OpenWork's Workbot
-desktop streamed through it. Pause is slow: a full checkpoint upload, about
-3 minutes for a 4 GiB desktop; resume and wake take under a second
+desktop streamed through it. Pause is slow: a full checkpoint, read back and
+uploaded, about 3.5 minutes for a 4 GiB desktop (about 3 with sparse
+templates, [shortening pauses](../guides/opensandbox-pools.md#shortening-pauses));
+resume and wake take under two seconds
 ([setup, timings and gaps](../guides/opensandbox-pools.md#fast-sandbox-runtime-microvms-pause-with-memory-native-idle)).
 
 ## Configure
@@ -106,5 +108,7 @@ default `https` with signed ports, else `http`) and `portURLSeconds`
   as `fastsandbox-1.2.0`, and OpenWork's Workbot desktop through
   Differently: create, viewer streamed over a port URL, pause and resume
   keeping memory, idle pause and wake by a port request.
-- Not run: the end-to-end suite on Fast Sandbox, multi-node clusters and
-  node drains, managed EKS, GKE and AKS.
+- The end-to-end suite on a Fast Sandbox pool, on two-node k3s with a
+  Standard_D16s_v6 KVM node, 2026-10-29: 14 of 14 run passed
+  ([azure-vms.md](../deploy/azure-vms.md#verify)).
+- Not run: node drains, more than one KVM node, managed EKS, GKE and AKS.

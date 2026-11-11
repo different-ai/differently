@@ -35,6 +35,11 @@ import (
 // DefaultAPIURL is Freestyle's API.
 const DefaultAPIURL = "https://api.freestyle.sh"
 
+// backstopGrace keeps Freestyle's own deletion behind Differently's audited
+// expiry: Freestyle counts from the create request, Differently from the
+// moment the sandbox is ready.
+const backstopGrace = 5 * 60
+
 // Metadata keys. Freestyle metadata keys are short and unprefixed.
 const (
 	metaSandbox      = "dly-sandbox"
@@ -101,7 +106,7 @@ func (a *Adapter) Info() adapter.Info {
 func (a *Adapter) Capabilities(context.Context) (adapter.Capabilities, error) {
 	return adapter.Capabilities{Features: []string{
 		adapter.FeatureExec, adapter.FeatureFiles, adapter.FeatureStopStart, adapter.FeaturePersistDisk,
-		adapter.FeaturePauseResume, adapter.FeatureSnapshotMem, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
+		adapter.FeaturePauseResume, adapter.FeaturePauseCheckpoint, adapter.FeatureSnapshotMem, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
 		adapter.FeaturePorts, adapter.FeatureEgressControl, adapter.FeatureMicroVM, adapter.FeatureArchAMD64,
 	}, MaxCPU: 32, MaxMemoryMiB: 65536, MaxDiskGiB: 256}, nil
 }
@@ -175,7 +180,7 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 			body["snapshotId"] = snapshot
 		}
 		if req.TTLSeconds > 0 {
-			body["ttlSeconds"] = req.TTLSeconds // provider-side backstop
+			body["ttlSeconds"] = req.TTLSeconds + backstopGrace // provider-side backstop
 		}
 		err = a.c.JSON(ctx, http.MethodPost, "/v5/vms", body, &v)
 		if api.IsCode(err, api.CodeInvalidState) {
@@ -242,7 +247,11 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 			return nil, err
 		}
 		for _, v := range page.VMs {
-			out = append(out, inst(v))
+			// Never trust a filter we did not write: the reconciler deletes
+			// what List returns and the control plane does not know.
+			if v.Metadata[metaInstallation] == installation && v.Metadata[metaSandbox] != "" {
+				out = append(out, inst(v))
+			}
 		}
 		offset += len(page.VMs)
 		if len(page.VMs) == 0 || offset >= page.TotalCount {

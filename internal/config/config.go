@@ -72,6 +72,13 @@ type Defaults struct {
 	// IdleTimeoutSeconds stops or pauses sandboxes left idle this long
 	// (0: off unless a request asks). At least 60 when set.
 	IdleTimeoutSeconds int `json:"idleTimeoutSeconds"`
+	// MaxRunSeconds pauses (or stops) sandboxes that have run this long
+	// without a break, so long runners give their slot back (0: off unless a
+	// request asks). At least 60 when set.
+	MaxRunSeconds int `json:"maxRunSeconds"`
+	// MaxPausedSeconds deletes sandboxes left paused or stopped this long
+	// (0: off unless a request asks). At least 60 when set.
+	MaxPausedSeconds int `json:"maxPausedSeconds"`
 }
 
 // CredentialRef points at a secret without containing it.
@@ -145,6 +152,9 @@ type PoolConfig struct {
 	CostModel      api.CostModel     `json:"costModel,omitempty"`
 	Config         map[string]string `json:"config,omitempty"`
 	Credentials    CredentialRef     `json:"credentials,omitempty"`
+	// Preemption lets the scheduler pause running sandboxes to make room for
+	// waiting work (pools that checkpoint on pause only).
+	Preemption *api.Preemption `json:"preemption,omitempty"`
 }
 
 // ToPool converts to the API representation.
@@ -153,8 +163,24 @@ func (p PoolConfig) ToPool() api.Pool {
 	return api.Pool{
 		Name: p.Name, Adapter: p.Adapter, Trust: p.Trust, Region: p.Region, Labels: p.Labels,
 		Enabled: enabled, MaxConcurrency: p.MaxConcurrency, CostModel: p.CostModel, Config: p.Config,
-		CredentialRef: p.Credentials.String(), Source: "config",
+		CredentialRef: p.Credentials.String(), Source: "config", Preemption: p.Preemption,
 	}
+}
+
+// ValidatePreemption checks a pool's preemption policy.
+func ValidatePreemption(p *api.Preemption) error {
+	if p == nil {
+		return nil
+	}
+	switch p.Mode {
+	case "", api.PreemptOff, api.PreemptIdle, api.PreemptLRU:
+	default:
+		return fmt.Errorf("preemption.mode must be off, idle or lru, not %q", p.Mode)
+	}
+	if p.MinRunSeconds < 0 || p.IdleSeconds < 0 {
+		return fmt.Errorf("preemption seconds must not be negative")
+	}
+	return nil
 }
 
 // SchedulerConfig tunes the dispatch and reconcile loops.
@@ -211,8 +237,45 @@ func (d DashboardConfig) On() bool { return d.Enabled == nil || *d.Enabled }
 // Adapter kinds that always run on third-party infrastructure.
 var externalKinds = []string{"daytona", "freestyle", "vercel", "fly", "boat", "morph", "blaxel"}
 
-// KnownAdapters lists adapter kinds the server can build.
-var KnownAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake", "vercel", "fly", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel"}
+// DefaultAdapters lists the adapter kinds in every build: the backends
+// Differently has run against for real, the remote plugin protocol, and the
+// two dev-mode kinds.
+var DefaultAdapters = []string{"opensandbox", "daytona", "freestyle", "remote", "devhost", "fake"}
+
+// ExperimentalTag is the Go build tag that compiles ExperimentalAdapters in.
+const ExperimentalTag = "experimental_adapters"
+
+// ExperimentalAdapters lists the adapter kinds left out of the default build.
+// Apart from agent-sandbox, which ran live against a kind cluster, they are
+// tested only against fakes of each provider's published API. A server built
+// with -tags experimental_adapters has them.
+var ExperimentalAdapters = []string{"vercel", "fly", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel"}
+
+// KnownAdapters lists adapter kinds this binary can build.
+var KnownAdapters = knownAdapters()
+
+func knownAdapters() []string {
+	if experimentalBuilt {
+		return slices.Concat(DefaultAdapters, ExperimentalAdapters)
+	}
+	return slices.Clone(DefaultAdapters)
+}
+
+// ExperimentalBuilt reports whether this binary has the experimental adapters.
+func ExperimentalBuilt() bool { return experimentalBuilt }
+
+// UnavailableAdapter says why this binary cannot build an adapter of kind:
+// an experimental kind names the build tag that adds it. It returns "" for a
+// kind in KnownAdapters.
+func UnavailableAdapter(kind string) string {
+	switch {
+	case slices.Contains(KnownAdapters, kind):
+		return ""
+	case slices.Contains(ExperimentalAdapters, kind):
+		return fmt.Sprintf("the %s adapter is experimental and not in this build of differently-server; build the server with -tags %s to use it (docs/providers/README.md)", kind, ExperimentalTag)
+	}
+	return fmt.Sprintf("unknown adapter %q (known: %s)", kind, strings.Join(KnownAdapters, ", "))
+}
 
 // Adapter kinds that run where the operator put them (a plugin they deploy,
 // the dev host, the test fake), so they are private unless declared.
@@ -352,6 +415,16 @@ func (c Config) Validate() error {
 	}
 	var errs []error
 	bad := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
+	for name, d := range map[string]int{"maxRunSeconds": c.Defaults.MaxRunSeconds, "maxPausedSeconds": c.Defaults.MaxPausedSeconds} {
+		if d != 0 && d < 60 {
+			bad("defaults.%s must be 0 (off) or at least 60, not %d", name, d)
+		}
+	}
+	for _, p := range c.Pools {
+		if err := ValidatePreemption(p.Preemption); err != nil {
+			bad("pool %s: %v", p.Name, err)
+		}
+	}
 	for _, o := range c.CORS.AllowedOrigins {
 		u, err := url.Parse(o)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || strings.Contains(u.Host, "*") || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
@@ -390,8 +463,8 @@ func (c Config) Validate() error {
 			bad("duplicate pool %s", p.Name)
 		}
 		names[p.Name] = true
-		if !slices.Contains(KnownAdapters, p.Adapter) {
-			bad("pool %s: unknown adapter %q (known: %s)", p.Name, p.Adapter, strings.Join(KnownAdapters, ", "))
+		if why := UnavailableAdapter(p.Adapter); why != "" {
+			bad("pool %s: %s", p.Name, why)
 		}
 		switch {
 		case p.Trust == "":

@@ -25,12 +25,25 @@ jobs:
           go-version-file: go.mod
       - name: gofmt
         run: make fmt-check
-      - name: vet
-        run: go vet ./...
+      - name: vet (including the e2e and live test files, which are not run here)
+        run: make vet
       - name: test
         run: go test -race -count=1 -coverprofile=coverage.out ./...
       - name: cross-build linux amd64/arm64
         run: make build-linux
+
+  # The adapter kinds left out of the default build (experimental_adapters
+  # tag) must keep compiling and passing their fake-server tests.
+  go-experimental:
+    name: go (experimental adapters)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build, vet and test with -tags experimental_adapters
+        run: make experimental
 
   postgres:
     name: postgres conformance
@@ -90,7 +103,10 @@ jobs:
 
   sdk-python:
     name: sdk (python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to Ubuntu 26.04, which has no Python 3.9 build for
+    # setup-python. The SDK still declares requires-python >= 3.9, so keep
+    # testing it on the last image that provides it.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python: ["3.9", "3.13"]
@@ -177,7 +193,7 @@ jobs:
   # again. It approves what CI checked, not what a reviewer read.
   approve:
     name: approve when CI passes
-    needs: [go, postgres, sdk-typescript, console, sdk-python, helm, images, dco, release-source]
+    needs: [go, go-experimental, postgres, sdk-typescript, console, sdk-python, helm, images, dco, release-source]
     if: >-
       always() &&
       github.event_name == 'pull_request' &&

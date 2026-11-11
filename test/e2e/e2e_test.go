@@ -60,7 +60,9 @@ func env(k, def string) string {
 }
 
 func ctx(t *testing.T) context.Context {
-	c, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	// A Fast Sandbox pause or snapshot writes a full checkpoint, minutes for
+	// a desktop-sized template, and a test may do both.
+	c, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	t.Cleanup(cancel)
 	return c
 }
@@ -270,7 +272,9 @@ func TestExecSemantics(t *testing.T) {
 	if advertises(t, "isolation.microvm") {
 		// A Fast Sandbox template fixes the workload: sandbox env is refused
 		// with a reason that says so, and per-command env still works.
-		refused, err := c.CreateSandbox(ctx, api.CreateSandboxRequest{Template: defaultTemplate, Env: map[string]string{"GREETING": "hello"}}, false)
+		// Pinned to the pool under test: on an install with other private
+		// pools the refused sandbox would be retried there.
+		refused, err := c.CreateSandbox(ctx, api.CreateSandboxRequest{Template: defaultTemplate, Env: map[string]string{"GREETING": "hello"}, Placement: &api.Placement{AllowedPools: []string{mainPool}}}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -637,8 +641,25 @@ func TestAuditTrustAndMetrics(t *testing.T) {
 	if strings.Contains(string(raw), osbKey) {
 		t.Fatal("trust report leaks the OpenSandbox API key")
 	}
-	if len(report.Pools) != 1 || report.Pools[0].Adapter != "opensandbox" || !strings.Contains(report.Pools[0].Isolation, "container") || report.Pools[0].CredentialRef != "env:DIFFERENTLY_OPENSANDBOX_API_KEY" {
-		t.Fatalf("trust report pools %+v", report.Pools)
+	// The pool under test, among any others the install has: its isolation
+	// as deployed, and its credential only as a reference.
+	isolation := "container"
+	if advertises(t, "isolation.microvm") {
+		isolation = "microVM"
+	}
+	found := false
+	for _, p := range report.Pools {
+		if p.Name != mainPool {
+			continue
+		}
+		found = true
+		ref := strings.SplitN(p.CredentialRef, ":", 2)
+		if p.Adapter != "opensandbox" || !strings.Contains(p.Isolation, isolation) || len(ref) != 2 || !slices.Contains([]string{"env", "file", "secret"}, ref[0]) {
+			t.Fatalf("trust report pool %+v", p)
+		}
+	}
+	if !found {
+		t.Fatalf("trust report has no pool %s: %+v", mainPool, report.Pools)
 	}
 	if !strings.Contains(strings.Join(report.Limitations, " "), "Differently does not isolate sandboxes itself") {
 		t.Fatal("trust report does not state that isolation is the runtime's")
@@ -798,7 +819,9 @@ func TestIdlePauseAndWakeThroughPortURL(t *testing.T) {
 		before = body
 		return code == http.StatusOK
 	})
-	eventually(t, 3*time.Minute, "the idle microVM to be paused", func() bool {
+	// A minute idle, then a full checkpoint of disk and memory (about three
+	// minutes for a desktop-sized template).
+	eventually(t, 8*time.Minute, "the idle microVM to be paused", func() bool {
 		got, err := c.GetSandbox(context.Background(), sb.ID)
 		return err == nil && got.IdledAt != nil && got.Status == api.StatusPaused
 	})
