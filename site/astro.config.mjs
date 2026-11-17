@@ -58,6 +58,7 @@ export default defineConfig({
           { label: 'Architecture', link: '/docs/architecture/' },
           { label: 'Placement policy', link: '/docs/scheduling/placement-policy/' },
           { label: 'Capacity', link: '/docs/scheduling/capacity/' },
+          { label: 'Load simulator', link: '/simulator/' },
           { label: 'Storage and lifecycle', link: '/docs/storage-and-lifecycle/' },
           { label: 'Reliability and performance', link: '/docs/reliability-and-performance/' },
         ] },

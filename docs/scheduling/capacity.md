@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-11-02 |
-| Code | `internal/scheduler/capacity.go`, `internal/store/store.go` (`HoldsPoolSlot`, `ReclaimSlot`), `internal/capsim` (the model) |
+| Status | Describes the code as of 2026-11-17 |
+| Code | `internal/scheduler/capacity.go`, `internal/store/store.go` (`HoldsPoolSlot`, `ReclaimSlot`), `internal/capsim` (the model), `internal/loadsim` (the scheduler itself under simulated load) |
 | Tests | `TestPausingSandboxRefusesWork`, `TestResumeCallsOffAPause`, `TestPreemptionSparesASandboxInUse`, `TestPausedSandboxGivesItsSlotBack`, `TestPreemptionMakesRoom`, `TestLifecycleLimits` (server), `TestVictimsOrder` (scheduler), `ReleasedSlotsAndReclaim` (store conformance, memory and Postgres), `TestStrategiesCompare` (model) |
 
 A pool's `maxConcurrency` is a number of **slots**. This page defines who
@@ -265,6 +265,15 @@ Limits of the model:
   ([research](../research/fast-sandbox-pause-time.md));
 - external pools are unbounded;
 - the scheduler's real tick and the backend-woken case are not modeled.
+
+The model is a separate program that imitates the rules. To watch the
+scheduler itself under load, `internal/loadsim` runs the whole control plane
+(API, placement, scheduler, in-memory store) in one process against fake
+backends with the same kind of users, and the website's
+[simulator](https://different-ai.github.io/differently/simulator/) is that
+program in a browser. It shows scheduling decisions as they happen; it does
+not replace the table above, which averages five simulated days over five
+seeds.
 
 ## 6. Metrics
 

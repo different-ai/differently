@@ -1,0 +1,614 @@
+---
+import '../styles/landing.css';
+import '../styles/simulator.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const repo = 'https://github.com/different-ai/differently';
+const origin = (Astro.site?.toString() ?? 'https://different-ai.github.io/').replace(/\/$/, '');
+const pageUrl = `${origin}${base}/simulator/`;
+
+const title = 'Load simulator: watch Differently schedule sandboxes under load';
+const description =
+  "Differently's control plane, compiled to WebAssembly, running in your browser against fake backends. Set the load, the slots and the policy, and watch placement, overflow, the resume queue and preemption.";
+
+// Scenarios: an installation and a load. The first is what the page starts with.
+interface Scenario { id: string; name: string; text: string; set: Record<string, string | number | boolean> }
+const scenarios: Scenario[] = [
+  {
+    id: 'preempt',
+    name: 'Release and make room',
+    text: 'A pause checkpoints the computer and frees its slot. When someone waits, the scheduler pauses a computer nobody is using.',
+    set: { users: 24, rate: 1.5, minutes: 12, slots: 8, paused: 'release', preemption: 'idle', overflow: true },
+  },
+  {
+    id: 'hold',
+    name: 'Paused computers keep their slot',
+    text: 'A pool whose pause stays on the host. Eight sleeping computers fill eight slots, and everyone after them runs outside.',
+    set: { users: 24, rate: 1.5, minutes: 12, slots: 8, paused: 'keep', preemption: 'off', overflow: true },
+  },
+  {
+    id: 'private',
+    name: 'Nothing leaves your cluster',
+    text: 'Policy external: never. Work that finds no slot queues instead of overflowing, and resumes wait their turn.',
+    set: { users: 24, rate: 1.5, minutes: 12, slots: 8, paused: 'release', preemption: 'idle', overflow: false },
+  },
+  {
+    id: 'crowd',
+    name: 'Ten times the people',
+    text: 'Ninety people on twelve slots. The private pool stays full, the resume queue works, and the rest overflows.',
+    set: { users: 90, rate: 2, minutes: 10, slots: 12, paused: 'release', preemption: 'idle', overflow: true },
+  },
+];
+
+const legend = [
+  ['busy', 'In a session'],
+  ['idle', 'Running, nobody using it'],
+  ['starting', 'Starting or resuming'],
+  ['pausing', 'Pausing (still holds its slot)'],
+  ['paused', 'Paused'],
+  ['waiting', 'Waiting for a slot'],
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={pageUrl} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={pageUrl} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script is:inline>
+      try {
+        const t = localStorage.getItem('starlight-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <header class="nav wrap">
+      <a class="brand" href={`${base}/`}>
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="10" y="3" width="19" height="19" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="3" y="10" width="19" height="19" rx="4" fill="currentColor"/></svg>
+        Differently
+      </a>
+      <nav>
+        <a class="wide-only" href={`${base}/`}>Home</a>
+        <a class="wide-only" href={`${base}/compare/`}>Compare</a>
+        <a href={`${base}/docs/`}>Docs</a>
+        <a href={repo}>GitHub</a>
+        <button class="theme" type="button" aria-label="Toggle color theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" /></svg>
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero wrap sim-hero">
+        <p class="eyebrow">Simulator · runs in your browser</p>
+        <h1>Put load on it. <em>Watch it schedule.</em></h1>
+        <p class="lede">
+          This page runs Differently's control plane in your tab: the API, the placement policy, the scheduler and its store, compiled to WebAssembly.
+          Simulated people create computers and come back to them. The backends are fake and the clock is sped up; every decision is made by the code a deployment runs.
+        </p>
+      </section>
+
+      <section class="wrap sim" data-base={base}>
+        <div class="sim-app">
+          <div class="sim-bar">
+            <button class="sim-btn primary" id="run" type="button">Start</button>
+            <div class="sim-seg" role="group" aria-label="Simulation speed">
+              {[1, 10, 60, 240].map((s) => <button type="button" data-speed={s} aria-pressed={s === 60 ? 'true' : 'false'}>{s}×</button>)}
+            </div>
+            <span class="sim-clock" id="clock" aria-live="off">Not started</span>
+            <span class="grow"></span>
+            <button class="sim-btn" id="restart" type="button" disabled>Restart</button>
+          </div>
+
+          <div class="sim-body">
+            <form class="sim-controls" id="controls" onsubmit="return false">
+              <fieldset>
+                <legend>Load <small>Applies as you move it</small></legend>
+                <label class="sim-field"><span>People <output for="users"></output></span><input id="users" type="range" min="1" max="120" step="1" value="24" data-kind="load" /></label>
+                <label class="sim-field"><span>Sessions per person, per hour <output for="rate"></output></span><input id="rate" type="range" min="0.25" max="6" step="0.25" value="1.5" data-kind="load" /></label>
+                <label class="sim-field"><span>Median session <output for="minutes"></output></span><input id="minutes" type="range" min="1" max="60" step="1" value="12" data-kind="load" data-unit=" min" /></label>
+                <div class="sim-actions">
+                  <button class="sim-btn" id="spike" type="button" disabled>Everyone logs in</button>
+                  <button class="sim-btn alert" id="outage" type="button" aria-pressed="false" disabled>Take the cluster offline</button>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>Installation <small>A change starts over</small></legend>
+                <label class="sim-field"><span>Slots on your cluster <output for="slots"></output></span><input id="slots" type="range" min="1" max="48" step="1" value="8" /></label>
+                <label class="sim-field"><span>A paused computer</span>
+                  <select id="paused">
+                    <option value="release">gives its slot back (checkpoint)</option>
+                    <option value="keep">keeps its slot (stays on the host)</option>
+                  </select>
+                </label>
+                <label class="sim-field"><span>When work waits for a slot</span>
+                  <select id="preemption">
+                    <option value="idle">pause a computer nobody uses (idle)</option>
+                    <option value="lru">pause the least recently used (lru)</option>
+                    <option value="off">wait (off)</option>
+                  </select>
+                </label>
+                <label class="sim-field"><span>A pause takes <output for="pause"></output></span><input id="pause" type="range" min="5" max="300" step="1" value="182" data-unit=" s" /></label>
+                <label class="sim-field"><span>Idle timeout <output for="idle"></output></span><input id="idle" type="range" min="1" max="15" step="1" value="5" data-unit=" min" /></label>
+                <label class="sim-check"><input id="overflow" type="checkbox" checked /><span><b>Overflow to a provider</b>Creates that find no private slot run on an external pool.</span></label>
+              </fieldset>
+            </form>
+
+            <div class="sim-stage">
+              <div class="sim-cover" id="cover">
+                <button class="sim-btn primary" id="begin" type="button">Start the simulation</button>
+                <p id="cover-note">Loads the control plane as WebAssembly, about 4 MB. Nothing is sent anywhere: it all runs in this tab.</p>
+              </div>
+
+              <div class="sim-zone sim-users">
+                <h3>People <small id="users-note"></small></h3>
+                <div class="bar" role="img" aria-label="What people are doing"><i class="working" id="bar-working"></i><i class="waiting" id="bar-waiting"></i></div>
+                <dl>
+                  <div class="k-working"><dt>working</dt><dd id="n-working">0</dd></div>
+                  <div class="k-waiting"><dt>waiting for their computer</dt><dd id="n-waiting">0</dd></div>
+                  <div><dt>away</dt><dd id="n-idle">0</dd></div>
+                </dl>
+              </div>
+
+              <div class="sim-zone" id="zone-private">
+                <h3>own-cluster <small>private pool · one slot per computer</small><span class="count" id="private-count"></span></h3>
+                <div class="sim-cells" id="slots-grid"></div>
+              </div>
+
+              <div class="sim-zone" id="zone-queue">
+                <h3>Waiting for a slot <small>queued creates and queued resumes</small><span class="count" id="queue-count"></span></h3>
+                <div class="sim-cells" id="queue" data-empty="Nobody is waiting."></div>
+              </div>
+
+              <div class="sim-zone" id="zone-shelf">
+                <h3>Checkpoints <small>paused, holding no slot</small><span class="count" id="shelf-count"></span></h3>
+                <div class="sim-cells" id="shelf" data-empty="No checkpoints yet."></div>
+              </div>
+
+              <div class="sim-zone" id="zone-ext">
+                <h3>burst-provider <small>external pool · overflow only</small><span class="count" id="ext-count"></span></h3>
+                <div class="sim-cells" id="ext" data-empty="Nothing has overflowed."></div>
+              </div>
+
+              <div class="sim-legend" aria-label="Legend">
+                {legend.map(([s, label]) => <span><i class="sb" data-s={s}></i>{label}</span>)}
+                <span>The number is the person.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sim-stats" id="stats">
+            <div><b id="s-sessions">0</b><span>sessions served</span></div>
+            <div><b><span id="s-p50">0 s</span> <small>/ <span id="s-p95">0 s</span></small></b><span>wait for a computer, median / p95</span></div>
+            <div><b id="s-private">–</b><span>of sessions on your own cluster</span></div>
+            <div><b id="s-external">0.0 h</b><span>computer time bought outside</span></div>
+            <div><b id="s-queued">0</b><span>resumes that had to wait</span></div>
+            <div><b><span id="s-preempt">0</span> <small>/ <span id="s-interrupt">0</span></small></b><span>preemptions / sessions interrupted</span></div>
+          </div>
+
+          <div class="sim-lower">
+            <div class="sim-trends">
+              <div class="sim-trend"><span>Private slots in use</span><b id="t-used">0</b><svg id="g-used" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true"><polyline /></svg></div>
+              <div class="sim-trend wait"><span>People waiting</span><b id="t-wait">0</b><svg id="g-wait" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true"><polyline /></svg></div>
+              <div class="sim-trend"><span>Computers running outside</span><b id="t-ext">0</b><svg id="g-ext" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true"><polyline /></svg></div>
+            </div>
+            <div class="sim-log">
+              <h3>Decisions <small>from the scheduler's audit log</small></h3>
+              <ol id="log"></ol>
+            </div>
+          </div>
+        </div>
+
+        <div class="sim-presets" role="group" aria-label="Scenarios">
+          {scenarios.map((s) => (
+            <button type="button" data-scenario={JSON.stringify(s.set)} aria-pressed={s.id === 'preempt' ? 'true' : 'false'}>
+              <b>{s.name}</b>{s.text}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section class="wrap sim-section">
+        <h2>What is real here, and what is not.</h2>
+        <p>
+          The numbers on this page describe how work is scheduled. They say nothing about how fast a backend starts a sandbox or how many requests a server takes:
+          for those, see <a href={`${base}/docs/reliability-and-performance/`}>reliability and performance</a>.
+        </p>
+        <div class="sim-real">
+          <div>
+            <h3>The code a deployment runs</h3>
+            <ul>
+              <li>The HTTP API. Each person creates, calls and wakes a computer through the server's handler, with a project key.</li>
+              <li>Admission, the <a href={`${base}/docs/scheduling/placement-policy/`}>placement policy</a> and the scheduler: <a href={`${base}/docs/scheduling/capacity/`}>slots, the resume queue and preemption</a>, <a href={`${base}/docs/guides/hybrid-overflow/`}>overflow</a>, idle timeouts and the reconciler.</li>
+              <li>The audit log. The list of decisions is read from it, reasons included.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Stand-ins</h3>
+            <ul>
+              <li>The backends. Both pools use the in-memory fake adapter from the test suite, with a delay: 3 s to create, 2 s to resume, and the pause you set. The default, 182 s, is a <a href={`${base}/docs/research/fast-sandbox-pause-time/`}>measured checkpoint</a> of a 4 GiB desktop.</li>
+              <li>The store is the in-memory one. A deployment with more than one replica uses Postgres.</li>
+              <li>Time. The clock the program reads runs up to 240 times faster and stands still while it computes, so its own work takes no simulated time.</li>
+              <li>The people. Each owns one long-lived computer, starts sessions at random, sends a keepalive every 20 s while working, and leaves. Real usage has mornings and lunch breaks.</li>
+            </ul>
+          </div>
+        </div>
+        <p>
+          The source is <a href={`${repo}/tree/pre-release/internal/loadsim`}><code>internal/loadsim</code></a>, built for the browser by
+          <a href={`${repo}/tree/pre-release/cmd/differently-loadsim`}><code>cmd/differently-loadsim</code></a>.
+        </p>
+      </section>
+    </main>
+
+    <footer class="wrap">
+      <span>Differently · Apache-2.0 · by <a href="https://github.com/different-ai">OpenWork</a></span>
+      <span><a href={`${base}/`}>Home</a> · <a href={`${base}/docs/scheduling/capacity/`}>Capacity</a> · <a href={`${repo}/releases`}>Releases</a></span>
+    </footer>
+
+    <script>
+      interface Box { id: string; user: number; status: string; pool?: string; busy: boolean; waiting: boolean; slotReleased?: boolean; resumeQueued?: boolean; reason?: string; waitedSeconds?: number }
+      interface Pool { name: string; trust: string; slots: number; healthy: boolean; detail?: string }
+      interface Event { t: number; action: string; user: number; text: string }
+      interface Stats { sessions: number; waitP50: number; waitP95: number; privateSessions: number; externalHours: number; queuedResumes: number; preemptions: number; interruptions: number }
+      interface Snapshot { seconds: number; pools: Pool[]; boxes: Box[]; working: number; waiting: number; idle: number; stats: Stats; events: Event[]; outage: boolean }
+
+      const PRIVATE = 'own-cluster';
+      const EXTERNAL = 'burst-provider';
+      const root = document.documentElement;
+      const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+      const base = document.querySelector<HTMLElement>('.sim')!.dataset.base ?? '';
+
+      document.querySelector('.theme')!.addEventListener('click', () => {
+        const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+        const next = dark ? 'light' : 'dark';
+        root.dataset.theme = next;
+        try { localStorage.setItem('starlight-theme', next); } catch {}
+      });
+
+      // Controls.
+      const input = (id: string) => $<HTMLInputElement>(id);
+      const num = (id: string) => Number(input(id).value);
+      const ranges = [...document.querySelectorAll<HTMLInputElement>('#controls input[type=range]')];
+      const label = () => {
+        ranges.forEach((r) => {
+          const out = document.querySelector<HTMLOutputElement>(`output[for="${r.id}"]`);
+          if (out) out.textContent = r.value + (r.dataset.unit ?? '');
+        });
+        const keeps = $<HTMLSelectElement>('paused').value === 'keep';
+        $<HTMLSelectElement>('preemption').disabled = keeps; // only a pool that checkpoints frees a slot by pausing
+        input('pause').disabled = keeps;
+      };
+      const load = () => ({ users: num('users'), sessionsPerHour: num('rate'), sessionMinutes: num('minutes') });
+      const installation = () => {
+        const checkpoint = $<HTMLSelectElement>('paused').value === 'release';
+        return {
+          slots: num('slots'),
+          checkpoint,
+          preemption: checkpoint ? $<HTMLSelectElement>('preemption').value : 'off',
+          overflow: input('overflow').checked,
+          createSeconds: 3,
+          pauseSeconds: checkpoint ? num('pause') : 1,
+          resumeSeconds: 2,
+          idleTimeoutSeconds: num('idle') * 60,
+          seed: Math.floor(Math.random() * 1e9),
+        };
+      };
+
+      // The run.
+      let worker: Worker | null = null;
+      let speed = 60;
+      let paused = false;
+      let started = false;
+      let slots = 0;
+      let checkpoint = true;
+      let overflow = true;
+      const chips = new Map<string, HTMLElement>();
+      const slotOf = new Map<string, number>();
+      const history: { used: number; wait: number; ext: number }[] = [];
+      const pace: [number, number][] = []; // wall ms, simulated s
+      const cover = $('cover');
+      const scale = () => (paused || document.hidden ? 0 : speed);
+
+      function reset() {
+        chips.clear();
+        slotOf.clear();
+        history.length = 0;
+        pace.length = 0;
+        ['slots-grid', 'queue', 'shelf', 'ext', 'log'].forEach((id) => $(id).replaceChildren());
+        $('outage').setAttribute('aria-pressed', 'false');
+        $('outage').textContent = 'Take the cluster offline';
+      }
+
+      function start() {
+        worker?.terminate();
+        reset();
+        const config = installation();
+        ({ slots, checkpoint, overflow } = config);
+        paused = false;
+        started = true;
+        cover.hidden = false;
+        $('begin').hidden = true;
+        $('cover-note').className = '';
+        $('cover-note').textContent = 'Starting the control plane…';
+        $('shelf').dataset.empty = checkpoint ? 'No checkpoints yet.' : 'This pool keeps a paused computer on the host, so it holds its slot.';
+        $('ext').dataset.empty = overflow ? 'Nothing has overflowed.' : 'Policy external: never. Nothing leaves your cluster.';
+        const w = new Worker(`${base}/sim/worker.js`);
+        worker = w;
+        w.onmessage = ({ data }) => {
+          if (w !== worker) return;
+          if (data.type === 'snapshot') {
+            cover.hidden = true;
+            render(data.snapshot as Snapshot);
+          } else if (data.type === 'error') fail(String(data.message));
+        };
+        w.onerror = (e) => fail(e.message || 'the simulator could not be loaded');
+        w.postMessage({ type: 'start', config: { ...config, load: load() }, scale: scale() });
+        // It is nine in the morning: half the people start working at once.
+        w.postMessage({ type: 'command', command: { op: 'spike', share: 0.5 } });
+        buttons();
+      }
+
+      function fail(message: string) {
+        worker?.terminate();
+        worker = null;
+        started = false;
+        cover.hidden = false;
+        $('begin').hidden = false;
+        $('begin').textContent = 'Try again';
+        $('cover-note').className = 'err';
+        $('cover-note').textContent = `The simulator stopped: ${message}`;
+        buttons();
+      }
+
+      function buttons() {
+        const run = $<HTMLButtonElement>('run');
+        run.textContent = !started ? 'Start' : paused ? 'Resume' : 'Pause';
+        ['restart', 'spike', 'outage'].forEach((id) => (($(id) as HTMLButtonElement).disabled = !started));
+        document.querySelectorAll<HTMLButtonElement>('.sim-seg button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === speed)));
+      }
+
+      const command = (c: object) => worker?.postMessage({ type: 'command', command: c });
+      const applyScale = () => worker?.postMessage({ type: 'scale', scale: scale() });
+
+      $('begin').addEventListener('click', start);
+      $('restart').addEventListener('click', start);
+      $('run').addEventListener('click', () => {
+        if (!started) return start();
+        paused = !paused;
+        pace.length = 0;
+        applyScale();
+        buttons();
+      });
+      document.querySelectorAll<HTMLButtonElement>('.sim-seg button').forEach((b) =>
+        b.addEventListener('click', () => {
+          speed = Number(b.dataset.speed);
+          pace.length = 0;
+          applyScale();
+          buttons();
+        }),
+      );
+      document.addEventListener('visibilitychange', () => {
+        pace.length = 0;
+        applyScale();
+      });
+      $('spike').addEventListener('click', () => command({ op: 'spike', share: 1 }));
+      $('outage').addEventListener('click', () => {
+        const down = $('outage').getAttribute('aria-pressed') !== 'true';
+        $('outage').setAttribute('aria-pressed', String(down));
+        $('outage').textContent = down ? 'Bring the cluster back' : 'Take the cluster offline';
+        command({ op: 'outage', outage: down });
+      });
+
+      // Load applies live; the installation starts over.
+      let again = 0;
+      const scenarioButtons = [...document.querySelectorAll<HTMLButtonElement>('.sim-presets button')];
+      const current = () => ({ users: num('users'), rate: num('rate'), minutes: num('minutes'), slots: num('slots'), paused: $<HTMLSelectElement>('paused').value, preemption: $<HTMLSelectElement>('preemption').value, overflow: input('overflow').checked });
+      const markScenario = () => {
+        const now = current() as Record<string, unknown>;
+        scenarioButtons.forEach((b) => {
+          const set = JSON.parse(b.dataset.scenario!) as Record<string, unknown>;
+          b.setAttribute('aria-pressed', String(Object.keys(set).every((k) => set[k] === now[k] || (k === 'preemption' && now.paused === 'keep'))));
+        });
+      };
+      $('controls').addEventListener('input', (e) => {
+        label();
+        markScenario();
+        const el = e.target as HTMLElement;
+        if (el.dataset.kind === 'load') return command({ op: 'load', load: load() });
+        if (!started) return;
+        clearTimeout(again);
+        again = window.setTimeout(start, 500);
+      });
+      scenarioButtons.forEach((b) =>
+        b.addEventListener('click', () => {
+          const set = JSON.parse(b.dataset.scenario!) as Record<string, string | number | boolean>;
+          for (const [id, value] of Object.entries(set)) {
+            const el = $<HTMLInputElement | HTMLSelectElement>(id);
+            if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = Boolean(value);
+            else el.value = String(value);
+          }
+          label();
+          markScenario();
+          start();
+          document.querySelector('.sim-app')!.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+        }),
+      );
+      label();
+
+      // Drawing.
+      const clock = (s: number) => {
+        const t = Math.floor(s);
+        const two = (n: number) => String(n).padStart(2, '0');
+        return `${two(Math.floor(t / 3600))}:${two(Math.floor(t / 60) % 60)}:${two(t % 60)}`;
+      };
+      const span = (s: number) => (s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${(s / 60).toFixed(1)} min` : `${(s / 3600).toFixed(1)} h`);
+
+      type Zone = 'slot' | 'queue' | 'shelf' | 'ext';
+      const zoneOf = (b: Box): Zone => {
+        if (b.status === 'queued') return 'queue';
+        if (b.pool === EXTERNAL) return 'ext';
+        if (b.status === 'paused' && b.slotReleased) return b.resumeQueued ? 'queue' : 'shelf';
+        return 'slot';
+      };
+      const lookOf = (b: Box, zone: Zone) => {
+        if (zone === 'queue') return 'waiting';
+        if (b.status === 'pausing') return 'pausing';
+        if (b.status === 'provisioning' || (b.waiting && zone !== 'shelf')) return 'starting';
+        if (b.status === 'paused' || b.status === 'stopped') return 'paused';
+        return b.busy ? 'busy' : 'idle';
+      };
+      const where: Record<Zone, string> = { slot: `on ${PRIVATE}`, queue: 'waiting for a slot', shelf: `checkpointed, off ${PRIVATE}`, ext: `on ${EXTERNAL}` };
+
+      function chip(b: Box, zone: Zone) {
+        let el = chips.get(b.id);
+        if (!el) {
+          el = document.createElement('i');
+          el.className = 'sb';
+          el.textContent = b.user >= 0 ? String(b.user + 1) : '';
+          chips.set(b.id, el);
+        }
+        const look = lookOf(b, zone);
+        if (el.dataset.s !== look) el.dataset.s = look;
+        const tip = `Person ${b.user + 1}: ${b.status} ${where[zone]}${b.waiting ? `, waited ${span(b.waitedSeconds ?? 0)}` : ''}${b.reason ? `\n${b.reason}` : ''}\n${b.id}`;
+        if (el.title !== tip) el.title = tip;
+        return el;
+      }
+
+      // fill makes a container hold exactly these chips, in order, moving only what changed.
+      function fill(container: HTMLElement, want: HTMLElement[]) {
+        want.forEach((el, i) => {
+          if (container.children[i] !== el) container.insertBefore(el, container.children[i] ?? null);
+        });
+        while (container.children.length > want.length) container.lastElementChild!.remove();
+      }
+
+      function line(svg: SVGSVGElement, values: number[], top: number) {
+        const n = values.length;
+        const pts = values.map((v, i) => `${(n > 1 ? (i / (n - 1)) * 300 : 300).toFixed(1)},${(42 - (Math.min(v, top) / top) * 40).toFixed(1)}`);
+        svg.querySelector('polyline')!.setAttribute('points', n > 1 ? pts.join(' ') : '');
+      }
+
+      function render(s: Snapshot) {
+        const live = new Set<string>();
+        const zones: Record<Zone, Box[]> = { slot: [], queue: [], shelf: [], ext: [] };
+        for (const b of s.boxes) {
+          live.add(b.id);
+          zones[zoneOf(b)].push(b);
+        }
+        for (const id of chips.keys()) if (!live.has(id)) chips.delete(id);
+
+        // The private pool: a sandbox keeps its cell while it holds a slot.
+        const holding = new Set(zones.slot.map((b) => b.id));
+        for (const id of slotOf.keys()) if (!holding.has(id)) slotOf.delete(id);
+        const taken = new Set(slotOf.values());
+        for (const b of zones.slot) {
+          if (slotOf.has(b.id)) continue;
+          let i = 0;
+          while (taken.has(i)) i++;
+          taken.add(i);
+          slotOf.set(b.id, i);
+        }
+        const cells = Math.max(slots, ...[...taken].map((i) => i + 1));
+        const grid = $('slots-grid');
+        while (grid.children.length < cells) grid.appendChild(Object.assign(document.createElement('div'), { className: 'slot' }));
+        while (grid.children.length > cells) grid.lastElementChild!.remove();
+        const inCell = new Map<number, Box>(zones.slot.map((b) => [slotOf.get(b.id)!, b]));
+        [...grid.children].forEach((cell, i) => {
+          cell.classList.toggle('over', i >= slots);
+          const b = inCell.get(i);
+          const el = b ? chip(b, 'slot') : null;
+          if (cell.firstElementChild !== el) cell.replaceChildren(...(el ? [el] : []));
+        });
+
+        zones.queue.sort((a, b) => (b.waitedSeconds ?? 0) - (a.waitedSeconds ?? 0));
+        fill($('queue'), zones.queue.map((b) => chip(b, 'queue')));
+        fill($('shelf'), zones.shelf.map((b) => chip(b, 'shelf')));
+        fill($('ext'), zones.ext.map((b) => chip(b, 'ext')));
+
+        const own = s.pools.find((p) => p.name === PRIVATE);
+        const down = own ? !own.healthy : false;
+        const used = zones.slot.length;
+        $('zone-private').classList.toggle('down', down);
+        $('zone-private').classList.toggle('hot', used >= slots);
+        $('private-count').textContent = down ? `offline · ${used} of ${slots} slots still held` : `${used} of ${slots} slots`;
+        const longest = Math.max(0, ...zones.queue.map((b) => b.waitedSeconds ?? 0));
+        $('zone-queue').classList.toggle('hot', zones.queue.length > 0);
+        $('queue-count').textContent = zones.queue.length ? `${zones.queue.length} · longest ${span(longest)}` : '0';
+        $('shelf-count').textContent = String(zones.shelf.length);
+        const extRunning = zones.ext.filter((b) => b.status !== 'paused' && b.status !== 'stopped').length;
+        $('ext-count').textContent = zones.ext.length ? `${extRunning} running · ${zones.ext.length - extRunning} paused` : '0';
+
+        const people = s.working + s.waiting + s.idle || 1;
+        $('bar-working').style.width = `${(s.working / people) * 100}%`;
+        $('bar-waiting').style.width = `${(s.waiting / people) * 100}%`;
+        $('n-working').textContent = String(s.working);
+        $('n-waiting').textContent = String(s.waiting);
+        $('n-idle').textContent = String(s.idle);
+
+        const st = s.stats;
+        $('s-sessions').textContent = st.sessions.toLocaleString('en');
+        $('s-p50').textContent = span(st.waitP50);
+        $('s-p95').textContent = span(st.waitP95);
+        $('s-private').textContent = st.sessions ? `${Math.round(st.privateSessions * 100)}%` : '–';
+        $('s-external').textContent = `${st.externalHours.toFixed(1)} h`;
+        $('s-queued').textContent = String(st.queuedResumes);
+        $('s-preempt').textContent = String(st.preemptions);
+        $('s-interrupt').textContent = String(st.interruptions);
+
+        // The pace actually kept, over the last two seconds.
+        const wall = performance.now();
+        pace.push([wall, s.seconds]);
+        while (pace.length > 2 && wall - pace[0][0] > 2000) pace.shift();
+        const kept = pace.length > 1 && wall > pace[0][0] ? ((s.seconds - pace[0][1]) * 1000) / (wall - pace[0][0]) : speed;
+        const slow = !paused && kept < speed * 0.8 && pace.length > 4;
+        $('clock').innerHTML = `Simulated <b>${clock(s.seconds)}</b>${paused ? ' · paused' : slow ? ` · ${Math.round(kept)}× (this tab is the limit)` : ''}`;
+
+        if (!paused) {
+          history.push({ used, wait: s.waiting, ext: extRunning });
+          if (history.length > 240) history.shift();
+        }
+        $('t-used').textContent = `${used} / ${slots}`;
+        $('t-wait').textContent = String(s.waiting);
+        $('t-ext').textContent = String(extRunning);
+        line($<HTMLElement>('g-used') as unknown as SVGSVGElement, history.map((h) => h.used), Math.max(slots, 1));
+        line($<HTMLElement>('g-wait') as unknown as SVGSVGElement, history.map((h) => h.wait), Math.max(4, ...history.map((h) => h.wait)));
+        line($<HTMLElement>('g-ext') as unknown as SVGSVGElement, history.map((h) => h.ext), Math.max(4, ...history.map((h) => h.ext)));
+
+        if (s.events.length) {
+          const log = $('log');
+          const hot = /resume_queued|preempted|provision_retry|failed|rejected|interrupted|replaced/;
+          for (const e of s.events) {
+            const li = document.createElement('li');
+            if (hot.test(e.action)) li.className = 'hot';
+            else if (e.text.includes(EXTERNAL) && e.action === 'sandbox.placed') li.className = 'strong';
+            const who = document.createElement('b');
+            who.textContent = e.user >= 0 ? `#${e.user + 1}` : '';
+            const when = document.createElement('span');
+            when.textContent = clock(Math.max(0, e.t));
+            const what = document.createElement('span');
+            what.textContent = e.text;
+            li.append(when, who, what);
+            log.prepend(li);
+          }
+          while (log.children.length > 150) log.lastElementChild!.remove();
+        }
+      }
+    </script>
+  </body>
+</html>

@@ -14,6 +14,7 @@ Docs are single-sourced: `scripts/sync-docs.mjs` generates
 | `api/openapi.yaml` | `/docs/reference/api/` |
 | `cmd/differently` help output (needs Go) | `/docs/reference/cli/` |
 | `site/pages-src/**` | Hand-written pages such as the Go SDK |
+| `cmd/differently-loadsim` (needs Go) | `/simulator/`: the control plane as WebAssembly, in `public/sim/` (git-ignored) |
 
 Relative links are rewritten to site routes, or to GitHub for files that have
 no page. Edit the source files, not the generated ones.

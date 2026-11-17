@@ -10,6 +10,11 @@ on:
       - sdk/*/README.md
       - console/README.md
       - cmd/differently/**
+      # The simulator page runs the control plane itself, built from these.
+      - cmd/differently-loadsim/**
+      - internal/**
+      - pkg/**
+      - go.mod
       - .github/workflows/site.yml
   pull_request:
     paths:
@@ -19,6 +24,11 @@ on:
       - sdk/*/README.md
       - console/README.md
       - cmd/differently/**
+      # The simulator page runs the control plane itself, built from these.
+      - cmd/differently-loadsim/**
+      - internal/**
+      - pkg/**
+      - go.mod
       - .github/workflows/site.yml
   workflow_dispatch:
 
@@ -44,7 +54,7 @@ jobs:
           cache-dependency-path: site/package-lock.json
       - run: npm ci
         working-directory: site
-      # Syncs docs/, SDK READMEs, the OpenAPI spec and CLI help, builds, and validates every internal link.
+      # Syncs docs/, SDK READMEs, the OpenAPI spec and CLI help, compiles the simulator to WebAssembly, builds, and validates every internal link.
       - run: npm run build
         working-directory: site
       - uses: actions/upload-pages-artifact@v3
