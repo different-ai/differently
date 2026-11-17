@@ -129,14 +129,14 @@ const glyphs: Record<string, string> = {
 };
 
 // Facts for the hero, counted from the data so they cannot drift from the tables.
-type Num = { n: number; digits?: number; prefix?: string };
-const facts: { parts: (Num | string)[]; label: string }[] = [
-  { parts: [{ n: low, digits: 3, prefix: '$' }, ' to ', { n: high, digits: 3, prefix: '$' }], label: 'for one small sandbox for an hour, at list price' },
-  { parts: [{ n: T.usage.yes }], label: 'bill only the CPU you use; the rest bill for running time or by size' },
-  { parts: [{ n: T.soc2.yes }], label: 'state a SOC 2 Type II report on their own site' },
-  { parts: [{ n: providers.filter((p) => p.caps.own !== 'no').length }], label: 'can run, fully or in part, in infrastructure you control' },
+// Figures on this page are plain text and no script rewrites them, so a copy,
+// a screenshot or a crawler always reads the real number.
+const facts = [
+  { value: `$${low.toFixed(3)} to $${high.toFixed(3)}`, label: 'for one small sandbox for an hour, at list price' },
+  { value: String(T.usage.yes), label: 'bill only the CPU you use; the rest bill for running time or by size' },
+  { value: String(T.soc2.yes), label: 'state a SOC 2 Type II report on their own site' },
+  { value: String(providers.filter((p) => p.caps.own !== 'no').length), label: 'can run, fully or in part, in infrastructure you control' },
 ];
-const num = (v: Num) => `${v.prefix ?? ''}${v.n.toFixed(v.digits ?? 0)}`;
 
 // One mark per logo for the strip in the hero (two Azure and two Google Cloud services share one).
 const marks = providers.filter((p, i, all) => all.findIndex((q) => q.logo === p.logo) === i);
@@ -244,12 +244,7 @@ const jsonLd = {
           whether it keeps state, what it can snapshot, what it says about compliance, and whether you can run it yourself. Each figure links to where it was read.
         </p>
         <div class="cmp-facts">
-          {facts.map((f) => (
-            <div>
-              <b>{f.parts.map((part) => (typeof part === 'string' ? part : <span data-count={part.n} data-digits={part.digits ?? 0} data-prefix={part.prefix ?? ''}>{num(part)}</span>))}</b>
-              <span>{f.label}</span>
-            </div>
-          ))}
+          {facts.map((f) => <div><b>{f.value}</b><span>{f.label}</span></div>)}
         </div>
         <div class="marks" role="group" aria-label="Providers compared">
           <div class="marks-track">
@@ -286,7 +281,7 @@ const jsonLd = {
               <h3>{b.title}</h3>
               <p>{b.text}</p>
               <div class="stat">
-                <b><span data-count={b.value} data-suffix={b.suffix ?? ''}>{b.value}{b.suffix ?? ''}</span>{b.t && <small> of {count}</small>}</b>
+                <b>{b.value}{b.suffix ?? ''}{b.t && <small> of {count}</small>}</b>
                 <span>{b.stat}</span>
                 <span class="more">{b.more}</span>
               </div>
@@ -551,34 +546,14 @@ const jsonLd = {
         try { localStorage.setItem('starlight-theme', next); } catch {}
       });
 
-      // Numbers count up to the value already on the page, once.
-      const countUp = (el: HTMLElement) => {
-        const end = Number(el.dataset.count);
-        if (still || el.dataset.counted || !Number.isFinite(end)) return;
-        el.dataset.counted = 'true';
-        const digits = Number(el.dataset.digits ?? 0);
-        const prefix = el.dataset.prefix ?? '';
-        const suffix = el.dataset.suffix ?? '';
-        const final = el.textContent;
-        const started = performance.now();
-        const step = (now: number) => {
-          const k = Math.min(1, (now - started) / 900);
-          el.textContent = k === 1 ? final : `${prefix}${(end * (1 - Math.pow(1 - k, 3))).toFixed(digits)}${suffix}`;
-          if (k < 1) requestAnimationFrame(step);
-        };
-        requestAnimationFrame(step);
-      };
-      document.querySelectorAll<HTMLElement>('.cmp-facts [data-count]').forEach(countUp);
-
-      // Sections, boxes and cards arrive as they scroll into view.
+      // Sections, boxes and cards arrive as they scroll into view. This only adds
+      // a class: no script on this page changes a figure's text.
       const reveal = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
             if (!entry.isIntersecting) continue;
-            const el = entry.target as HTMLElement;
-            el.classList.add('in');
-            el.querySelectorAll<HTMLElement>('[data-count]').forEach(countUp);
-            reveal.unobserve(el);
+            entry.target.classList.add('in');
+            reveal.unobserve(entry.target);
           }
         },
         { rootMargin: '0px 0px -6% 0px', threshold: 0.04 },
