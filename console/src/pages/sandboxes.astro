@@ -5,6 +5,7 @@ import Icon from '../components/Icon.astro';
 ---
 <Console title="Sandboxes" active="sandboxes">
   <PageHeader title="Sandboxes" description="Every sandbox this key can see, newest first.">
+    <a class="btn" href={import.meta.env.BASE_URL + 'routing/?launch'}>Launch on chosen pools</a>
     <button class="btn primary" type="button" data-open="create"><Icon name="plus" size={15} />Create sandbox</button>
   </PageHeader>
   <div class="toolbar">

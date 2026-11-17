@@ -8,6 +8,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"slices"
@@ -155,6 +156,13 @@ type PoolConfig struct {
 	// Preemption lets the scheduler pause running sandboxes to make room for
 	// waiting work (pools that checkpoint on pause only).
 	Preemption *api.Preemption `json:"preemption,omitempty"`
+	// Attestations record what whoever runs this pool is certified for or
+	// has signed (soc2-type2, hipaa-baa, ...). Placement requires them where
+	// a policy, classification or request says so.
+	Attestations map[string]api.Attestation `json:"attestations,omitempty"`
+	// Budget caps the pool's estimated spend per calendar month. It needs a
+	// costModel, which is what the estimate is computed from.
+	Budget *api.Budget `json:"budget,omitempty"`
 }
 
 // ToPool converts to the API representation.
@@ -164,7 +172,52 @@ func (p PoolConfig) ToPool() api.Pool {
 		Name: p.Name, Adapter: p.Adapter, Trust: p.Trust, Region: p.Region, Labels: p.Labels,
 		Enabled: enabled, MaxConcurrency: p.MaxConcurrency, CostModel: p.CostModel, Config: p.Config,
 		CredentialRef: p.Credentials.String(), Source: "config", Preemption: p.Preemption,
+		Attestations: p.Attestations, Budget: normalBudget(p.Budget),
 	}
+}
+
+// normalBudget stores "no budget" one way: nil.
+func normalBudget(b *api.Budget) *api.Budget {
+	if b == nil || b.Monthly == 0 {
+		return nil
+	}
+	return b
+}
+
+// ValidateBudget checks a pool's budget against the cost model its spend is
+// estimated from. A budget on a pool with no prices would never be reached,
+// so it is refused rather than silently doing nothing.
+func ValidateBudget(b *api.Budget, cost api.CostModel) error {
+	switch {
+	case b == nil || b.Monthly == 0:
+		return nil
+	case b.Monthly < 0 || math.IsNaN(b.Monthly) || math.IsInf(b.Monthly, 0):
+		return fmt.Errorf("budget.monthly must be a positive amount, not %v", b.Monthly)
+	case cost.CPUHour <= 0 && cost.MemoryGiBHour <= 0 && cost.DiskGiBHour <= 0 && cost.SandboxHour <= 0:
+		return errors.New("a budget needs a costModel: spend is estimated from the pool's prices, and without any it would always be 0")
+	}
+	return nil
+}
+
+// ValidateAttestationNames checks names used to declare or require
+// attestations.
+func ValidateAttestationNames(names ...string) error {
+	for _, n := range names {
+		if !api.ValidAttestationName(n) {
+			return fmt.Errorf("attestation name %q must be 1 to 63 lowercase letters, digits, '.', '_' or '-', starting with a letter or digit", n)
+		}
+	}
+	return nil
+}
+
+// ValidateAttestations checks the attestations declared on a pool.
+func ValidateAttestations(m map[string]api.Attestation) error {
+	names := make([]string, 0, len(m))
+	for n := range m {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	return ValidateAttestationNames(names...)
 }
 
 // ValidatePreemption checks a pool's preemption policy.
@@ -424,6 +477,15 @@ func (c Config) Validate() error {
 		if err := ValidatePreemption(p.Preemption); err != nil {
 			bad("pool %s: %v", p.Name, err)
 		}
+		if err := ValidateAttestations(p.Attestations); err != nil {
+			bad("pool %s: %v", p.Name, err)
+		}
+		if err := ValidateBudget(p.Budget, p.CostModel); err != nil {
+			bad("pool %s: %v", p.Name, err)
+		}
+	}
+	if err := ValidateAttestationNames(c.Policy.RequiredAttestations...); err != nil {
+		bad("policy.requiredAttestations: %v", err)
 	}
 	for _, o := range c.CORS.AllowedOrigins {
 		u, err := url.Parse(o)
@@ -439,6 +501,9 @@ func (c Config) Validate() error {
 		classes[cl.Name] = true
 		if _, ok := map[string]bool{api.ExternalNever: true, api.ExternalOverflow: true, api.ExternalAllowed: true}[cl.External]; !ok {
 			bad("classification %s: external must be never, overflow or allowed", cl.Name)
+		}
+		if err := ValidateAttestationNames(cl.RequiredAttestations...); err != nil {
+			bad("classification %s: %v", cl.Name, err)
 		}
 	}
 	if !classes[c.Defaults.Classification] {

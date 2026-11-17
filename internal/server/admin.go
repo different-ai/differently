@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -187,8 +188,21 @@ func (s *Server) decoratedPools(r *http.Request) ([]api.Pool, error) {
 	active, _ := s.Store.PoolActive(r.Context())
 	for i := range list {
 		s.Pools.Decorate(&list[i], active[list[i].Name])
+		s.decorateSpend(r, &list[i])
 	}
 	return list, nil
+}
+
+// decorateSpend reports this month's estimated spend on a pool with a budget.
+func (s *Server) decorateSpend(r *http.Request, p *api.Pool) {
+	if p.Budget == nil || p.Budget.Monthly <= 0 {
+		return
+	}
+	spend, err := s.Scheduler.MonthSpend(r.Context())
+	if err != nil {
+		return // placement holds the pool; the report just has no figure
+	}
+	p.Spend = &api.PoolSpend{Month: s.now().UTC().Format("2006-01"), Estimated: spend[p.Name], BudgetReached: p.BudgetReached(spend[p.Name])}
 }
 
 func (s *Server) listPools(w http.ResponseWriter, r *http.Request, _ auth.Principal) error {
@@ -207,6 +221,7 @@ func (s *Server) getPool(w http.ResponseWriter, r *http.Request, _ auth.Principa
 	}
 	active, _ := s.Store.PoolActive(r.Context())
 	s.Pools.Decorate(&pool, active[pool.Name])
+	s.decorateSpend(r, &pool)
 	writeJSON(w, 200, pool)
 	return nil
 }
@@ -231,6 +246,7 @@ func (s *Server) createPool(w http.ResponseWriter, r *http.Request, p auth.Princ
 	}
 	pool := parsed.ToPool()
 	pool.Source = "api"
+	pool.Attestations = recordAttestations(pool.Attestations, nil, p.Actor(), s.now())
 	if err := s.checkPoolCredential(r.Context(), pool.CredentialRef); err != nil {
 		return err
 	}
@@ -240,9 +256,46 @@ func (s *Server) createPool(w http.ResponseWriter, r *http.Request, p auth.Princ
 	if err := s.SyncPools(r.Context()); err != nil {
 		return err
 	}
-	s.audit(r, p, "pool.create", pool.Name, "", "", map[string]string{"adapter": pool.Adapter, "trust": pool.Trust, "credentialRef": pool.CredentialRef})
+	details := map[string]string{"adapter": pool.Adapter, "trust": pool.Trust, "credentialRef": pool.CredentialRef}
+	if len(pool.Attestations) > 0 {
+		details["attestations"] = attestationNames(pool.Attestations)
+	}
+	s.audit(r, p, "pool.create", pool.Name, "", "", details)
 	writeJSON(w, http.StatusCreated, pool)
 	return nil
+}
+
+// recordAttestations stamps who declared each attestation and when. An entry
+// whose evidence and expiry match the stored one keeps its original record,
+// so re-sending the same set does not rewrite its history.
+func recordAttestations(next, old map[string]api.Attestation, actor string, now time.Time) map[string]api.Attestation {
+	if len(next) == 0 {
+		return nil
+	}
+	out := make(map[string]api.Attestation, len(next))
+	for name, a := range next {
+		prev, had := old[name]
+		same := had && prev.Evidence == a.Evidence &&
+			((prev.ValidUntil == nil && a.ValidUntil == nil) || (prev.ValidUntil != nil && a.ValidUntil != nil && prev.ValidUntil.Equal(*a.ValidUntil)))
+		if same {
+			out[name] = prev
+			continue
+		}
+		at := now
+		a.RecordedBy, a.RecordedAt = actor, &at
+		out[name] = a
+	}
+	return out
+}
+
+// attestationNames lists attestation names for an audit event.
+func attestationNames(m map[string]api.Attestation) string {
+	names := make([]string, 0, len(m))
+	for n := range m {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	return strings.Join(names, ",")
 }
 
 func validatePool(cfg config.Config) (config.PoolConfig, error) {
@@ -266,6 +319,10 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 		// CredentialRef moves an API-registered pool to another credential,
 		// for example from env:NAME to a stored secret:name.
 		CredentialRef *string `json:"credentialRef,omitempty"`
+		// Attestations replaces the whole set the pool holds ({} clears it).
+		Attestations *map[string]api.Attestation `json:"attestations,omitempty"`
+		// Budget sets the pool's monthly budget ({"monthly": 0} removes it).
+		Budget *api.Budget `json:"budget,omitempty"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
@@ -305,6 +362,31 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 		}
 		pool.Preemption = req.Preemption
 	}
+	if req.Attestations != nil {
+		// A config-declared pool is rewritten from the file at every start,
+		// so a change made here would silently disappear.
+		if pool.Source == "config" {
+			return api.Errorf(api.CodeConflict, "pool %s is declared in the config file; change its attestations there", pool.Name)
+		}
+		if err := config.ValidateAttestations(*req.Attestations); err != nil {
+			return api.Errorf(api.CodeInvalidRequest, "%v", err)
+		}
+		pool.Attestations = recordAttestations(*req.Attestations, pool.Attestations, p.Actor(), s.now())
+	}
+	if req.Budget != nil {
+		if pool.Source == "config" {
+			return api.Errorf(api.CodeConflict, "pool %s is declared in the config file; change its budget there", pool.Name)
+		}
+		pool.Budget = req.Budget
+		if pool.Budget.Monthly == 0 {
+			pool.Budget = nil
+		}
+	}
+	// Checked after every change: dropping the prices under a budget would
+	// leave a budget that can never be reached.
+	if err := config.ValidateBudget(pool.Budget, pool.CostModel); err != nil {
+		return api.Errorf(api.CodeInvalidRequest, "%v", err)
+	}
 	if err := s.Store.UpsertPool(r.Context(), pool); err != nil {
 		return err
 	}
@@ -312,6 +394,21 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 	var details map[string]string
 	if req.CredentialRef != nil {
 		details = map[string]string{"credentialRef": pool.CredentialRef}
+	}
+	if req.Attestations != nil {
+		if details == nil {
+			details = map[string]string{}
+		}
+		details["attestations"] = attestationNames(pool.Attestations)
+	}
+	if req.Budget != nil {
+		if details == nil {
+			details = map[string]string{}
+		}
+		details["budgetMonthly"] = "none"
+		if pool.Budget != nil {
+			details["budgetMonthly"] = strconv.FormatFloat(pool.Budget.Monthly, 'f', -1, 64)
+		}
 	}
 	s.audit(r, p, "pool.update", pool.Name, "", "", details)
 	writeJSON(w, 200, pool)
@@ -485,6 +582,9 @@ type TrustPool struct {
 	CredentialRef    string `json:"credentialRef,omitempty"`
 	ApprovedExternal bool   `json:"approvedForExternalPlacement"`
 	Health           string `json:"health"`
+	// Attestations are what the operator recorded for this pool, with the
+	// evidence reference and expiry. They are declarations, not checks.
+	Attestations map[string]api.Attestation `json:"attestations,omitempty"`
 }
 
 // TrustPlacement is one sandbox placed outside private pools.
@@ -510,6 +610,7 @@ func limitations(cfg config.Config) []string {
 		"Sandbox environment variables are stored unencrypted in the control-plane database; protect it with storage encryption and access controls.",
 		"Exec commands are audited by program name unless audit.recordCommands is enabled; command arguments and outputs are not retained.",
 		"Usage costs are estimates from configured cost models, not reconciled provider invoices.",
+		"Pool attestations (for example soc2-type2 or hipaa-baa) are declarations an operator recorded, with an evidence reference and an optional expiry. Differently filters placement on them but does not verify a provider's certification, and an attestation says nothing about where a provider keeps backups, logs or telemetry.",
 	}
 	if !cfg.Audit.FailClosed {
 		out = append(out, "Audit logging is fail-open: if an audit append fails the action still proceeds and the failure is only logged and counted (set audit.failClosed to refuse changes instead).")
@@ -551,6 +652,7 @@ func (s *Server) trustReport(w http.ResponseWriter, r *http.Request, _ auth.Prin
 			Isolation: isolation,
 			Name:      pl.Name, Adapter: pl.Adapter, Trust: pl.Trust, Enabled: pl.Enabled, Draining: pl.Draining, Region: pl.Region,
 			Endpoint: endpoints[pl.Name], CredentialRef: pl.CredentialRef, Health: pl.Health.Status,
+			Attestations:     pl.Attestations,
 			ApprovedExternal: pl.Trust == api.TrustExternal && rep.GlobalPolicy.External != api.ExternalNever && slices.Contains(rep.GlobalPolicy.ExternalPools, pl.Name),
 		})
 	}

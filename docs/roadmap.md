@@ -37,7 +37,7 @@ quota and placement policy, runnable on a laptop.
 | Placement policy engine (filter, rank, fail-closed external) | ✅ | `internal/policy` |
 | Scheduler, retries, reconciler | ✅ | `internal/scheduler` (no package-level tests; covered by server tests) |
 | Memory store | ✅ | `internal/store/memory.go` |
-| Postgres store, migrations, advisory-lock leadership | 🟡 | Implemented; the conformance suite needs `DIFFERENTLY_TEST_POSTGRES_URL` and runs in the CI `postgres conformance` job; multi-replica failover not yet run ([E5](backlog.md#e5-postgres-in-ci-failover-and-scale)) |
+| Postgres store, migrations, advisory-lock leadership | 🟡 | Implemented; the conformance suite and the server acceptance scenarios need `DIFFERENTLY_TEST_POSTGRES_URL` and run in the CI `postgres conformance and acceptance` job; multi-replica failover not yet run ([E5](backlog.md#e5-postgres-in-ci-failover-and-scale)) |
 | CI and release workflows | 🟡 | `.github/workflows/ci.yml`, `release.yml`; encode the branch model |
 | Tamper-evident audit chain, verify endpoint, JSON-lines mirror | ✅ | `internal/audit`, `internal/auditlog` |
 | Dev mode with `devhost` pool | ✅ | `differently-server --dev` |

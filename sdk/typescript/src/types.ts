@@ -53,6 +53,11 @@ export interface Placement {
   regions?: string[];
   /** Lowers the effective external mode (for example to "never"); it never raises it. */
   external?: ExternalMode;
+  /**
+   * Attestations a pool must hold to take this sandbox, for example `soc2-type2`.
+   * They add to what policies and the classification already require.
+   */
+  requiredAttestations?: string[];
 }
 
 export interface CreateSandboxParams {
@@ -157,6 +162,8 @@ export interface PlacementDecision {
   policies: string[] | null;
   candidates: CandidateEvaluation[] | null;
   evaluatedAt: string;
+  /** What the policies, the classification and the request together required of a pool. */
+  requiredAttestations?: string[];
 }
 
 export interface CandidateEvaluation {
@@ -364,6 +371,12 @@ export interface Pool {
   credentialRef?: string;
   source: "config" | "api" | (string & {});
   capabilities?: string[];
+  /** What the operator recorded about whoever runs this pool, by attestation name. */
+  attestations?: Record<string, Attestation>;
+  /** Caps the pool's estimated spend per calendar month. */
+  budget?: Budget;
+  /** This month's estimated spend, reported for pools with a budget. */
+  spend?: PoolSpend;
   health?: PoolHealth;
   capacity?: PoolCapacity;
   /** Lets the scheduler pause running sandboxes to make room for waiting work. Absent or `off`: never. */
@@ -371,6 +384,37 @@ export interface Pool {
   active: number;
   /** Paused sandboxes on the pool that hold no slot. */
   released?: number;
+}
+
+/** A ceiling on a pool's estimated spend. */
+export interface Budget {
+  /**
+   * Per calendar month (UTC), in the cost model's currency. Once the estimate reaches
+   * it the pool takes no new sandboxes; those already there keep running.
+   */
+  monthly?: number;
+}
+
+/** A pool's estimated spend this month, from its cost model and run times, not an invoice. */
+export interface PoolSpend {
+  /** For example `2026-11`. */
+  month: string;
+  estimated: number;
+  budgetReached: boolean;
+}
+
+/**
+ * An operator's record that whoever runs a pool holds a certification or agreement
+ * (a SOC 2 Type II report, a signed BAA). Differently filters placement on it and
+ * does not verify it.
+ */
+export interface Attestation {
+  /** Where the proof is: a trust-center URL, a report or contract reference. */
+  evidence?: string;
+  /** When it stops counting (RFC 3339). Absent: it does not expire. */
+  validUntil?: string;
+  recordedBy?: string;
+  recordedAt?: string;
 }
 
 export interface Preemption {
@@ -391,6 +435,10 @@ export interface CreatePoolParams {
   maxConcurrency?: number;
   costModel?: CostModel;
   config?: Record<string, string>;
+  /** Attestations the pool holds, by name; `recordedBy` and `recordedAt` are set by the server. */
+  attestations?: Record<string, Pick<Attestation, "evidence" | "validUntil">>;
+  /** A monthly budget; it needs a `costModel`, which the spend estimate is computed from. */
+  budget?: Budget;
   /**
    * Where the credential lives: a server environment variable, a mounted file, or a
    * credential stored in Differently with `admin.secrets.put` (`secret`).
@@ -437,6 +485,8 @@ export interface PoolCapabilities {
   enabled: boolean;
   health: string;
   capabilities: string[] | null;
+  /** Names of the attestations the pool currently holds. */
+  attestations?: string[];
 }
 
 /** Scope is "global", "org:<id>" or "project:<id>". */
@@ -450,6 +500,8 @@ export interface PlacementPolicy {
   strategy?: PlacementStrategy;
   maxCostPerHour?: number;
   maxQueueSeconds?: number;
+  /** Attestations a pool must hold. Every scope adds to the list; none can remove one. */
+  requiredAttestations?: string[];
   updatedAt: string;
   updatedBy?: string;
 }
@@ -461,6 +513,8 @@ export interface Classification {
   description?: string;
   /** The most permissive external mode this class allows. */
   external: ExternalMode;
+  /** Attestations a pool must hold to take data of this class. */
+  requiredAttestations?: string[];
 }
 
 export interface Profile {

@@ -75,6 +75,10 @@ type Placement struct {
 	Regions      []string `json:"regions,omitempty"`
 	// External can lower the effective external mode (e.g. "never"), never raise it.
 	External string `json:"external,omitempty"`
+	// RequiredAttestations names attestations a pool must hold to take this
+	// sandbox (for example "soc2-type2"). They add to what the policies and
+	// the classification already require; a request cannot remove any.
+	RequiredAttestations []string `json:"requiredAttestations,omitempty"`
 }
 
 // CreateSandboxRequest is the body of POST /v1/sandboxes.
@@ -180,6 +184,9 @@ type PlacementDecision struct {
 	Policies    []string              `json:"policies"`
 	Candidates  []CandidateEvaluation `json:"candidates"`
 	EvaluatedAt time.Time             `json:"evaluatedAt"`
+	// RequiredAttestations is what the policies, the classification and the
+	// request together required of a pool.
+	RequiredAttestations []string `json:"requiredAttestations,omitempty"`
 }
 
 // CandidateEvaluation is the verdict for one pool during placement.
@@ -390,6 +397,15 @@ type Pool struct {
 	CredentialRef  string            `json:"credentialRef,omitempty"`
 	Source         string            `json:"source"` // config | api
 	Capabilities   []string          `json:"capabilities,omitempty"`
+	// Attestations are what the operator has recorded about whoever runs
+	// this pool: a SOC 2 Type II report, a signed BAA and so on, by name.
+	// Placement keeps work that requires one off pools that lack it.
+	Attestations map[string]Attestation `json:"attestations,omitempty"`
+	// Budget caps the pool's estimated spend. Nil means no budget.
+	Budget *Budget `json:"budget,omitempty"`
+	// Spend is the estimated spend this month, reported for pools with a
+	// budget.
+	Spend *PoolSpend `json:"spend,omitempty"`
 	// Preemption lets the scheduler pause running sandboxes to make room for
 	// waiting work on this pool. Nil or mode "off" never preempts.
 	Preemption *Preemption   `json:"preemption,omitempty"`
@@ -422,6 +438,29 @@ type Preemption struct {
 	IdleSeconds int `json:"idleSeconds,omitempty"`
 }
 
+// Budget caps what a pool may be estimated to cost.
+type Budget struct {
+	// Monthly is the ceiling on the pool's estimated spend in a calendar
+	// month (UTC), in the cost model's currency. Once the estimate reaches it
+	// the pool takes no new sandboxes until the month ends or the budget is
+	// raised; sandboxes already there keep running. Zero means no budget.
+	Monthly float64 `json:"monthly,omitempty"`
+}
+
+// PoolSpend is a pool's estimated spend so far in the current calendar month.
+// It comes from the pool's cost model and run times, not a provider invoice.
+type PoolSpend struct {
+	Month     string  `json:"month"` // for example "2026-11", UTC
+	Estimated float64 `json:"estimated"`
+	// BudgetReached reports that the pool takes no new sandboxes this month.
+	BudgetReached bool `json:"budgetReached"`
+}
+
+// BudgetReached reports whether spent has used up the pool's monthly budget.
+func (p Pool) BudgetReached(spent float64) bool {
+	return p.Budget != nil && p.Budget.Monthly > 0 && spent >= p.Budget.Monthly
+}
+
 // PoolHealth is the last observed health of a pool.
 type PoolHealth struct {
 	Status    string    `json:"status"` // healthy | degraded | unavailable | unknown
@@ -443,17 +482,20 @@ type PoolCapacity struct {
 // Scope is "global", "org:<id>" or "project:<id>". More specific scopes can
 // only narrow security constraints; strategy prefers the most specific value.
 type PlacementPolicy struct {
-	Scope           string    `json:"scope"`
-	AllowedPools    []string  `json:"allowedPools,omitempty"`
-	DeniedPools     []string  `json:"deniedPools,omitempty"`
-	AllowedRegions  []string  `json:"allowedRegions,omitempty"`
-	External        string    `json:"external,omitempty"`
-	ExternalPools   []string  `json:"externalPools,omitempty"`
-	Strategy        string    `json:"strategy,omitempty"`
-	MaxCostPerHour  float64   `json:"maxCostPerHour,omitempty"`
-	MaxQueueSeconds int       `json:"maxQueueSeconds,omitempty"`
-	UpdatedAt       time.Time `json:"updatedAt"`
-	UpdatedBy       string    `json:"updatedBy,omitempty"`
+	Scope           string   `json:"scope"`
+	AllowedPools    []string `json:"allowedPools,omitempty"`
+	DeniedPools     []string `json:"deniedPools,omitempty"`
+	AllowedRegions  []string `json:"allowedRegions,omitempty"`
+	External        string   `json:"external,omitempty"`
+	ExternalPools   []string `json:"externalPools,omitempty"`
+	Strategy        string   `json:"strategy,omitempty"`
+	MaxCostPerHour  float64  `json:"maxCostPerHour,omitempty"`
+	MaxQueueSeconds int      `json:"maxQueueSeconds,omitempty"`
+	// RequiredAttestations names attestations a pool must hold. Every scope
+	// adds to the list; none can remove what a wider scope requires.
+	RequiredAttestations []string  `json:"requiredAttestations,omitempty"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+	UpdatedBy            string    `json:"updatedBy,omitempty"`
 }
 
 // Classification is an operator-defined data sensitivity level.
@@ -462,6 +504,60 @@ type Classification struct {
 	Description string `json:"description,omitempty"`
 	// External is the most permissive external mode this class allows.
 	External string `json:"external"`
+	// RequiredAttestations names attestations a pool must hold to take data
+	// of this class, for example "soc2-type2" and "hipaa-baa".
+	RequiredAttestations []string `json:"requiredAttestations,omitempty"`
+}
+
+// Attestation is the operator's record that whoever runs a pool holds a
+// certification or agreement. Differently stores it and filters placement on
+// it; it does not verify the claim.
+type Attestation struct {
+	// Evidence says where the proof is: a trust-center URL, a report or
+	// contract reference.
+	Evidence string `json:"evidence,omitempty"`
+	// ValidUntil is when the attestation stops counting, for example the end
+	// of an audit report's bridge period. Unset never expires.
+	ValidUntil *time.Time `json:"validUntil,omitempty"`
+	// RecordedBy and RecordedAt say who declared it through the API and when.
+	RecordedBy string     `json:"recordedBy,omitempty"`
+	RecordedAt *time.Time `json:"recordedAt,omitempty"`
+}
+
+// ValidAttestationName reports whether s can name an attestation: 1 to 63
+// lowercase letters, digits, '.', '_' or '-', starting with a letter or digit.
+// Names are the operator's own; "soc2-type2", "iso27001", "hipaa-baa" and
+// "gdpr-dpa" are the conventional ones.
+func ValidAttestationName(s string) bool {
+	if s == "" || len(s) > 63 {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case i > 0 && (r == '.' || r == '_' || r == '-'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// MissingAttestations returns the required attestations the pool does not
+// hold at now, in the order given. An expired one is reported with the day it
+// expired, so a placement explanation says why it no longer counts.
+func (p Pool) MissingAttestations(required []string, now time.Time) []string {
+	var out []string
+	for _, name := range required {
+		a, ok := p.Attestations[name]
+		switch {
+		case !ok:
+			out = append(out, name)
+		case a.ValidUntil != nil && !now.Before(*a.ValidUntil):
+			out = append(out, name+" (expired "+a.ValidUntil.UTC().Format(time.DateOnly)+")")
+		}
+	}
+	return out
 }
 
 // Profile is a named resource preset.

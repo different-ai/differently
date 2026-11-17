@@ -134,3 +134,71 @@ func TestCORSOriginsMustBeExact(t *testing.T) {
 		t.Fatalf("exact origins are valid: %v", err)
 	}
 }
+
+// Attestations are declared on pools and required by classifications and the
+// global policy; a malformed name is refused wherever it appears.
+func TestAttestationsInConfig(t *testing.T) {
+	c, err := Parse([]byte(`
+classifications:
+  - {name: internal, external: overflow}
+  - {name: regulated, external: overflow, requiredAttestations: [soc2-type2, hipaa-baa]}
+pools:
+  - name: osb
+    adapter: opensandbox
+    trust: private
+    config: {apiURL: "http://opensandbox:8090/v1"}
+  - name: burst
+    adapter: daytona
+    credentials: {env: DAYTONA_API_KEY}
+    attestations:
+      soc2-type2: {evidence: "https://trust.example.com", validUntil: "2027-06-30T00:00:00Z"}
+      hipaa-baa: {evidence: "BAA signed 2026-09-01"}
+policy:
+  requiredAttestations: [gdpr-dpa]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	burst := c.Pools[1].ToPool()
+	if a := burst.Attestations["soc2-type2"]; a.Evidence != "https://trust.example.com" || a.ValidUntil == nil || a.ValidUntil.Year() != 2027 {
+		t.Fatalf("attestation not carried to the pool: %+v", burst.Attestations)
+	}
+	if class, _ := c.Classification("regulated"); !slices.Equal(class.RequiredAttestations, []string{"soc2-type2", "hipaa-baa"}) {
+		t.Fatalf("classification requirements: %+v", class)
+	}
+	for _, bad := range []string{
+		"classifications:\n  - {name: internal, external: never, requiredAttestations: [SOC2]}\n",
+		"pools:\n  - name: osb\n    adapter: opensandbox\n    trust: private\n    config: {apiURL: \"http://o/v1\"}\n    attestations: {\"soc2 type2\": {}}\n",
+		"policy:\n  requiredAttestations: [\"\"]\n",
+	} {
+		if _, err := Parse([]byte(bad)); err == nil || !strings.Contains(err.Error(), "attestation name") {
+			t.Errorf("malformed attestation name accepted: %v\n%s", err, bad)
+		}
+	}
+}
+
+// A budget is estimated from the pool's prices, so one without a cost model
+// is refused instead of silently never being reached.
+func TestPoolBudgetNeedsACostModel(t *testing.T) {
+	pool := func(extra string) []byte {
+		return []byte("pools:\n  - name: burst\n    adapter: daytona\n    credentials: {env: DAYTONA_API_KEY}\n" + extra)
+	}
+	c, err := Parse(pool("    costModel: {cpuHour: 0.0504, memoryGiBHour: 0.0162}\n    budget: {monthly: 500}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := c.Pools[0].ToPool().Budget; b == nil || b.Monthly != 500 {
+		t.Fatalf("budget not carried to the pool: %+v", b)
+	}
+	if c, err := Parse(pool("    budget: {monthly: 0}\n")); err != nil || c.Pools[0].ToPool().Budget != nil {
+		t.Fatalf("a zero budget means none: %v", err)
+	}
+	for extra, want := range map[string]string{
+		"    budget: {monthly: 500}\n":                                "needs a costModel",
+		"    costModel: {cpuHour: 0.05}\n    budget: {monthly: -1}\n": "positive amount",
+	} {
+		if _, err := Parse(pool(extra)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("want an error containing %q, got %v", want, err)
+		}
+	}
+}

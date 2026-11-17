@@ -1,7 +1,7 @@
 # Differently console
 
 A small admin app for Differently: sandboxes, snapshots, API keys, providers,
-secrets, policies, usage, the audit log and the trust report. It is an Astro
+secrets, policies, live routing, usage, the audit log and the trust report. It is an Astro
 site that talks only to Differently's public API. Every rule and every piece
 of state stays in the control plane, so the console can run anywhere, run
 several times, or be thrown away and rebuilt.
@@ -88,6 +88,41 @@ Auth plugin, move users to Postgres with a Better Auth database adapter, or
 replace the email allowlist with your own rule. See the
 [Better Auth documentation](https://www.better-auth.com/docs) for the options.
 
+## Live routing
+
+The **Live routing** page shows where sandboxes are going as it happens, in
+the same picture as the intro video: your apps, Differently, and one box per
+pool, with your own pools first and external providers behind the gate.
+
+- **Pools** show their health, the sandboxes on them (filled slots), how many
+  were placed in the last five minutes, and, where set, this month's spend
+  against the budget and the attestations the pool holds.
+- **The gate** shows the global policy's external mode. An external pool the
+  policy does not approve is greyed out and its wire is not live.
+- **Packets** move as events arrive: a request reaches Differently, then goes
+  to a pool. Work that is refused or fails turns red at the point it stopped.
+- **Decisions** is the running log. Click a row to see how that sandbox was
+  placed: every pool considered and why it was chosen, held or ruled out.
+- **Waiting now** lists queued sandboxes with the reason each one waits.
+
+**Launch sandboxes** on the same page starts a batch across pools: set a
+count beside each pool (say 5 on one provider and 10 on another), pick the
+profile, template and time to live, and create them. Each sandbox is pinned
+to its pool with `placement.allowedPools`, so policy, quotas and budgets
+still decide: a pool the global policy does not approve cannot be chosen, and
+a pool that is full takes its sandboxes as slots free up. The dialog shows
+each pool's free slots and an estimated cost per hour from its cost model,
+then reports what was accepted and what was refused, with the reason. A batch
+is at most 50 per pool and 100 in all. The Sandboxes page links to it.
+
+The page uses only the public API, polled every two seconds: pools, policies,
+queued sandboxes, and audit events after the last one seen. It needs a key
+that can read the audit log. With an operator key it shows every pool and its
+load. With a tenant key it shows the pools that tenant's policies allow and
+that tenant's sandboxes, without each pool's load. Motion is off when the
+browser asks for reduced motion and on narrow screens, where the picture
+stacks into one column.
+
 ## Reaching a Differently you do not expose
 
 - **From your laptop.** Run `npm run dev` and set `DIFFERENTLY_URL` to a
@@ -107,6 +142,7 @@ npm ci
 npm run dev           # static mode on :4321, forwarding /v1 to DIFFERENTLY_URL (default http://localhost:8080)
 npm run dev:server    # server mode, reading the variables above from .env
 npm run typecheck
+npm test              # the live routing and launch models, with Node's built-in test runner
 ```
 
 With `differently-server --dev` running, connect with the token in

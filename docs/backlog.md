@@ -476,10 +476,11 @@ E0.20.
 
 **Priority** P1. **Depends on** none.
 
-- **E5.1 Conformance in CI.** The `postgres conformance` job in
-  `.github/workflows/ci.yml` exists; make it a required check, and make the
-  test fail instead of skipping when CI sets a flag (a skipped test passes
-  today). *Acceptance:* removing the database URL in CI turns the job red.
+- **E5.1 Conformance in CI.** Partly done: the `postgres conformance and
+  acceptance` job in `.github/workflows/ci.yml` runs the conformance suite and
+  the server acceptance scenarios, and fails instead of skipping when the
+  database URL is missing (`DIFFERENTLY_TEST_POSTGRES_REQUIRED`). Still open:
+  make it a required check.
 - **E5.2 POC 6 (failover).** Run and publish; document recommended Postgres
   settings (TCP keepalives, synchronous replication). *Acceptance:* POC 6
   criteria.

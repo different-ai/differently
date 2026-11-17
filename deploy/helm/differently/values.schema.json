@@ -22,6 +22,28 @@
     "externalMode": {"type": "string", "enum": ["never", "overflow", "allowed"]},
     "strategy": {"type": "string", "enum": ["private-first", "cost", "spread"]},
     "nonNegativeInt": {"type": "integer", "minimum": 0},
+    "attestationNames": {"type": "array", "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$"}, "description": "Attestations a pool must hold, for example soc2-type2 or hipaa-baa."},
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Caps the pool's estimated spend. Needs a costModel.",
+      "properties": {
+        "monthly": {"type": "number", "minimum": 0, "description": "Per calendar month (UTC), in the cost model's currency. New sandboxes stop once the estimate reaches it."}
+      }
+    },
+    "attestations": {
+      "type": "object",
+      "description": "What whoever runs this pool is certified for or has signed, by name (soc2-type2, iso27001, hipaa-baa, gdpr-dpa). Declared by the operator; not verified.",
+      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9._-]{0,62}$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "evidence": {"type": "string", "description": "Where the proof is: a trust-center URL, a report or contract reference."},
+          "validUntil": {"type": "string", "format": "date-time", "description": "When it stops counting, RFC 3339. Unset never expires."}
+        }
+      }
+    },
     "resources": {
       "type": "object",
       "additionalProperties": false,
@@ -69,6 +91,8 @@
         "enabled": {"type": "boolean"},
         "maxConcurrency": {"$ref": "#/definitions/nonNegativeInt"},
         "costModel": {"$ref": "#/definitions/costModel"},
+        "attestations": {"$ref": "#/definitions/attestations"},
+        "budget": {"$ref": "#/definitions/budget"},
         "preemption": {
           "type": "object",
           "additionalProperties": false,
@@ -147,7 +171,8 @@
         "externalPools": {"type": "array", "items": {"type": "string"}},
         "strategy": {"$ref": "#/definitions/strategy"},
         "maxCostPerHour": {"type": "number", "minimum": 0},
-        "maxQueueSeconds": {"$ref": "#/definitions/nonNegativeInt"}
+        "maxQueueSeconds": {"$ref": "#/definitions/nonNegativeInt"},
+        "requiredAttestations": {"$ref": "#/definitions/attestationNames"}
       }
     },
     "provider": {
@@ -166,6 +191,8 @@
             "labels": {"$ref": "#/definitions/stringMap"},
             "maxConcurrency": {"$ref": "#/definitions/nonNegativeInt"},
             "costModel": {"$ref": "#/definitions/costModel"},
+            "attestations": {"$ref": "#/definitions/attestations"},
+            "budget": {"$ref": "#/definitions/budget"},
             "config": {"$ref": "#/definitions/stringMap"}
           }
         },
@@ -192,7 +219,9 @@
             "region": {"type": "string"},
             "labels": {"$ref": "#/definitions/stringMap"},
             "maxConcurrency": {"$ref": "#/definitions/nonNegativeInt"},
-            "costModel": {"$ref": "#/definitions/costModel"}
+            "costModel": {"$ref": "#/definitions/costModel"},
+            "attestations": {"$ref": "#/definitions/attestations"},
+            "budget": {"$ref": "#/definitions/budget"}
           }
         },
         "image": {"type": "string"},
@@ -266,7 +295,8 @@
             "properties": {
               "name": {"type": "string", "minLength": 1},
               "description": {"type": "string"},
-              "external": {"$ref": "#/definitions/externalMode"}
+              "external": {"$ref": "#/definitions/externalMode"},
+              "requiredAttestations": {"$ref": "#/definitions/attestationNames"}
             }
           }
         },

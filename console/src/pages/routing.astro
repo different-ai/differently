@@ -1,0 +1,513 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Icon from '../components/Icon.astro';
+---
+<Console title="Live routing" active="routing">
+  <PageHeader title="Live routing" description="Where sandboxes are going right now, and why each one went there.">
+    <span class="live" id="live"><span class="dot"></span><span id="live-label">Connecting</span></span>
+    <button class="btn" type="button" id="pause" aria-pressed="false">Pause</button>
+    <button class="btn primary" type="button" id="launch-open"><Icon name="plus" size={15} />Launch sandboxes</button>
+  </PageHeader>
+  <div id="root">
+    <div class="stats" id="stats"></div>
+    <div class="flow" id="flow">
+      <svg class="flow-wires" id="wires" aria-hidden="true"></svg>
+      <div class="flow-col">
+        <div class="fnode" id="n-app">
+          <div class="ft">your apps</div>
+          <div class="fs">TS · Python · Go · CLI</div>
+          <div class="fmeta mono" id="app-meta"></div>
+        </div>
+      </div>
+      <div class="flow-col">
+        <div class="fnode ours" id="n-core">
+          <div class="ft"><span class="mark" id="mark"></span>differently</div>
+          <div class="fs">policy · quotas · audit</div>
+          <div class="fmeta mono" id="core-meta"></div>
+        </div>
+        <button class="fwait mono" type="button" id="wait-chip" hidden></button>
+      </div>
+      <div class="flow-col fpools" id="pools"></div>
+    </div>
+    <p class="table-note" id="view-note" hidden></p>
+    <div class="flow-panels">
+      <section>
+        <h2>Decisions</h2>
+        <div class="flog" id="log"></div>
+      </section>
+      <section id="waiting-panel">
+        <h2>Waiting now</h2>
+        <div id="waiting"></div>
+      </section>
+    </div>
+  </div>
+
+  <dialog class="modal wide" id="launch">
+    <form id="launch-form">
+      <div class="modal-head"><h2>Launch sandboxes</h2><button class="btn ghost icon-btn" type="button" data-launch-close aria-label="Close"><Icon name="x" /></button></div>
+      <p class="launch-intro">Choose how many to start on each pool. Each sandbox is pinned to its pool. Placement policy, quotas and budgets still apply, so a pool that is full takes them as slots free up.</p>
+      <div class="launch-rows" id="launch-rows"></div>
+      <label class="field" id="launch-project-field" hidden><span>Project</span><select name="projectId" id="launch-projects"></select><small>Operator and organization keys choose the project the sandboxes belong to.</small></label>
+      <div class="grid-2">
+        <label class="field"><span>Profile</span><select name="profile" id="launch-profiles"></select></label>
+        <label class="field"><span>Template</span><select name="template" id="launch-templates"><option value="">Profile default</option></select></label>
+      </div>
+      <label class="field"><span>Time to live</span>
+        <select name="ttl"><option value="">Server default</option><option value="900">15 minutes</option><option value="3600">1 hour</option><option value="28800">8 hours</option></select>
+      </label>
+      <div class="launch-result" id="launch-result" hidden></div>
+      <div class="modal-foot"><span class="launch-total" id="launch-total"></span><button class="btn" type="button" data-launch-close>Close</button><button class="btn primary" id="launch-go" disabled>Create</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="modal wide plain" id="explain">
+    <div class="modal-head"><h2 id="ex-title">Placement</h2><button class="btn ghost icon-btn" type="button" id="ex-close" aria-label="Close"><Icon name="x" /></button></div>
+    <div id="ex-body"></div>
+  </dialog>
+</Console>
+<script>
+  import { DifferentlyError } from '@differently/sdk';
+  import type { PlacementDecision, Pool, Profile, SandboxInfo } from '@differently/sdk';
+  import { MAX_PER_POOL, MAX_TOTAL, clampCount, launchRow, planOf, runLimited, summarize, totalOf } from '../lib/launch';
+  import type { Outcome } from '../lib/launch';
+  import { client, entryPage } from '../lib/connection';
+  import { logo } from '../lib/icons';
+  import { along, clock, ease, flowOf, gateOf, hcurve, money, pathOf, poolView, shortId, sortPools, statsOf } from '../lib/routing';
+  import type { Curve, Flow, Gate, PoolView, Stats, XY } from '../lib/routing';
+  import { badge, el, empty, message, mount, relTime, table, toast } from '../lib/ui';
+
+  const POLL_MS = 2000;
+  const WINDOW_MS = 5 * 60_000;
+  const c = client();
+  const stage = document.getElementById('flow') as HTMLElement;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  const narrow = matchMedia('(max-width: 900px)');
+  (document.getElementById('mark') as HTMLElement).innerHTML = logo;
+
+  let pools: Pool[] = [];
+  let gate: Gate = gateOf([]);
+  let flows: Flow[] = [];
+  let waiting: SandboxInfo[] = [];
+  let lastSeq = 0;
+  let tenantView = false; // a key that cannot list pools sees the pools it may use, without their load
+  let paused = false;
+  const curves: { app?: Curve; pools: Record<string, Curve> } = { pools: {} };
+
+  // ---- data ----
+
+  async function loadPools(): Promise<Pool[]> {
+    if (!tenantView) {
+      try {
+        return await c.admin.pools.list();
+      } catch (e) {
+        if (!(e instanceof DifferentlyError) || e.code !== 'permission_denied') throw e;
+        tenantView = true;
+      }
+    }
+    const visible = await c.capabilities.list();
+    return visible.map((p) => ({ name: p.pool, adapter: p.adapter, trust: p.trust, region: p.region, enabled: p.enabled, draining: false, source: 'api', active: 0, costModel: {}, health: { status: p.health } }) as unknown as Pool);
+  }
+
+  /** The latest events, so the page opens with the last few minutes already counted. */
+  async function backfill(): Promise<void> {
+    const page = await c.auditEvents.list({ order: 'desc', limit: 300 });
+    const items = [...page.items].sort((a, b) => a.seq - b.seq);
+    lastSeq = items.length ? items[items.length - 1].seq : 0;
+    flows = items.map(flowOf).filter((f): f is Flow => f !== null);
+  }
+
+  async function tick(): Promise<void> {
+    const [nextPools, policies, page, queued] = await Promise.all([
+      loadPools(),
+      c.policies.list().catch(() => []),
+      c.auditEvents.list({ afterSeq: lastSeq, limit: 500 }),
+      c.sandboxes.list({ status: ['queued', 'provisioning'], limit: 100 }),
+    ]);
+    pools = nextPools;
+    gate = gateOf(policies);
+    waiting = queued.items.map((s) => s.info);
+    const fresh: Flow[] = [];
+    for (const e of page.items) {
+      lastSeq = Math.max(lastSeq, e.seq);
+      const f = flowOf(e);
+      if (f) fresh.push(f);
+    }
+    flows = flows.concat(fresh).slice(-600);
+    render();
+    if (fresh.length && canAnimate()) fresh.slice(-24).forEach((f, i) => setTimeout(() => animate(f), i * 140));
+  }
+
+  // ---- drawing ----
+
+  function render(): void {
+    const stats = statsOf(flows, Date.now(), WINDOW_MS);
+    renderStats(stats);
+    renderPools(stats);
+    const queuedNow = waiting.filter((s) => s.status === 'queued');
+    const created = flows.filter((f) => f.kind === 'created' && Date.now() - new Date(f.time).getTime() <= WINDOW_MS).length;
+    (document.getElementById('app-meta') as HTMLElement).textContent = `${created} request${created === 1 ? '' : 's'} in 5 min`;
+    (document.getElementById('core-meta') as HTMLElement).textContent = `${queuedNow.length} queued · ${waiting.length - queuedNow.length} provisioning`;
+    const chip = document.getElementById('wait-chip') as HTMLButtonElement;
+    chip.hidden = queuedNow.length === 0;
+    chip.textContent = `waiting · stays queued${queuedNow.length > 1 ? ` ×${queuedNow.length}` : ''}`;
+    renderWaiting(queuedNow);
+    renderLog();
+    const note = document.getElementById('view-note') as HTMLElement;
+    note.hidden = !tenantView;
+    note.textContent = 'This key is not an operator key: it shows the pools your policies allow and your own sandboxes, without each pool\'s load.';
+    drawWires();
+    refreshLaunchNotes();
+  }
+
+  function renderStats(s: Stats): void {
+    const running = pools.reduce((n, p) => n + p.active, 0);
+    const tile = (label: string, value: string) => el('div', { class: 'stat' }, el('div', { class: 'label' }, label), el('div', { class: 'value' }, value));
+    mount('#stats',
+      tile('Placed in the last minute', String(s.perMinute)),
+      tile('Running now', tenantView ? '—' : String(running)),
+      tile('Waiting', String(waiting.filter((x) => x.status === 'queued').length)),
+      tile('Sent to providers, 5 min', `${s.external} of ${s.placed}`),
+      tile('Refused or failed, 5 min', String(s.refused + s.failed)));
+  }
+
+  function poolNode(v: PoolView, placed: number): HTMLElement {
+    const slots: Node[] = [];
+    for (let i = 0; i < v.slots; i++) slots.push(el('span', { class: `slot ${i < v.filled ? 'on' : ''}` }));
+    const closed = v.external && !v.reachable;
+    return el('div', { class: `fpool ${v.external ? 'external' : ''} ${v.state === 'off' ? 'off' : ''} ${closed ? 'closed' : ''}`, 'data-pool': v.name },
+      el('div', { class: 'fhead' },
+        el('span', { class: `hdot ${v.state}`, title: v.stateLabel }),
+        el('span', { class: 'ft' }, v.name),
+        el('span', { class: 'fs' }, v.sub)),
+      tenantView ? null : el('div', { class: 'slots' }, ...slots, v.more > 0 ? el('span', { class: 'more mono' }, `+${v.more}`) : null),
+      el('div', { class: 'fmeta mono' },
+        tenantView ? '' : `${v.load} · `, `${placed} placed in 5 min`,
+        v.state !== 'ok' ? ` · ${v.stateLabel}` : '',
+        closed ? ` · ${gate.mode === 'never' ? 'gate closed' : 'not approved'}` : ''),
+      v.budget ? el('div', { class: `fbudget ${v.budget.reached ? 'reached' : ''}` },
+        el('div', { class: 'bar' }, el('i', { style: `width:${Math.min(100, (v.budget.spent / v.budget.limit) * 100).toFixed(1)}%` })),
+        el('span', { class: 'mono' }, `${money(v.budget.spent)} of ${money(v.budget.limit)} this month`)) : null,
+      v.attestations.length ? el('div', { class: 'fchips' }, ...v.attestations.map((a) => el('span', { class: 'fchip mono' }, a))) : null);
+  }
+
+  function renderPools(stats: Stats): void {
+    const nodes: Node[] = [];
+    let gated = false;
+    for (const p of sortPools(pools)) {
+      const v = poolView(p, gate);
+      if (v.external && !gated) {
+        gated = true;
+        nodes.push(el('div', { class: `fgate ${gate.mode}` }, el('span', { class: 'mono' }, `external: ${gate.mode}`), el('span', {}, gate.meaning)));
+      }
+      nodes.push(poolNode(v, stats.perPool[v.name] ?? 0));
+    }
+    if (!nodes.length) nodes.push(empty('No pools yet. Add a provider to see sandboxes routed.', ['server']));
+    mount('#pools', ...nodes);
+  }
+
+  function renderLog(): void {
+    const rows = flows.slice(-60).reverse().map((f) => {
+      const cells = [
+        el('span', { class: 't' }, clock(f.time)),
+        el('span', { class: 'k' }, f.kind),
+        el('span', { class: 'id' }, shortId(f.sandbox)),
+        el('span', { class: 'to' }, f.pool ? `→ ${f.pool}` : ''),
+        el('span', { class: 'n', title: f.note }, f.note),
+      ];
+      // A refused request never became a sandbox, so there is nothing more to open.
+      return f.kind === 'rejected'
+        ? el('div', { class: `frow ${f.kind}` }, ...cells)
+        : el('button', { class: `frow ${f.kind}`, type: 'button', title: 'Show how this sandbox was placed', onclick: () => void explain(f.sandbox) }, ...cells);
+    });
+    mount('#log', ...(rows.length ? rows : [el('p', { class: 'muted' }, 'No sandboxes routed yet. Create one and it appears here.')]));
+  }
+
+  function renderWaiting(queued: SandboxInfo[]): void {
+    mount('#waiting', table<SandboxInfo>([
+      { label: 'Sandbox', cell: (s) => el('button', { class: 'linkish mono', type: 'button', onclick: () => void explain(s.id) }, shortId(s.id)) },
+      { label: 'Since', cell: (s) => el('span', { class: 'muted' }, relTime(s.createdAt)) },
+      { label: 'Why it waits', cell: (s) => s.statusReason || 'not considered yet' },
+    ], queued.slice(0, 25), el('p', { class: 'muted' }, 'Nothing is waiting.')));
+  }
+
+  // ---- wires and packets ----
+
+  const canAnimate = () => !reduce.matches && !narrow.matches && !document.hidden && !!curves.app;
+
+  function anchor(node: Element, side: 'left' | 'right'): XY {
+    const s = stage.getBoundingClientRect();
+    const r = node.getBoundingClientRect();
+    return { x: (side === 'left' ? r.left : r.right) - s.left, y: r.top + r.height / 2 - s.top };
+  }
+
+  function drawWires(): void {
+    const wires = document.getElementById('wires') as unknown as SVGElement;
+    curves.app = undefined;
+    curves.pools = {};
+    if (narrow.matches) { wires.innerHTML = ''; return; }
+    const app = document.getElementById('n-app') as HTMLElement;
+    const core = document.getElementById('n-core') as HTMLElement;
+    curves.app = hcurve(anchor(app, 'right'), anchor(core, 'left'));
+    const paths = [`<path class="wire on" d="${pathOf(curves.app)}"/>`];
+    document.querySelectorAll<HTMLElement>('#pools .fpool').forEach((node) => {
+      const cv = hcurve(anchor(core, 'right'), anchor(node, 'left'));
+      curves.pools[node.dataset.pool ?? ''] = cv;
+      const shut = node.classList.contains('closed') || node.classList.contains('off');
+      paths.push(`<path class="wire ${node.classList.contains('external') ? 'ext' : ''} ${shut ? 'shut' : 'on'}" d="${pathOf(cv)}"/>`);
+    });
+    wires.innerHTML = paths.join('');
+  }
+
+  /** Moves a packet along the legs in turn, then calls done. */
+  function send(legs: { curve: Curve; ms: number }[], cls: string, done?: () => void): void {
+    const packet = el('div', { class: `packet ${cls}` });
+    const from = legs[0].curve.a;
+    packet.style.transform = `translate(${from.x - 7}px, ${from.y - 7}px)`;
+    stage.append(packet);
+    const t0 = performance.now();
+    const total = legs.reduce((n, l) => n + l.ms, 0);
+    // A background tab may stop delivering frames; never leave a packet behind.
+    const stale = setTimeout(() => packet.remove(), total + 5000);
+    const step = (now: number) => {
+      let rest = now - t0;
+      if (rest >= total) { clearTimeout(stale); packet.remove(); done?.(); return; }
+      let leg = legs[legs.length - 1];
+      for (const l of legs) { if (rest <= l.ms) { leg = l; break; } rest -= l.ms; }
+      const at = along(leg.curve, ease(Math.min(1, rest / leg.ms)));
+      packet.style.transform = `translate(${at.x - 7}px, ${at.y - 7}px)`;
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  function pulse(target: Element | null, cls: string): void {
+    if (!target) return;
+    target.classList.remove(cls);
+    void (target as HTMLElement).offsetWidth; // restart the animation
+    target.classList.add(cls);
+    setTimeout(() => target.classList.remove(cls), 700);
+  }
+
+  const poolEl = (name?: string) => (name ? document.querySelector(`#pools .fpool[data-pool="${CSS.escape(name)}"]`) : null);
+
+  /** One routing event as motion: a request reaches Differently, then goes to a pool or is turned away. */
+  function animate(f: Flow): void {
+    const core = document.getElementById('n-core');
+    const toPool = f.pool ? curves.pools[f.pool] : undefined;
+    if (!curves.app) return;
+    if (f.kind === 'created') send([{ curve: curves.app, ms: 420 }], '', () => pulse(core, 'hit'));
+    else if (f.kind === 'placed' && toPool) send([{ curve: toPool, ms: 560 }], f.trust === 'external' ? 'ext' : '', () => pulse(poolEl(f.pool), 'hit'));
+    else if (f.kind === 'rejected') send([{ curve: curves.app, ms: 420 }], 'bad', () => pulse(core, 'refuse'));
+    else if (f.kind === 'failed' && toPool) send([{ curve: toPool, ms: 560 }], 'bad', () => pulse(poolEl(f.pool), 'refuse'));
+    else if (f.kind === 'failed') pulse(core, 'refuse');
+  }
+
+  // ---- why: one sandbox's placement, pool by pool ----
+
+  const explainDialog = document.getElementById('explain') as HTMLDialogElement;
+  document.getElementById('ex-close')?.addEventListener('click', () => explainDialog.close());
+
+  async function explain(id: string): Promise<void> {
+    (document.getElementById('ex-title') as HTMLElement).textContent = `Placement of ${shortId(id)}`;
+    mount('#ex-body', el('p', { class: 'muted' }, 'Loading…'));
+    explainDialog.showModal();
+    try {
+      const sandbox = await c.sandboxes.get(id);
+      const ex = await sandbox.explainPlacement();
+      const d: PlacementDecision | null | undefined = ex.current ?? ex.decision;
+      if (!d) { mount('#ex-body', el('p', { class: 'muted' }, 'No placement decision is recorded for this sandbox yet.')); return; }
+      const verdict = (cand: NonNullable<PlacementDecision['candidates']>[number]) =>
+        cand.rank ? `choice ${cand.rank}` : cand.eligible ? 'allowed, no room now' : 'ruled out';
+      mount('#ex-body',
+        el('div', { class: 'ex-summary' },
+          badge(ex.status), el('span', { class: 'mono' }, `${d.outcome}${d.pool ? ` → ${d.pool}` : ''}`),
+          el('span', { class: 'muted' }, d.reason)),
+        el('p', { class: 'ex-meta mono' },
+          `strategy ${d.strategy} · external ${d.external}`,
+          d.requiredAttestations?.length ? ` · requires ${d.requiredAttestations.join(', ')}` : '',
+          d.policies?.length ? ` · from ${d.policies.join(', ')}` : ''),
+        table([
+          { label: 'Pool', cell: (x) => el('span', { style: 'font-weight:500' }, x.pool) },
+          { label: 'Trust', cell: (x) => x.trust },
+          { label: 'Verdict', cell: (x) => verdict(x) },
+          { label: 'Why', cell: (x) => (x.reasons ?? []).join('; ') || '—' },
+          { label: 'Est. cost / h', cell: (x) => (x.estimatedCostPerHour ? `$${x.estimatedCostPerHour.toFixed(4)}` : '—') },
+        ], d.candidates ?? [], el('p', { class: 'muted' }, 'No pools were considered.')));
+    } catch (e) {
+      mount('#ex-body', el('div', { class: 'notice bad' }, message(e)));
+    }
+  }
+  document.getElementById('wait-chip')?.addEventListener('click', () => document.getElementById('waiting-panel')?.scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'nearest' }));
+
+  // ---- launch: start sandboxes on chosen pools ----
+
+  const launchDialog = document.getElementById('launch') as HTMLDialogElement;
+  const launchForm = document.getElementById('launch-form') as HTMLFormElement;
+  const launchGo = document.getElementById('launch-go') as HTMLButtonElement;
+  const profileSel = document.getElementById('launch-profiles') as HTMLSelectElement;
+  let profiles: Profile[] = [];
+  let launchReady = false;
+  let launching = false;
+  const counts: Record<string, number> = {};
+
+  const chosenProfile = () => profiles.find((p) => p.name === profileSel.value);
+
+  const noteOf = (r: { note: string; external: boolean }) => r.note || (r.external ? 'approved by policy' : 'your own pool');
+
+  /** While the dialog is open, free slots and other notes follow the live data without touching what was typed. */
+  function refreshLaunchNotes(): void {
+    if (!launchDialog.open || launching) return;
+    const resources = chosenProfile()?.resources;
+    for (const p of pools) {
+      const note = document.querySelector(`#launch-rows [data-note="${CSS.escape(p.name)}"]`);
+      if (note) note.textContent = noteOf(launchRow(p, gate, resources));
+    }
+  }
+
+  /** Rows for the pools as they are now, keeping any counts already typed. */
+  function renderLaunchRows(): void {
+    const resources = chosenProfile()?.resources;
+    const rows = sortPools(pools).map((p) => {
+      const r = launchRow(p, gate, resources);
+      if (!r.open) counts[r.pool] = 0;
+      const input = el('input', { type: 'number', min: 0, max: MAX_PER_POOL, step: 1, value: counts[r.pool] ?? 0, inputmode: 'numeric', 'aria-label': `Sandboxes on ${r.pool}`, disabled: !r.open || launching, id: `launch-count-${r.pool}` });
+      const set = (n: number) => { counts[r.pool] = clampCount(n); input.value = String(counts[r.pool]); syncLaunch(); };
+      input.addEventListener('input', () => { counts[r.pool] = clampCount(input.value); syncLaunch(); });
+      input.addEventListener('blur', () => { input.value = String(counts[r.pool] ?? 0); });
+      const step = (label: string, by: number) => el('button', { type: 'button', 'aria-label': `${by > 0 ? 'One more' : 'One fewer'} on ${r.pool}`, disabled: !r.open || launching, onclick: () => set((counts[r.pool] ?? 0) + by) }, label);
+      return el('div', { class: `lrow ${r.open ? '' : 'shut'}` },
+        el('div', {},
+          el('div', { class: 'ln' }, r.pool, el('span', { class: 'ls' }, r.sub)),
+          el('div', { class: 'lnote', 'data-note': r.pool }, noteOf(r))),
+        el('div', { class: 'stepper' }, step('−', -1), input, step('+', 1)),
+        el('div', { class: 'lcost mono' }, r.hourly > 0 ? `${money(r.hourly)}/h each` : ''));
+    });
+    mount('#launch-rows', ...(rows.length ? rows : [el('p', { class: 'muted' }, 'No pools yet. Add a provider first.')]));
+    syncLaunch();
+  }
+
+  /** The total line and the Create button follow the counts. */
+  function syncLaunch(): void {
+    const total = totalOf(counts);
+    const resources = chosenProfile()?.resources;
+    const hourly = pools.reduce((sum, p) => sum + clampCount(counts[p.name]) * launchRow(p, gate, resources).hourly, 0);
+    const over = total > MAX_TOTAL;
+    (document.getElementById('launch-total') as HTMLElement).textContent = over
+      ? `At most ${MAX_TOTAL} at once`
+      : total === 0 ? 'Set a count on at least one pool' : hourly > 0 ? `About ${money(hourly)} per hour while they run` : '';
+    launchGo.textContent = launching ? launchGo.textContent ?? '' : total > 0 ? `Create ${total} sandbox${total === 1 ? '' : 'es'}` : 'Create';
+    launchGo.disabled = launching || total === 0 || over || !launchReady;
+  }
+
+  async function openLaunch(): Promise<void> {
+    (document.getElementById('launch-result') as HTMLElement).hidden = true;
+    renderLaunchRows();
+    launchDialog.showModal();
+    if (launchReady) return;
+    try {
+      const [ps, templates, me] = await Promise.all([c.profiles.list(), c.templates.list(), c.me()]);
+      profiles = ps;
+      profileSel.replaceChildren(...ps.map((p) => el('option', { value: p.name }, `${p.name} · ${p.resources.cpu} CPU, ${Math.round(p.resources.memoryMiB / 1024)} GiB`)));
+      (document.getElementById('launch-templates') as HTMLSelectElement).append(...templates.map((t) => el('option', { value: t.name }, t.name)));
+      if (!me.projectId) {
+        const projects = await c.projects.list();
+        (document.getElementById('launch-projects') as HTMLSelectElement).replaceChildren(...projects.map((p) => el('option', { value: p.id }, `${p.name} · ${p.id}`)));
+        (document.getElementById('launch-project-field') as HTMLElement).hidden = false;
+      }
+      launchReady = true;
+      renderLaunchRows();
+    } catch (e) {
+      mount('#launch-rows', el('div', { class: 'notice bad' }, message(e)));
+    }
+  }
+
+  launchForm.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if (launching) return;
+    const plan = planOf(counts);
+    if (!plan.length || plan.length > MAX_TOTAL) return;
+    const data = new FormData(launchForm);
+    const text = (name: string) => String(data.get(name) ?? '').trim() || undefined;
+    const ttl = text('ttl');
+    launching = true;
+    renderLaunchRows();
+    launchGo.textContent = `Requesting 0 of ${plan.length}`;
+    const outcomes = await runLimited<Outcome>(plan.map((pool) => async () => {
+      try {
+        const s = await c.sandboxes.create(
+          { projectId: text('projectId'), profile: text('profile'), template: text('template'), ttlSeconds: ttl ? Number(ttl) : undefined, placement: { allowedPools: [pool] } },
+          { wait: false });
+        return { pool, id: s.id };
+      } catch (e) {
+        if (e instanceof DifferentlyError && e.code === 'unauthenticated') { location.href = entryPage(); }
+        return { pool, error: message(e) };
+      }
+    }), 4, (done) => { launchGo.textContent = `Requesting ${done} of ${plan.length}`; });
+    launching = false;
+    for (const k of Object.keys(counts)) counts[k] = 0;
+    const s = summarize(outcomes);
+    const result = document.getElementById('launch-result') as HTMLElement;
+    result.hidden = false;
+    mount(result,
+      el('strong', {}, s.refused ? `${s.created} of ${s.requested} accepted, ${s.refused} refused` : `All ${s.created} accepted. They appear on the picture as they are placed.`),
+      ...s.pools.map((p) => el('div', { class: p.refused ? 'bad' : '' },
+        el('span', { class: 'mono' }, p.pool), ` · ${p.created} accepted`,
+        p.refused ? ` · ${p.refused} refused: ${p.reasons.join('; ')}` : '')));
+    toast(s.refused ? `${s.created} accepted, ${s.refused} refused` : `${s.created} sandbox${s.created === 1 ? '' : 'es'} requested`, s.refused ? 'bad' : 'info');
+    renderLaunchRows();
+    void tick().catch(() => {});
+  });
+
+  profileSel.addEventListener('change', renderLaunchRows);
+  document.getElementById('launch-open')?.addEventListener('click', () => void openLaunch());
+  document.querySelectorAll('[data-launch-close]').forEach((b) => b.addEventListener('click', () => launchDialog.close()));
+
+  // ---- loop ----
+
+  function setLive(state: 'ok' | 'paused' | 'bad', text: string): void {
+    const live = document.getElementById('live') as HTMLElement;
+    live.className = `live ${state}`;
+    (document.getElementById('live-label') as HTMLElement).textContent = text;
+  }
+
+  const pauseBtn = document.getElementById('pause') as HTMLButtonElement;
+  pauseBtn.addEventListener('click', () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+    pauseBtn.setAttribute('aria-pressed', String(paused));
+    setLive(paused ? 'paused' : 'ok', paused ? 'Paused' : 'Live');
+  });
+
+  async function loop(): Promise<void> {
+    if (!paused && !document.hidden) {
+      try {
+        await tick();
+        setLive('ok', 'Live');
+      } catch (e) {
+        if (e instanceof DifferentlyError && e.code === 'unauthenticated') { location.href = entryPage(); return; }
+        setLive('bad', e instanceof DifferentlyError && e.code === 'permission_denied' ? 'This key cannot read the audit log' : 'Reconnecting');
+      }
+    }
+    setTimeout(() => void loop(), POLL_MS);
+  }
+
+  async function start(): Promise<void> {
+    try {
+      await backfill();
+    } catch (e) {
+      if (e instanceof DifferentlyError && e.code === 'unauthenticated') { location.href = entryPage(); return; }
+      const text = e instanceof DifferentlyError && e.code === 'permission_denied'
+        ? 'This key cannot read the audit log, which is where routing events come from. Sign in with an operator key, or one with the audit:read scope.'
+        : message(e);
+      mount('#root', el('div', { class: 'notice bad' }, text));
+      setLive('bad', 'Not connected');
+      return;
+    }
+    new ResizeObserver(() => drawWires()).observe(stage);
+    await tick().then(() => setLive('ok', 'Live')).catch(() => {});
+    if (new URLSearchParams(location.search).has('launch')) void openLaunch();
+    setTimeout(() => void loop(), POLL_MS);
+  }
+  void start();
+</script>

@@ -75,6 +75,9 @@ config:
   # Data sensitivity levels. `external` is the most permissive external
   # placement mode a class allows: never | overflow | allowed. The global
   # policy below must also allow it before anything leaves private pools.
+  # `requiredAttestations` (optional) lists what a pool must hold to take data
+  # of the class, for example [soc2-type2, hipaa-baa]; declare them on pools
+  # with `attestations`. See docs/scheduling/placement-policy.md, section 4.1.
   classifications:
     - name: private-only
       description: Must never leave private pools.

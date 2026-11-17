@@ -36,14 +36,15 @@ type harness struct {
 	srv   *httptest.Server
 	api   *server.Server
 	sched *scheduler.Scheduler
-	store *store.Memory
+	store store.Store // the store itself, under any wrapper a test added
 	fc    *fake.Adapter
 	ext   *fake.Adapter
 	pools *pools.Manager
 }
 
-// newHarness runs the real server, scheduler and memory store with two fake
-// pools: "fc" (private, 4 CPU) and "burst" (external, unbounded).
+// newHarness runs the real server and scheduler on the test store (memory, or
+// Postgres when DIFFERENTLY_TEST_POSTGRES_URL is set) with two fake pools:
+// "fc" (private, 4 CPU) and "burst" (external, unbounded).
 func newHarness(t *testing.T, policy api.PlacementPolicy) *harness {
 	t.Helper()
 	return newHarnessWith(t, policy, nil, nil)
@@ -61,15 +62,15 @@ func newHarnessWith(t *testing.T, policy api.PlacementPolicy, tweak func(*config
 		tweak(&cfg)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	mem := store.NewMemory()
-	var st store.Store = mem
+	base := newTestStore(t)
+	st := base
 	if wrap != nil {
-		st = wrap(mem)
+		st = wrap(base)
 	}
 	rec, _ := auditlog.New(st, log, "")
 	box, _ := secrets.New(make([]byte, secrets.KeySize))
 	pm := pools.NewManager(pools.Deps{Store: st, Logger: log, Resolve: server.CredentialResolver(st, box)})
-	h := &harness{t: t, store: mem, pools: pm,
+	h := &harness{t: t, store: base, pools: pm,
 		fc:  fake.New(fake.Options{Trust: api.TrustPrivate, TotalCPU: 4, TotalMemoryMiB: 16384}),
 		ext: fake.New(fake.Options{Trust: api.TrustExternal, Features: []string{adapter.FeatureExec, adapter.FeatureFiles, adapter.FeaturePorts}}),
 	}

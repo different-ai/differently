@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/different-ai/differently/internal/auth"
+	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/internal/id"
 	"github.com/different-ai/differently/internal/policy"
 	"github.com/different-ai/differently/internal/scheduler"
@@ -120,6 +121,13 @@ func (s *Server) admit(w http.ResponseWriter, r *http.Request, p auth.Principal,
 		return s.placementUnavailable(err)
 	}
 	if res := policy.Decide(in); res.Err != nil {
+		// A refusal is a routing outcome too. Recording it lets the audit log
+		// and the live routing view show what was turned away and why.
+		details := map[string]string{"code": res.Err.Code, "reason": res.Err.Message, "classification": rec.Classification}
+		if req := res.Decision.RequiredAttestations; len(req) > 0 {
+			details["requiredAttestations"] = strings.Join(req, ",")
+		}
+		s.Audit.Record(ctx, api.AuditEvent{Actor: p.Actor(), OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.rejected", Resource: rec.ID, Outcome: "failure", Details: details, RequestID: requestID(r)})
 		return res.Err
 	}
 	out, existed, err := s.Store.AdmitSandbox(ctx, rec, store.Admission{OrgQuota: org.Quota, ProjectQuota: proj.Quota})
@@ -216,6 +224,9 @@ func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.Cre
 		}
 		if pl.External != "" && !policy.ValidExternal(pl.External) {
 			return store.SandboxRecord{}, api.Errorf(api.CodeInvalidRequest, "placement.external must be never, overflow or allowed")
+		}
+		if err := config.ValidateAttestationNames(pl.RequiredAttestations...); err != nil {
+			return store.SandboxRecord{}, api.Errorf(api.CodeInvalidRequest, "placement.requiredAttestations: %v", err)
 		}
 	}
 	// A negative TTL would never expire and would slip under maxTTLSeconds.

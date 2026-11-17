@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -164,5 +165,151 @@ func TestTemplateImagesLimitAndRoute(t *testing.T) {
 	in.Sandbox.Template, in.Template = "workbot", &tpl
 	if res := Decide(in); res.Decision.Pool != "osb" {
 		t.Fatalf("private pool with a mapped image should win, got %+v", res.Decision)
+	}
+}
+
+// attested returns a copy of pv whose pool holds the named attestations.
+func attested(pv PoolView, held map[string]api.Attestation) PoolView {
+	pv.Pool.Attestations = held
+	return pv
+}
+
+var allowBurst = []api.PlacementPolicy{{Scope: "global", External: api.ExternalAllowed, ExternalPools: []string{"daytona"}}}
+
+// Work that requires an attestation goes only to a pool that holds it, and
+// the explanation names what the other pools lack.
+func TestRequiredAttestationsFilterPools(t *testing.T) {
+	regulated := api.Classification{Name: "regulated", External: api.ExternalAllowed, RequiredAttestations: []string{"soc2-type2"}}
+	fc := pool("fc", api.TrustPrivate, 8, vmFeatures, 0.05)
+	vendor := attested(pool("daytona", api.TrustExternal, 0, extFeatures, 0.01), map[string]api.Attestation{"soc2-type2": {Evidence: "https://trust.example.com"}})
+	res := Decide(input(regulated, allowBurst, fc, vendor))
+	if res.Decision.Pool != "daytona" || len(res.Ranked) != 1 {
+		t.Fatalf("want only the attested pool, got %+v", res.Ranked)
+	}
+	if got := res.Decision.RequiredAttestations; len(got) != 1 || got[0] != "soc2-type2" {
+		t.Fatalf("decision does not record the requirement: %v", got)
+	}
+	for _, c := range res.Decision.Candidates {
+		if c.Pool == "fc" && (c.Eligible || len(c.Reasons) != 1 || c.Reasons[0] != "missing attestations: soc2-type2") {
+			t.Fatalf("fc should be ruled out by name: %+v", c)
+		}
+	}
+	// A private pool is not exempt: it qualifies once the operator records it.
+	res = Decide(input(regulated, allowBurst, attested(fc, map[string]api.Attestation{"soc2-type2": {}}), vendor))
+	if res.Decision.Pool != "fc" {
+		t.Fatalf("attested private pool should win private-first: %+v", res.Decision)
+	}
+}
+
+// Requirements from every level add up; no level can drop one.
+func TestRequiredAttestationsOnlyAccumulate(t *testing.T) {
+	regulated := api.Classification{Name: "regulated", External: api.ExternalAllowed, RequiredAttestations: []string{"soc2-type2"}}
+	policies := append(allowBurst[:1:1], api.PlacementPolicy{Scope: "org:o1", RequiredAttestations: []string{"iso27001"}}, api.PlacementPolicy{Scope: "project:p1"})
+	in := input(regulated, policies)
+	in.Sandbox.Placement = &api.Placement{RequiredAttestations: []string{"hipaa-baa", "soc2-type2"}}
+	eff := Merge(in)
+	if got := strings.Join(eff.RequiredAttestations, ","); got != "hipaa-baa,iso27001,soc2-type2" {
+		t.Fatalf("want the union of every level, got %q", got)
+	}
+	// Holding two of three is not enough.
+	partial := attested(pool("daytona", api.TrustExternal, 0, extFeatures, 0.01), map[string]api.Attestation{"soc2-type2": {}, "iso27001": {}})
+	in.Pools = []PoolView{partial}
+	res := Decide(in)
+	if res.Err == nil || res.Err.Code != api.CodeNoEligiblePool {
+		t.Fatalf("want no_eligible_pool, got %+v", res.Err)
+	}
+	if res.Err.Details["requiredAttestations"] != "hipaa-baa,iso27001,soc2-type2" || !strings.Contains(res.Decision.Reason, "attestations") {
+		t.Fatalf("the refusal does not name the attestations: %+v / %q", res.Err.Details, res.Decision.Reason)
+	}
+}
+
+// An attestation past its validUntil no longer counts, and the explanation
+// gives the day it expired.
+func TestExpiredAttestationDoesNotCount(t *testing.T) {
+	regulated := api.Classification{Name: "regulated", External: api.ExternalAllowed, RequiredAttestations: []string{"soc2-type2"}}
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	expired, valid := now.Add(-48*time.Hour), now.Add(48*time.Hour)
+	in := input(regulated, allowBurst, attested(pool("daytona", api.TrustExternal, 0, extFeatures, 0.01), map[string]api.Attestation{"soc2-type2": {ValidUntil: &expired}}))
+	in.Now = now
+	res := Decide(in)
+	if res.Err == nil || len(res.Ranked) != 0 {
+		t.Fatalf("expired attestation was accepted: %+v", res.Decision)
+	}
+	if got := res.Decision.Candidates[0].Reasons; len(got) != 1 || got[0] != "missing attestations: soc2-type2 (expired 2026-11-14)" {
+		t.Fatalf("reasons %v", got)
+	}
+	// A caller that leaves Now unset must not make expired evidence valid.
+	in.Now = time.Time{}
+	if res := Decide(in); len(res.Ranked) != 0 {
+		t.Fatalf("zero clock accepted an expired attestation: %+v", res.Decision)
+	}
+	in.Now = now
+	in.Pools[0].Pool.Attestations = map[string]api.Attestation{"soc2-type2": {ValidUntil: &valid}}
+	if res := Decide(in); res.Decision.Pool != "daytona" {
+		t.Fatalf("valid attestation refused: %+v", res.Decision)
+	}
+}
+
+// Without requirements, attestations change nothing.
+func TestNoRequirementsIgnoresAttestations(t *testing.T) {
+	res := Decide(input(internal, overflow, pool("fc", api.TrustPrivate, 8, vmFeatures, 0.05)))
+	if res.Decision.Pool != "fc" || len(res.Decision.RequiredAttestations) != 0 {
+		t.Fatalf("unexpected decision %+v", res.Decision)
+	}
+}
+
+// budgeted returns a copy of pv with a monthly budget and this month's spend.
+func budgeted(pv PoolView, monthly, spent float64) PoolView {
+	pv.Pool.Budget = &api.Budget{Monthly: monthly}
+	pv.Spent = spent
+	return pv
+}
+
+// A pool whose estimated spend has reached its monthly budget takes no new
+// work; the sandbox goes to the next pool, or waits if there is none.
+func TestMonthlyBudgetHoldsAPool(t *testing.T) {
+	cheap := pool("cheap", api.TrustPrivate, 8, vmFeatures, 0.01)
+	dear := pool("dear", api.TrustPrivate, 8, vmFeatures, 0.05)
+	res := Decide(input(internal, nil, budgeted(cheap, 100, 99.99), dear))
+	if res.Decision.Pool != "cheap" {
+		t.Fatalf("a pool under budget must still take work: %+v", res.Decision)
+	}
+	res = Decide(input(internal, nil, budgeted(cheap, 100, 100), dear))
+	if res.Decision.Pool != "dear" || len(res.Ranked) != 1 {
+		t.Fatalf("want the next pool once the budget is reached, got %+v", res.Ranked)
+	}
+	for _, c := range res.Decision.Candidates {
+		if c.Pool == "cheap" && (!c.Eligible || c.HasCapacity || len(c.Reasons) != 1 || c.Reasons[0] != "monthly budget reached: estimated 100.00 of 100.00") {
+			t.Fatalf("the held pool should stay eligible and say why it is held: %+v", c)
+		}
+	}
+	// With nowhere else to go the sandbox waits; it is not refused.
+	res = Decide(input(internal, nil, budgeted(cheap, 100, 250)))
+	if res.Err != nil || res.Decision.Outcome != "waiting" {
+		t.Fatalf("want waiting, got %+v / %v", res.Decision, res.Err)
+	}
+	// A budget of zero is no budget.
+	if res := Decide(input(internal, nil, budgeted(cheap, 0, 1e9))); res.Decision.Pool != "cheap" {
+		t.Fatalf("zero budget held the pool: %+v", res.Decision)
+	}
+}
+
+// A private pool at its budget counts as full, so approved overflow may use
+// an external pool; an unreadable spend holds the pool rather than pass it.
+func TestBudgetReachedOverflowsAndUnknownSpendHolds(t *testing.T) {
+	fc := budgeted(pool("fc", api.TrustPrivate, 8, vmFeatures, 0.05), 50, 50)
+	res := Decide(input(internal, overflow, fc, pool("daytona", api.TrustExternal, 0, extFeatures, 0.01)))
+	if res.Decision.Pool != "daytona" {
+		t.Fatalf("want overflow once the private budget is reached, got %+v", res.Decision)
+	}
+	// private-only work still never leaves.
+	if res := Decide(input(privateOnly, overflow, fc, pool("daytona", api.TrustExternal, 0, extFeatures, 0.01))); len(res.Ranked) != 0 {
+		t.Fatalf("a budget moved private-only work outside: %+v", res.Ranked)
+	}
+	unknown := budgeted(pool("fc", api.TrustPrivate, 8, vmFeatures, 0.05), 50, 0)
+	unknown.SpendUnknown = true
+	res = Decide(input(internal, nil, unknown))
+	if len(res.Ranked) != 0 || res.Decision.Outcome != "waiting" || !strings.Contains(res.Decision.Candidates[0].Reasons[0], "could not be read") {
+		t.Fatalf("an unreadable spend must hold the pool: %+v", res.Decision)
 	}
 }
