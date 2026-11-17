@@ -6,6 +6,18 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added
+
+- The website has a provider comparison at `/compare/`: 27 sandbox services
+  and runtimes side by side, with list prices normalised to one sandbox of
+  1 vCPU and 2 GiB for an hour, isolation, state, snapshots, self-hosting,
+  what each states about SOC 2, HIPAA and ISO 27001, and how far Differently
+  supports each. Prices were read on 16 November 2026 from the pages the
+  table links to; nothing was benchmarked and no audit report was read. The
+  data is one file, `site/src/data/providers.ts`, and the page carries Open
+  Graph and Twitter metadata with a share image
+  (`node scripts/compare-og.mjs` in `site/` redraws it).
+
 ## [0.1.0-alpha.4] — 2026-11-17
 
 Fourth alpha, published as a GitHub pre-release. Not for production. It adds

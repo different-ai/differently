@@ -63,6 +63,7 @@ export default defineConfig({
         ] },
         { label: 'Security', items: [{ autogenerate: { directory: 'docs/security' } }] },
         { label: 'Compare', items: [
+          { label: 'Sandbox providers compared', link: '/compare/' },
           { label: 'Feature parity', link: '/docs/feature-parity/' },
           { label: 'Competitive landscape', link: '/docs/competitive-landscape/' },
         ] },
