@@ -1,7 +1,7 @@
 # Differently console
 
 A small admin app for Differently: sandboxes, snapshots, API keys, providers,
-secrets, policies, live routing, usage, the audit log and the trust report. It is an Astro
+secrets, policies, stacks, live routing, usage, the audit log and the trust report. It is an Astro
 site that talks only to Differently's public API. Every rule and every piece
 of state stays in the control plane, so the console can run anywhere, run
 several times, or be thrown away and rebuilt.

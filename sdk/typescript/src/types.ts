@@ -467,6 +467,58 @@ export interface Secret {
   usedBy: string[];
 }
 
+export type HealthStatus = "healthy" | "degraded" | "unavailable" | "unknown" | (string & {});
+
+/** The last probe of a stack component by the replica that answered. */
+export interface ComponentHealth {
+  /** `degraded` means the service is up but reports that it is not ready. */
+  status: HealthStatus;
+  message?: string;
+  /** The version or build the health route reported. */
+  version?: string;
+  latencyMs: number;
+  checkedAt: string;
+  /** When this replica first saw the current status. */
+  since: string;
+}
+
+/** One service of a watched stack. */
+export interface StackComponent {
+  name: string;
+  /** In an `openwork` stack: den-api, den-web, gateway, den-gateway, workbot or headless-runner. */
+  role?: string;
+  /** The service's base URL as the Differently server reaches it. */
+  url: string;
+  healthPath?: string;
+  readyPath?: string;
+  /** A bearer token sent with the probes: `env:NAME`, `file:/path` or `secret:name`. */
+  credentialRef?: string;
+  /** Keeps this component's failures out of the stack's health. */
+  optional?: boolean;
+  health?: ComponentHealth;
+}
+
+/** A component to watch. `name` defaults to `role`; the paths default by role in an `openwork` stack. */
+export type StackComponentParams = Omit<StackComponent, "name" | "health"> & { name?: string };
+
+/** An application deployment Differently watches. It probes the components; it never changes them. */
+export interface Stack {
+  name: string;
+  kind: "openwork" | "custom" | (string & {});
+  components: StackComponent[];
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+  updatedBy: string;
+  /** The worst state among the components that are not optional. */
+  health?: { status: HealthStatus; message?: string; checkedAt: string };
+}
+
+export interface PutStackParams {
+  kind?: "openwork" | "custom";
+  components: StackComponentParams[];
+}
+
 /** The result of sending new sandboxes to a pool. */
 export interface UsePoolResult {
   pool: Pool;

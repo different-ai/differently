@@ -10,7 +10,9 @@ import type {
   Project,
   Quota,
   SandboxInfo,
+  PutStackParams,
   Secret,
+  Stack,
   SuspendOrganizationParams,
   SuspendOrganizationResult,
   TrustReport,
@@ -137,12 +139,45 @@ export class AdminSecrets {
   }
 }
 
+/** Application stacks this installation watches: their services and each one's health. */
+export class AdminStacks {
+  readonly #http: HttpClient;
+
+  constructor(http: HttpClient) {
+    this.#http = http;
+  }
+
+  async list(): Promise<Stack[]> {
+    return (await this.#http.json<Page<Stack>>({ method: "GET", path: "/v1/admin/stacks" })).items ?? [];
+  }
+
+  get(name: string): Promise<Stack> {
+    return this.#http.json<Stack>({ method: "GET", path: `/v1/admin/stacks/${enc(name)}` });
+  }
+
+  /** Registers or replaces a stack. The result carries a first probe of every component. */
+  put(name: string, params: PutStackParams): Promise<Stack> {
+    return this.#http.json<Stack>({ method: "PUT", path: `/v1/admin/stacks/${enc(name)}`, json: params });
+  }
+
+  /** Probes the stack now instead of waiting for the next round. */
+  check(name: string): Promise<Stack> {
+    return this.#http.json<Stack>({ method: "POST", path: `/v1/admin/stacks/${enc(name)}/check` });
+  }
+
+  /** Stops watching the stack. Its services are not touched. */
+  async delete(name: string): Promise<void> {
+    await this.#http.json<void>({ method: "DELETE", path: `/v1/admin/stacks/${enc(name)}` });
+  }
+}
+
 /** Operator-only endpoints. Every call needs a key with the `admin` scope. */
 export class Admin {
   readonly organizations: AdminOrganizations;
   readonly projects: AdminProjects;
   readonly pools: AdminPools;
   readonly secrets: AdminSecrets;
+  readonly stacks: AdminStacks;
   readonly #http: HttpClient;
 
   constructor(http: HttpClient) {
@@ -151,6 +186,7 @@ export class Admin {
     this.projects = new AdminProjects(http);
     this.pools = new AdminPools(http);
     this.secrets = new AdminSecrets(http);
+    this.stacks = new AdminStacks(http);
   }
 
   /** Where workloads can go, where they went, and what Differently cannot prove. */

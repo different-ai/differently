@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, List, Mapping, Optional
+from typing import Any, List, Mapping, Optional, Sequence
 
 from ._http import HttpClient, path_segment
 from ._sandbox import compact
@@ -14,6 +14,8 @@ from .types import (
     Project,
     Quota,
     Secret,
+    Stack,
+    StackComponent,
     UsePoolResult,
     SandboxInfo,
     SuspendOrganizationResult,
@@ -151,6 +153,35 @@ class AdminSecrets:
         self._http.json("DELETE", f"/v1/admin/secrets/{path_segment(name)}")
 
 
+class AdminStacks:
+    """Application stacks this installation watches: their services and each one's health."""
+
+    def __init__(self, http: HttpClient) -> None:
+        self._http = http
+
+    def list(self) -> List[Stack]:
+        return self._http.json("GET", "/v1/admin/stacks").get("items") or []
+
+    def get(self, name: str) -> Stack:
+        return self._http.json("GET", f"/v1/admin/stacks/{path_segment(name)}")
+
+    def put(self, name: str, components: Sequence[StackComponent], *, kind: Optional[str] = None) -> Stack:
+        """Registers or replaces a stack. With ``kind="openwork"`` a component's ``role`` fills in its health routes.
+
+        The result carries a first probe of every component.
+        """
+        body = compact(kind=kind, components=[dict(c) for c in components])
+        return self._http.json("PUT", f"/v1/admin/stacks/{path_segment(name)}", json=body)
+
+    def check(self, name: str) -> Stack:
+        """Probes the stack now instead of waiting for the next round."""
+        return self._http.json("POST", f"/v1/admin/stacks/{path_segment(name)}/check")
+
+    def delete(self, name: str) -> None:
+        """Stops watching the stack. Its services are not touched."""
+        self._http.json("DELETE", f"/v1/admin/stacks/{path_segment(name)}")
+
+
 class Admin:
     """Operator-only endpoints. Every call needs a key with the ``admin`` scope."""
 
@@ -160,6 +191,7 @@ class Admin:
         self.projects = AdminProjects(http)
         self.pools = AdminPools(http)
         self.secrets = AdminSecrets(http)
+        self.stacks = AdminStacks(http)
 
     def trust_report(self) -> TrustReport:
         """Where workloads can go, where they went, and what Differently cannot prove."""

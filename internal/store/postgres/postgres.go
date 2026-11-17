@@ -285,6 +285,27 @@ func (s *Store) UpdateKey(ctx context.Context, kid string, fn func(*store.KeyRec
 	return out, err
 }
 
+func (s *Store) PutStack(ctx context.Context, st api.Stack) error {
+	_, err := s.pool.Exec(ctx, "INSERT INTO stacks (name, doc) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET doc = EXCLUDED.doc", st.Name, st)
+	return err
+}
+
+func (s *Store) GetStack(ctx context.Context, name string) (api.Stack, error) {
+	return getDoc[api.Stack](ctx, s.pool, "stack", name, "SELECT doc FROM stacks WHERE name = $1", name)
+}
+
+func (s *Store) ListStacks(ctx context.Context) ([]api.Stack, error) {
+	return listDocs[api.Stack](ctx, s.pool, "SELECT doc FROM stacks ORDER BY name")
+}
+
+func (s *Store) DeleteStack(ctx context.Context, name string) error {
+	tag, err := s.pool.Exec(ctx, "DELETE FROM stacks WHERE name = $1", name)
+	if err == nil && tag.RowsAffected() == 0 {
+		return store.NotFound("stack", name)
+	}
+	return err
+}
+
 func (s *Store) PutSecret(ctx context.Context, rec store.SecretRecord) error {
 	_, err := s.pool.Exec(ctx, "INSERT INTO secrets (name, doc) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET doc = EXCLUDED.doc", rec.Name, rec)
 	return err

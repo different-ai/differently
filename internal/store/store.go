@@ -145,6 +145,12 @@ type Store interface {
 	// DeleteSecret refuses while a pool's credential refers to the secret.
 	DeleteSecret(ctx context.Context, name string) error
 
+	// PutStack creates or replaces a watched stack.
+	PutStack(ctx context.Context, s api.Stack) error
+	GetStack(ctx context.Context, name string) (api.Stack, error)
+	ListStacks(ctx context.Context) ([]api.Stack, error)
+	DeleteStack(ctx context.Context, name string) error
+
 	UpsertPool(ctx context.Context, p api.Pool) error
 	GetPool(ctx context.Context, name string) (api.Pool, error)
 	ListPools(ctx context.Context) ([]api.Pool, error)

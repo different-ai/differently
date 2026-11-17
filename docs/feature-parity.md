@@ -135,6 +135,7 @@ Boat is the developer-experience reference. Boat paths are relative to
 | Drain a pool | n/a | `POST /v1/admin/pools/{name}/drain` | ✅ |
 | Preemption on a full pool | n/a | `preemption.mode: idle` or `lru` pauses running sandboxes to make room for waiting work; `preemptible: false` opts a sandbox out | ✅ |
 | Switch which provider new sandboxes go to | n/a | `POST /v1/admin/pools/{name}/use` drains every other pool; running sandboxes stay; external pools need approval; every replica picks it up within about 5 s | ✅ |
+| Watch the services around the sandboxes | n/a | `PUT /v1/admin/stacks/{name}` registers a deployment's services (OpenWork's Den, Gateway, Workbot and runner have their routes built in); each is probed for health, readiness and version about every 10 s, shown on the console's Stacks page, recorded in the audit log on change and exported as `differently_stack_component_up`. Read-only: nothing is deployed or changed. Tested against stand-in servers, not yet against a live OpenWork installation ([guide](guides/openwork.md#watch-openworks-services-from-differently)) | ✅ |
 | Webhooks | 6 lifecycle events, HMAC | — | 📋 |
 | OpenTelemetry | Metrics + logs | Prometheus `/metrics`, structured JSON logs | 🟡 OTel traces 📋 |
 | Integrated coding agents (prompt, steer, events) | Yes | — | — (out of scope: Differently is the substrate agents run on) |

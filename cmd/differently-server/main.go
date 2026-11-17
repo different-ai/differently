@@ -29,6 +29,7 @@ import (
 	"github.com/different-ai/differently/internal/scheduler"
 	"github.com/different-ai/differently/internal/secrets"
 	"github.com/different-ai/differently/internal/server"
+	"github.com/different-ai/differently/internal/stacks"
 	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/internal/store/postgres"
 	"github.com/different-ai/differently/internal/version"
@@ -155,10 +156,12 @@ func serve(cfgPath string, dev bool, listen, dataDir string) error {
 	sch := scheduler.New(st, pm, cfg, installation, rec, log)
 	srv := server.New(cfg, st, pm, sch, rec, log, installation)
 	srv.Secrets = box
+	srv.Stacks = stacks.New(stacks.Deps{Store: st, Audit: rec, Log: log, Resolve: server.CredentialResolver(st, box)})
 	if err := srv.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("bootstrap: %w", err)
 	}
 	go sch.Run(ctx)
+	go srv.Stacks.Run(ctx)
 
 	httpSrv := &http.Server{Addr: cfg.Listen, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
 	errc := make(chan error, 2)

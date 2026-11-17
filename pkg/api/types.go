@@ -618,6 +618,82 @@ type PutSecretRequest struct {
 	Value string `json:"value"`
 }
 
+// Health statuses of a stack and its components.
+const (
+	HealthHealthy     = "healthy"
+	HealthDegraded    = "degraded" // answers, but reports that it is not ready
+	HealthUnavailable = "unavailable"
+	HealthUnknown     = "unknown" // not probed yet
+)
+
+// Stack kinds.
+const (
+	StackOpenWork = "openwork" // components named after OpenWork's services get its health routes
+	StackCustom   = "custom"
+)
+
+// Stack is an application deployment that Differently watches: the services
+// that make it up and where each one answers for its health. Differently
+// probes them; it does not deploy or change them.
+type Stack struct {
+	Name       string           `json:"name"`
+	Kind       string           `json:"kind"`
+	Components []StackComponent `json:"components"`
+	CreatedAt  time.Time        `json:"createdAt"`
+	CreatedBy  string           `json:"createdBy"`
+	UpdatedAt  time.Time        `json:"updatedAt"`
+	UpdatedBy  string           `json:"updatedBy"`
+	// Health is the worst state among the components that are not optional.
+	Health *StackHealth `json:"health,omitempty"`
+}
+
+// StackComponent is one service of a stack.
+type StackComponent struct {
+	Name string `json:"name"`
+	// Role says which service this is. In an openwork stack the roles
+	// den-api, den-web, gateway, den-gateway, workbot and headless-runner
+	// fill in HealthPath and ReadyPath when they are empty.
+	Role string `json:"role,omitempty"`
+	// URL is the service's base URL as this server reaches it.
+	URL string `json:"url"`
+	// HealthPath answers 2xx while the service is up. Default /health.
+	HealthPath string `json:"healthPath,omitempty"`
+	// ReadyPath answers 2xx while the service can take work. Empty skips it.
+	ReadyPath string `json:"readyPath,omitempty"`
+	// CredentialRef is a bearer token sent with the probes, as env:NAME,
+	// file:/path or secret:name. Most health routes need none.
+	CredentialRef string `json:"credentialRef,omitempty"`
+	// Optional keeps this component's failures out of the stack's health.
+	Optional bool             `json:"optional,omitempty"`
+	Health   *ComponentHealth `json:"health,omitempty"`
+}
+
+// ComponentHealth is the last probe of a component by the replica that
+// answered the request.
+type ComponentHealth struct {
+	Status  string `json:"status"` // healthy | degraded | unavailable | unknown
+	Message string `json:"message,omitempty"`
+	// Version is what the health route reported as its version or build.
+	Version   string    `json:"version,omitempty"`
+	LatencyMs int64     `json:"latencyMs"`
+	CheckedAt time.Time `json:"checkedAt"`
+	// Since is when this replica first saw the current status.
+	Since time.Time `json:"since"`
+}
+
+// StackHealth is a stack's overall state.
+type StackHealth struct {
+	Status    string    `json:"status"`
+	Message   string    `json:"message,omitempty"`
+	CheckedAt time.Time `json:"checkedAt"`
+}
+
+// PutStackRequest registers or replaces a stack.
+type PutStackRequest struct {
+	Kind       string           `json:"kind,omitempty"`
+	Components []StackComponent `json:"components"`
+}
+
 // AuditEvent is one entry of the tamper-evident audit chain.
 type AuditEvent struct {
 	Seq       int64             `json:"seq"`
