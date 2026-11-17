@@ -116,7 +116,7 @@ Also `PATCH /v1/admin/pools/{name}` with `{"preemption": {...}}`.
 | Mode | Candidates | Order |
 |---|---|---|
 | `off` | none | |
-| `idle` (recommended) | running, preemptible, no call in progress and idle for `idleSeconds` | least recently active, then lowest priority, then longest running |
+| `idle` (recommended) | running, preemptible, no call in progress and idle for `idleSeconds`, counted from its last call or from when it started running, whichever is later | least recently active, then lowest priority, then longest running |
 | `lru` | running, preemptible, ran for `minRunSeconds`, busy or not | same |
 
 Rules:

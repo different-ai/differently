@@ -39,6 +39,17 @@ All notable changes are recorded here. The format follows
   and the `site` workflow now also runs when `internal/**`, `pkg/**` or
   `go.mod` change. `make vet` vets the browser build.
 
+### Fixed
+
+- Idle preemption no longer pauses a sandbox as it starts. A create records
+  its request as activity, so a sandbox that had waited in the queue longer
+  than the pool's `idleSeconds` counted as idle the moment it ran, and was
+  the first one paused to make room for the next waiting sandbox, before its
+  caller's first command. Idle time now counts from the last call or from
+  when the sandbox started running, whichever is later. Found with simulated
+  load on a full private pool with no overflow: 26 placements for 19 sessions
+  before, 22 for 22 after.
+
 ## [0.1.0-alpha.4] — 2026-11-17
 
 Fourth alpha, published as a GitHub pre-release. Not for production. It adds
