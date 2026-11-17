@@ -171,10 +171,13 @@ main section.sim-stage { padding: 0; border-top: 0; }
 .sim-real ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.9375rem; }
 .sim-real li + li { margin-top: 6px; }
 
+/* Below a wide desktop the diagram takes the full width, so its three
+   columns always fit; the controls move under it, side by side. */
 @media (max-width: 1180px) {
-  .sim-app { grid-template-columns: 280px minmax(0, 1fr); height: auto; }
-  .sim-stage { min-height: 640px; }
-  .sim-right { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); grid-template-rows: none; }
+  .sim-app { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .sim-stage { order: 1; min-height: 0; }
+  .sim-side { order: 2; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .sim-right { order: 3; border-left: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); grid-template-rows: none; }
   .sim-trends { border-bottom: 0; border-right: 1px solid var(--line); align-content: start; }
   .sim-log ol { max-height: 260px; }
 }
@@ -182,12 +185,8 @@ main section.sim-stage { padding: 0; border-top: 0; }
   .sim-bar nav a { display: none; }
   .sim-clock { white-space: normal; }
   .pctl { flex-wrap: wrap; }
-  .sim-app { grid-template-columns: 1fr; }
-  .sim-side { border-right: 0; border-bottom: 1px solid var(--line); order: 2; }
-  .sim-stage { order: 1; }
-  .sim-right { order: 3; grid-template-columns: 1fr; }
+  .sim-right { grid-template-columns: minmax(0, 1fr); }
   .sim-trends { border-right: 0; border-bottom: 1px solid var(--line); }
-  .sim-stage { min-height: 0; }
   .sim-scroll { padding: 16px; }
   .flow { grid-template-columns: 1fr; gap: 14px; align-self: start; }
   .flow-wires { display: none; }
