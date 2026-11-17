@@ -7,6 +7,7 @@ import Icon from '../components/Icon.astro';
   <PageHeader title="Live routing" description="Where sandboxes are going right now, and why each one went there.">
     <span class="live" id="live"><span class="dot"></span><span id="live-label">Connecting</span></span>
     <button class="btn" type="button" id="pause" aria-pressed="false">Pause</button>
+    <button class="btn primary" type="button" id="launch-open"><Icon name="plus" size={15} />Launch sandboxes</button>
   </PageHeader>
   <div id="root">
     <div class="stats" id="stats"></div>
@@ -42,19 +43,39 @@ import Icon from '../components/Icon.astro';
     </div>
   </div>
 
-  <dialog class="modal wide" id="explain">
+  <dialog class="modal wide" id="launch">
+    <form id="launch-form">
+      <div class="modal-head"><h2>Launch sandboxes</h2><button class="btn ghost icon-btn" type="button" data-launch-close aria-label="Close"><Icon name="x" /></button></div>
+      <p class="launch-intro">Choose how many to start on each pool. Each sandbox is pinned to its pool. Placement policy, quotas and budgets still apply, so a pool that is full takes them as slots free up.</p>
+      <div class="launch-rows" id="launch-rows"></div>
+      <label class="field" id="launch-project-field" hidden><span>Project</span><select name="projectId" id="launch-projects"></select><small>Operator and organization keys choose the project the sandboxes belong to.</small></label>
+      <div class="grid-2">
+        <label class="field"><span>Profile</span><select name="profile" id="launch-profiles"></select></label>
+        <label class="field"><span>Template</span><select name="template" id="launch-templates"><option value="">Profile default</option></select></label>
+      </div>
+      <label class="field"><span>Time to live</span>
+        <select name="ttl"><option value="">Server default</option><option value="900">15 minutes</option><option value="3600">1 hour</option><option value="28800">8 hours</option></select>
+      </label>
+      <div class="launch-result" id="launch-result" hidden></div>
+      <div class="modal-foot"><span class="launch-total" id="launch-total"></span><button class="btn" type="button" data-launch-close>Close</button><button class="btn primary" id="launch-go" disabled>Create</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="modal wide plain" id="explain">
     <div class="modal-head"><h2 id="ex-title">Placement</h2><button class="btn ghost icon-btn" type="button" id="ex-close" aria-label="Close"><Icon name="x" /></button></div>
     <div id="ex-body"></div>
   </dialog>
 </Console>
 <script>
   import { DifferentlyError } from '@differently/sdk';
-  import type { PlacementDecision, Pool, SandboxInfo } from '@differently/sdk';
+  import type { PlacementDecision, Pool, Profile, SandboxInfo } from '@differently/sdk';
+  import { MAX_PER_POOL, MAX_TOTAL, clampCount, launchRow, planOf, runLimited, summarize, totalOf } from '../lib/launch';
+  import type { Outcome } from '../lib/launch';
   import { client, entryPage } from '../lib/connection';
   import { logo } from '../lib/icons';
   import { along, clock, ease, flowOf, gateOf, hcurve, money, pathOf, poolView, shortId, sortPools, statsOf } from '../lib/routing';
   import type { Curve, Flow, Gate, PoolView, Stats, XY } from '../lib/routing';
-  import { badge, el, empty, message, mount, relTime, table } from '../lib/ui';
+  import { badge, el, empty, message, mount, relTime, table, toast } from '../lib/ui';
 
   const POLL_MS = 2000;
   const WINDOW_MS = 5 * 60_000;
@@ -136,6 +157,7 @@ import Icon from '../components/Icon.astro';
     note.hidden = !tenantView;
     note.textContent = 'This key is not an operator key: it shows the pools your policies allow and your own sandboxes, without each pool\'s load.';
     drawWires();
+    refreshLaunchNotes();
   }
 
   function renderStats(s: Stats): void {
@@ -318,6 +340,129 @@ import Icon from '../components/Icon.astro';
   }
   document.getElementById('wait-chip')?.addEventListener('click', () => document.getElementById('waiting-panel')?.scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'nearest' }));
 
+  // ---- launch: start sandboxes on chosen pools ----
+
+  const launchDialog = document.getElementById('launch') as HTMLDialogElement;
+  const launchForm = document.getElementById('launch-form') as HTMLFormElement;
+  const launchGo = document.getElementById('launch-go') as HTMLButtonElement;
+  const profileSel = document.getElementById('launch-profiles') as HTMLSelectElement;
+  let profiles: Profile[] = [];
+  let launchReady = false;
+  let launching = false;
+  const counts: Record<string, number> = {};
+
+  const chosenProfile = () => profiles.find((p) => p.name === profileSel.value);
+
+  const noteOf = (r: { note: string; external: boolean }) => r.note || (r.external ? 'approved by policy' : 'your own pool');
+
+  /** While the dialog is open, free slots and other notes follow the live data without touching what was typed. */
+  function refreshLaunchNotes(): void {
+    if (!launchDialog.open || launching) return;
+    const resources = chosenProfile()?.resources;
+    for (const p of pools) {
+      const note = document.querySelector(`#launch-rows [data-note="${CSS.escape(p.name)}"]`);
+      if (note) note.textContent = noteOf(launchRow(p, gate, resources));
+    }
+  }
+
+  /** Rows for the pools as they are now, keeping any counts already typed. */
+  function renderLaunchRows(): void {
+    const resources = chosenProfile()?.resources;
+    const rows = sortPools(pools).map((p) => {
+      const r = launchRow(p, gate, resources);
+      if (!r.open) counts[r.pool] = 0;
+      const input = el('input', { type: 'number', min: 0, max: MAX_PER_POOL, step: 1, value: counts[r.pool] ?? 0, inputmode: 'numeric', 'aria-label': `Sandboxes on ${r.pool}`, disabled: !r.open || launching, id: `launch-count-${r.pool}` });
+      const set = (n: number) => { counts[r.pool] = clampCount(n); input.value = String(counts[r.pool]); syncLaunch(); };
+      input.addEventListener('input', () => { counts[r.pool] = clampCount(input.value); syncLaunch(); });
+      input.addEventListener('blur', () => { input.value = String(counts[r.pool] ?? 0); });
+      const step = (label: string, by: number) => el('button', { type: 'button', 'aria-label': `${by > 0 ? 'One more' : 'One fewer'} on ${r.pool}`, disabled: !r.open || launching, onclick: () => set((counts[r.pool] ?? 0) + by) }, label);
+      return el('div', { class: `lrow ${r.open ? '' : 'shut'}` },
+        el('div', {},
+          el('div', { class: 'ln' }, r.pool, el('span', { class: 'ls' }, r.sub)),
+          el('div', { class: 'lnote', 'data-note': r.pool }, noteOf(r))),
+        el('div', { class: 'stepper' }, step('−', -1), input, step('+', 1)),
+        el('div', { class: 'lcost mono' }, r.hourly > 0 ? `${money(r.hourly)}/h each` : ''));
+    });
+    mount('#launch-rows', ...(rows.length ? rows : [el('p', { class: 'muted' }, 'No pools yet. Add a provider first.')]));
+    syncLaunch();
+  }
+
+  /** The total line and the Create button follow the counts. */
+  function syncLaunch(): void {
+    const total = totalOf(counts);
+    const resources = chosenProfile()?.resources;
+    const hourly = pools.reduce((sum, p) => sum + clampCount(counts[p.name]) * launchRow(p, gate, resources).hourly, 0);
+    const over = total > MAX_TOTAL;
+    (document.getElementById('launch-total') as HTMLElement).textContent = over
+      ? `At most ${MAX_TOTAL} at once`
+      : total === 0 ? 'Set a count on at least one pool' : hourly > 0 ? `About ${money(hourly)} per hour while they run` : '';
+    launchGo.textContent = launching ? launchGo.textContent ?? '' : total > 0 ? `Create ${total} sandbox${total === 1 ? '' : 'es'}` : 'Create';
+    launchGo.disabled = launching || total === 0 || over || !launchReady;
+  }
+
+  async function openLaunch(): Promise<void> {
+    (document.getElementById('launch-result') as HTMLElement).hidden = true;
+    renderLaunchRows();
+    launchDialog.showModal();
+    if (launchReady) return;
+    try {
+      const [ps, templates, me] = await Promise.all([c.profiles.list(), c.templates.list(), c.me()]);
+      profiles = ps;
+      profileSel.replaceChildren(...ps.map((p) => el('option', { value: p.name }, `${p.name} · ${p.resources.cpu} CPU, ${Math.round(p.resources.memoryMiB / 1024)} GiB`)));
+      (document.getElementById('launch-templates') as HTMLSelectElement).append(...templates.map((t) => el('option', { value: t.name }, t.name)));
+      if (!me.projectId) {
+        const projects = await c.projects.list();
+        (document.getElementById('launch-projects') as HTMLSelectElement).replaceChildren(...projects.map((p) => el('option', { value: p.id }, `${p.name} · ${p.id}`)));
+        (document.getElementById('launch-project-field') as HTMLElement).hidden = false;
+      }
+      launchReady = true;
+      renderLaunchRows();
+    } catch (e) {
+      mount('#launch-rows', el('div', { class: 'notice bad' }, message(e)));
+    }
+  }
+
+  launchForm.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if (launching) return;
+    const plan = planOf(counts);
+    if (!plan.length || plan.length > MAX_TOTAL) return;
+    const data = new FormData(launchForm);
+    const text = (name: string) => String(data.get(name) ?? '').trim() || undefined;
+    const ttl = text('ttl');
+    launching = true;
+    renderLaunchRows();
+    launchGo.textContent = `Requesting 0 of ${plan.length}`;
+    const outcomes = await runLimited<Outcome>(plan.map((pool) => async () => {
+      try {
+        const s = await c.sandboxes.create(
+          { projectId: text('projectId'), profile: text('profile'), template: text('template'), ttlSeconds: ttl ? Number(ttl) : undefined, placement: { allowedPools: [pool] } },
+          { wait: false });
+        return { pool, id: s.id };
+      } catch (e) {
+        if (e instanceof DifferentlyError && e.code === 'unauthenticated') { location.href = entryPage(); }
+        return { pool, error: message(e) };
+      }
+    }), 4, (done) => { launchGo.textContent = `Requesting ${done} of ${plan.length}`; });
+    launching = false;
+    for (const k of Object.keys(counts)) counts[k] = 0;
+    const s = summarize(outcomes);
+    const result = document.getElementById('launch-result') as HTMLElement;
+    result.hidden = false;
+    mount(result,
+      el('strong', {}, s.refused ? `${s.created} of ${s.requested} accepted, ${s.refused} refused` : `All ${s.created} accepted. They appear on the picture as they are placed.`),
+      ...s.pools.map((p) => el('div', { class: p.refused ? 'bad' : '' },
+        el('span', { class: 'mono' }, p.pool), ` · ${p.created} accepted`,
+        p.refused ? ` · ${p.refused} refused: ${p.reasons.join('; ')}` : '')));
+    toast(s.refused ? `${s.created} accepted, ${s.refused} refused` : `${s.created} sandbox${s.created === 1 ? '' : 'es'} requested`, s.refused ? 'bad' : 'info');
+    renderLaunchRows();
+    void tick().catch(() => {});
+  });
+
+  profileSel.addEventListener('change', renderLaunchRows);
+  document.getElementById('launch-open')?.addEventListener('click', () => void openLaunch());
+  document.querySelectorAll('[data-launch-close]').forEach((b) => b.addEventListener('click', () => launchDialog.close()));
+
   // ---- loop ----
 
   function setLive(state: 'ok' | 'paused' | 'bad', text: string): void {
@@ -360,7 +505,9 @@ import Icon from '../components/Icon.astro';
       return;
     }
     new ResizeObserver(() => drawWires()).observe(stage);
-    void loop();
+    await tick().then(() => setLive('ok', 'Live')).catch(() => {});
+    if (new URLSearchParams(location.search).has('launch')) void openLaunch();
+    setTimeout(() => void loop(), POLL_MS);
   }
   void start();
 </script>

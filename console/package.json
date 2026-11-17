@@ -12,7 +12,7 @@
     "preview": "astro preview",
     "start": "node --env-file-if-exists=.env ./dist/server/entry.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test test/routing.test.ts"
+    "test": "node --experimental-strip-types --test test/routing.test.ts test/launch.test.ts"
   },
   "dependencies": {
     "astro": "7.4.4"

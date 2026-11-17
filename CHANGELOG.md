@@ -41,6 +41,12 @@ All notable changes are recorded here. The format follows
   sandboxes are placed, and a click on a decision shows every pool that was
   considered and why. It polls the public API every two seconds and needs a
   key that can read the audit log.
+- **Launch sandboxes** from the console's Live routing page: set a count per
+  pool, choose the profile, template and time to live, and create the batch.
+  Each sandbox is pinned to its pool, so policy, quotas and budgets still
+  apply; pools the policy does not approve cannot be chosen, and a full pool
+  takes its sandboxes as slots free up. The dialog shows free slots and an
+  estimated hourly cost, then what was accepted or refused and why.
 - A create request that placement refuses (`422 no_eligible_pool` or
   `unsupported_capability`) is now recorded on the audit log as
   `sandbox.rejected`, with the error code, the reason, the classification

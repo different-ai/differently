@@ -105,6 +105,16 @@ pool, with your own pools first and external providers behind the gate.
   placed: every pool considered and why it was chosen, held or ruled out.
 - **Waiting now** lists queued sandboxes with the reason each one waits.
 
+**Launch sandboxes** on the same page starts a batch across pools: set a
+count beside each pool (say 5 on one provider and 10 on another), pick the
+profile, template and time to live, and create them. Each sandbox is pinned
+to its pool with `placement.allowedPools`, so policy, quotas and budgets
+still decide: a pool the global policy does not approve cannot be chosen, and
+a pool that is full takes its sandboxes as slots free up. The dialog shows
+each pool's free slots and an estimated cost per hour from its cost model,
+then reports what was accepted and what was refused, with the reason. A batch
+is at most 50 per pool and 100 in all. The Sandboxes page links to it.
+
 The page uses only the public API, polled every two seconds: pools, policies,
 queued sandboxes, and audit events after the last one seen. It needs a key
 that can read the audit log. With an operator key it shows every pool and its
@@ -132,7 +142,7 @@ npm ci
 npm run dev           # static mode on :4321, forwarding /v1 to DIFFERENTLY_URL (default http://localhost:8080)
 npm run dev:server    # server mode, reading the variables above from .env
 npm run typecheck
-npm test              # the live routing view's model, with Node's built-in test runner
+npm test              # the live routing and launch models, with Node's built-in test runner
 ```
 
 With `differently-server --dev` running, connect with the token in
