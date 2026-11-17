@@ -43,6 +43,8 @@ type fakeAgentPlatform struct {
 	ops   map[string]map[string]any
 	dir   string
 	srv   *httptest.Server
+
+	templateReads int
 }
 
 func gerr(w http.ResponseWriter, code int, status, msg string) {
@@ -88,6 +90,19 @@ func (f *fakeAgentPlatform) serve(w http.ResponseWriter, r *http.Request) {
 		op := f.ops[p]
 		op["done"] = true
 		json.NewEncoder(w).Encode(op)
+	case strings.HasPrefix(p, engine+"/sandboxEnvironmentTemplates/") && r.Method == http.MethodGet:
+		// "shell" has no egress configuration (internet off); "open" allows it.
+		tmpl := map[string]any{"name": p, "displayName": lastSegment(p)}
+		switch lastSegment(p) {
+		case "shell", "closed":
+		case "open":
+			tmpl["egressControlConfig"] = map[string]any{"internetAccess": true}
+		default:
+			gerr(w, 404, "NOT_FOUND", "no such template")
+			return
+		}
+		f.templateReads++
+		json.NewEncoder(w).Encode(tmpl)
 	case p == list && r.Method == http.MethodGet:
 		var items []any
 		for _, id := range f.order {
@@ -320,6 +335,71 @@ func TestAgentPlatformErrors(t *testing.T) {
 		t.Fatal("engine and template are required")
 	}
 	if _, err := FromConfig(map[string]string{"project": "p", "reasoningEngine": "r", "template": "t"}, "us-central1", `{"type":"authorized_user"}`); err == nil {
-		t.Fatal("only service-account keys are accepted")
+		t.Fatal("user credentials are not accepted")
+	}
+}
+
+// A pool on GKE Workload Identity or a Compute Engine VM takes its token
+// from the metadata server, with no key in the pool's credential.
+func TestAgentPlatformMetadataServer(t *testing.T) {
+	f := newFake(t)
+	meta := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Metadata-Flavor") != "Google" || !strings.HasSuffix(r.URL.Path, "/service-accounts/default/token") {
+			w.WriteHeader(403)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"access_token": "ya29.test", "expires_in": 3599, "token_type": "Bearer"})
+	}))
+	defer meta.Close()
+	o, err := FromConfig(map[string]string{"project": "proj-1", "reasoningEngine": "re-1", "template": "shell", "apiURL": f.srv.URL},
+		"us-central1", `{"type":"metadata_server","metadataHost":"`+meta.URL+`"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := New(o).Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Egress is a property of the template: a pool advertises egress control
+// only when its template has internet access off, and then does not let a
+// request swap in a template that allows it.
+func TestAgentPlatformEgressControl(t *testing.T) {
+	f := newFake(t)
+	ctx := context.Background()
+	adapterFor := func(template string) *Adapter {
+		o, err := FromConfig(map[string]string{"project": "proj-1", "reasoningEngine": "re-1", "template": template, "apiURL": f.srv.URL}, "us-central1", keyJSON(t, f.srv.URL+"/token"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.PollEvery = time.Millisecond
+		return New(o)
+	}
+
+	closed := adapterFor("shell")
+	for range 2 {
+		if caps, _ := closed.Capabilities(ctx); !caps.Has(adapter.FeatureEgressControl) {
+			t.Fatalf("a template without internet access is egress-controlled: %v", caps.Features)
+		}
+	}
+	if f.templateReads != 1 {
+		t.Fatalf("the template is read once: %d reads", f.templateReads)
+	}
+	if _, err := closed.Create(ctx, adapter.CreateRequest{ID: "sbx_1", Installation: "inst_1", Template: "open"}); !api.IsCode(err, api.CodeInvalidRequest) || len(f.order) != 0 {
+		t.Fatalf("a request may not pick a template with internet access on an egress-controlled pool: %v", err)
+	}
+	if _, err := closed.Create(ctx, adapter.CreateRequest{ID: "sbx_1", Installation: "inst_1", Template: "closed"}); err != nil {
+		t.Fatalf("another template without internet access is fine: %v", err)
+	}
+
+	open := adapterFor("open")
+	if caps, _ := open.Capabilities(ctx); caps.Has(adapter.FeatureEgressControl) {
+		t.Fatalf("a template with internet access is not egress-controlled: %v", caps.Features)
+	}
+	if _, err := open.Create(ctx, adapter.CreateRequest{ID: "sbx_2", Installation: "inst_1", Template: "closed"}); err != nil {
+		t.Fatalf("an open pool takes any template: %v", err)
+	}
+	if caps, err := adapterFor("missing").Capabilities(ctx); err != nil || caps.Has(adapter.FeatureEgressControl) {
+		t.Fatalf("an unreadable template leaves the feature out: %v %v", caps.Features, err)
 	}
 }

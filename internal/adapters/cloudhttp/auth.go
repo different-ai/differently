@@ -165,6 +165,179 @@ func Google(sa GoogleServiceAccount, key *rsa.PrivateKey, scope string, hc *http
 	}}
 }
 
+// Google credential types beyond a service-account key.
+const (
+	// GoogleMetadataServer reads tokens from the metadata server: the node's
+	// service account on Compute Engine, or the Kubernetes service account's
+	// identity under GKE Workload Identity.
+	GoogleMetadataServer = "metadata_server"
+	// GoogleExternalAccount is workload identity federation: the credential
+	// configuration file `gcloud iam workload-identity-pools
+	// create-cred-config` writes, with a file as the subject token source
+	// (a projected Kubernetes token on EKS or AKS, for example).
+	GoogleExternalAccount = "external_account"
+)
+
+const googleCredentialHelp = `the credential must be a Google service-account JSON key (type service_account), {"type": "metadata_server"}, or a workload identity federation configuration (type external_account) that reads its token from a file`
+
+// googleCredential holds the fields of the credential types that need no
+// private key.
+type googleCredential struct {
+	Type string `json:"type"`
+
+	// metadata_server
+	ServiceAccount string `json:"serviceAccount"`
+	MetadataHost   string `json:"metadataHost"`
+
+	// external_account
+	Audience         string `json:"audience"`
+	SubjectTokenType string `json:"subject_token_type"`
+	TokenURL         string `json:"token_url"`
+	ImpersonationURL string `json:"service_account_impersonation_url"`
+	Source           struct {
+		File   string `json:"file"`
+		URL    string `json:"url"`
+		Exec   any    `json:"executable"`
+		EnvID  string `json:"environment_id"`
+		Format struct {
+			Type  string `json:"type"`
+			Field string `json:"subject_token_field_name"`
+		} `json:"format"`
+	} `json:"credential_source"`
+}
+
+// GoogleTokens returns a token source for scope from the pool's credential
+// string: a service-account key, the metadata server, or workload identity
+// federation from a token file.
+func GoogleTokens(raw, scope string, hc *http.Client) (TokenSource, error) {
+	var c googleCredential
+	if err := json.Unmarshal([]byte(raw), &c); err != nil {
+		return nil, errors.New(googleCredentialHelp)
+	}
+	switch c.Type {
+	case "service_account":
+		sa, key, err := ParseGoogle(raw)
+		if err != nil {
+			return nil, err
+		}
+		return Google(sa, key, scope, hc), nil
+	case GoogleMetadataServer:
+		return googleMetadata(c, scope, hc), nil
+	case GoogleExternalAccount:
+		switch {
+		case c.Audience == "" || c.SubjectTokenType == "" || c.TokenURL == "":
+			return nil, errors.New("the external_account configuration needs audience, subject_token_type and token_url")
+		case c.Source.File == "":
+			return nil, errors.New("the external_account configuration must read its subject token from a file (credential_source.file); URL, AWS and executable sources are not supported")
+		}
+		return googleFederated(c, scope, hc), nil
+	}
+	return nil, errors.New(googleCredentialHelp)
+}
+
+// googleMetadata asks the metadata server for the attached service
+// account's token. GKE Workload Identity serves the same route.
+func googleMetadata(c googleCredential, scope string, hc *http.Client) TokenSource {
+	host := c.MetadataHost
+	if host == "" {
+		host = os.Getenv("GCE_METADATA_HOST")
+	}
+	if host == "" {
+		host = "metadata.google.internal"
+	}
+	if !strings.Contains(host, "://") {
+		host = "http://" + host
+	}
+	account := c.ServiceAccount
+	if account == "" {
+		account = "default"
+	}
+	tokenURL := strings.TrimRight(host, "/") + "/computeMetadata/v1/instance/service-accounts/" + url.PathEscape(account) + "/token?scopes=" + url.QueryEscape(scope)
+	return &cached{fetch: func(ctx context.Context) (string, time.Duration, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL, nil)
+		if err != nil {
+			return "", 0, err
+		}
+		req.Header.Set("Metadata-Flavor", "Google")
+		return doToken(hc, "google metadata server", req)
+	}}
+}
+
+// googleFederated exchanges the subject token in a file for a federated
+// access token at Google's STS (RFC 8693), then, when the configuration
+// names a service account, for that account's token.
+func googleFederated(c googleCredential, scope string, hc *http.Client) TokenSource {
+	return &cached{fetch: func(ctx context.Context) (string, time.Duration, error) {
+		// Re-read every time: the kubelet rotates the projected token.
+		b, err := os.ReadFile(c.Source.File)
+		if err != nil {
+			return "", 0, adapter.Unavailable(fmt.Errorf("google workload identity: read the subject token file: %w", err))
+		}
+		subject := strings.TrimSpace(string(b))
+		if c.Source.Format.Type == "json" {
+			var doc map[string]any
+			_ = json.Unmarshal(b, &doc)
+			subject, _ = doc[c.Source.Format.Field].(string)
+			if subject == "" {
+				return "", 0, adapter.Unavailable(errors.New("google workload identity: the subject token file has no " + c.Source.Format.Field + " field"))
+			}
+		}
+		stsScope := scope
+		if c.ImpersonationURL != "" {
+			stsScope = "https://www.googleapis.com/auth/cloud-platform"
+		}
+		form := url.Values{
+			"grant_type":           {"urn:ietf:params:oauth:grant-type:token-exchange"},
+			"requested_token_type": {"urn:ietf:params:oauth:token-type:access_token"},
+			"audience":             {c.Audience},
+			"scope":                {stsScope},
+			"subject_token":        {subject},
+			"subject_token_type":   {c.SubjectTokenType},
+		}
+		tok, ttl, err := postToken(ctx, hc, "google workload identity", c.TokenURL, form)
+		if err != nil || c.ImpersonationURL == "" {
+			return tok, ttl, err
+		}
+		return impersonate(ctx, hc, c.ImpersonationURL, tok, scope)
+	}}
+}
+
+// impersonate calls IAM Credentials generateAccessToken with a federated
+// token.
+func impersonate(ctx context.Context, hc *http.Client, rawURL, federated, scope string) (string, time.Duration, error) {
+	const who = "google workload identity"
+	body, _ := json.Marshal(map[string]any{"scope": []string{scope}})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(string(body)))
+	if err != nil {
+		return "", 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+federated)
+	resp, err := hc.Do(req)
+	if err != nil {
+		return "", 0, adapter.Unavailable(fmt.Errorf("%s: impersonation request failed: %w", who, err))
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	var out struct {
+		AccessToken string    `json:"accessToken"`
+		ExpireTime  time.Time `json:"expireTime"`
+	}
+	_ = json.Unmarshal(raw, &out)
+	if resp.StatusCode != http.StatusOK || out.AccessToken == "" {
+		code, _ := ProviderError(resp.Header, raw)
+		if code == "" {
+			code = http.StatusText(resp.StatusCode)
+		}
+		return "", 0, adapter.Unavailable(fmt.Errorf("%s: the service account could not be impersonated (%s); the workload identity needs roles/iam.workloadIdentityUser on it", who, code))
+	}
+	ttl := time.Until(out.ExpireTime)
+	if ttl <= 0 {
+		ttl = time.Hour
+	}
+	return out.AccessToken, ttl, nil
+}
+
 func signJWT(key *rsa.PrivateKey, kid string, claims map[string]any) (string, error) {
 	header := map[string]string{"alg": "RS256", "typ": "JWT"}
 	if kid != "" {
@@ -190,6 +363,11 @@ func postToken(ctx context.Context, hc *http.Client, who, tokenURL string, form 
 		return "", 0, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return doToken(hc, who, req)
+}
+
+// doToken sends a token request and reads the OAuth 2.0 token response.
+func doToken(hc *http.Client, who string, req *http.Request) (string, time.Duration, error) {
 	req.Header.Set("Accept", "application/json")
 	resp, err := hc.Do(req)
 	if err != nil {
@@ -200,15 +378,15 @@ func postToken(ctx context.Context, hc *http.Client, who, tokenURL string, form 
 	var body struct {
 		AccessToken string          `json:"access_token"`
 		ExpiresIn   json.RawMessage `json:"expires_in"`
-		Error       string          `json:"error"`
+		Error       json.RawMessage `json:"error"`
 	}
 	_ = json.Unmarshal(raw, &body)
 	if resp.StatusCode != http.StatusOK || body.AccessToken == "" {
-		reason := body.Error
-		if reason == "" {
+		// error_description can echo request details; keep only the OAuth code.
+		var reason string
+		if json.Unmarshal(body.Error, &reason) != nil || reason == "" {
 			reason = http.StatusText(resp.StatusCode)
 		}
-		// error_description can echo request details; keep only the OAuth code.
 		return "", 0, adapter.Unavailable(fmt.Errorf("%s: credentials were rejected (%s); check the pool's credential reference", who, reason))
 	}
 	secs, err := strconv.Atoi(strings.Trim(string(body.ExpiresIn), `"`)) // some issuers send a string

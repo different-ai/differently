@@ -11,10 +11,16 @@
 | Adapter | `aws-agentcore` (`internal/adapters/agentcore`) |
 | Trust | declared: every pool must state it. AWS manages the sessions (`external`), but they run in your own AWS account, so declare `private` if your policy treats that account as private |
 | Isolation | A dedicated microVM per session, with its memory sanitized when the session ends (AWS's session-characteristics page; the overview page says "containerized environment") |
-| API checked | [AgentCore data-plane API reference](https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_StartCodeInterpreterSession.html), the botocore model `bedrock-agentcore/2024-02-28` and the [developer guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-api-reference-examples.html), read 2026-10-28 |
+| API checked | [AgentCore data-plane API reference](https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_StartCodeInterpreterSession.html), the botocore model `bedrock-agentcore/2024-02-28` and the [developer guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-api-reference-examples.html), read 2026-10-28; the botocore model was read again on 2026-11-17 |
 
 Each Differently sandbox is one Code Interpreter session. The adapter signs
 requests with AWS Signature Version 4 itself, so it needs no AWS SDK.
+
+This is as far as AWS's sandbox APIs go today. Compared with
+[Azure Container Apps Sandboxes](azure-sandboxes.md), a session has no stop
+and start, no snapshots, no ports and no per-pool egress setting, and no
+other AWS service fills the gap: see
+[other AWS services](#limits-and-differences) below.
 
 ## Capabilities
 
@@ -36,14 +42,34 @@ requests with AWS Signature Version 4 itself, so it needs no AWS SDK.
 
 ## Configure
 
-The credential is an AWS access key as JSON. The IAM principal needs
-`bedrock-agentcore:StartCodeInterpreterSession`, `GetCodeInterpreterSession`,
-`ListCodeInterpreterSessions`, `StopCodeInterpreterSession` and
-`InvokeCodeInterpreter` on the code interpreter.
+The IAM principal needs `bedrock-agentcore:StartCodeInterpreterSession`,
+`GetCodeInterpreterSession`, `ListCodeInterpreterSessions`,
+`StopCodeInterpreterSession` and `InvokeCodeInterpreter` on the code
+interpreter. The credential is JSON, and says where the keys come from: an
+access key, or a role that Differently reads and renews by itself.
 
 ```json
 {"accessKeyId": "AKIA...", "secretAccessKey": "...", "sessionToken": "optional"}
+{"source": "web-identity"}
+{"source": "pod-identity"}
+{"source": "instance-role"}
 ```
+
+| `source` | Where it runs | What it reads |
+|---|---|---|
+| none | anywhere | The access key in the credential. Temporary keys with a `sessionToken` work until they expire; the operator replaces them |
+| `web-identity` | EKS with IAM Roles for Service Accounts | `AWS_ROLE_ARN` and `AWS_WEB_IDENTITY_TOKEN_FILE`, which EKS sets on a pod whose service account is annotated with the role (`serviceAccount.annotations` in the chart). The token is exchanged at STS (`AssumeRoleWithWebIdentity`). Override with `roleArn`, `webIdentityTokenFile`, `roleSessionName`, `stsEndpoint` |
+| `pod-identity` | EKS Pod Identity, ECS task roles | `AWS_CONTAINER_CREDENTIALS_FULL_URI` and `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, which the platform sets. Override with `containerCredentialsUri`, `containerAuthorizationTokenFile`. The endpoint must be HTTPS, loopback or the ECS/EKS agent address |
+| `instance-role` | EC2 with an instance profile | The instance metadata service (IMDSv2). A pod needs the instance's metadata hop limit set to 2. Override with `imdsEndpoint` |
+
+Keys from a source are renewed five minutes before they expire. A source
+needs no secret, so the credential can be a plain environment variable:
+`credentials: {env: AGENTCORE_CREDENTIAL}` with the value
+`{"source":"pod-identity"}`. Allow the server's egress to what the source
+calls: `sts.<region>.amazonaws.com`, the Pod Identity agent
+(`169.254.170.23`, port 80) or the metadata service (`169.254.169.254`,
+port 80). The chart's NetworkPolicy allows only port 443 to providers by
+default.
 
 ```sh
 differently admin secret put agentcore-key --from-file ./agentcore-credential.json
@@ -83,8 +109,8 @@ allow the server's egress to the AWS endpoint
 - **Sessions last at most 8 hours**, whatever the sandbox's TTL; a longer
   sandbox ends then and the reconciler marks it failed. Changing the TTL
   later does not change the session.
-- **Static keys only.** Instance roles, IRSA and EKS Pod Identity are not
-  read yet. Temporary keys with a `sessionToken` work until they expire.
+- **Not read:** the shared config and credentials files, SSO profiles and
+  `AssumeRole` chains. Use one of the sources above, or a static key.
 - **Idempotent create**: the adapter first looks for a READY session named
   `dly:<installation>:<sandbox>`, then starts one with a `clientToken`
   derived from both IDs.
@@ -106,10 +132,17 @@ allow the server's egress to the AWS endpoint
   classified the same way.
 - **Pricing**: per second for vCPU and memory used; I/O wait and idle time are
   free.
+- **Not used:** the session's own file tools (`readFiles`, `writeFiles`,
+  `listFiles`, `removeFiles`), background commands (`startCommandExecution`,
+  `getTask`, `stopTask`) and mounts (`filesystemConfigurations`: S3 Files or
+  EFS access points). Background commands could give streamed output and the
+  mounts a disk that outlives a session; neither is a stop and start.
 - Other AWS services: [AgentCore Runtime](aws-agentcore-runtime.md) can run
-  commands in your own container image but has no way to list sessions;
-  AgentCore Browser is browser-only; ECS `ExecuteCommand` is an interactive
-  SSM session with no exit code; Lambda has no sandbox sessions.
+  commands in your own container image, stop a session and resume it, but
+  has no way to list sessions (still true in the API model on 2026-11-17),
+  so the reconciler could not find orphans; AgentCore Browser is
+  browser-only; ECS `ExecuteCommand` is an interactive SSM session with no
+  exit code; Lambda has no sandbox sessions.
 
 ## How it was tested
 
@@ -123,7 +156,14 @@ the result as an AWS event stream. The tests cover:
 - file write, read and list;
 - paged List per installation, idempotent Delete;
 - an exception inside the event stream;
-- the 402, 429, 400, 403 and 500 classifications.
+- the 402, 429, 400, 403 and 500 classifications;
+- a pool on Pod Identity, signing with keys from a fake credentials
+  endpoint, and that endpoint refusing the pod's token.
 
 The SigV4 signer is checked against the worked example in the IAM user guide.
-Nothing has run against a real AWS account.
+The three credential sources are tested in `internal/adapters/cloudhttp`
+against fakes of STS (the documented XML), the container credentials
+endpoint and IMDSv2: caching, renewal near expiry, keeping valid keys
+through a failed renewal, and refusals that do not echo the token.
+Nothing has run against a real AWS account, an EKS cluster or an EC2
+instance.
