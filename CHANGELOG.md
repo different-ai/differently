@@ -8,6 +8,20 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- The experimental AWS and Google Cloud adapters take their credentials from
+  the platform, as `azure-sandboxes` already did with a federated token.
+  `aws-agentcore` accepts `{"source": "web-identity"}` (IAM Roles for
+  Service Accounts), `{"source": "pod-identity"}` (EKS Pod Identity) or
+  `{"source": "instance-role"}` (the EC2 instance profile) and renews the
+  keys itself. `gcp-sandboxes` accepts `{"type": "metadata_server"}` (GKE
+  Workload Identity, Compute Engine) or a workload identity federation
+  configuration that reads a token file. `gcp-sandboxes` also advertises
+  `network.egress-control` when its template has internet access off, and
+  then refuses a request for a template that allows it. Tested against
+  fakes only; nothing ran against AWS or Google Cloud. AWS still has no
+  sandbox API with stop and start, snapshots or ports
+  ([AWS](docs/providers/aws-agentcore.md),
+  [Google Cloud](docs/providers/gcp-sandboxes.md)).
 - The website has a provider comparison at `/compare/`: 27 sandbox services
   and runtimes side by side, with list prices normalised to one sandbox of
   1 vCPU and 2 GiB for an hour, isolation, state, snapshots, self-hosting,

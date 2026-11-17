@@ -6,7 +6,7 @@
 | Adapter | none |
 | Trust | declared on the plugin pool: AWS manages the sessions (`external`), but they run in your own AWS account, so declare `private` if your policy treats that account as private |
 | Isolation | microVM per runtime session (AWS-managed) |
-| API checked | [Execute commands in a runtime session](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-execute-command.html), [runtime sessions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-sessions.html), the botocore model `bedrock-agentcore/2024-02-28`, read 2026-10-28 |
+| API checked | [Execute commands in a runtime session](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-execute-command.html), [runtime sessions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-sessions.html), the botocore model `bedrock-agentcore/2024-02-28`, read 2026-10-28 and again on 2026-11-17 (still no operation that lists runtime sessions) |
 
 AgentCore Runtime hosts your own container image. It can also run shell
 commands in a runtime session (`InvokeAgentRuntimeCommand`), which
