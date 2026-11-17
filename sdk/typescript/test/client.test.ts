@@ -214,6 +214,7 @@ test("admin namespace", async () => {
   mock.on("POST /v1/admin/organizations/org_1/suspend", reply(200, { organization: org, terminated: 2 }));
   mock.on("POST /v1/admin/pools/edge/drain", reply(200, { name: "edge", draining: true }));
   mock.on("DELETE /v1/admin/pools/edge", (_req, res) => void res.writeHead(204).end());
+  mock.on("PATCH /v1/admin/pools/edge", reply(200, { name: "edge", budget: { monthly: 250 } }));
   mock.on("POST /v1/admin/sandboxes/sbx_1/terminate", reply(202, sandboxInfo({ status: "terminating" })));
   mock.on("GET /v1/admin/audit/verify", reply(200, { ok: true, events: 42, headHash: "abc" }));
 
@@ -223,6 +224,19 @@ test("admin namespace", async () => {
   assert.equal(suspended.terminated, 2);
   assert.deepEqual(mock.calls("POST /v1/admin/organizations/org_1/suspend")[0]?.json(), { terminate: true, reason: "billing" });
   assert.equal((await client.admin.pools.drain("edge")).draining, true);
+  const budgeted = await client.admin.pools.update("edge", {
+    costModel: { cpuHour: 0.05, memoryGiBHour: 0.016 },
+    budget: { monthly: 250 },
+    attestations: { "soc2-type2": { evidence: "https://trust.example.com", validUntil: "2027-06-30T00:00:00Z" } },
+    preemption: { mode: "idle", idleSeconds: 300 },
+  });
+  assert.equal(budgeted.budget?.monthly, 250);
+  assert.deepEqual(mock.calls("PATCH /v1/admin/pools/edge")[0]?.json(), {
+    costModel: { cpuHour: 0.05, memoryGiBHour: 0.016 },
+    budget: { monthly: 250 },
+    attestations: { "soc2-type2": { evidence: "https://trust.example.com", validUntil: "2027-06-30T00:00:00Z" } },
+    preemption: { mode: "idle", idleSeconds: 300 },
+  });
   await client.admin.pools.delete("edge");
   assert.equal((await client.admin.terminateSandbox("sbx_1", { reason: "abuse" })).status, "terminating");
   assert.equal((await client.admin.verifyAudit()).ok, true);

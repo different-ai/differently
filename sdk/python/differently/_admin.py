@@ -5,7 +5,9 @@ from typing import Any, List, Mapping, Optional, Sequence
 from ._http import HttpClient, path_segment
 from ._sandbox import compact
 from .types import (
+    Attestation,
     AuditVerifyResult,
+    Budget,
     CostModel,
     CreateOrganizationResult,
     CredentialRef,
@@ -88,8 +90,15 @@ class AdminPools:
         cost_model: Optional[CostModel] = None,
         config: Optional[Mapping[str, str]] = None,
         credentials: Optional[CredentialRef] = None,
+        attestations: Optional[Mapping[str, Attestation]] = None,
+        budget: Optional[Budget] = None,
     ) -> Pool:
-        """Registers a pool at runtime. ``credentials`` names a server env var, file or stored ``secret``, never a value."""
+        """Registers a pool at runtime. ``credentials`` names a server env var, file or stored ``secret``, never a value.
+
+        ``attestations`` are what you record about whoever runs the pool, by name
+        (``soc2-type2``, ``hipaa-baa``); Differently filters placement on them and
+        does not verify them. ``budget`` (``{"monthly": 250}``) needs a ``cost_model``.
+        """
         body = compact(
             name=name,
             adapter=adapter,
@@ -101,6 +110,8 @@ class AdminPools:
             costModel=cost_model,
             config=dict(config) if config is not None else None,
             credentials=credentials,
+            attestations=dict(attestations) if attestations is not None else None,
+            budget=budget,
         )
         return self._http.json("POST", "/v1/admin/pools", json=body)
 
@@ -113,9 +124,28 @@ class AdminPools:
         cost_model: Optional[CostModel] = None,
         region: Optional[str] = None,
         credential_ref: Optional[str] = None,
+        preemption: Optional[Mapping[str, Any]] = None,
+        attestations: Optional[Mapping[str, Attestation]] = None,
+        budget: Optional[Budget] = None,
     ) -> Pool:
-        """``credential_ref`` (API-registered pools only) is ``env:NAME``, ``file:/path`` or ``secret:name``."""
-        body = compact(enabled=enabled, maxConcurrency=max_concurrency, costModel=cost_model, region=region, credentialRef=credential_ref)
+        """``credential_ref`` (API-registered pools only) is ``env:NAME``, ``file:/path`` or ``secret:name``.
+
+        ``attestations`` and ``budget`` are for API-registered pools too.
+        ``attestations`` replaces the whole set the pool holds, so send the ones to
+        keep as well (``{}`` clears it). ``budget={"monthly": 0}`` removes the
+        budget; a budget needs a cost model. ``preemption={"mode": "off"}`` turns
+        preemption off.
+        """
+        body = compact(
+            enabled=enabled,
+            maxConcurrency=max_concurrency,
+            costModel=cost_model,
+            region=region,
+            credentialRef=credential_ref,
+            preemption=dict(preemption) if preemption is not None else None,
+            attestations=dict(attestations) if attestations is not None else None,
+            budget=budget,
+        )
         return self._http.json("PATCH", f"/v1/admin/pools/{path_segment(name)}", json=body)
 
     def drain(self, name: str) -> Pool:

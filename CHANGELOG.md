@@ -38,6 +38,24 @@ All notable changes are recorded here. The format follows
   sandbox API with stop and start, snapshots or ports
   ([AWS](docs/providers/aws-agentcore.md),
   [Google Cloud](docs/providers/gcp-sandboxes.md)).
+- The console's Providers page manages what each pool charges and may spend.
+  Every pool shows its prices, this month's estimated spend against its
+  budget and its attestations; Manage sets the prices, a monthly budget, the
+  attestations, the concurrency limit and whether the pool is enabled. The
+  page carries the provider catalog from the website's comparison (list
+  prices read on 16 November 2026, how each provider bills, what it documents
+  and states), so a pool can take its provider's list price in one click and
+  record a certification the provider states, and a provider in the default
+  build can be added from the catalog with a price and a budget. Spend is
+  still the estimate from the pool's prices, not an invoice; for providers
+  that bill on use the list rates give an upper bound; a recorded attestation
+  is the operator's declaration, which Differently does not verify. Checked
+  in a browser against a local server with simulated pools (the fake
+  adapter); no real provider account was involved.
+- Both SDKs can set a pool's `budget`, `attestations` and `preemption` when
+  updating it (`admin.pools.update`), and the Python SDK can set `budget` and
+  `attestations` when creating one. The server already accepted them.
+
 - The website has a provider comparison at `/compare/`: 27 sandbox services
   and runtimes side by side, with list prices normalised to one sandbox of
   1 vCPU and 2 GiB for an hour, isolation, state, snapshots, self-hosting,

@@ -209,6 +209,7 @@ class ClientTests(unittest.TestCase):
         self.mock.on("POST /v1/admin/pools", reply(201, {"name": "edge", "adapter": "a", "trust": "external"}))
         self.mock.on("POST /v1/admin/pools/edge/drain", reply(200, {"name": "edge", "draining": True}))
         self.mock.on("DELETE /v1/admin/pools/edge", no_content)
+        self.mock.on("PATCH /v1/admin/pools/edge", reply(200, {"name": "edge", "budget": {"monthly": 250}}))
         self.mock.on("POST /v1/admin/sandboxes/sbx_1/terminate", reply(202, sandbox_info(status="terminating")))
         self.mock.on("GET /v1/admin/audit/verify", reply(200, {"ok": True, "events": 42}))
 
@@ -225,6 +226,26 @@ class ClientTests(unittest.TestCase):
             {"name": "edge", "adapter": "remote", "trust": "external", "maxConcurrency": 4, "credentials": {"env": "EDGE_TOKEN"}},
         )
         self.assertTrue(self.client.admin.pools.drain("edge")["draining"])
+        budgeted = self.client.admin.pools.update(
+            "edge",
+            cost_model={"cpuHour": 0.05, "memoryGiBHour": 0.016},
+            budget={"monthly": 250},
+            attestations={"soc2-type2": {"evidence": "https://trust.example.com"}},
+            preemption={"mode": "off"},
+        )
+        self.assertEqual(budgeted["budget"]["monthly"], 250)
+        self.assertEqual(
+            self.mock.calls("PATCH /v1/admin/pools/edge")[0].json(),
+            {
+                "costModel": {"cpuHour": 0.05, "memoryGiBHour": 0.016},
+                "budget": {"monthly": 250},
+                "attestations": {"soc2-type2": {"evidence": "https://trust.example.com"}},
+                "preemption": {"mode": "off"},
+            },
+        )
+        # An empty set is sent, not dropped: it clears the pool's attestations.
+        self.client.admin.pools.update("edge", attestations={})
+        self.assertEqual(self.mock.calls("PATCH /v1/admin/pools/edge")[1].json(), {"attestations": {}})
         self.client.admin.pools.delete("edge")
         self.assertEqual(self.client.admin.terminate_sandbox("sbx_1", reason="abuse")["status"], "terminating")
         self.assertTrue(self.client.admin.verify_audit()["ok"])

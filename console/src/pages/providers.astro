@@ -3,14 +3,47 @@ import Console from '../layouts/Console.astro';
 import PageHeader from '../components/PageHeader.astro';
 import Icon from '../components/Icon.astro';
 import { providerKinds } from '../lib/providers';
+import { ATTESTATIONS, PRICES_READ_LABEL, providers } from '../lib/catalog';
+
+const behind = [...providers].sort((a, b) => a.name.localeCompare(b.name));
 ---
 <Console title="Providers" active="providers">
-  <PageHeader title="Providers" description="Pools sandboxes can be placed on: runtimes you run and providers you opt into.">
-    <a class="btn" href="https://different-ai.github.io/differently/docs/providers/" target="_blank" rel="noopener">Provider catalog <Icon name="external" size={14} /></a>
+  <PageHeader title="Providers" description="Where sandboxes can run, what each pool charges, and how much it may spend in a month.">
+    <a class="btn" href="https://different-ai.github.io/differently/docs/providers/" target="_blank" rel="noopener">Provider docs <Icon name="external" size={14} /></a>
     <button class="btn primary" type="button" data-open="add"><Icon name="plus" size={15} />Add provider</button>
   </PageHeader>
-  <div id="list"></div>
-  <p class="table-note">Registering a managed provider does not authorize its use: work reaches it only when placement policy allows external placement.</p>
+
+  <div id="totals"></div>
+
+  <section class="section">
+    <h2 class="section-title">Your pools</h2>
+    <div id="list"></div>
+    <p class="table-note">
+      Spend is an estimate from each pool's prices and how long its sandboxes ran. It is not an invoice.
+      Registering a managed provider does not authorize its use: work reaches it only when placement policy allows external placement.
+    </p>
+  </section>
+
+  <section class="section" id="catalog">
+    <div class="toolbar">
+      <h2 class="section-title">Catalog</h2>
+      <div class="cat-tools">
+        <input type="search" id="cat-q" placeholder="Search providers" aria-label="Search providers" />
+        <div class="segmented" id="cat-kind">
+          <button type="button" data-kind="all" aria-pressed="true">All</button>
+          <button type="button" data-kind="hosted" aria-pressed="false">Hosted</button>
+          <button type="button" data-kind="cloud" aria-pressed="false">Your cloud</button>
+          <button type="button" data-kind="open" aria-pressed="false">Open source</button>
+        </div>
+      </div>
+    </div>
+    <p class="table-note cat-about">
+      List prices for one sandbox of 1 vCPU and 2 GiB, and what each provider documents, read from its own pages on {PRICES_READ_LABEL}.
+      A provider's price is what it publishes, not what you were billed.{' '}
+      <a href="https://different-ai.github.io/differently/compare/" target="_blank" rel="noopener">The full comparison</a>
+    </p>
+    <div id="cat" class="cat-grid"></div>
+  </section>
 
   <dialog class="modal" id="add">
     <form>
@@ -19,35 +52,265 @@ import { providerKinds } from '../lib/providers';
         <label class="field"><span>Provider</span>
           <select name="kind" id="kind">{providerKinds.map((k) => <option value={k.kind}>{k.label}</option>)}</select>
         </label>
-        <label class="field"><span>Pool name</span><input type="text" name="name" required pattern="[a-z0-9][a-z0-9-]{0,62}" placeholder="e.g. daytona" /></label>
+        <label class="field"><span>Pool name</span><input type="text" name="name" required pattern="[a-z0-9][a-z0-9\-]{0,62}" placeholder="e.g. daytona" /></label>
       </div>
+      <label class="field" id="behind-field" hidden><span>Provider behind the plugin</span>
+        <select name="behind" id="behind"><option value="">Another one, or my own</option>{behind.map((p) => <option value={p.id}>{p.name}</option>)}</select>
+        <small>Sets the pool's <span class="mono">provider</span> label, so its catalog entry and list price show here.</small>
+      </label>
       <label class="field"><span>Trust</span>
         <select name="trust" id="trust"><option value="external">External: someone else runs it</option><option value="private">Private: you run it</option></select>
         <small id="trust-note"></small>
       </label>
       <div id="fields" class="grid-2"></div>
       <label class="field"><span>API key</span><input type="password" name="key" autocomplete="off" placeholder="Stored sealed in Differently" /><small>Saved as the secret <span class="mono" id="secret-name">name-key</span> and never shown again.</small></label>
+      <div class="group" id="add-money" hidden>
+        <label class="check"><input type="checkbox" name="list" id="add-list" /><span id="add-list-text"></span></label>
+        <label class="field"><span>Monthly budget, in dollars</span>
+          <input type="number" name="budget" id="add-budget" min="0" step="any" inputmode="decimal" placeholder="No budget" />
+          <small>Once the estimated spend reaches it, the pool takes no new sandboxes until the month ends or you raise it. It needs prices.</small>
+        </label>
+      </div>
       <div class="modal-foot"><button class="btn" type="button" data-close>Close</button><button class="btn primary" data-save>Add provider</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="modal wide" id="manage">
+    <form>
+      <div class="modal-head">
+        <h2 class="m-title"><span id="m-mark"></span><span id="m-name">Manage pool</span></h2>
+        <button class="btn ghost icon-btn" type="button" data-close aria-label="Close"><Icon name="x" /></button>
+      </div>
+      <div class="notice" id="m-config" hidden>
+        This pool is declared in the server's config file. Its budget and attestations are changed there.
+        Prices and limits set here last until the server restarts and reads the file again.
+      </div>
+
+      <fieldset class="group">
+        <legend>Prices</legend>
+        <p class="hint">What a sandbox costs on this pool, per hour. Differently estimates spend from these figures. It does not read them from the provider.</p>
+        <div class="grid-4">
+          <label class="field"><span>Per vCPU</span><input type="number" name="cpuHour" min="0" step="any" inputmode="decimal" placeholder="0" /></label>
+          <label class="field"><span>Per GiB of memory</span><input type="number" name="memoryGiBHour" min="0" step="any" inputmode="decimal" placeholder="0" /></label>
+          <label class="field"><span>Per sandbox</span><input type="number" name="sandboxHour" min="0" step="any" inputmode="decimal" placeholder="0" /></label>
+          <label class="field"><span>Per GiB of disk</span><input type="number" name="diskGiBHour" min="0" step="any" inputmode="decimal" placeholder="0" /></label>
+        </div>
+        <div class="from-catalog" id="m-list" hidden>
+          <p id="m-list-text"></p>
+          <button type="button" class="btn small" id="m-use-list">Use list prices</button>
+        </div>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>Monthly budget</legend>
+        <div class="grid-2">
+          <label class="field"><span>Budget, in dollars a month</span>
+            <input type="number" name="budget" id="m-budget" min="0" step="any" inputmode="decimal" placeholder="No budget" />
+            <small id="m-budget-note"></small>
+          </label>
+          <div class="field"><span>So far this month</span><div class="spent" id="m-spent"></div></div>
+        </div>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>Attestations</legend>
+        <p class="hint">What you have on record about whoever runs this pool. Placement keeps work that requires one off pools that lack it. Differently does not verify them.</p>
+        <div class="from-catalog" id="m-stated" hidden>
+          <p id="m-stated-text"></p>
+          <div id="m-stated-add" class="chips"></div>
+        </div>
+        <div id="m-atts" class="att-rows"></div>
+        <datalist id="att-names">{ATTESTATIONS.map((a) => <option value={a.name}>{a.label}</option>)}</datalist>
+        <div><button type="button" class="btn small" id="m-add-att"><Icon name="plus" size={14} />Add attestation</button></div>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>Capacity</legend>
+        <div class="grid-2">
+          <label class="field"><span>Sandboxes at once</span><input type="number" name="maxConcurrency" min="0" step="1" inputmode="numeric" placeholder="No limit" /></label>
+          <label class="check m-enabled"><input type="checkbox" name="enabled" /><span>Enabled: placement may use this pool</span></label>
+        </div>
+      </fieldset>
+
+      <div class="modal-foot"><button class="btn" type="button" data-close>Close</button><button class="btn primary" data-save>Save</button></div>
     </form>
   </dialog>
 </Console>
 <script>
   import { client } from '../lib/connection';
-  import { badge, confirmAction, dialog, el, empty, field, rowMenu, section, table, toast } from '../lib/ui';
+  import { badge, confirmAction, dialog, el, empty, field, icon, mount, rowMenu, section, toast } from '../lib/ui';
   import { providerKinds } from '../lib/providers';
-  import type { Pool } from '@differently/sdk';
+  import { markURL } from '../lib/marks';
+  import {
+    PRICES_READ_LABEL, addRoute, attestationValid, budgetView, costText, entryFor, hasPrices, listCost, monthStart,
+    priceState, providers, sameCost, search, slotText, stated, supportLabel, tags, totalsOf, usd,
+  } from '../lib/catalog';
+  import type { KindKey, Provider } from '../lib/catalog';
+  import type { Attestation, CostModel, CreatePoolParams, Pool, UpdatePoolParams } from '@differently/sdk';
 
   const c = client();
-  const kindSel = document.getElementById('kind') as HTMLSelectElement;
-  const trustSel = document.getElementById('trust') as HTMLSelectElement;
+  const kinds = providerKinds.map((k) => k.kind);
+  const DOCS = 'https://different-ai.github.io/differently/docs/providers/';
+  const RATES = ['cpuHour', 'memoryGiBHour', 'sandboxHour', 'diskGiBHour'] as const;
+  const byId = (id: string) => document.getElementById(id) as HTMLElement;
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+  const billed: Record<Provider['billing'], string> = { wall: 'billed while it runs', usage: 'billed on the CPU it uses', tier: 'sold in bundled sizes', infra: 'runs on your infrastructure' };
+
+  let pools: Pool[] = [];
+  /** This month's estimated cost by pool, from the usage report: the server reports spend only for pools with a budget. */
+  let usage: Record<string, number> = {};
+
+  const mark = (p: Provider | undefined, cls = 'pmark'): HTMLElement => {
+    const url = markURL(p?.logo);
+    return url ? el('img', { class: cls, src: url, alt: '', width: 32, height: 32 }) : el('span', { class: `${cls} blank` }, icon('server', 16));
+  };
+
+  // ---- Totals and pools ----------------------------------------------------
+
+  function renderTotals() {
+    if (!pools.length) return mount('#totals');
+    const t = totalsOf(pools, usage);
+    const priced = pools.length - t.unpriced;
+    const stat = (label: string, value: string, hint: string, tone = '') =>
+      el('div', { class: `stat ${tone}` }, el('div', { class: 'label' }, label), el('div', { class: 'value' }, value), el('div', { class: 'hint' }, hint));
+    mount('#totals', el('div', { class: 'stats money' },
+      stat('Estimated spend this month', usd(t.spent), t.unpriced ? `${plural(priced, 'pool')} with prices, ${t.unpriced} without` : `From the prices of ${plural(priced, 'pool')}`),
+      stat('Monthly budgets', t.withBudget ? usd(t.budgeted) : 'None', t.withBudget ? `On ${t.withBudget} of ${plural(pools.length, 'pool')}` : 'No pool has a budget'),
+      stat('At their budget', String(t.reached), t.reached ? 'They take no new sandboxes this month' : 'No pool has used up its budget', t.reached ? 'warn' : ''),
+      stat('External, no budget', String(t.externalOpen), t.externalOpen ? 'Spend there has no ceiling' : 'Every external pool has a ceiling', t.externalOpen ? 'warn' : ''),
+    ));
+  }
+
+  function poolRow(p: Pool): HTMLElement {
+    const entry = entryFor(p);
+    const b = budgetView(p, usage[p.name]);
+    const list = listCost(entry);
+    const prices = priceState(p, entry);
+    const status = !p.enabled ? 'disabled' : p.draining ? 'draining' : p.health?.status ?? 'unknown';
+    const held = Object.entries(p.attestations ?? {});
+    const now = new Date();
+    const priceNote = prices === 'list' ? `${entry!.name}'s list price`
+      : prices === 'custom' ? (list ? `Your own. List is ${costText(list)}` : 'Your own')
+      : list ? `None set. List is ${costText(list)}` : 'None set, so spend cannot be estimated';
+    const budgetNote = { none: 'No budget', ok: 'Within its budget', near: 'Close to its budget', reached: 'Budget reached: no new sandboxes' }[b.state];
+    return el('div', { class: 'prow' },
+      el('div', { class: 'p-id' }, mark(entry),
+        el('div', {},
+          el('div', { class: 'p-name' }, p.name, badge(status)),
+          el('div', { class: 'p-sub' }, [entry?.name ?? p.adapter, p.trust, p.region, p.released ? `${p.active} active, ${p.released} paused` : `${p.active} active`].filter(Boolean).join(' · ')))),
+      el('div', { class: 'p-cell' },
+        el('div', { class: 'p-label' }, 'Prices'),
+        el('div', { class: 'p-value mono' }, costText(p.costModel) || '—'),
+        el('div', { class: 'p-note' }, priceNote)),
+      el('div', { class: 'p-cell' },
+        el('div', { class: 'p-label' }, 'This month'),
+        el('div', { class: 'p-value' }, b.text),
+        b.limit ? el('div', { class: `meter ${b.state}`, role: 'img', 'aria-label': `${Math.round(b.share * 100)}% of the budget` }, el('i', { style: `width:${(b.share * 100).toFixed(1)}%` })) : null,
+        el('div', { class: `p-note ${b.state === 'reached' || b.state === 'near' ? 'warn' : ''}` }, budgetNote)),
+      el('div', { class: 'p-cell' },
+        el('div', { class: 'p-label' }, 'Attestations'),
+        held.length
+          ? el('div', { class: 'chips' }, ...held.map(([name, a]) => el('span', { class: `chip ${attestationValid(a, now) ? '' : 'expired'}`, title: [a.evidence, attestationValid(a, now) ? '' : 'Expired'].filter(Boolean).join(' · ') || undefined }, name)))
+          : el('div', { class: 'p-note' }, 'None recorded')),
+      el('div', { class: 'p-actions' },
+        el('button', { class: 'btn small', type: 'button', onclick: () => openManage(p) }, 'Manage'),
+        rowMenu([
+          { label: 'Use for new sandboxes', run: async () => { if (await confirmAction(`Use ${p.name}?`, 'Every other pool is drained, so new sandboxes go here. Running sandboxes stay where they are.', 'Use', false)) { await c.admin.pools.use(p.name, { approveExternal: p.trust === 'external' }); toast(`New sandboxes go to ${p.name}`); await load(); } } },
+          { label: 'Drain', hidden: p.draining, run: async () => { await c.admin.pools.drain(p.name); toast('Draining'); await load(); } },
+          { label: 'Undrain', hidden: !p.draining, run: async () => { await c.admin.pools.undrain(p.name); toast('Accepting sandboxes'); await load(); } },
+          { label: 'Remove', danger: true, hidden: p.source === 'config', run: async () => { if (await confirmAction(`Remove ${p.name}?`, 'The pool is unregistered. Sandboxes on it must be deleted first.', 'Remove')) { await c.admin.pools.delete(p.name); toast('Removed'); await load(); } } },
+        ])));
+  }
+
+  async function load() {
+    await section('#list', async () => {
+      const [list, report] = await Promise.all([
+        c.admin.pools.list(),
+        // The usage report fills in spend for pools without a budget; the page works without it.
+        c.usage.get({ from: monthStart(new Date()), groupBy: 'pool' }).catch(() => null),
+      ]);
+      pools = list;
+      usage = Object.fromEntries((report?.lines ?? []).map((l) => [l.key, l.estimatedCost]));
+      return pools.length
+        ? el('div', { class: 'prows' }, ...pools.map(poolRow))
+        : empty('No providers yet. Add OpenSandbox, a managed provider from the catalog below, or a plugin.', ['server']);
+    });
+    renderTotals();
+    renderCatalog();
+  }
+
+  // ---- Catalog ---------------------------------------------------------------
+
+  let catKind: KindKey | 'all' = 'all';
+  const catQuery = byId('cat-q') as HTMLInputElement;
+
+  function catCard(p: Provider, connected: Pool[]): HTMLElement {
+    const route = addRoute(p, kinds);
+    const says = stated(p).map((s) => s.label);
+    const price = p.slot
+      ? [el('b', {}, slotText(p)), el('span', {}, ' an hour')]
+      : [el('b', {}, p.billing === 'infra' ? 'Your own cost' : 'By size')];
+    const action = route.how === 'here' ? el('button', { class: 'btn small', type: 'button', onclick: () => addFromCatalog(p, false) }, icon('plus', 14), 'Add')
+      : route.how === 'plugin' ? el('button', { class: 'btn small', type: 'button', title: route.text, onclick: () => addFromCatalog(p, true) }, icon('plus', 14), 'Add as a plugin')
+      : route.how === 'cli' ? el('a', { class: 'btn small', href: `${DOCS}${p.docs}/`, target: '_blank', rel: 'noopener', title: route.text }, 'How to add', icon('external', 13))
+      : el('span', { class: 'cat-none' }, route.text);
+    return el('article', { class: 'cat' },
+      el('div', { class: 'cat-head' }, mark(p),
+        el('div', { class: 'cat-title' }, el('b', {}, p.name), el('small', {}, p.kind)),
+        connected.length ? el('span', { class: 'badge ok', title: connected.map((x) => x.name).join(', ') }, connected.length === 1 ? 'Connected' : `${connected.length} pools`) : null),
+      el('div', { class: 'cat-price' }, ...price),
+      el('div', { class: 'cat-sub' }, p.slot ? `1 vCPU + 2 GiB at list price, ${billed[p.billing]}` : p.billing === 'infra' ? 'It runs on machines you already pay for' : p.fees),
+      el('div', { class: 'chips' }, ...tags(p).map((t) => el('span', { class: 'chip' }, t))),
+      el('p', { class: 'cat-says' }, says.length ? `States ${says.join(', ')}` : p.soc2 === 'own' ? 'Inside your own audit scope' : 'No certification stated for it'),
+      el('div', { class: 'cat-foot' }, el('span', { class: 'cat-support' }, supportLabel[p.support]), action));
+  }
+
+  function renderCatalog() {
+    const found = search(catKind, catQuery.value);
+    mount('#cat', ...(found.length
+      ? found.map((p) => catCard(p, pools.filter((x) => entryFor(x)?.id === p.id)))
+      : [el('p', { class: 'table-note' }, 'No provider matches.')]));
+  }
+  catQuery.addEventListener('input', renderCatalog);
+  document.querySelectorAll<HTMLButtonElement>('#cat-kind button').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('#cat-kind button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    catKind = b.dataset.kind as typeof catKind;
+    renderCatalog();
+  }));
+
+  // ---- Add -------------------------------------------------------------------
+
+  const kindSel = byId('kind') as HTMLSelectElement;
+  const trustSel = byId('trust') as HTMLSelectElement;
+  const behindSel = byId('behind') as HTMLSelectElement;
+  const addList = byId('add-list') as HTMLInputElement;
+  const addBudget = byId('add-budget') as HTMLInputElement;
   const nameInput = document.querySelector<HTMLInputElement>('#add input[name=name]')!;
 
+  /** The catalog entry of the pool being added: its adapter's, or for a plugin the one chosen. */
+  const addEntry = (): Provider | undefined => providers.find((p) => (kindSel.value === 'remote' ? p.id === behindSel.value : p.adapter === kindSel.value));
+
+  function renderMoney() {
+    const entry = addEntry();
+    const list = listCost(entry);
+    byId('add-money').hidden = !list;
+    addList.checked = !!list;
+    addBudget.value = '';
+    if (list) byId('add-list-text').textContent = `Set ${entry!.name}'s list price: ${costText(list)}${entry!.rates!.basis === 'used' ? ' (it bills on use, so this is the most a sandbox costs)' : ''}`;
+    syncBudget();
+  }
+  function syncBudget() {
+    addBudget.disabled = !addList.checked;
+    if (addBudget.disabled) addBudget.value = '';
+  }
   function renderKind() {
     const k = providerKinds.find((x) => x.kind === kindSel.value)!;
     trustSel.disabled = k.trust === 'external';
     if (k.trust) trustSel.value = 'external';
-    (document.getElementById('trust-note') as HTMLElement).textContent = k.trust ? 'Managed providers are always external.' : 'Self-hostable: say who operates it.';
-    (document.getElementById('fields') as HTMLElement).replaceChildren(...k.fields.map((f) => {
+    byId('trust-note').textContent = k.trust ? 'Managed providers are always external.' : 'Self-hostable: say who operates it.';
+    byId('behind-field').hidden = k.kind !== 'remote';
+    if (k.kind !== 'remote') behindSel.value = '';
+    byId('fields').replaceChildren(...k.fields.map((f) => {
       // "API URL (default https://…)" becomes the label "API URL" with the default as a placeholder.
       const m = f.label.match(/^(.*?)\s*\((?:default|e\.g\.)\s*([^)]*)\)\s*$/);
       const label = (m ? m[1] : f.label).replace(/^./, (ch) => ch.toUpperCase());
@@ -55,28 +318,14 @@ import { providerKinds } from '../lib/providers';
         f.choices ? el('select', { name: `cfg.${f.key}` }, el('option', { value: '' }, 'Default'), ...f.choices.map((ch) => el('option', { value: ch }, ch)))
           : el('input', { type: 'text', name: `cfg.${f.key}`, required: f.required, placeholder: m ? m[2] : f.required ? 'Required' : 'Optional' }));
     }));
+    renderMoney();
   }
   kindSel.addEventListener('change', renderKind);
-  nameInput.addEventListener('input', () => { (document.getElementById('secret-name') as HTMLElement).textContent = `${nameInput.value || 'name'}-key`; });
+  behindSel.addEventListener('change', renderMoney);
+  addList.addEventListener('change', syncBudget);
+  nameInput.addEventListener('input', () => { byId('secret-name').textContent = `${nameInput.value || 'name'}-key`; });
 
-  async function load() {
-    await section('#list', async () => table<Pool>([
-      { label: 'Pool', cell: (p) => el('span', { style: 'font-weight:500' }, p.name) },
-      { label: 'Adapter', cell: (p) => p.adapter },
-      { label: 'Trust', cell: (p) => p.trust },
-      { label: 'Health', cell: (p) => badge(!p.enabled ? 'disabled' : p.draining ? 'draining' : p.health?.status ?? 'unknown') },
-      { label: 'Active', cell: (p) => p.released ? el('span', { title: 'Paused sandboxes that hold no slot until they resume' }, String(p.active), el('span', { class: 'muted' }, ` · ${p.released} paused, no slot`)) : p.active },
-      { label: 'Source', cell: (p) => el('span', { class: 'muted' }, p.source === 'config' ? 'Config file' : 'Added here') },
-      { label: '', className: 'actions', cell: (p) => rowMenu([
-        { label: 'Use for new sandboxes', run: async () => { if (await confirmAction(`Use ${p.name}?`, 'Every other pool is drained, so new sandboxes go here. Running sandboxes stay where they are.', 'Use', false)) { await c.admin.pools.use(p.name, { approveExternal: p.trust === 'external' }); toast(`New sandboxes go to ${p.name}`); await load(); } } },
-        { label: 'Drain', hidden: p.draining, run: async () => { await c.admin.pools.drain(p.name); toast('Draining'); await load(); } },
-        { label: 'Undrain', hidden: !p.draining, run: async () => { await c.admin.pools.undrain(p.name); toast('Accepting sandboxes'); await load(); } },
-        { label: 'Remove', danger: true, hidden: p.source === 'config', run: async () => { if (await confirmAction(`Remove ${p.name}?`, 'The pool is unregistered. Sandboxes on it must be deleted first.', 'Remove')) { await c.admin.pools.delete(p.name); toast('Removed'); await load(); } } },
-      ]) },
-    ], await c.admin.pools.list(), empty('No providers yet. Add OpenSandbox, a managed provider, or a plugin.', ['server'])));
-  }
-
-  dialog('add', async (form) => {
+  const add = dialog('add', async (form) => {
     const data = new FormData(form);
     const name = field(form, 'name');
     const kind = field(form, 'kind');
@@ -85,10 +334,174 @@ import { providerKinds } from '../lib/providers';
     const key = String(data.get('key') ?? '');
     if (key) await c.admin.secrets.put(`${name}-key`, key);
     const meta = providerKinds.find((x) => x.kind === kind)!;
-    await c.admin.pools.create({ name, adapter: kind, trust: meta.trust ?? trustSel.value, config, credentials: key ? { secret: `${name}-key` } : undefined });
+    const params: CreatePoolParams = { name, adapter: kind, trust: meta.trust ?? trustSel.value, config, credentials: key ? { secret: `${name}-key` } : undefined };
+    if (kind === 'remote' && behindSel.value) params.labels = { provider: behindSel.value };
+    const list = addList.checked ? listCost(addEntry()) : undefined;
+    if (list) {
+      params.costModel = list;
+      const budget = Number(addBudget.value);
+      if (budget > 0) params.budget = { monthly: budget };
+    }
+    await c.admin.pools.create(params);
     toast(`Added ${name}`);
     await load();
   });
+  // The form resets when it opens; put the kind's fields and prices back after that.
+  document.querySelectorAll('[data-open="add"]').forEach((b) => b.addEventListener('click', renderKind));
+
+  function addFromCatalog(p: Provider, plugin: boolean) {
+    add.open();
+    kindSel.value = plugin ? 'remote' : p.adapter!;
+    renderKind();
+    if (plugin) { behindSel.value = p.id; renderMoney(); }
+    // Suggest the provider's id as the pool name unless a pool already has it.
+    nameInput.value = pools.some((x) => x.name === p.id) ? '' : p.id;
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  // ---- Manage ----------------------------------------------------------------
+
+  let current: Pool | undefined;
+  const budgetInput = byId('m-budget') as HTMLInputElement;
+  const attRows = byId('m-atts');
+
+  const num = (form: HTMLFormElement, name: string): number => {
+    const v = Number(field(form, name));
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  };
+  function costFrom(form: HTMLFormElement): CostModel {
+    const cost: CostModel = {};
+    for (const k of RATES) { const v = num(form, k); if (v > 0) cost[k] = v; }
+    if (hasPrices(cost)) cost.currency = current?.costModel?.currency || 'USD';
+    return cost;
+  }
+  const dateOf = (iso?: string): string => (iso && !iso.startsWith('0001-') ? iso.slice(0, 10) : '');
+
+  function attRow(name = '', a: Attestation = {}): HTMLElement {
+    const row = el('div', { class: 'att-row' },
+      el('input', { type: 'text', name: 'att-name', list: 'att-names', value: name, placeholder: 'soc2-type2', 'aria-label': 'Attestation name', required: true, pattern: '[a-z0-9][a-z0-9._\\-]{0,62}', autocomplete: 'off' }),
+      el('input', { type: 'text', name: 'att-evidence', value: a.evidence ?? '', placeholder: 'Where the proof is: a URL, a report, a contract', 'aria-label': 'Evidence' }),
+      el('input', { type: 'date', name: 'att-until', value: dateOf(a.validUntil), 'aria-label': 'Valid until', title: 'Valid until (UTC). Leave empty if it does not expire.' }),
+      el('button', { class: 'btn ghost icon-btn', type: 'button', 'aria-label': 'Remove attestation', onclick: () => { row.remove(); syncManage(); } }, icon('x', 16)));
+    // Keep the exact stored time when the day is unchanged, so saving does not rewrite it.
+    row.dataset.until = a.validUntil ?? '';
+    return row;
+  }
+  function attsFrom(): Record<string, Pick<Attestation, 'evidence' | 'validUntil'>> {
+    const out: Record<string, Pick<Attestation, 'evidence' | 'validUntil'>> = {};
+    for (const row of attRows.querySelectorAll<HTMLElement>('.att-row')) {
+      const [name, evidence, until] = [...row.querySelectorAll('input')].map((i) => i.value.trim());
+      if (!name) continue;
+      const a: Pick<Attestation, 'evidence' | 'validUntil'> = {};
+      if (evidence) a.evidence = evidence;
+      if (until) a.validUntil = dateOf(row.dataset.until) === until ? row.dataset.until : `${until}T23:59:59Z`;
+      out[name] = a;
+    }
+    return out;
+  }
+  const canonical = (m: Record<string, Pick<Attestation, 'evidence' | 'validUntil'>>): string =>
+    JSON.stringify(Object.keys(m).sort().map((k) => [k, m[k].evidence ?? '', dateOf(m[k].validUntil)]));
+
+  /** Marks what the form cannot save: a budget without prices, an attestation named twice. */
+  function syncManage() {
+    const form = manage.form;
+    const priced = hasPrices(costFrom(form));
+    const wantsBudget = num(form, 'budget') > 0;
+    budgetInput.setCustomValidity(wantsBudget && !priced ? 'A budget needs prices' : '');
+    const note = byId('m-budget-note');
+    note.textContent = wantsBudget && !priced
+      ? 'Set prices first: the budget is checked against spend estimated from them.'
+      : 'When the estimate reaches it, the pool takes no new sandboxes until the month ends or you raise it. Sandboxes already there keep running.';
+    note.classList.toggle('bad', wantsBudget && !priced);
+    const seen = new Set<string>();
+    for (const input of attRows.querySelectorAll<HTMLInputElement>('input[name=att-name]')) {
+      const v = input.value.trim();
+      input.setCustomValidity(v && seen.has(v) ? 'This attestation is listed twice' : '');
+      seen.add(v);
+    }
+    renderStated();
+    form.dispatchEvent(new Event('change'));
+  }
+
+  /** What the provider states, with a button for each one not yet in the list. */
+  function renderStated() {
+    const entry = current && entryFor(current);
+    const says = stated(entry);
+    byId('m-stated').hidden = !says.length || current?.source === 'config';
+    if (!entry || !says.length) return;
+    byId('m-stated-text').textContent = `${entry.name} states ${says.map((s) => s.label).join(', ')} on its own pages. ${entry.complianceNote} Record one only after you have seen the report or the signed agreement.`;
+    const listed = new Set([...attRows.querySelectorAll<HTMLInputElement>('input[name=att-name]')].map((i) => i.value.trim()));
+    mount('#m-stated-add', ...says.filter((s) => !listed.has(s.name)).map((s) => el('button', { class: 'btn small', type: 'button', onclick: () => {
+      const row = attRow(s.name);
+      attRows.append(row);
+      syncManage();
+      row.querySelector<HTMLInputElement>('input[name=att-evidence]')!.focus();
+    } }, icon('plus', 13), `Record ${s.label}`)));
+  }
+
+  const manage = dialog('manage', async (form) => {
+    const p = current!;
+    const patch: UpdatePoolParams = {};
+    const cost = costFrom(form);
+    if (!sameCost(cost, p.costModel)) patch.costModel = cost;
+    const cap = Math.floor(num(form, 'maxConcurrency'));
+    if (cap !== (p.maxConcurrency ?? 0)) patch.maxConcurrency = cap;
+    const enabled = (form.elements.namedItem('enabled') as HTMLInputElement).checked;
+    if (enabled !== p.enabled) patch.enabled = enabled;
+    if (p.source !== 'config') {
+      const budget = num(form, 'budget');
+      if (budget !== (p.budget?.monthly ?? 0)) patch.budget = { monthly: budget };
+      const atts = attsFrom();
+      if (canonical(atts) !== canonical(p.attestations ?? {})) patch.attestations = atts;
+    }
+    if (!Object.keys(patch).length) { toast('Nothing to save'); return; }
+    await c.admin.pools.update(p.name, patch);
+    toast(`Saved ${p.name}`);
+    await load();
+  });
+  manage.form.addEventListener('input', syncManage);
+  byId('m-add-att').addEventListener('click', () => {
+    const row = attRow();
+    attRows.append(row);
+    syncManage();
+    row.querySelector('input')!.focus();
+  });
+  byId('m-use-list').addEventListener('click', () => {
+    const list = listCost(current && entryFor(current));
+    if (!list) return;
+    for (const k of RATES) if (k !== 'diskGiBHour') (manage.form.elements.namedItem(k) as HTMLInputElement).value = list[k] ? String(list[k]) : '';
+    syncManage();
+  });
+
+  function openManage(p: Pool) {
+    current = p;
+    manage.open();
+    const form = manage.form;
+    const entry = entryFor(p);
+    const fromFile = p.source === 'config';
+    byId('m-name').textContent = `Manage ${p.name}`;
+    mount('#m-mark', mark(entry, 'pmark small'));
+    byId('m-config').hidden = !fromFile;
+    for (const k of RATES) (form.elements.namedItem(k) as HTMLInputElement).value = p.costModel?.[k] ? String(p.costModel[k]) : '';
+    budgetInput.value = p.budget?.monthly ? String(p.budget.monthly) : '';
+    budgetInput.disabled = fromFile;
+    (form.elements.namedItem('maxConcurrency') as HTMLInputElement).value = p.maxConcurrency ? String(p.maxConcurrency) : '';
+    (form.elements.namedItem('enabled') as HTMLInputElement).checked = p.enabled;
+    byId('m-spent').textContent = budgetView(p, usage[p.name]).text;
+
+    const list = listCost(entry);
+    byId('m-list').hidden = !list;
+    if (list && entry) {
+      const used = entry.rates!.basis === 'used' ? ' It bills only what a sandbox uses, so spend estimated from these rates is an upper bound.' : '';
+      mount('#m-list-text', `${entry.name}'s list price is ${costText(list)}, read on ${PRICES_READ_LABEL}.${used}${entry.rates!.note ? ` ${entry.rates!.note}` : ''} `,
+        entry.priceSource ? el('a', { href: entry.priceSource, target: '_blank', rel: 'noopener' }, 'Source') : null);
+    }
+    attRows.replaceChildren(...Object.entries(p.attestations ?? {}).map(([name, a]) => attRow(name, a)));
+    attRows.querySelectorAll('input, button').forEach((n) => { (n as HTMLInputElement).disabled = fromFile; });
+    (byId('m-add-att') as HTMLButtonElement).disabled = fromFile;
+    syncManage();
+  }
+
   renderKind();
   void load();
 </script>
