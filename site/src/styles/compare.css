@@ -244,3 +244,14 @@ section.cmp-cta { padding: 80px 0 96px; border-top: 1px solid var(--line); }
   .marks a[aria-hidden] { display: none; }
   .marks a, .card .pv img, .who img, .go, .m { transition: none; }
 }
+
+/* Paper and PDF: nothing waits to be scrolled into view, and nothing moves. */
+@media print {
+  .cmp-hero > *, .js [data-reveal], .js [data-reveal].in, .js .matrix .m, .js .box .ticks i, .js .box .glyph svg > * { opacity: 1 !important; animation: none !important; }
+  .js .ladder .track i { transform: none !important; transition: none !important; }
+  .marks { -webkit-mask-image: none; mask-image: none; }
+  .marks-track { animation: none !important; flex-wrap: wrap; width: auto; }
+  .marks a[aria-hidden] { display: none; }
+  .cmp-filter { position: static; }
+  .cmp-kinds, .cmp-spy, .cmp-jump, .theme { display: none; }
+}
