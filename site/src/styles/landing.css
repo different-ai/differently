@@ -174,3 +174,25 @@ footer a { color: var(--muted); }
 .next a:hover { border-color: var(--ink); }
 .next b { font-weight: 600; }
 .next span { color: var(--muted); font-size: 0.9375rem; }
+
+/* The simulator's teaser: the routing diagram, with a packet for each placement. */
+.simtease-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; margin-bottom: 36px; }
+.simtease-head .section-head { margin-bottom: 0; }
+.simtease-fig { display: block; border: 1px solid var(--line); border-radius: 16px; padding: 24px; overflow-x: auto; background: var(--surface); text-decoration: none; }
+.simtease-fig:hover { border-color: var(--ink); }
+.simtease-fig svg { display: block; min-width: 680px; width: 100%; height: auto; font-family: var(--sans); }
+.simtease-fig .wire { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; }
+.simtease-fig .wire.ext { stroke-dasharray: 5 8; }
+.simtease-fig .node > rect:first-child { fill: var(--bg); stroke: var(--ink); stroke-width: 2; }
+.simtease-fig .node.ext > rect:first-child { stroke-dasharray: 6 5; }
+.simtease-fig .node.ours > rect:first-child { fill: var(--ink); }
+.simtease-fig .node text { font-weight: 600; font-size: 15px; fill: var(--ink); letter-spacing: -0.01em; }
+.simtease-fig .node text.sub { font-weight: 400; font-size: 12.5px; fill: var(--muted); letter-spacing: 0; }
+.simtease-fig .node.ours text { fill: var(--bg); }
+.simtease-fig .node.ours text.sub { fill: color-mix(in srgb, var(--bg) 64%, transparent); }
+.simtease-fig .logo { fill: #ffffff; stroke: var(--line); }
+.simtease-fig .dot { fill: none; stroke: color-mix(in srgb, var(--muted) 50%, transparent); stroke-dasharray: 2 2; }
+.simtease-fig .dot.on { fill: var(--ink); stroke: var(--ink); stroke-dasharray: none; }
+.simtease-fig .packet { fill: var(--ink); }
+.simtease-fig .packet.ext { fill: var(--bg); stroke: var(--ink); stroke-width: 2.5; }
+@media (prefers-reduced-motion: reduce) { .simtease-fig .packets { display: none; } }
