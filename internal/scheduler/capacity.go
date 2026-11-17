@@ -358,11 +358,19 @@ func Victims(running []store.SandboxRecord, p api.Preemption, now time.Time) []s
 	if p.IdleSeconds == 0 {
 		idleFor = defaultIdleSeconds * time.Second
 	}
+	// A sandbox has been idle no longer than it has been running: a create
+	// records its request as activity, and one that then queued for minutes
+	// would otherwise be paused the moment it started, before its caller's
+	// first command.
 	last := func(r store.SandboxRecord) time.Time {
+		t := r.UpdatedAt
 		if r.LastActivityAt != nil {
-			return *r.LastActivityAt
+			t = *r.LastActivityAt
 		}
-		return r.UpdatedAt
+		if r.RunningSince != nil && r.RunningSince.After(t) {
+			t = *r.RunningSince
+		}
+		return t
 	}
 	var out []store.SandboxRecord
 	for _, r := range running {

@@ -16,7 +16,7 @@ func TestVictimsOrder(t *testing.T) {
 	}
 	running := []store.SandboxRecord{
 		rec("busy", time.Second, time.Hour, 0, true),
-		rec("young", time.Hour, time.Minute, 0, true),    // under minRunSeconds
+		rec("young", time.Hour, time.Minute, 0, true),    // under minRunSeconds; asked for an hour ago, queued, started a minute ago
 		rec("guarded", 3*time.Hour, time.Hour, 0, false), // not preemptible
 		rec("idle-high", 2*time.Hour, time.Hour, 5, true),
 		rec("idle-low", 2*time.Hour, time.Hour, 0, true),
@@ -32,9 +32,15 @@ func TestVictimsOrder(t *testing.T) {
 	if want := []string{"oldest", "idle-low", "idle-high", "busy"}; !equal(lru, want) {
 		t.Fatalf("lru victims %v, want %v", lru, want)
 	}
+	// A sandbox is idle no longer than it has been running: "young" waited an
+	// hour in the queue, and pausing it as it starts would only send its
+	// caller back there.
 	idle := ids(Victims(running, api.Preemption{Mode: api.PreemptIdle, IdleSeconds: 3600}, now))
-	if want := []string{"oldest", "idle-low", "idle-high", "young"}; !equal(idle, want) {
+	if want := []string{"oldest", "idle-low", "idle-high"}; !equal(idle, want) {
 		t.Fatalf("idle victims %v, want %v", idle, want)
+	}
+	if soon := ids(Victims(running, api.Preemption{Mode: api.PreemptIdle, IdleSeconds: 30}, now)); !equal(soon, []string{"oldest", "idle-low", "idle-high", "young"}) {
+		t.Fatalf("once it has run idle for idleSeconds it is a candidate, last in line: %v", soon)
 	}
 }
 

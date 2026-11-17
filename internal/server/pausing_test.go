@@ -199,6 +199,9 @@ func (h *harness) backdate(id string, d time.Duration) {
 	at := time.Now().UTC().Add(-d)
 	if _, err := h.store.UpdateSandbox(context.Background(), id, func(r *store.SandboxRecord) error {
 		r.LastActivityAt = &at
+		if r.RunningSince != nil && r.RunningSince.After(at) {
+			r.RunningSince = &at // idle time never exceeds running time
+		}
 		return nil
 	}); err != nil {
 		h.t.Fatal(err)
