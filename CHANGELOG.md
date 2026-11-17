@@ -6,6 +6,35 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.4] — 2026-11-17
+
+Fourth alpha, published as a GitHub pre-release. Not for production. It adds
+three controls for an operator who places work on several providers:
+placement can require provider attestations (a SOC 2 Type II report, a signed
+BAA and the like), a pool can carry a monthly budget, and the console shows
+routing as it happens and can start a batch of sandboxes on chosen pools.
+
+What ran for this release: the unit and in-process tests, the Postgres
+conformance and acceptance job and the end-to-end suite on OpenSandbox's
+Docker runtime, in CI on each pull request that added these features (#92 to
+#95). The console's live view and launcher were also run by hand against a
+local server with simulated pools (the fake adapter).
+
+What has not run: the live adapter tests against Daytona and Freestyle
+accounts, and the Kubernetes and Fast Sandbox runtimes. They last ran on
+earlier code (see `Verified` under 0.1.0-alpha.2). Neither attestations nor
+budgets have been exercised against a real provider. Attestations are
+declarations Differently does not verify, and a pool's spend is an estimate
+from its cost model, not a provider invoice.
+
+Upgrading from 0.1.0-alpha.3: nothing has to change, and there is no database
+migration (pools and policies are stored as documents). The new fields are
+all optional: `attestations`, `budget` and `spend` on pools,
+`requiredAttestations` on classifications, policies and requests, and
+`attestations` in `GET /v1/capabilities`. A consumer of the audit log will
+see one new action, `sandbox.rejected`, for create requests that placement
+refuses.
+
 ### Added
 
 - Placement filters on provider attestations. A pool can declare what
@@ -647,7 +676,8 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.3...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.4...pre-release
+[0.1.0-alpha.4]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.1
