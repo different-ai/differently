@@ -57,6 +57,13 @@ func TestAttestationsDecideWhereRegulatedWorkRuns(t *testing.T) {
 	}
 	// Neither pool holds the report yet, the private one included.
 	refused(regulated, "soc2-type2", "attestations")
+	// The refusal is on the audit log, with what was required and why.
+	var audit api.List[api.AuditEvent]
+	h.must(200, "GET", "/v1/audit-events?action=sandbox.rejected", operatorToken, nil, &audit)
+	if len(audit.Items) != 1 || audit.Items[0].Outcome != "failure" || audit.Items[0].Details["code"] != api.CodeNoEligiblePool ||
+		audit.Items[0].Details["requiredAttestations"] != "soc2-type2" || audit.Items[0].Details["classification"] != "regulated" || audit.Items[0].OrgID == "" {
+		t.Fatalf("a refused create must be recorded as a routing event: %+v", audit.Items)
+	}
 
 	h.attest("burst", map[string]api.Attestation{"soc2-type2": {Evidence: "https://trust.example.com/report"}})
 	sb := h.create(token, regulated)

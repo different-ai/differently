@@ -33,6 +33,18 @@ All notable changes are recorded here. The format follows
   (`pool add --cost ... --monthly-budget`, `pool budget NAME AMOUNT`), the
   SDK types and the OpenAPI document. The per-tenant `poolBudgetsPerHour`
   quota field is unchanged and still not enforced.
+- A **Live routing** page in the console. It draws your apps, Differently and
+  every pool the way the intro video does, from live data: sandboxes on each
+  pool, placements in the last five minutes, the external gate from the
+  global policy, budgets and attestations, a running decision log, and the
+  sandboxes that are waiting with the reason for each. Packets move as
+  sandboxes are placed, and a click on a decision shows every pool that was
+  considered and why. It polls the public API every two seconds and needs a
+  key that can read the audit log.
+- A create request that placement refuses (`422 no_eligible_pool` or
+  `unsupported_capability`) is now recorded on the audit log as
+  `sandbox.rejected`, with the error code, the reason, the classification
+  and any required attestations. Refusals used to leave no trace.
 
 ### Tests
 
