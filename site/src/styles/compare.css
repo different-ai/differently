@@ -1,26 +1,83 @@
 /* /compare/: the provider comparison. Monochrome like the landing page; a
-   filled mark means "stated or supported", a hollow one "not". */
+   filled mark means "stated or supported", a hollow one "not". Motion is
+   small, plays once and is off under prefers-reduced-motion (see the end). */
+:root {
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --part: color-mix(in srgb, var(--ink) 38%, var(--bg));
+}
+
 .cmp-hero { padding: 72px 0 56px; }
 .cmp-hero h1 { font-size: clamp(2.25rem, 5.5vw, 3.75rem); }
 .cmp-hero .lede { max-width: 680px; margin-bottom: 28px; }
 .cmp-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); margin-top: 36px; }
 .cmp-facts div { padding: 18px 20px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .cmp-facts b { display: block; font-size: 1.5rem; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.cmp-facts span { color: var(--muted); font-size: 0.875rem; }
-.cmp-jump { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
-.cmp-jump a { padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.875rem; text-decoration: none; color: var(--ink); }
-.cmp-jump a:hover { border-color: var(--ink); }
+.cmp-facts div > span { color: var(--muted); font-size: 0.875rem; }
 
-.cmp-section { padding: 72px 0; border-top: 1px solid var(--line); }
+/* The strip of marks under the facts drifts slowly and stops under the pointer. */
+.marks { margin-top: 28px; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent); mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent); }
+.marks-track { display: flex; gap: 12px; width: max-content; padding: 3px 0; }
+.marks a { flex: none; display: block; border-radius: 10px; transition: transform 260ms var(--ease); }
+.marks a:hover { transform: translateY(-2px); }
+.marks a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.marks img { display: block; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: #ffffff; object-fit: contain; }
+
+.cmp-jump { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
+.cmp-jump a { padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.875rem; text-decoration: none; color: var(--ink); transition: border-color 180ms var(--ease), background-color 180ms var(--ease); }
+.cmp-jump a:hover { border-color: var(--ink); background: var(--surface); }
+
+section.cmp-section { padding: 80px 0; border-top: 1px solid var(--line); scroll-margin-top: 48px; }
 .cmp-section > p { color: var(--muted); max-width: 720px; margin: 14px 0 0; }
 .cmp-section > h2 + p { margin-top: 16px; }
+.cmp-section > .sub-head { margin-top: 56px; font-size: 1.25rem; letter-spacing: -0.02em; }
+.cmp-section > .sub-lede { margin-top: 8px; font-size: 0.9375rem; }
 
-.cmp-filter { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
-.cmp-filter .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 0; }
-.cmp-filter span { color: var(--muted); font-size: 0.8125rem; margin-right: 4px; }
-.cmp-filter button { font: inherit; font-size: 0.8125rem; padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--ink); cursor: pointer; }
-.cmp-filter button[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
-.cmp-filter button:focus-visible, .cmp-jump a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* Eight boxes: what differs, why it matters and how many providers have it. */
+.boxes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 36px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.box { --box-bg: var(--bg); display: flex; flex-direction: column; min-width: 0; padding: 22px 22px 20px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--box-bg); color: var(--ink); text-decoration: none; transition: background-color 220ms var(--ease); }
+.box:hover, .box:focus-visible { --box-bg: var(--surface); }
+.box:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.box-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.glyph { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 10px; transition: background-color 220ms var(--ease), color 220ms var(--ease), border-color 220ms var(--ease); }
+.glyph svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.box:hover .glyph, .box:focus-visible .glyph { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.go { color: var(--muted); transition: transform 220ms var(--ease), color 220ms var(--ease); }
+.box:hover .go, .box:focus-visible .go { transform: translateX(4px); color: var(--ink); }
+.box .k { font: 500 0.6875rem var(--mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.box h3 { margin-top: 6px; font-size: 1.0625rem; line-height: 1.25; }
+.box p { margin: 10px 0 0; color: var(--muted); font-size: 0.875rem; line-height: 1.55; }
+.stat { display: grid; gap: 1px; margin-top: auto; padding-top: 22px; }
+.stat b { font-size: 2rem; font-weight: 600; letter-spacing: -0.035em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.stat b small { font-size: 0.8125rem; font-weight: 400; letter-spacing: 0; color: var(--muted); }
+.stat > span { font-size: 0.8125rem; line-height: 1.45; }
+.stat .more { color: var(--muted); }
+.ticks { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: end; gap: 2px; height: 16px; margin-top: 14px; }
+.ticks i, .tick { height: 100%; border-radius: 1.5px; background: var(--ink); transform-origin: bottom; }
+.ticks i.part, .tick.part { background: var(--part); }
+.ticks i.no, .tick.no { background: none; box-shadow: inset 0 0 0 1px var(--muted); }
+.ticks i.na, .tick.na { background: var(--line); }
+.who { display: flex; align-items: center; min-height: 22px; margin-top: 12px; }
+.who img { width: 22px; height: 22px; margin-left: -6px; border-radius: 6px; border: 1px solid var(--line); background: #ffffff; object-fit: contain; box-shadow: 0 0 0 2px var(--box-bg); transition: margin-left 280ms var(--ease), box-shadow 220ms var(--ease); }
+.who img:first-child { margin-left: 0; }
+.box:hover .who img + img, .box:focus-visible .who img + img { margin-left: -2px; }
+.who span { margin-left: 8px; font: 0.75rem var(--mono); color: var(--muted); }
+
+/* The bar under the boxes: the filter on the left, the section in view on the right. */
+.cmp-sentinel { height: 0; }
+.cmp-filter { position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 84%, transparent); -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4); transition: box-shadow 260ms var(--ease); }
+.cmp-filter.stuck { box-shadow: 0 12px 24px -22px rgb(0 0 0 / 0.55); }
+.cmp-filter .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; padding: 10px 0; }
+.cmp-kinds { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cmp-kinds span { color: var(--muted); font-size: 0.8125rem; margin-right: 4px; }
+.cmp-kinds button { font: inherit; font-size: 0.8125rem; padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--ink); cursor: pointer; transition: background-color 180ms var(--ease), color 180ms var(--ease), border-color 180ms var(--ease), transform 120ms var(--ease); }
+.cmp-kinds button:hover { border-color: var(--ink); }
+.cmp-kinds button:active { transform: scale(0.97); }
+.cmp-kinds button[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.cmp-kinds button:focus-visible, .cmp-jump a:focus-visible, .cmp-spy a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.cmp-spy { display: flex; gap: 20px; font-size: 0.8125rem; white-space: nowrap; }
+.cmp-spy a { padding: 4px 0; color: var(--muted); text-decoration: none; box-shadow: inset 0 -1.5px 0 transparent; transition: color 180ms var(--ease), box-shadow 180ms var(--ease); }
+.cmp-spy a:hover, .cmp-spy a[aria-current] { color: var(--ink); }
+.cmp-spy a[aria-current] { box-shadow: inset 0 -1.5px 0 var(--ink); }
 
 /* Tables: the provider column stays put while the rest scrolls. */
 .cmp-table { margin-top: 28px; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
@@ -29,6 +86,8 @@
 .cmp-table tbody tr:last-child > * { border-bottom: 0; }
 .cmp-table thead th { font-size: 0.75rem; font-weight: 500; color: var(--muted); white-space: nowrap; background: var(--surface); }
 .cmp-table tbody th { position: sticky; left: 0; background: var(--bg); font-weight: 400; min-width: 214px; box-shadow: 1px 0 0 var(--line); }
+.cmp-table tbody tr > * { transition: background-color 140ms var(--ease); }
+.cmp-table tbody tr:hover > * { background: var(--surface); }
 .cmp-table td { color: var(--muted); }
 .cmp-table td.num { font: 0.8125rem var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cmp-table td small, .cmp-table td .sub { display: block; margin-top: 3px; font: 0.75rem var(--sans); color: var(--muted); white-space: normal; }
@@ -40,6 +99,24 @@
 .pv img { width: 28px; height: 28px; flex: none; border-radius: 6px; background: #ffffff; border: 1px solid var(--line); object-fit: contain; }
 .pv b { display: block; font-weight: 600; color: var(--ink); line-height: 1.25; }
 .pv small { display: block; color: var(--muted); font-size: 0.75rem; line-height: 1.3; }
+
+/* The feature grid: one mark for each provider and capability. */
+.matrix table { min-width: 860px; }
+.matrix thead th { padding: 12px 6px; text-align: center; vertical-align: bottom; white-space: normal; line-height: 1.25; }
+.matrix thead th:first-child { padding-left: 16px; text-align: left; }
+.matrix thead th span { display: block; color: var(--ink); }
+.matrix thead small { display: block; margin-top: 4px; font: 0.6875rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.matrix tbody th { min-width: 196px; padding: 8px 16px; vertical-align: middle; }
+.matrix td { padding: 9px 6px; text-align: center; vertical-align: middle; }
+.matrix .pv img { width: 24px; height: 24px; }
+.matrix .pv b { font-weight: 500; }
+.matrix col { transition: background-color 160ms var(--ease); }
+.matrix col.hot { background: var(--surface); }
+.m { display: inline-block; width: 12px; height: 12px; border: 1.5px solid var(--muted); border-radius: 50%; vertical-align: middle; transition: transform 180ms var(--ease); }
+.m.yes { background: var(--ink); border-color: var(--ink); }
+.m.part { border-color: var(--ink); background: linear-gradient(90deg, var(--ink) 50%, transparent 50%); }
+.m.na { width: 10px; height: 0; border: 0; border-top: 1.5px solid var(--muted); border-radius: 0; opacity: 0.55; }
+.matrix td:hover .m { transform: scale(1.3); }
 
 /* Marks and chips */
 .ev { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; color: var(--muted); }
@@ -60,6 +137,7 @@
 .track i { position: absolute; top: 0; bottom: 0; background: var(--ink); }
 .track i.span { background: repeating-linear-gradient(135deg, var(--ink) 0 2px, transparent 2px 6px); }
 .lval { font: 0.75rem var(--mono); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lval sup { color: var(--muted); margin-left: 1px; }
 .laxis { display: grid; grid-template-columns: 216px minmax(0, 1fr) 132px; gap: 14px; margin-top: 8px; }
 .laxis div { grid-column: 2; position: relative; height: 18px; border-top: 1px solid var(--line); }
 .laxis span { position: absolute; top: 4px; transform: translateX(-50%); font: 0.6875rem var(--mono); color: var(--muted); }
@@ -68,13 +146,22 @@
 .legend { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 12px; font-size: 0.8125rem; color: var(--muted); }
 .legend i { display: inline-block; width: 22px; height: 9px; margin-right: 7px; border-radius: 2px; vertical-align: -1px; background: var(--ink); }
 .legend i.span { background: repeating-linear-gradient(135deg, var(--ink) 0 2px, transparent 2px 6px); }
+.legend.key { margin-top: 16px; }
+.legend .tick { width: 6px; height: 13px; margin-right: 7px; vertical-align: -2px; }
+.legend .m { margin-right: 8px; vertical-align: -1px; }
+.legend .m.na { vertical-align: 3px; }
 
 /* One card per provider */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0; margin-top: 28px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
-.card { display: flex; flex-direction: column; gap: 10px; padding: 22px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; }
-.card .pv img { width: 36px; height: 36px; border-radius: 8px; }
+.card { display: flex; flex-direction: column; gap: 10px; padding: 22px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; scroll-margin-top: 64px; transition: background-color 220ms var(--ease), box-shadow 220ms var(--ease); }
+.card:hover { background: var(--surface); }
+.card:target { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--ink); }
+.card .pv img { width: 36px; height: 36px; border-radius: 8px; transition: transform 280ms var(--ease); }
+.card:hover .pv img { transform: scale(1.07); }
 .card .pv b { font-size: 1.0625rem; letter-spacing: -0.015em; }
 .card p { margin: 0; color: var(--muted); font-size: 0.875rem; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0; padding: 0; list-style: none; }
+.tags li { padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; font: 500 0.6875rem var(--mono); color: var(--muted); white-space: nowrap; }
 .card dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 0.8125rem; }
 .card dt { color: var(--muted); }
 .card dd { margin: 0; }
@@ -85,17 +172,75 @@
 .gone img { width: 28px; height: 28px; flex: none; border-radius: 6px; background: #ffffff; border: 1px solid var(--line); filter: grayscale(1); opacity: 0.7; }
 .method { display: grid; gap: 10px; margin: 22px 0 0; padding-left: 20px; color: var(--muted); max-width: 760px; }
 .fine { margin-top: 28px; font-size: 0.8125rem; color: var(--muted); max-width: 760px; }
-.cmp-cta { padding: 72px 0 88px; border-top: 1px solid var(--line); }
+section.cmp-cta { padding: 80px 0 96px; border-top: 1px solid var(--line); }
 .cmp-cta p { color: var(--muted); max-width: 620px; margin: 16px 0 28px; }
+.cmp-cta .btn { transition: border-color 180ms var(--ease), background-color 180ms var(--ease), transform 120ms var(--ease); }
+.cmp-cta .btn:active { transform: scale(0.98); }
 [hidden] { display: none !important; }
 
+@media (max-width: 980px) {
+  .boxes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cmp-spy { display: none; }
+}
 @media (max-width: 720px) {
   .cmp-hero { padding: 48px 0 40px; }
-  .cmp-section { padding: 52px 0; }
+  section.cmp-section { padding: 56px 0; }
   .lrow { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 0; }
   .lrow .track { grid-column: 1 / -1; order: 3; }
   .laxis { display: none; }
   .cmp-table tbody th { min-width: 168px; }
+  .matrix tbody th { min-width: 150px; padding-inline: 12px; }
+  /* One row that scrolls sideways, so the bar stays short on a phone. */
+  .cmp-filter .wrap { flex-wrap: nowrap; }
+  .cmp-kinds { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+  .cmp-kinds::-webkit-scrollbar { display: none; }
+  .cmp-kinds span { display: none; }
+  .cmp-kinds button { flex: none; white-space: nowrap; }
+}
+@media (max-width: 600px) {
+  .boxes { grid-template-columns: minmax(0, 1fr); }
 }
 
-.lval sup { color: var(--muted); margin-left: 1px; }
+/* Motion. The hero arrives once on load. Everything marked data-reveal waits
+   for the page script to add .in as it scrolls into view; without that script
+   (no .js on <html>) nothing is hidden. */
+@keyframes cmp-rise { from { opacity: 0; transform: translateY(14px); } }
+@keyframes cmp-pop { from { opacity: 0; transform: scale(0.4); } }
+@keyframes cmp-grow { from { opacity: 0; transform: scaleY(0.15); } }
+@keyframes cmp-draw { from { stroke-dashoffset: 1; } }
+@keyframes cmp-drift { to { transform: translateX(calc(-50% - 6px)); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+
+  .cmp-hero > * { animation: cmp-rise 720ms var(--ease) both; }
+  .cmp-hero > :nth-child(2) { animation-delay: 60ms; }
+  .cmp-hero > :nth-child(3) { animation-delay: 130ms; }
+  .cmp-hero > :nth-child(4) { animation-delay: 210ms; }
+  .cmp-hero > :nth-child(5) { animation-delay: 290ms; }
+  .cmp-hero > :nth-child(6) { animation-delay: 350ms; }
+  .marks-track { animation: cmp-drift 90s linear infinite; }
+  .marks:hover .marks-track, .marks:focus-within .marks-track { animation-play-state: paused; }
+
+  .js [data-reveal] { opacity: 0; }
+  .js [data-reveal].in { opacity: 1; animation: cmp-rise 700ms var(--ease) calc(var(--i, 0) * 70ms) backwards; }
+
+  /* Bars on the price ladder grow from the left, the hatched span after the solid part. */
+  .js .ladder .track i { transform: scaleX(0); transform-origin: left center; }
+  .js .ladder.in .track i { transform: none; transition: transform 900ms var(--ease) calc(var(--r, 0) * 30ms + 150ms); }
+  .js .ladder.in .track i.span { transition-delay: calc(var(--r, 0) * 30ms + 450ms); }
+
+  /* Marks, ticks and glyph strokes follow their container in. */
+  .js .matrix.in .m { animation: cmp-pop 420ms var(--ease) calc(var(--r, 0) * 16ms + 200ms) backwards; }
+  .js .box.in .ticks i { animation: cmp-grow 520ms var(--ease) calc(var(--i, 0) * 70ms + var(--t, 0) * 14ms + 250ms) backwards; }
+  .js .box.in .glyph svg > * { stroke-dasharray: 1; animation: cmp-draw 1000ms var(--ease) calc(var(--i, 0) * 70ms + 200ms) backwards; }
+
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 220ms; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marks { -webkit-mask-image: none; mask-image: none; }
+  .marks-track { flex-wrap: wrap; width: auto; }
+  .marks a[aria-hidden] { display: none; }
+  .marks a, .card .pv img, .who img, .go, .m { transition: none; }
+}

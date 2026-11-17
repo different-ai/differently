@@ -16,7 +16,13 @@ All notable changes are recorded here. The format follows
   table links to; nothing was benchmarked and no audit report was read. The
   data is one file, `site/src/data/providers.ts`, and the page carries Open
   Graph and Twitter metadata with a share image
-  (`node scripts/compare-og.mjs` in `site/` redraws it).
+  (`node scripts/compare-og.mjs` in `site/` redraws it). The page opens with
+  the eight places providers differ, each explained in a box with a count
+  taken from the data, and has a feature grid with one mark for each provider
+  and capability: documented, with a condition, not offered or not
+  documented, or not collected. A mark is a reading of the provider's
+  documentation, not a test. Sections arrive with a short animation that is
+  off under `prefers-reduced-motion`.
 
 ## [0.1.0-alpha.4] — 2026-11-17
 
