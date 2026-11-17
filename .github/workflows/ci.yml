@@ -98,6 +98,7 @@ jobs:
           cache-dependency-path: console/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
+      - run: npm test
       - name: static build
         run: npm run build
       - name: server build

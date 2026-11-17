@@ -121,6 +121,13 @@ func (s *Server) admit(w http.ResponseWriter, r *http.Request, p auth.Principal,
 		return s.placementUnavailable(err)
 	}
 	if res := policy.Decide(in); res.Err != nil {
+		// A refusal is a routing outcome too. Recording it lets the audit log
+		// and the live routing view show what was turned away and why.
+		details := map[string]string{"code": res.Err.Code, "reason": res.Err.Message, "classification": rec.Classification}
+		if req := res.Decision.RequiredAttestations; len(req) > 0 {
+			details["requiredAttestations"] = strings.Join(req, ",")
+		}
+		s.Audit.Record(ctx, api.AuditEvent{Actor: p.Actor(), OrgID: rec.OrgID, ProjectID: rec.ProjectID, Action: "sandbox.rejected", Resource: rec.ID, Outcome: "failure", Details: details, RequestID: requestID(r)})
 		return res.Err
 	}
 	out, existed, err := s.Store.AdmitSandbox(ctx, rec, store.Admission{OrgQuota: org.Quota, ProjectQuota: proj.Quota})
