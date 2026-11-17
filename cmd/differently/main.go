@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -591,6 +592,8 @@ func poolAddCmd() *cobra.Command {
 	var settings, attests []string
 	var maxConcurrency int
 	var keyStdin bool
+	var budget float64
+	var costs []string
 	cmd := &cobra.Command{Use: "add NAME", Args: cobra.ExactArgs(1), Short: "Add a provider pool (e.g. Daytona or Freestyle) at runtime", RunE: func(_ *cobra.Command, a []string) error {
 		cfg := map[string]string{}
 		for _, kv := range settings {
@@ -630,6 +633,21 @@ func poolAddCmd() *cobra.Command {
 		if maxConcurrency > 0 {
 			body["maxConcurrency"] = maxConcurrency
 		}
+		if len(costs) > 0 {
+			model := map[string]float64{}
+			for _, kv := range costs {
+				k, v, _ := strings.Cut(kv, "=")
+				price, err := strconv.ParseFloat(v, 64)
+				if err != nil || price < 0 {
+					return fmt.Errorf("--cost takes NAME=PRICE such as cpuHour=0.0504, got %q", kv)
+				}
+				model[k] = price
+			}
+			body["costModel"] = model
+		}
+		if budget > 0 {
+			body["budget"] = map[string]float64{"monthly": budget}
+		}
 		if len(attests) > 0 {
 			held := map[string]any{}
 			for _, a := range attests {
@@ -647,6 +665,8 @@ func poolAddCmd() *cobra.Command {
 	f.StringVar(&region, "region", "", "region label")
 	f.IntVar(&maxConcurrency, "max-concurrency", 0, "most sandboxes at once (0: quotas only)")
 	f.StringArrayVar(&attests, "attestation", nil, "what the provider is certified for or has signed, NAME[=EVIDENCE] (repeatable), e.g. soc2-type2=https://trust.example.com")
+	f.StringArrayVar(&costs, "cost", nil, "list price NAME=PRICE (repeatable): cpuHour, memoryGiBHour, diskGiBHour, sandboxHour")
+	f.Float64Var(&budget, "monthly-budget", 0, "stop sending new sandboxes once the month's estimated spend reaches this (needs --cost)")
 	f.StringVar(&secret, "secret", "", "use a credential stored with 'admin secret put'")
 	f.BoolVar(&keyStdin, "api-key-stdin", false, "read the provider's API key from stdin and store it as --secret (default <name>-key)")
 	f.StringVar(&credential, "credential", "", "reference instead of storing: env:NAME or file:/path on the server")
@@ -710,6 +730,13 @@ func adminCmd() *cobra.Command {
 	)
 	pool := &cobra.Command{Use: "pool", Short: "Execution pools"}
 	pool.AddCommand(poolAddCmd(), poolUseCmd(),
+		&cobra.Command{Use: "budget NAME AMOUNT", Args: cobra.ExactArgs(2), Short: "Set a pool's monthly budget (0 removes it); new sandboxes stop once estimated spend reaches it", RunE: func(_ *cobra.Command, a []string) error {
+			amount, err := strconv.ParseFloat(a[1], 64)
+			if err != nil || amount < 0 {
+				return fmt.Errorf("AMOUNT must be a number, 0 or more, got %q", a[1])
+			}
+			return raw("PATCH", "/v1/admin/pools/"+a[0], map[string]any{"budget": map[string]float64{"monthly": amount}})
+		}},
 		&cobra.Command{Use: "list", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/admin/pools", nil) }},
 		&cobra.Command{Use: "get NAME", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("GET", "/v1/admin/pools/"+a[0], nil) }},
 		&cobra.Command{Use: "drain NAME", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("POST", "/v1/admin/pools/"+a[0]+"/drain", nil) }},

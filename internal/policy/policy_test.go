@@ -257,3 +257,59 @@ func TestNoRequirementsIgnoresAttestations(t *testing.T) {
 		t.Fatalf("unexpected decision %+v", res.Decision)
 	}
 }
+
+// budgeted returns a copy of pv with a monthly budget and this month's spend.
+func budgeted(pv PoolView, monthly, spent float64) PoolView {
+	pv.Pool.Budget = &api.Budget{Monthly: monthly}
+	pv.Spent = spent
+	return pv
+}
+
+// A pool whose estimated spend has reached its monthly budget takes no new
+// work; the sandbox goes to the next pool, or waits if there is none.
+func TestMonthlyBudgetHoldsAPool(t *testing.T) {
+	cheap := pool("cheap", api.TrustPrivate, 8, vmFeatures, 0.01)
+	dear := pool("dear", api.TrustPrivate, 8, vmFeatures, 0.05)
+	res := Decide(input(internal, nil, budgeted(cheap, 100, 99.99), dear))
+	if res.Decision.Pool != "cheap" {
+		t.Fatalf("a pool under budget must still take work: %+v", res.Decision)
+	}
+	res = Decide(input(internal, nil, budgeted(cheap, 100, 100), dear))
+	if res.Decision.Pool != "dear" || len(res.Ranked) != 1 {
+		t.Fatalf("want the next pool once the budget is reached, got %+v", res.Ranked)
+	}
+	for _, c := range res.Decision.Candidates {
+		if c.Pool == "cheap" && (!c.Eligible || c.HasCapacity || len(c.Reasons) != 1 || c.Reasons[0] != "monthly budget reached: estimated 100.00 of 100.00") {
+			t.Fatalf("the held pool should stay eligible and say why it is held: %+v", c)
+		}
+	}
+	// With nowhere else to go the sandbox waits; it is not refused.
+	res = Decide(input(internal, nil, budgeted(cheap, 100, 250)))
+	if res.Err != nil || res.Decision.Outcome != "waiting" {
+		t.Fatalf("want waiting, got %+v / %v", res.Decision, res.Err)
+	}
+	// A budget of zero is no budget.
+	if res := Decide(input(internal, nil, budgeted(cheap, 0, 1e9))); res.Decision.Pool != "cheap" {
+		t.Fatalf("zero budget held the pool: %+v", res.Decision)
+	}
+}
+
+// A private pool at its budget counts as full, so approved overflow may use
+// an external pool; an unreadable spend holds the pool rather than pass it.
+func TestBudgetReachedOverflowsAndUnknownSpendHolds(t *testing.T) {
+	fc := budgeted(pool("fc", api.TrustPrivate, 8, vmFeatures, 0.05), 50, 50)
+	res := Decide(input(internal, overflow, fc, pool("daytona", api.TrustExternal, 0, extFeatures, 0.01)))
+	if res.Decision.Pool != "daytona" {
+		t.Fatalf("want overflow once the private budget is reached, got %+v", res.Decision)
+	}
+	// private-only work still never leaves.
+	if res := Decide(input(privateOnly, overflow, fc, pool("daytona", api.TrustExternal, 0, extFeatures, 0.01))); len(res.Ranked) != 0 {
+		t.Fatalf("a budget moved private-only work outside: %+v", res.Ranked)
+	}
+	unknown := budgeted(pool("fc", api.TrustPrivate, 8, vmFeatures, 0.05), 50, 0)
+	unknown.SpendUnknown = true
+	res = Decide(input(internal, nil, unknown))
+	if len(res.Ranked) != 0 || res.Decision.Outcome != "waiting" || !strings.Contains(res.Decision.Candidates[0].Reasons[0], "could not be read") {
+		t.Fatalf("an unreadable spend must hold the pool: %+v", res.Decision)
+	}
+}

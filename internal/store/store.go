@@ -196,6 +196,45 @@ type Store interface {
 	Close() error
 }
 
+// MonthStart is the first instant of now's calendar month, in UTC.
+func MonthStart(now time.Time) time.Time {
+	y, m, _ := now.UTC().Date()
+	return time.Date(y, m, 1, 0, 0, 0, 0, time.UTC)
+}
+
+// MonthSpend estimates what each pool has cost so far in now's calendar month
+// (UTC), from the pools' cost models and the sandboxes' run times. Run time is
+// stored as a running total, so a sandbox that started before the month
+// counts for at most the time since the month began: for those the estimate
+// can run high, never low.
+func MonthSpend(recs []SandboxRecord, costs map[string]api.CostModel, now time.Time) map[string]float64 {
+	start := MonthStart(now)
+	out := map[string]float64{}
+	for _, rec := range recs {
+		if rec.Pool == "" || (rec.EndedAt != nil && rec.EndedAt.Before(start)) {
+			continue
+		}
+		run := rec.RunSeconds
+		if rec.RunningSince != nil {
+			run += now.Sub(*rec.RunningSince).Seconds()
+		}
+		from, until := rec.CreatedAt, now
+		if from.Before(start) {
+			from = start
+		}
+		if rec.EndedAt != nil {
+			until = *rec.EndedAt
+		}
+		if window := until.Sub(from).Seconds(); run > window {
+			run = window
+		}
+		if run > 0 {
+			out[rec.Pool] += run / 3600 * costs[rec.Pool].HourlyCost(rec.Resources)
+		}
+	}
+	return out
+}
+
 // HoldsPoolSlot reports whether a sandbox occupies pool concurrency. A paused
 // sandbox on a pool that checkpoints on pause has given its slot back
 // (SlotReleased) until it resumes.

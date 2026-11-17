@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-10-28; attestation filtering added 2026-11-16 |
+| Status | Describes the code as of 2026-10-28; attestation filtering and pool budgets added 2026-11-16 |
 | Code | `internal/policy/policy.go` (merge, filter, rank), `internal/scheduler/scheduler.go` (dispatch, retries), `internal/store/store.go` (quota checks, fair order) |
 | Tests | `internal/policy/policy_test.go`, `internal/server/server_test.go` |
 
@@ -177,6 +177,8 @@ An eligible pool **has capacity** unless (first match wins):
 | Check | Reason |
 |---|---|
 | Health probe failed, adapter could not be built, or the pool was marked unhealthy after a provisioning failure | `unhealthy: <detail>` |
+| The pool has a monthly budget and this month's spend could not be read | `monthly budget set but this month's spend could not be read` |
+| The pool's estimated spend this month has reached its budget ([§5.1](#51-monthly-budgets)) | `monthly budget reached: estimated X of Y` |
 | `maxConcurrency > 0` and active slots ≥ cap (slots: provisioning, running, stopped, terminating, and paused unless the pool checkpoints on pause; see [capacity.md](capacity.md)) | `at concurrency limit N` |
 | Bounded capacity and the sandbox does not fit (uses the roomiest single node when reported) | `insufficient free capacity` |
 
@@ -190,6 +192,47 @@ backend can still answer `insufficient_capacity` (for HTTP backends, a 429).
 
 Placement chooses a pool, not a host. Which host or node runs the sandbox is
 decided by the backend: OpenSandbox's runtime, or the provider.
+
+### 5.1 Monthly budgets
+
+A pool can have a **monthly budget**: a ceiling on its estimated spend in a
+calendar month (UTC), in the cost model's currency.
+
+```yaml
+pools:
+  - name: daytona-burst
+    adapter: daytona
+    costModel: {cpuHour: 0.0504, memoryGiBHour: 0.0162}
+    budget: {monthly: 500}
+```
+
+- Once the estimate reaches the budget, the pool **takes no new sandboxes**
+  until the month ends or the budget is raised. It stays eligible but counts
+  as having no capacity, like a full pool: work goes to the next ranked
+  pool, an `overflow` policy may then use an approved external pool, and
+  work with nowhere else to go waits in the queue. Nothing is refused, and
+  `private-only` work still never leaves.
+- Sandboxes already on the pool keep running, so a month can end above its
+  budget. The budget stops new placements; it does not stop or pause work.
+- The estimate is each sandbox's run time this month priced with the pool's
+  `costModel`. It is **not** a provider invoice: active-CPU billing, plan
+  fees, storage and egress are not modelled. Run time is stored as a running
+  total, so a sandbox that started before the month counts for at most the
+  time since the month began; for those the estimate can run high, never
+  low.
+- A budget needs a `costModel`. Without prices the estimate would always be
+  0, so the configuration is refused.
+- The estimate is recomputed at most every 30 seconds and reads every
+  sandbox record, so it is only computed while some pool has a budget. If it
+  cannot be read, pools with a budget take no new work until it can.
+- `GET /v1/admin/pools` reports `spend` (`month`, `estimated`,
+  `budgetReached`) for pools with a budget. Set one on a pool added through
+  the API with `PATCH /v1/admin/pools/{name}` (`{"budget": {"monthly": 0}}`
+  removes it) or `differently admin pool budget NAME AMOUNT`; a pool declared
+  in the config file takes its budget from the file.
+
+This is separate from the per-tenant `poolBudgetsPerHour` quota field, which
+is still not enforced (§14).
 
 ## 6. Overflow
 

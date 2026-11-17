@@ -401,6 +401,11 @@ type Pool struct {
 	// this pool: a SOC 2 Type II report, a signed BAA and so on, by name.
 	// Placement keeps work that requires one off pools that lack it.
 	Attestations map[string]Attestation `json:"attestations,omitempty"`
+	// Budget caps the pool's estimated spend. Nil means no budget.
+	Budget *Budget `json:"budget,omitempty"`
+	// Spend is the estimated spend this month, reported for pools with a
+	// budget.
+	Spend *PoolSpend `json:"spend,omitempty"`
 	// Preemption lets the scheduler pause running sandboxes to make room for
 	// waiting work on this pool. Nil or mode "off" never preempts.
 	Preemption *Preemption   `json:"preemption,omitempty"`
@@ -431,6 +436,29 @@ type Preemption struct {
 	// IdleSeconds is how long without activity makes a sandbox a candidate in
 	// mode idle. Default 60.
 	IdleSeconds int `json:"idleSeconds,omitempty"`
+}
+
+// Budget caps what a pool may be estimated to cost.
+type Budget struct {
+	// Monthly is the ceiling on the pool's estimated spend in a calendar
+	// month (UTC), in the cost model's currency. Once the estimate reaches it
+	// the pool takes no new sandboxes until the month ends or the budget is
+	// raised; sandboxes already there keep running. Zero means no budget.
+	Monthly float64 `json:"monthly,omitempty"`
+}
+
+// PoolSpend is a pool's estimated spend so far in the current calendar month.
+// It comes from the pool's cost model and run times, not a provider invoice.
+type PoolSpend struct {
+	Month     string  `json:"month"` // for example "2026-11", UTC
+	Estimated float64 `json:"estimated"`
+	// BudgetReached reports that the pool takes no new sandboxes this month.
+	BudgetReached bool `json:"budgetReached"`
+}
+
+// BudgetReached reports whether spent has used up the pool's monthly budget.
+func (p Pool) BudgetReached(spent float64) bool {
+	return p.Budget != nil && p.Budget.Monthly > 0 && spent >= p.Budget.Monthly
 }
 
 // PoolHealth is the last observed health of a pool.
