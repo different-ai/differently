@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-10-28 |
+| Status | Describes the code as of 2026-10-28; attestation filtering added 2026-11-16 |
 | Code | `internal/policy/policy.go` (merge, filter, rank), `internal/scheduler/scheduler.go` (dispatch, retries), `internal/store/store.go` (quota checks, fair order) |
 | Tests | `internal/policy/policy_test.go`, `internal/server/server_test.go` |
 
@@ -52,13 +52,14 @@ A `PlacementPolicy` (`pkg/api/types.go`) has these fields:
 | `strategy` | `private-first`, `cost` or `spread` |
 | `maxCostPerHour` | Cost ceiling per sandbox-hour |
 | `maxQueueSeconds` | How long a sandbox may wait before failing |
+| `requiredAttestations` | Attestations a pool must hold, by name (see [§4.1](#41-attestations)) |
 
 Who may write them (`internal/server/tenancy.go` `policyScopeAllowed`):
 operators any scope; keys with `policies:write` their own `org:<id>` (if not
 project-scoped) and `project:<id>` scopes inside their tenancy. `PUT` replaces
 the whole document; omitted fields are cleared. The request's own
-`placement` (`strategy`, `allowedPools`, `regions`, `external`) is the most
-specific level.
+`placement` (`strategy`, `allowedPools`, `regions`, `external`,
+`requiredAttestations`) is the most specific level.
 
 ## 3. Merge rules
 
@@ -72,6 +73,7 @@ specific level.
 | `allowedPools` | Intersection across policy levels and the request; empty list = no constraint at that level; an empty intersection allows nothing | Lists only narrow |
 | `allowedRegions` / request `regions` | Intersection, same semantics. A pool with no region fails any region constraint. | Lists only narrow |
 | `deniedPools` | Union across policy levels | Denials accumulate |
+| `requiredAttestations` | Union across policy levels, the classification and the request | Requirements accumulate; no level can drop one |
 | `strategy` | The most specific non-empty value wins: global, then organization, then project, then request. Default `private-first`. | Preference, not security |
 | `maxCostPerHour` | Minimum of the non-zero values | Tightest ceiling |
 | `maxQueueSeconds` | Minimum of the non-zero values | Tightest deadline |
@@ -97,12 +99,76 @@ Each pool starts eligible; every failed rule adds a reason
 | External and effective mode `never` | `external placement not permitted (effective mode "never")` |
 | External and not in effective `externalPools` | `external pool not approved by policy` |
 | Region not allowed | `region "<r>" not allowed` |
+| Pool lacks a required attestation, or holds an expired one | `missing attestations: a, b (expired 2026-06-30)` |
 | Missing requested capabilities | `missing capabilities: a, b` |
 | Over adapter limits or template unavailable | `cpu above adapter maximum`, `memory above adapter maximum`, `disk above adapter maximum`, `template <t> not available` |
 | Estimated cost above ceiling | `estimated cost X/h exceeds ceiling Y/h` |
 
 Estimated cost uses the pool's `costModel`:
 `sandboxHour + cpu × cpuHour + memoryMiB/1024 × memoryGiBHour + diskGiB × diskGiBHour`.
+
+### 4.1 Attestations
+
+An **attestation** is the operator's record that whoever runs a pool holds a
+certification or agreement: a SOC 2 Type II report, an ISO 27001 certificate,
+a signed BAA or DPA. Work that requires one is placed only on pools that hold
+it.
+
+Declare them on the pool, by name, with where the proof is and when it stops
+counting:
+
+```yaml
+pools:
+  - name: daytona-eu
+    adapter: daytona
+    region: eu
+    attestations:
+      soc2-type2: {evidence: "https://trust.daytona.io", validUntil: "2027-06-30T00:00:00Z"}
+      hipaa-baa:  {evidence: "BAA signed 2026-09-01"}
+```
+
+Require them on a classification, on a policy at any scope, or on one
+request. The effective requirement is the union of all three:
+
+```yaml
+classifications:
+  - name: regulated
+    external: overflow
+    requiredAttestations: [soc2-type2, hipaa-baa]
+```
+
+```json
+{"classification": "internal", "placement": {"requiredAttestations": ["iso27001"], "regions": ["eu"]}}
+```
+
+Rules:
+
+- Names are the operator's own: 1 to 63 lowercase letters, digits, `.`, `_`
+  or `-`. `soc2-type2`, `iso27001`, `hipaa-baa` and `gdpr-dpa` are the
+  conventional ones. Differently attaches no meaning to a name.
+- **Private pools are not exempt.** A pool you operate qualifies only once
+  you record the attestation on it, so a requirement never passes by
+  default.
+- An attestation counts until `validUntil`; without one it does not expire.
+  An expired attestation stops new placements on that pool. Sandboxes
+  already running there keep running.
+- Pools added through the API take attestations in `POST /v1/admin/pools`,
+  and `PATCH /v1/admin/pools/{name}` replaces the whole set (`{}` clears
+  it). The server records who declared each one and when. A pool declared in
+  the config file takes its attestations from the file; the API answers
+  `409`.
+- The stored decision lists `requiredAttestations`, so
+  `GET /v1/sandboxes/{id}/placement` shows what was required and which pools
+  lacked it. `GET /v1/capabilities` shows tenants the names each pool holds,
+  never the evidence. The trust report lists every pool's attestations with
+  their evidence and expiry.
+- Data residency is a separate constraint: use `allowedRegions` or the
+  request's `regions`. An audit report says nothing about where a provider
+  runs or stores data.
+
+Differently enforces these declarations; it does not verify them. Nothing
+checks that a provider's report exists, covers the product you use, or is
+still current beyond the `validUntil` you set.
 
 ## 5. Capacity
 
@@ -158,7 +224,7 @@ adapter and by `remote` plugins that choose to.
 |---|---|---|---|
 | `placed` | At least one ranked pool | Admitted as `queued` (202) | Activate in rank order (§9) |
 | `waiting` | Some pool is eligible but none is ready | Admitted as `queued` (202) | Stay queued; `statusReason` = `waiting for capacity: <pool (reasons)>`; next attempt in 2 s; fail if `maxQueueSeconds` has passed since creation |
-| `rejected` | No pool is eligible | `422 unsupported_capability` if every policy-eligible pool was ruled out only by missing capabilities (detail `capabilities`), else `422 no_eligible_pool` (detail `classification`) | Sandbox `failed` with the reason (a policy change can turn a waiting sandbox into a rejected one) |
+| `rejected` | No pool is eligible | `422 unsupported_capability` if every policy-eligible pool was ruled out only by missing capabilities (detail `capabilities`), else `422 no_eligible_pool` (detail `classification`; plus `requiredAttestations` and the reason "no permitted pool holds the required attestations" when a pool the policy otherwise permits lacks only those) | Sandbox `failed` with the reason (a policy change can turn a waiting sandbox into a rejected one) |
 
 Admission runs the full decision once to fail fast. A suspended organization's
 queued sandboxes wait with reason `organization suspended`.

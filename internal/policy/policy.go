@@ -2,8 +2,8 @@
 //
 // Placement is filter-then-rank. Hard constraints are evaluated first and can
 // only be narrowed by more specific scopes: classification, external mode,
-// allowed/denied pools, regions, required capabilities, resource limits and
-// cost ceilings. Only pools that pass every constraint are ranked by strategy.
+// allowed/denied pools, regions, required attestations, required capabilities,
+// resource limits and cost ceilings. Only pools that pass every constraint are ranked by strategy.
 // Security and residency therefore always win over cost or speed, and an
 // external provider receives work only when every level permits it and it is
 // explicitly approved — registering a provider authorizes nothing.
@@ -54,7 +54,10 @@ type Effective struct {
 	Strategy       string
 	MaxCostPerHour float64
 	MaxQueue       time.Duration
-	Sources        []string
+	// RequiredAttestations is the union of what every policy level, the
+	// classification and the request require of a pool, sorted.
+	RequiredAttestations []string
+	Sources              []string
 }
 
 var externalRank = map[string]int{api.ExternalNever: 0, api.ExternalOverflow: 1, api.ExternalAllowed: 2}
@@ -115,6 +118,7 @@ func Merge(in Input) Effective {
 		eff.Regions = intersect(eff.Regions, p.AllowedRegions)
 		eff.DeniedPools = append(eff.DeniedPools, p.DeniedPools...)
 		externalPools = intersect(externalPools, p.ExternalPools)
+		eff.RequiredAttestations = append(eff.RequiredAttestations, p.RequiredAttestations...)
 		if p.Strategy != "" {
 			eff.Strategy = p.Strategy // policies arrive least to most specific
 		}
@@ -131,23 +135,29 @@ func Merge(in Input) Effective {
 		classExternal = api.ExternalNever
 	}
 	eff.External = stricter(eff.External, classExternal)
+	eff.RequiredAttestations = append(eff.RequiredAttestations, in.Classification.RequiredAttestations...)
 	if pl := in.Sandbox.Placement; pl != nil {
 		eff.External = stricter(eff.External, pl.External)
 		eff.AllowedPools = intersect(eff.AllowedPools, pl.AllowedPools)
 		eff.Regions = intersect(eff.Regions, pl.Regions)
+		eff.RequiredAttestations = append(eff.RequiredAttestations, pl.RequiredAttestations...)
 		if pl.Strategy != "" {
 			eff.Strategy = pl.Strategy
 		}
 	}
+	// Requirements only accumulate: no level can drop what another requires.
+	slices.Sort(eff.RequiredAttestations)
+	eff.RequiredAttestations = slices.Compact(eff.RequiredAttestations)
 	eff.ExternalPools = externalPools
 	return eff
 }
 
-// PolicyReasons says why the effective policy keeps work off pool p: denied,
-// not allowed, external without approval, or outside the allowed regions.
-// Empty means the policy lets work go there. Capacity, capabilities,
-// templates and cost are not considered.
-func PolicyReasons(eff Effective, p api.Pool) []string {
+// PolicyReasons says why the effective policy keeps work off pool p at now:
+// denied, not allowed, external without approval, outside the allowed
+// regions, or lacking a required attestation (an expired one counts as
+// lacking). Empty means the policy lets work go there. Capacity,
+// capabilities, templates and cost are not considered.
+func PolicyReasons(eff Effective, p api.Pool, now time.Time) []string {
 	var out []string
 	if slices.Contains(eff.DeniedPools, p.Name) {
 		out = append(out, "denied by policy")
@@ -166,6 +176,9 @@ func PolicyReasons(eff Effective, p api.Pool) []string {
 	if eff.Regions != nil && !slices.Contains(eff.Regions, p.Region) {
 		out = append(out, fmt.Sprintf("region %q not allowed", p.Region))
 	}
+	if lacking := p.MissingAttestations(eff.RequiredAttestations, now); len(lacking) > 0 {
+		out = append(out, "missing attestations: "+strings.Join(lacking, ", "))
+	}
 	return out
 }
 
@@ -181,9 +194,15 @@ type Result struct {
 func Decide(in Input) Result {
 	eff := Merge(in)
 	sb := in.Sandbox
-	dec := &api.PlacementDecision{Strategy: eff.Strategy, External: eff.External, Policies: eff.Sources, EvaluatedAt: in.Now}
+	dec := &api.PlacementDecision{Strategy: eff.Strategy, External: eff.External, Policies: eff.Sources, EvaluatedAt: in.Now, RequiredAttestations: eff.RequiredAttestations}
 	if in.Classification.Name != "" {
 		dec.Policies = append(dec.Policies, "classification:"+in.Classification.Name)
+	}
+	// Expiry is judged against a real clock even if the caller left Now
+	// unset: a zero time would make every expired attestation look valid.
+	now := in.Now
+	if now.IsZero() {
+		now = time.Now()
 	}
 
 	type cand struct {
@@ -191,7 +210,7 @@ func Decide(in Input) Result {
 		pv   PoolView
 	}
 	var cands []cand
-	capabilityOnly := 0
+	capabilityOnly, attestationOnly := 0, 0
 	for _, pv := range in.Pools {
 		p := pv.Pool
 		ev := api.CandidateEvaluation{Pool: p.Name, Trust: p.Trust, Eligible: true}
@@ -211,8 +230,13 @@ func Decide(in Input) Result {
 		if in.PinnedPool != "" && p.Name != in.PinnedPool {
 			reject("restore requires pool %s", in.PinnedPool)
 		}
-		for _, why := range PolicyReasons(eff, p) {
-			reject("%s", why)
+		usable := ev.Eligible
+		why := PolicyReasons(eff, p, now)
+		for _, w := range why {
+			reject("%s", w)
+		}
+		if usable && len(why) == 1 && len(p.MissingAttestations(eff.RequiredAttestations, now)) > 0 {
+			attestationOnly++ // policy would let work go here if the pool held the attestations
 		}
 		missing := pv.Capabilities.Missing(sb.Capabilities)
 		policyOK := ev.Eligible
@@ -338,10 +362,15 @@ func Decide(in Input) Result {
 		dec.Reason = "eligible pools exist but none can take the sandbox now; it stays queued"
 	default:
 		dec.Outcome = "rejected"
-		if capabilityOnly > 0 {
+		switch {
+		case capabilityOnly > 0:
 			dec.Reason = "no permitted pool supports the requested capabilities"
 			res.Err = api.Errorf(api.CodeUnsupportedCapability, "%s", dec.Reason).With("capabilities", strings.Join(sb.Capabilities, ","))
-		} else {
+		case attestationOnly > 0:
+			dec.Reason = "no permitted pool holds the required attestations"
+			res.Err = api.Errorf(api.CodeNoEligiblePool, "%s", dec.Reason).With("classification", sb.Classification).
+				With("requiredAttestations", strings.Join(eff.RequiredAttestations, ","))
+		default:
 			dec.Reason = "no pool satisfies placement policy for this sandbox"
 			res.Err = api.Errorf(api.CodeNoEligiblePool, "%s", dec.Reason).With("classification", sb.Classification)
 		}

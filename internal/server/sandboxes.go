@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/different-ai/differently/internal/auth"
+	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/internal/id"
 	"github.com/different-ai/differently/internal/policy"
 	"github.com/different-ai/differently/internal/scheduler"
@@ -216,6 +217,9 @@ func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.Cre
 		}
 		if pl.External != "" && !policy.ValidExternal(pl.External) {
 			return store.SandboxRecord{}, api.Errorf(api.CodeInvalidRequest, "placement.external must be never, overflow or allowed")
+		}
+		if err := config.ValidateAttestationNames(pl.RequiredAttestations...); err != nil {
+			return store.SandboxRecord{}, api.Errorf(api.CodeInvalidRequest, "placement.requiredAttestations: %v", err)
 		}
 	}
 	// A negative TTL would never expire and would slip under maxTTLSeconds.

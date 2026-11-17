@@ -305,12 +305,12 @@ paths:
     post:
       tags: [Admin]
       summary: Register a pool at runtime
-      description: 'Credentials are references, never values: `{"env": NAME}` or `{"file": PATH}` resolved on the server, or `{"secret": name}` for a credential stored with PUT /v1/admin/secrets/{name}.'
+      description: 'Credentials are references, never values: `{"env": NAME}` or `{"file": PATH}` resolved on the server, or `{"secret": name}` for a credential stored with PUT /v1/admin/secrets/{name}. `attestations` maps a name such as `soc2-type2` to an Attestation (`evidence`, `validUntil`).'
       responses: { "201": { description: Pool } }
   /v1/admin/pools/{name}:
     parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
     get: { tags: [Admin], summary: Get a pool, responses: { "200": { description: Pool } } }
-    patch: { tags: [Admin], summary: Enable/disable, set concurrency, cost model, region or (for API-registered pools) credentialRef, responses: { "200": { description: Pool } } }
+    patch: { tags: [Admin], summary: "Enable/disable, set concurrency, cost model, region or (for API-registered pools) credentialRef and attestations (the whole set is replaced)", responses: { "200": { description: Pool } } }
     delete: { tags: [Admin], summary: Remove an API-registered pool with no sandboxes, responses: { "204": { description: Removed } } }
   /v1/admin/pools/{name}/drain:
     post: { tags: [Admin], summary: Stop new placements on a pool, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Pool } } }
@@ -393,6 +393,19 @@ components:
         allowedPools: { type: array, items: { type: string } }
         regions: { type: array, items: { type: string } }
         external: { type: string, enum: [never, overflow, allowed] }
+        requiredAttestations: { type: array, items: { $ref: "#/components/schemas/AttestationName" }, description: Attestations a pool must hold to take this sandbox. They add to what policies and the classification require }
+    AttestationName:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9._-]{0,62}$"
+      description: Operator-defined. Conventional names are soc2-type2, iso27001, hipaa-baa and gdpr-dpa
+    Attestation:
+      type: object
+      description: An operator's record that whoever runs a pool holds a certification or agreement. Placement filters on it; Differently does not verify it.
+      properties:
+        evidence: { type: string, description: "Where the proof is, such as a trust-center URL or a report reference" }
+        validUntil: { type: string, format: date-time, description: When it stops counting. Absent means it does not expire }
+        recordedBy: { type: string, readOnly: true }
+        recordedAt: { type: string, format: date-time, readOnly: true }
     Capability:
       type: string
       enum: [exec, exec.stream, files, lifecycle.stop-start, lifecycle.pause-resume, snapshots.disk, snapshots.memory, fork, persistence.disk, ports.expose, ssh, pty, network.egress-control, gpu, arch.amd64, arch.arm64, isolation.microvm, isolation.container]
@@ -472,6 +485,7 @@ components:
         reason: { type: string }
         policies: { type: array, items: { type: string } }
         evaluatedAt: { type: string, format: date-time }
+        requiredAttestations: { type: array, items: { type: string }, description: "What the policies, the classification and the request together required of a pool" }
         candidates:
           type: array
           items:
@@ -607,6 +621,7 @@ components:
         strategy: { type: string, enum: [private-first, cost, spread] }
         maxCostPerHour: { type: number }
         maxQueueSeconds: { type: integer }
+        requiredAttestations: { type: array, items: { $ref: "#/components/schemas/AttestationName" }, description: Attestations a pool must hold. Every scope adds to the list; none can remove one }
     UsageReport:
       type: object
       properties:
