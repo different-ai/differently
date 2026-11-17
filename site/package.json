@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "Website and docs for Differently",
   "scripts": {
-    "sync": "node scripts/sync-docs.mjs",
+    "sync": "node scripts/sync-docs.mjs && node scripts/build-sim.mjs",
+    "sim": "node scripts/build-sim.mjs",
     "dev": "npm run sync && astro dev",
     "build": "npm run sync && astro build",
     "preview": "astro preview"

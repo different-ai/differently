@@ -23,6 +23,21 @@ All notable changes are recorded here. The format follows
   documented, or not collected. A mark is a reading of the provider's
   documentation, not a test. Sections arrive with a short animation that is
   off under `prefers-reduced-motion`.
+- The website has a load simulator at `/simulator/`. It runs the control
+  plane itself in the visitor's browser: the HTTP API, admission, the
+  placement policy, the scheduler and the in-memory store, compiled to
+  WebAssembly, with simulated people who each create a computer and come back
+  to it. The visitor sets the load, the private pool's slots, what a pause
+  does, the preemption mode and whether creates may overflow, can send
+  everyone in at once or take the private backend offline, and watches
+  placement, the resume queue, checkpoints, overflow and the scheduler's
+  audit log. Both pools are the fake adapter with delays and the clock is
+  sped up (it stands still while the program computes), so the page shows
+  scheduling decisions and says nothing about performance. The program is
+  `internal/loadsim` (tested natively), built for the browser by
+  `cmd/differently-loadsim`; the site build compiles it (3.8 MB compressed)
+  and the `site` workflow now also runs when `internal/**`, `pkg/**` or
+  `go.mod` change. `make vet` vets the browser build.
 
 ### Fixed
 

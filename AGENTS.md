@@ -61,7 +61,10 @@ that covers it, and say in the PR what did not run.
 - Stored credentials: `internal/secrets` (sealed values, `secret:` refs).
 - Capacity: `internal/scheduler/capacity.go` (slots, resume queue,
   preemption, lifecycle limits) and its model `internal/capsim`
-  ([capacity](docs/scheduling/capacity.md)).
+  ([capacity](docs/scheduling/capacity.md)). `internal/loadsim` runs the whole
+  control plane in one process against fake backends with simulated users;
+  the website's `/simulator/` page is that, compiled to WebAssembly
+  (`cmd/differently-loadsim`, `site/public/sim/worker.js`).
 - Interfaces: `internal/dashboard` (the built-in dashboard), `console/` (the
   separate admin app, static or on Node with sign-in), `site/` (the website;
   its docs sync from `docs/**`).
