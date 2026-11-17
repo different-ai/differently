@@ -116,7 +116,7 @@ footer a { color: var(--muted); }
 
 @media (max-width: 560px) {
   .nav nav { gap: 14px; }
-  .nav nav a[href*='api'] { display: none; }
+  .nav nav a[href*='api'], .nav nav a[href='#stack'], .nav nav a.wide-only { display: none; }
   .hero { padding-top: 56px; }
   section:not(.hero) { padding: 64px 0; }
 }

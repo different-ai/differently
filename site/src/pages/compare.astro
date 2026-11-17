@@ -1,0 +1,328 @@
+---
+import '../styles/landing.css';
+import '../styles/compare.css';
+import { PRICES_READ, PRICES_READ_LABEL, billingLabel, evidenceLabel, providers, slotText, supportLabel, unavailable } from '../data/providers';
+import type { Evidence, Provider } from '../data/providers';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const repo = 'https://github.com/different-ai/differently';
+const origin = (Astro.site?.toString() ?? 'https://different-ai.github.io/').replace(/\/$/, '');
+const pageUrl = `${origin}${base}/compare/`;
+const image = `${origin}${base}/media/sandbox-providers-compared.png`;
+
+const count = providers.length;
+const title = `${count} sandbox providers compared: price, features and compliance`;
+const description = `List prices, isolation, pause and snapshots, self-hosting and SOC 2 for ${count} sandbox services and runtimes for AI agents, with sources. Updated ${PRICES_READ_LABEL}.`;
+const imageAlt = `${count} sandbox providers compared, by Differently: price, isolation, state, snapshots and compliance.`;
+
+const logo = (p: { logo: string }) => `${base}/providers/${p.logo}`;
+const kindKey = (p: Provider) => (p.kind === 'Hosted service' ? 'hosted' : p.kind === 'Open-source runtime' ? 'open' : 'cloud');
+const dash = (v: string | null) => v ?? 'Not collected';
+
+// The price ladder: cheapest first, on one scale.
+const MAX = 0.18;
+const priced = providers.filter((p) => p.slot).sort((a, b) => a.slot![0] - b.slot![0]);
+const pct = (n: number) => `${((Math.min(n, MAX) / MAX) * 100).toFixed(2)}%`;
+const ticks = [0, 0.03, 0.06, 0.09, 0.12, 0.15, 0.18];
+
+// Facts for the hero, counted from the data so they cannot drift from the tables.
+const lows = priced.map((p) => p.slot![0]);
+const highs = priced.map((p) => p.slot![p.slot!.length - 1]);
+const usd = (n: number) => `$${n.toFixed(3)}`;
+const facts = [
+  { value: `${usd(Math.min(...lows))} to ${usd(Math.max(...highs))}`, label: 'for one small sandbox for an hour, at list price' },
+  { value: String(providers.filter((p) => p.billing === 'usage').length), label: 'bill only the CPU you use; the rest bill for running time or by size' },
+  { value: String(providers.filter((p) => p.soc2 === 'yes').length), label: 'state a SOC 2 Type II report on their own site' },
+  { value: String(providers.filter((p) => p.runItYourself !== 'No').length), label: 'can run in infrastructure or a cloud account you control' },
+];
+
+const evidence = (e: Evidence) => ({ cls: e, text: evidenceLabel[e] });
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Article',
+  headline: title,
+  description,
+  url: pageUrl,
+  image,
+  dateModified: PRICES_READ,
+  author: { '@type': 'Organization', name: 'Differently', url: `${origin}${base}/` },
+  publisher: { '@type': 'Organization', name: 'Differently' },
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · Differently</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={pageUrl} />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Differently" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:image" content={image} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={imageAlt} />
+    <meta property="article:modified_time" content={PRICES_READ} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={image} />
+    <meta name="twitter:image:alt" content={imageAlt} />
+    <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <script is:inline>
+      try {
+        const t = localStorage.getItem('starlight-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <header class="nav wrap">
+      <a class="brand" href={`${base}/`}>
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="10" y="3" width="19" height="19" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="3" y="10" width="19" height="19" rx="4" fill="currentColor"/></svg>
+        Differently
+      </a>
+      <nav>
+        <a class="wide-only" href={`${base}/`}>Home</a>
+        <a href={`${base}/docs/`}>Docs</a>
+        <a class="wide-only" href={`${base}/docs/providers/`}>Providers</a>
+        <a href={repo}>GitHub</a>
+        <button class="theme" type="button" aria-label="Toggle color theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" /></svg>
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero wrap cmp-hero">
+        <p class="eyebrow">Prices read {PRICES_READ_LABEL}</p>
+        <h1>{count} sandbox providers, <em>compared.</em></h1>
+        <p class="lede">
+          The services and runtimes we track for running an AI agent's code in isolation: what each costs at list price, how it isolates,
+          whether it keeps state, what it can snapshot, what it says about compliance, and whether you can run it yourself. Each figure links to where it was read.
+        </p>
+        <div class="cmp-facts">
+          {facts.map((f) => <div><b>{f.value}</b><span>{f.label}</span></div>)}
+        </div>
+        <nav class="cmp-jump" aria-label="On this page">
+          <a href="#cost">Cost</a>
+          <a href="#features">Features</a>
+          <a href="#compliance">Compliance</a>
+          <a href="#with-differently">With Differently</a>
+          <a href="#each">Each provider</a>
+          <a href="#method">How we compared</a>
+        </nav>
+      </section>
+
+      <div class="cmp-filter">
+        <div class="wrap" role="group" aria-label="Show providers by kind">
+          <span>Show</span>
+          <button type="button" data-kind="all" aria-pressed="true">All {count}</button>
+          <button type="button" data-kind="hosted" aria-pressed="false">Hosted services</button>
+          <button type="button" data-kind="cloud" aria-pressed="false">In your cloud account</button>
+          <button type="button" data-kind="open" aria-pressed="false">Open-source runtimes</button>
+        </div>
+      </div>
+
+      <section class="wrap cmp-section" id="cost">
+        <h2>Cost</h2>
+        <p>
+          The list price of one running sandbox with 1 vCPU and 2 GiB of memory, for one hour. Providers that bill only the CPU you use are shown
+          as a span, from a sandbox that is busy a quarter of the time to one that is busy all of it. An agent mostly waits on a model, so the low end is its usual case.
+        </p>
+        <div class="ladder">
+          {priced.map((p) => (
+            <div class="lrow" data-kind={kindKey(p)}>
+              <div class="pv"><img src={logo(p)} alt="" width="28" height="28" decoding="async" /><b>{p.name}</b></div>
+              <div class="track" role="img" aria-label={`${p.name}: ${slotText(p)} an hour`}>
+                <i style={`left:0;width:${pct(p.slot![0])}`}></i>
+                {p.slot!.length === 2 && <i class="span" style={`left:${pct(p.slot![0])};width:${pct(p.slot![1]! - p.slot![0])}`}></i>}
+              </div>
+              <div class="lval">{slotText(p)}{p.slotNote && <sup title={p.slotNote}>*</sup>}</div>
+            </div>
+          ))}
+          <div class="laxis" aria-hidden="true"><div>{ticks.map((t) => <span style={`left:${(t / MAX) * 100}%`}>${t.toFixed(2)}</span>)}</div></div>
+          <div class="legend">
+            <span><i></i>List price for the hour, or for a quarter-busy sandbox</span>
+            <span><i class="span"></i>Up to a fully busy sandbox, or a span between sources</span>
+            <span>* The table below says what this figure covers</span>
+          </div>
+        </div>
+        <div class="cmp-table">
+          <table>
+            <thead><tr><th>Provider</th><th>Billed for</th><th>CPU</th><th>Memory</th><th>1 vCPU + 2 GiB, one hour</th><th>Fees and minimums</th></tr></thead>
+            <tbody>
+              {providers.map((p) => (
+                <tr data-kind={kindKey(p)}>
+                  <th scope="row"><div class="pv"><img src={logo(p)} alt="" width="28" height="28" decoding="async" /><span><b>{p.name}</b><small>{p.kind}</small></span></div></th>
+                  <td>{billingLabel[p.billing]}</td>
+                  <td class="num rate">{p.billing === 'infra' ? '—' : dash(p.cpu)}</td>
+                  <td class="num rate">{p.billing === 'infra' ? '—' : dash(p.memory)}</td>
+                  <td class="num">{p.slot ? slotText(p) : p.billing === 'infra' ? 'Your own cost' : 'Not comparable'}{p.slotNote && <span class="sub">{p.slotNote}</span>}</td>
+                  <td class="wide">{p.fees}{p.priceSource && <small><a href={p.priceSource} rel="noopener">Source</a></small>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="wrap cmp-section" id="features">
+        <h2>Features</h2>
+        <p>What each provider documents. "Keeps state" means a sandbox can stop and come back with its disk, or pause and come back with its memory.</p>
+        <div class="cmp-table">
+          <table>
+            <thead><tr><th>Provider</th><th>Isolation</th><th>Keeps state</th><th>Snapshots</th><th>Port URLs</th><th>Largest size</th><th>Run it yourself</th></tr></thead>
+            <tbody>
+              {providers.map((p) => (
+                <tr data-kind={kindKey(p)}>
+                  <th scope="row"><div class="pv"><img src={logo(p)} alt="" width="28" height="28" decoding="async" /><span><b>{p.name}</b><small>{p.kind}</small></span></div></th>
+                  <td>{p.isolation}</td>
+                  <td>{dash(p.keepsState)}</td>
+                  <td>{dash(p.snapshots)}</td>
+                  <td>{dash(p.ports)}</td>
+                  <td>{dash(p.maxSize)}</td>
+                  <td>{p.runItYourself}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="wrap cmp-section" id="compliance">
+        <h2>Compliance</h2>
+        <p>
+          What each provider says on its own security or trust page. "Unconfirmed" means it is claimed elsewhere, or holds for the provider's wider
+          platform and not clearly for its sandbox product. We read no audit reports, and a report says nothing about where a provider keeps your data.
+        </p>
+        <div class="cmp-table">
+          <table>
+            <thead><tr><th>Provider</th><th>SOC 2 Type II</th><th>HIPAA BAA</th><th>ISO 27001</th><th>What we found</th></tr></thead>
+            <tbody>
+              {providers.map((p) => (
+                <tr data-kind={kindKey(p)}>
+                  <th scope="row"><div class="pv"><img src={logo(p)} alt="" width="28" height="28" decoding="async" /><span><b>{p.name}</b><small>{p.kind}</small></span></div></th>
+                  {[p.soc2, p.hipaa, p.iso].map((e) => <td><span class={`ev ${evidence(e).cls}`}>{evidence(e).text}</span></td>)}
+                  <td class="wide">{p.complianceNote}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="wrap cmp-section" id="with-differently">
+        <h2>With Differently</h2>
+        <p>
+          Differently runs no sandboxes. It is an open-source control plane that places each sandbox on one of these providers by policy, behind one API,
+          with quotas, budgets and an audit trail. This is how far each provider is supported today. Only "Verified live" means it has run against the real service.
+        </p>
+        <div class="cmp-table">
+          <table>
+            <thead><tr><th>Provider</th><th>Status</th><th>What that means</th><th>Setup</th></tr></thead>
+            <tbody>
+              {providers.map((p) => (
+                <tr data-kind={kindKey(p)}>
+                  <th scope="row"><div class="pv"><img src={logo(p)} alt="" width="28" height="28" decoding="async" /><span><b>{p.name}</b><small>{p.kind}</small></span></div></th>
+                  <td><span class={`chip ${p.support}`}>{supportLabel[p.support]}</span></td>
+                  <td class="wide">{p.supportNote}</td>
+                  <td>{p.docs ? <a href={`${base}/docs/providers/${p.docs}/`}>Provider page</a> : 'None yet'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="wrap cmp-section" id="each">
+        <h2>Each provider</h2>
+        <p>One note on what sets each apart, with its own site and the page the price came from.</p>
+        <div class="cards">
+          {providers.map((p) => (
+            <article class="card" data-kind={kindKey(p)} id={p.id}>
+              <div class="pv"><img src={logo(p)} alt={`${p.name} mark`} width="36" height="36" decoding="async" /><span><b>{p.name}</b><small>{p.kind}</small></span></div>
+              <p>{p.note}</p>
+              <dl>
+                <dt>Isolation</dt><dd>{p.isolation}</dd>
+                <dt>Price</dt><dd>{p.slot ? `${slotText(p)} an hour for 1 vCPU + 2 GiB` : p.billing === 'infra' ? p.fees : p.fees}</dd>
+                <dt>Differently</dt><dd>{supportLabel[p.support]}</dd>
+              </dl>
+              <div class="links">
+                <a href={p.url} rel="noopener">Website</a>
+                {p.priceSource && <a href={p.priceSource} rel="noopener">Price source</a>}
+                {p.docs && <a href={`${base}/docs/providers/${p.docs}/`}>Setup with Differently</a>}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section class="wrap cmp-section" id="method">
+        <h2>How we compared</h2>
+        <ul class="method">
+          <li><strong>Prices are list prices</strong>, read on {PRICES_READ_LABEL} from each provider's pricing page or, where the source link shows it, from a published comparison. Plan fees, storage, egress and free credits are left out of the hourly figure.</li>
+          <li><strong>The hourly figure is our arithmetic</strong>: the CPU rate plus twice the memory rate. Where a provider sells bundled sizes, it is the smallest size that fits, or left out when the sizes do not line up.</li>
+          <li><strong>Features come from each provider's public documentation</strong>, as recorded with the date on our <a href={`${base}/docs/providers/`}>provider pages</a>. "Not collected" means we did not look, not that the provider lacks it.</li>
+          <li><strong>Compliance is what the provider states.</strong> We read no audit reports. Ask for the report and its scope before you rely on it.</li>
+          <li><strong>We did not benchmark anything.</strong> There are no start times or performance numbers here, because we have not measured them the same way on every provider.</li>
+        </ul>
+        <p class="fine">Not in the tables:</p>
+        <ul class="gone">
+          {unavailable.map((u) => <li><img src={logo(u)} alt="" width="28" height="28" decoding="async" /><span><strong>{u.name}.</strong> {u.why}</span></li>)}
+        </ul>
+        <p class="fine">
+          Something wrong or out of date? The data is one file, <a href={`${repo}/blob/pre-release/site/src/data/providers.ts`}>providers.ts</a>.
+          Open a <a href={`${repo}/issues/new`}>GitHub issue</a> or a pull request with the source and we will correct it.
+        </p>
+        <p class="fine">
+          Names and marks are trademarks of their respective owners and are used here only to identify the services compared. Differently is not affiliated with or endorsed by any of them.
+        </p>
+      </section>
+
+      <section class="wrap cmp-cta">
+        <h2>Use any of them through one API.</h2>
+        <p>Differently is open source and self-hosted. You ask for a sandbox and a policy; it decides which of your pools or approved providers runs it, and records why.</p>
+        <div class="ctas">
+          <a class="btn primary" href={`${base}/docs/guides/quickstart/`}>Quickstart</a>
+          <a class="btn" href={`${base}/docs/providers/`}>Provider catalog</a>
+          <a class="btn" href={repo}>GitHub</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap">
+      <span>Differently · Apache-2.0 · by <a href="https://github.com/different-ai">OpenWork</a></span>
+      <span><a href={`${base}/`}>Home</a> · <a href={`${repo}/releases`}>Releases</a></span>
+    </footer>
+
+    <script>
+      document.querySelector('.theme')!.addEventListener('click', () => {
+        const root = document.documentElement;
+        const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+        const next = dark ? 'light' : 'dark';
+        root.dataset.theme = next;
+        try { localStorage.setItem('starlight-theme', next); } catch {}
+      });
+      // One filter for every table, the ladder and the cards.
+      const buttons = [...document.querySelectorAll<HTMLButtonElement>('.cmp-filter button')];
+      buttons.forEach((b) => b.addEventListener('click', () => {
+        buttons.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+        const kind = b.dataset.kind;
+        document.querySelectorAll<HTMLElement>('main [data-kind]').forEach((el) => {
+          if (el.tagName !== 'BUTTON') el.hidden = kind !== 'all' && el.dataset.kind !== kind;
+        });
+      }));
+    </script>
+  </body>
+</html>
