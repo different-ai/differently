@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -187,8 +188,21 @@ func (s *Server) decoratedPools(r *http.Request) ([]api.Pool, error) {
 	active, _ := s.Store.PoolActive(r.Context())
 	for i := range list {
 		s.Pools.Decorate(&list[i], active[list[i].Name])
+		s.decorateSpend(r, &list[i])
 	}
 	return list, nil
+}
+
+// decorateSpend reports this month's estimated spend on a pool with a budget.
+func (s *Server) decorateSpend(r *http.Request, p *api.Pool) {
+	if p.Budget == nil || p.Budget.Monthly <= 0 {
+		return
+	}
+	spend, err := s.Scheduler.MonthSpend(r.Context())
+	if err != nil {
+		return // placement holds the pool; the report just has no figure
+	}
+	p.Spend = &api.PoolSpend{Month: s.now().UTC().Format("2006-01"), Estimated: spend[p.Name], BudgetReached: p.BudgetReached(spend[p.Name])}
 }
 
 func (s *Server) listPools(w http.ResponseWriter, r *http.Request, _ auth.Principal) error {
@@ -207,6 +221,7 @@ func (s *Server) getPool(w http.ResponseWriter, r *http.Request, _ auth.Principa
 	}
 	active, _ := s.Store.PoolActive(r.Context())
 	s.Pools.Decorate(&pool, active[pool.Name])
+	s.decorateSpend(r, &pool)
 	writeJSON(w, 200, pool)
 	return nil
 }
@@ -306,6 +321,8 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 		CredentialRef *string `json:"credentialRef,omitempty"`
 		// Attestations replaces the whole set the pool holds ({} clears it).
 		Attestations *map[string]api.Attestation `json:"attestations,omitempty"`
+		// Budget sets the pool's monthly budget ({"monthly": 0} removes it).
+		Budget *api.Budget `json:"budget,omitempty"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
@@ -356,6 +373,20 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 		}
 		pool.Attestations = recordAttestations(*req.Attestations, pool.Attestations, p.Actor(), s.now())
 	}
+	if req.Budget != nil {
+		if pool.Source == "config" {
+			return api.Errorf(api.CodeConflict, "pool %s is declared in the config file; change its budget there", pool.Name)
+		}
+		pool.Budget = req.Budget
+		if pool.Budget.Monthly == 0 {
+			pool.Budget = nil
+		}
+	}
+	// Checked after every change: dropping the prices under a budget would
+	// leave a budget that can never be reached.
+	if err := config.ValidateBudget(pool.Budget, pool.CostModel); err != nil {
+		return api.Errorf(api.CodeInvalidRequest, "%v", err)
+	}
 	if err := s.Store.UpsertPool(r.Context(), pool); err != nil {
 		return err
 	}
@@ -369,6 +400,15 @@ func (s *Server) updatePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 			details = map[string]string{}
 		}
 		details["attestations"] = attestationNames(pool.Attestations)
+	}
+	if req.Budget != nil {
+		if details == nil {
+			details = map[string]string{}
+		}
+		details["budgetMonthly"] = "none"
+		if pool.Budget != nil {
+			details["budgetMonthly"] = strconv.FormatFloat(pool.Budget.Monthly, 'f', -1, 64)
+		}
 	}
 	s.audit(r, p, "pool.update", pool.Name, "", "", details)
 	writeJSON(w, 200, pool)

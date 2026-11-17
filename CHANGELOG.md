@@ -21,6 +21,18 @@ All notable changes are recorded here. The format follows
   `sandbox create --require-attestation`), the SDK types, the placement
   explanation, `GET /v1/capabilities` (names only) and the trust report.
   Differently enforces these declarations and does not verify them.
+- A monthly budget per pool (`budget: {monthly: N}`, in the cost model's
+  currency). Once the pool's estimated spend for the calendar month reaches
+  it, the pool takes no new sandboxes: work goes to the next ranked pool, an
+  overflow policy may use an approved external pool, and work with nowhere
+  else to go waits. Running sandboxes are not stopped. The estimate prices
+  this month's run time with the pool's cost model; it is not a provider
+  invoice, and a budget on a pool without a cost model is refused. Pools
+  report `spend` (`month`, `estimated`, `budgetReached`). Available in the
+  config file, the Helm chart, `POST`/`PATCH /v1/admin/pools`, the CLI
+  (`pool add --cost ... --monthly-budget`, `pool budget NAME AMOUNT`), the
+  SDK types and the OpenAPI document. The per-tenant `poolBudgetsPerHour`
+  quota field is unchanged and still not enforced.
 
 ### Tests
 

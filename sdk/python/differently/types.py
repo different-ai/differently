@@ -281,6 +281,20 @@ class Attestation(TypedDict, total=False):
     recordedAt: str
 
 
+class Budget(TypedDict, total=False):
+    """A ceiling on a pool's estimated spend per calendar month."""
+
+    monthly: float
+
+
+class PoolSpend(TypedDict):
+    """A pool's estimated spend this month, from its cost model, not an invoice."""
+
+    month: str
+    estimated: float
+    budgetReached: bool
+
+
 class _PoolRequired(TypedDict):
     name: str
     adapter: str
@@ -300,6 +314,8 @@ class Pool(_PoolRequired, total=False):
     credentialRef: str
     capabilities: List[str]
     attestations: Dict[str, Attestation]
+    budget: Budget
+    spend: PoolSpend
     health: Dict[str, str]
     capacity: Dict[str, object]
     preemption: Dict[str, object]

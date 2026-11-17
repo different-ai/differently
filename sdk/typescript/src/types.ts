@@ -373,6 +373,10 @@ export interface Pool {
   capabilities?: string[];
   /** What the operator recorded about whoever runs this pool, by attestation name. */
   attestations?: Record<string, Attestation>;
+  /** Caps the pool's estimated spend per calendar month. */
+  budget?: Budget;
+  /** This month's estimated spend, reported for pools with a budget. */
+  spend?: PoolSpend;
   health?: PoolHealth;
   capacity?: PoolCapacity;
   /** Lets the scheduler pause running sandboxes to make room for waiting work. Absent or `off`: never. */
@@ -380,6 +384,23 @@ export interface Pool {
   active: number;
   /** Paused sandboxes on the pool that hold no slot. */
   released?: number;
+}
+
+/** A ceiling on a pool's estimated spend. */
+export interface Budget {
+  /**
+   * Per calendar month (UTC), in the cost model's currency. Once the estimate reaches
+   * it the pool takes no new sandboxes; those already there keep running.
+   */
+  monthly?: number;
+}
+
+/** A pool's estimated spend this month, from its cost model and run times, not an invoice. */
+export interface PoolSpend {
+  /** For example `2026-11`. */
+  month: string;
+  estimated: number;
+  budgetReached: boolean;
 }
 
 /**
@@ -416,6 +437,8 @@ export interface CreatePoolParams {
   config?: Record<string, string>;
   /** Attestations the pool holds, by name; `recordedBy` and `recordedAt` are set by the server. */
   attestations?: Record<string, Pick<Attestation, "evidence" | "validUntil">>;
+  /** A monthly budget; it needs a `costModel`, which the spend estimate is computed from. */
+  budget?: Budget;
   /**
    * Where the credential lives: a server environment variable, a mounted file, or a
    * credential stored in Differently with `admin.secrets.put` (`secret`).

@@ -28,6 +28,11 @@ type PoolView struct {
 	Healthy      bool
 	HealthDetail string
 	Active       int
+	// Spent is the pool's estimated spend this calendar month, filled in for
+	// pools with a budget. SpendUnknown says it could not be read; such a
+	// pool takes no new work, so a budget is never passed unseen.
+	Spent        float64
+	SpendUnknown bool
 }
 
 // Input is everything placement needs.
@@ -267,6 +272,12 @@ func Decide(in Input) Result {
 			case !pv.Healthy:
 				ev.HasCapacity = false
 				ev.Reasons = append(ev.Reasons, "unhealthy: "+pv.HealthDetail)
+			case pv.SpendUnknown:
+				ev.HasCapacity = false
+				ev.Reasons = append(ev.Reasons, "monthly budget set but this month's spend could not be read")
+			case p.BudgetReached(pv.Spent):
+				ev.HasCapacity = false
+				ev.Reasons = append(ev.Reasons, fmt.Sprintf("monthly budget reached: estimated %.2f of %.2f", pv.Spent, p.Budget.Monthly))
 			case p.MaxConcurrency > 0 && pv.Active >= p.MaxConcurrency:
 				ev.HasCapacity = false
 				ev.Reasons = append(ev.Reasons, fmt.Sprintf("at concurrency limit %d", p.MaxConcurrency))

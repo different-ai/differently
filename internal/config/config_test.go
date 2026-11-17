@@ -176,3 +176,29 @@ policy:
 		}
 	}
 }
+
+// A budget is estimated from the pool's prices, so one without a cost model
+// is refused instead of silently never being reached.
+func TestPoolBudgetNeedsACostModel(t *testing.T) {
+	pool := func(extra string) []byte {
+		return []byte("pools:\n  - name: burst\n    adapter: daytona\n    credentials: {env: DAYTONA_API_KEY}\n" + extra)
+	}
+	c, err := Parse(pool("    costModel: {cpuHour: 0.0504, memoryGiBHour: 0.0162}\n    budget: {monthly: 500}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := c.Pools[0].ToPool().Budget; b == nil || b.Monthly != 500 {
+		t.Fatalf("budget not carried to the pool: %+v", b)
+	}
+	if c, err := Parse(pool("    budget: {monthly: 0}\n")); err != nil || c.Pools[0].ToPool().Budget != nil {
+		t.Fatalf("a zero budget means none: %v", err)
+	}
+	for extra, want := range map[string]string{
+		"    budget: {monthly: 500}\n":                                "needs a costModel",
+		"    costModel: {cpuHour: 0.05}\n    budget: {monthly: -1}\n": "positive amount",
+	} {
+		if _, err := Parse(pool(extra)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("want an error containing %q, got %v", want, err)
+		}
+	}
+}

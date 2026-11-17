@@ -57,6 +57,13 @@ type Scheduler struct {
 	ReconcileGrace time.Duration
 	// RefreshInterval is how often pools are probed; zero means 5 seconds.
 	RefreshInterval time.Duration
+	// SpendInterval is how long an estimate of the pools' spend this month is
+	// reused before it is computed again; zero means 30 seconds.
+	SpendInterval time.Duration
+
+	spendMu sync.Mutex
+	spend   map[string]float64
+	spendAt time.Time
 
 	wake chan struct{}
 	mu   sync.Mutex
@@ -201,6 +208,7 @@ func (s *Scheduler) PlacementInput(ctx context.Context, rec store.SandboxRecord,
 		Sandbox: rec.Sandbox, Policies: policies, Classification: class,
 		Pools: s.Pools.Views(active), ExcludedPools: rec.ExcludedPools, Now: s.Now(),
 	}
+	s.applySpend(ctx, in.Pools)
 	if rec.FromSnapshot != "" {
 		snap, err := s.Store.GetSnapshot(ctx, rec.FromSnapshot)
 		switch {
@@ -214,6 +222,60 @@ func (s *Scheduler) PlacementInput(ctx context.Context, rec store.SandboxRecord,
 		in.Template = &t
 	}
 	return in, nil
+}
+
+// applySpend fills in this month's estimated spend for pools with a budget.
+// If it cannot be read, those pools are marked so placement holds them: a
+// budget must never be passed because the numbers were unavailable.
+func (s *Scheduler) applySpend(ctx context.Context, views []policy.PoolView) {
+	budgeted := false
+	for _, v := range views {
+		budgeted = budgeted || (v.Pool.Budget != nil && v.Pool.Budget.Monthly > 0)
+	}
+	if !budgeted {
+		return // no budgets: skip reading every sandbox record
+	}
+	spend, err := s.MonthSpend(ctx)
+	if err != nil {
+		s.Log.Warn("pool spend unavailable; budgeted pools take no new work", "err", err)
+	}
+	for i := range views {
+		if b := views[i].Pool.Budget; b == nil || b.Monthly <= 0 {
+			continue
+		}
+		if err != nil {
+			views[i].SpendUnknown = true
+			continue
+		}
+		views[i].Spent = spend[views[i].Pool.Name]
+	}
+}
+
+// MonthSpend estimates what each pool has cost so far this calendar month
+// (see store.MonthSpend). It reads every sandbox record, so the result is
+// reused for SpendInterval.
+func (s *Scheduler) MonthSpend(ctx context.Context) (map[string]float64, error) {
+	ttl := s.SpendInterval
+	if ttl == 0 {
+		ttl = 30 * time.Second
+	}
+	now := s.Now()
+	s.spendMu.Lock()
+	defer s.spendMu.Unlock()
+	// A new month starts from zero at once, whatever the cache holds.
+	if s.spend != nil && now.Sub(s.spendAt) < ttl && !s.spendAt.Before(store.MonthStart(now)) {
+		return s.spend, nil
+	}
+	recs, err := s.Store.ListSandboxes(ctx, store.SandboxFilter{})
+	if err != nil {
+		return nil, err
+	}
+	costs := map[string]api.CostModel{}
+	for _, v := range s.Pools.Views(nil) {
+		costs[v.Pool.Name] = v.Pool.CostModel
+	}
+	s.spend, s.spendAt = store.MonthSpend(recs, costs, now), now
+	return s.spend, nil
 }
 
 func (s *Scheduler) dispatch(ctx context.Context) {

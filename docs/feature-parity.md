@@ -34,6 +34,7 @@ and where workloads may go.
 | Fail-closed external placement (explicit approval required) | ✅ | n/a | n/a | n/a | n/a | n/a |
 | Data classification routing (e.g. `private-only`) | ✅ | No | No | No | No | No |
 | Routing on provider attestations (SOC 2 Type II, ISO 27001, HIPAA BAA, DPA) | ✅ operator-declared per pool with evidence and expiry, required per classification, policy or request; not verified by Differently ([placement policy §4.1](scheduling/placement-policy.md#41-attestations)) | No | No | No | No | No |
+| Monthly budget per pool | ✅ new sandboxes stop when the pool's estimated spend reaches it; estimate from the pool's cost model, not provider invoices ([placement policy §5.1](scheduling/placement-policy.md#51-monthly-budgets)) | No | No | No | No | No |
 | Placement explanation per sandbox | ✅ `GET /v1/sandboxes/{id}/placement` | No | No | No | No | No |
 | Trust report (endpoints, credentials by ref, external placements, limits) | ✅ `GET /v1/admin/trust-report` | No | No | No | No | No |
 | Tamper-evident audit log | ✅ hash chain + verify endpoint + JSON-lines export | Audit/OTel export (UNVERIFIED scope) | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
