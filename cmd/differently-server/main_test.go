@@ -34,3 +34,35 @@ func TestDevWelcomeNamesACommandThatWorks(t *testing.T) {
 		}
 	}
 }
+
+// The demo keeps its own data directory, so the CLI always needs its token,
+// and the console's dev server needs the address unless it is the default.
+func TestDemoWelcomeNamesCommandsThatWork(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	token := filepath.Join(home, ".differently", "demo", "token")
+
+	plain := demoWelcome(":8080", filepath.Dir(token))
+	for _, want := range []string{
+		"http://localhost:8080/demo/",
+		"http://localhost:8080/dashboard/",
+		"npm ci && npm run dev,",
+		"http://localhost:4321/routing/",
+		"  CLI        DIFFERENTLY_API_KEY=$(cat " + token + ") DIFFERENTLY_PROJECT=prj_default differently sandbox list\n",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("want %q in\n%s", want, plain)
+		}
+	}
+
+	moved := demoWelcome("127.0.0.1:18090", filepath.Dir(token))
+	for _, want := range []string{
+		"DIFFERENTLY_URL=http://127.0.0.1:18090 npm run dev",
+		"DIFFERENTLY_URL=http://127.0.0.1:18090 DIFFERENTLY_API_KEY=",
+	} {
+		if !strings.Contains(moved, want) {
+			t.Errorf("another address: want %q in\n%s", want, moved)
+		}
+	}
+}

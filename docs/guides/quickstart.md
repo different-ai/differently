@@ -101,6 +101,28 @@ covers them all.
 
 Every command is in the [CLI reference](https://different-ai.github.io/differently/docs/reference/cli/).
 
+## Watch placement with pretend providers
+
+<!-- Remove this note in the release that ships `--demo` (the first after v0.1.0-alpha.7); do not bump its version. -->
+> `--demo` is newer than `v0.1.0-alpha.7`, the latest release. Until the
+> next one, build from source and run `make demo`.
+
+```bash
+differently-server --demo
+```
+
+This starts a separate installation with six mock providers, two private
+and four external, each with a region, list prices, illustrative
+certifications and a monthly budget, and sends them generated traffic. The
+scheduler, policies, budgets, API and audit log are the real ones; only the
+sandboxes are simulated, and no real provider is called.
+
+It prints where to look. The presenter page at `/demo/` switches between
+situations: a normal day, a quarter-end peak, a regulated workload, EU data
+residency and a vendor incident, each with what to point out. The console's
+Live routing page shows where every sandbox goes and why. The demo uses
+port 8080 like dev mode, so stop the dev server first or pass `--listen`.
+
 ## From your code
 
 Against the local server the SDKs need no key and no project: on this

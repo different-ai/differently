@@ -19,12 +19,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/different-ai/differently/internal/auditlog"
 	"github.com/different-ai/differently/internal/auth"
 	"github.com/different-ai/differently/internal/config"
+	"github.com/different-ai/differently/internal/demo"
 	"github.com/different-ai/differently/internal/pools"
 	"github.com/different-ai/differently/internal/scheduler"
 	"github.com/different-ai/differently/internal/secrets"
@@ -45,6 +47,7 @@ func main() {
 	fs := flag.NewFlagSet("differently-server", flag.ExitOnError)
 	cfgPath := fs.String("config", os.Getenv("DIFFERENTLY_CONFIG"), "path to the YAML config file")
 	dev := fs.Bool("dev", false, "zero-setup local mode: memory store and a devhost pool with NO isolation")
+	demoMode := fs.Bool("demo", false, "demo mode: mock connectors and generated traffic, nothing real is called (implies --dev)")
 	listen := fs.String("listen", "", "override the listen address")
 	dataDir := fs.String("data-dir", "", "override the data directory")
 	_ = fs.Parse(args)
@@ -52,7 +55,7 @@ func main() {
 	var err error
 	switch cmd {
 	case "serve":
-		err = serve(*cfgPath, *dev, *listen, *dataDir)
+		err = serve(*cfgPath, *dev || *demoMode, *demoMode, *listen, *dataDir)
 	case "migrate":
 		err = migrate(*cfgPath)
 	case "preflight":
@@ -108,8 +111,21 @@ func openStore(ctx context.Context, cfg config.Config) (store.Store, error) {
 	return store.NewMemory(), nil
 }
 
-func serve(cfgPath string, dev bool, listen, dataDir string) error {
+func serve(cfgPath string, dev, demoMode bool, listen, dataDir string) error {
 	cfg, err := loadConfig(cfgPath, dev, dataDir)
+	if demoMode {
+		// The demo is its own installation: a config file would mix real
+		// pools with generated traffic.
+		if cfgPath != "" {
+			return errors.New("--demo brings its own configuration; do not combine it with --config")
+		}
+		if dataDir == "" {
+			home, _ := os.UserHomeDir()
+			dataDir = filepath.Join(home, ".differently", "demo")
+		}
+		cfg = demo.Config(dataDir)
+		err = cfg.Validate()
+	}
 	if err != nil {
 		return err
 	}
@@ -163,7 +179,30 @@ func serve(cfgPath string, dev bool, listen, dataDir string) error {
 	go sch.Run(ctx)
 	go srv.Stacks.Run(ctx)
 
-	httpSrv := &http.Server{Addr: cfg.Listen, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
+	handlerHTTP := srv.Handler()
+	if demoMode {
+		// The generator calls the API as the operator: with the bootstrap
+		// token when one is set, otherwise with the one dev mode wrote.
+		token := os.Getenv(cfg.Auth.BootstrapTokenEnv)
+		if token == "" {
+			b, err := os.ReadFile(filepath.Join(cfg.DataDir, "token"))
+			if err != nil {
+				return fmt.Errorf("demo: read the operator token: %w", err)
+			}
+			token = string(b)
+		}
+		gen := demo.NewGenerator(localURL(cfg.Listen), strings.TrimSpace(token), log)
+		mux := http.NewServeMux()
+		mux.Handle("/demo/state", gen.Handler())
+		mux.Handle("GET /demo/{$}", demo.PageHandler())
+		mux.Handle("/", handlerHTTP)
+		handlerHTTP = mux
+		go func() {
+			time.Sleep(500 * time.Millisecond) // let the listener come up
+			gen.Run(ctx)
+		}()
+	}
+	httpSrv := &http.Server{Addr: cfg.Listen, Handler: handlerHTTP, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
 	errc := make(chan error, 2)
 	go func() { errc <- httpSrv.ListenAndServe() }()
 	var metricsSrv *http.Server
@@ -174,7 +213,11 @@ func serve(cfgPath string, dev bool, listen, dataDir string) error {
 		go func() { errc <- metricsSrv.ListenAndServe() }()
 	}
 	log.Info("differently-server started", "listen", cfg.Listen, "version", version.Version, "installation", installation, "store", cfg.Store.Driver, "dev", cfg.Dev)
-	if cfg.Dev {
+	if demoMode {
+		log.Warn("DEMO MODE: mock connectors and generated traffic; no real provider is called",
+			"presenter", localURL(cfg.Listen)+"/demo/", "operatorTokenFile", filepath.Join(cfg.DataDir, "token"))
+		fmt.Fprint(os.Stderr, demoWelcome(cfg.Listen, cfg.DataDir))
+	} else if cfg.Dev {
 		log.Warn("DEV MODE: the devhost pool runs commands directly on this machine with no isolation",
 			"operatorTokenFile", filepath.Join(cfg.DataDir, "token"), "dashboard", dashboardURL(cfg.Listen))
 		fmt.Fprint(os.Stderr, devWelcome(cfg.Listen, cfg.DataDir))
@@ -286,13 +329,7 @@ func localURL(listen string) string {
 // command shown always works as printed.
 func devWelcome(listen, dataDir string) string {
 	api, token := localURL(listen), filepath.Join(dataDir, "token")
-	try := "differently run -- echo hello"
-	if home, err := os.UserHomeDir(); err != nil || dataDir != filepath.Join(home, ".differently", "dev") {
-		try = fmt.Sprintf("DIFFERENTLY_API_KEY=$(cat %s) DIFFERENTLY_PROJECT=prj_default %s", token, try)
-	}
-	if api != "http://localhost:8080" {
-		try = "DIFFERENTLY_URL=" + api + " " + try
-	}
+	try := cliCommand(listen, dataDir, "differently run -- echo hello")
 	return fmt.Sprintf(`
 Differently is running in dev mode.
 
@@ -305,4 +342,42 @@ Dev mode keeps everything in memory and runs commands on this machine as
 you, with no isolation. Do not run code you do not trust.
 
 `, api, api, token, try)
+}
+
+// cliCommand prefixes a CLI command with the settings it needs to reach this
+// server: none at the default address and dev data directory, where the CLI
+// and the SDKs look by themselves.
+func cliCommand(listen, dataDir, command string) string {
+	if home, err := os.UserHomeDir(); err != nil || dataDir != filepath.Join(home, ".differently", "dev") {
+		command = fmt.Sprintf("DIFFERENTLY_API_KEY=$(cat %s) DIFFERENTLY_PROJECT=prj_default %s", filepath.Join(dataDir, "token"), command)
+	}
+	if api := localURL(listen); api != "http://localhost:8080" {
+		command = "DIFFERENTLY_URL=" + api + " " + command
+	}
+	return command
+}
+
+// demoWelcome says where to watch the demo and how to drive it. The console's
+// dev server forwards /v1 to DIFFERENTLY_URL, http://localhost:8080 by default.
+func demoWelcome(listen, dataDir string) string {
+	api, token := localURL(listen), filepath.Join(dataDir, "token")
+	console := "npm run dev"
+	if api != "http://localhost:8080" {
+		console = "DIFFERENTLY_URL=" + api + " " + console
+	}
+	return fmt.Sprintf(`
+Differently is running in demo mode: six mock providers and generated
+traffic. Every sandbox is simulated and no real provider is called.
+
+  Presenter  %s/demo/
+  Dashboard  %s/dashboard/
+  Token      %s (sign in with it)
+  Console    in console/: npm ci && %s, then open
+             http://localhost:4321/routing/ for Live routing
+  CLI        %s
+
+The presenter page switches situations: a normal day, a quarter-end peak,
+a regulated workload, EU data residency and a vendor incident.
+
+`, api, api, token, console, cliCommand(listen, dataDir, "differently sandbox list"))
 }

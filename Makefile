@@ -11,7 +11,7 @@ GO_TAGS ?=
 EXPERIMENTAL_TAG := experimental_adapters
 PG_PORT ?= 55432
 
-.PHONY: build build-linux test test-postgres fmt-check vet experimental sdk-test helm-lint compose-lint verify dev images clean
+.PHONY: build build-linux test test-postgres fmt-check vet experimental sdk-test helm-lint compose-lint verify dev demo images clean
 
 build:
 	@mkdir -p bin
@@ -76,6 +76,11 @@ verify: fmt-check vet test experimental sdk-test helm-lint compose-lint
 
 dev: build
 	./bin/differently-server --dev
+
+# Mock providers and generated traffic: open the printed presenter page, and
+# the console's Live routing page (it prints how) for the audience.
+demo: build
+	./bin/differently-server --demo
 
 images:
 	docker build -f build/server.Dockerfile --build-arg GO_TAGS=$(GO_TAGS) -t ghcr.io/different-ai/differently-server:$(VERSION) .

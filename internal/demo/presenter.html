@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Differently demo · presenter</title>
+<style>
+:root { color-scheme: dark; --bg: #0a0a0a; --card: #141414; --fg: #fafafa; --muted: #8f8f8f; --line: #262626; --on: #fafafa; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 ui-sans-serif, system-ui, sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 28px 16px 56px; display: flex; flex-direction: column; gap: 18px; }
+h1 { font-size: 26px; letter-spacing: -0.02em; margin: 0; }
+p { margin: 0; } .muted { color: var(--muted); font-size: 13px; }
+.tag { font: 11px ui-monospace, monospace; background: #f2b84b; color: #0a0a0a; padding: 2px 7px; border-radius: 4px; margin-left: 8px; vertical-align: middle; }
+#list { display: flex; flex-direction: column; gap: 10px; }
+button.s { text-align: left; font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; cursor: pointer; display: grid; gap: 4px; }
+button.s:hover { border-color: var(--muted); } button.s:focus-visible, input:focus-visible { outline: 2px solid #f2b84b; outline-offset: 2px; }
+button.s[aria-pressed="true"] { border-color: var(--on); box-shadow: inset 3px 0 0 var(--on); }
+button.s b { font-size: 16px; } button.s span { color: var(--muted); font-size: 13.5px; } button.s[aria-pressed="true"] span { color: var(--fg); }
+button.s small { font: 11px ui-monospace, monospace; color: var(--muted); }
+form { display: flex; gap: 8px; flex-wrap: wrap; } input { flex: 1; min-width: 220px; font: 13px ui-monospace, monospace; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+form button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--fg); color: var(--bg); cursor: pointer; }
+#err { color: #ff6b5e; font-size: 13px; min-height: 1.4em; }
+</style>
+</head>
+<body>
+<main>
+  <div><h1>Demo presenter<span class="tag">MOCK DATA</span></h1>
+  <p class="muted">Keep this window on your own screen and the console's Live routing page on the shared one. Pick a situation; the line under it is what to point out.</p></div>
+  <form id="auth" hidden><input id="tok" type="password" placeholder="operator token (printed token file), needed once" autocomplete="off" required><button>Unlock</button></form>
+  <div id="list"></div>
+  <p id="err" role="status"></p>
+  <p class="muted">Every sandbox is simulated by the fake adapter. The scheduler, policy engine, budgets, audit log and API are the real ones. Prices are multiplied by 3,600 so a second of run time bills like an hour and budgets fill in minutes. Vendor prices and certifications are illustrative.</p>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const tok = () => { try { return sessionStorage.getItem("demo-token") || ""; } catch { return ""; } };
+function draw(state) {
+  $("#list").innerHTML = state.scenarios.map((s) => `<button class="s" id="s-${s.id}" data-id="${s.id}" aria-pressed="${s.id === state.scenario.id}"><b>${s.label}</b><span>${s.say}</span><small>${s.rate} requests/s${s.down ? " · off: " + s.down.join(", ") : ""}</small></button>`).join("");
+  $("#auth").hidden = !!tok();
+}
+async function load() { draw(await (await fetch("/demo/state")).json()); }
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("button.s"); if (!b) return;
+  if (!tok()) { $("#auth").hidden = false; $("#tok").focus(); $("#err").textContent = "Enter the operator token once to switch scenarios."; return; }
+  const r = await fetch("/demo/state", { method: "POST", headers: { Authorization: "Bearer " + tok(), "Content-Type": "application/json" }, body: JSON.stringify({ scenario: b.dataset.id }) });
+  if (r.status === 401) { try { sessionStorage.removeItem("demo-token"); } catch {} $("#auth").hidden = false; $("#err").textContent = "That token was not accepted."; return; }
+  $("#err").textContent = ""; draw(await r.json());
+});
+$("#auth").addEventListener("submit", (e) => { e.preventDefault(); try { sessionStorage.setItem("demo-token", $("#tok").value.trim()); } catch {} $("#tok").value = ""; $("#auth").hidden = true; $("#err").textContent = ""; });
+load();
+</script>
+</body>
+</html>
