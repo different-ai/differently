@@ -134,3 +134,45 @@ func TestCORSOriginsMustBeExact(t *testing.T) {
 		t.Fatalf("exact origins are valid: %v", err)
 	}
 }
+
+// Attestations are declared on pools and required by classifications and the
+// global policy; a malformed name is refused wherever it appears.
+func TestAttestationsInConfig(t *testing.T) {
+	c, err := Parse([]byte(`
+classifications:
+  - {name: internal, external: overflow}
+  - {name: regulated, external: overflow, requiredAttestations: [soc2-type2, hipaa-baa]}
+pools:
+  - name: osb
+    adapter: opensandbox
+    trust: private
+    config: {apiURL: "http://opensandbox:8090/v1"}
+  - name: burst
+    adapter: daytona
+    credentials: {env: DAYTONA_API_KEY}
+    attestations:
+      soc2-type2: {evidence: "https://trust.example.com", validUntil: "2027-06-30T00:00:00Z"}
+      hipaa-baa: {evidence: "BAA signed 2026-09-01"}
+policy:
+  requiredAttestations: [gdpr-dpa]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	burst := c.Pools[1].ToPool()
+	if a := burst.Attestations["soc2-type2"]; a.Evidence != "https://trust.example.com" || a.ValidUntil == nil || a.ValidUntil.Year() != 2027 {
+		t.Fatalf("attestation not carried to the pool: %+v", burst.Attestations)
+	}
+	if class, _ := c.Classification("regulated"); !slices.Equal(class.RequiredAttestations, []string{"soc2-type2", "hipaa-baa"}) {
+		t.Fatalf("classification requirements: %+v", class)
+	}
+	for _, bad := range []string{
+		"classifications:\n  - {name: internal, external: never, requiredAttestations: [SOC2]}\n",
+		"pools:\n  - name: osb\n    adapter: opensandbox\n    trust: private\n    config: {apiURL: \"http://o/v1\"}\n    attestations: {\"soc2 type2\": {}}\n",
+		"policy:\n  requiredAttestations: [\"\"]\n",
+	} {
+		if _, err := Parse([]byte(bad)); err == nil || !strings.Contains(err.Error(), "attestation name") {
+			t.Errorf("malformed attestation name accepted: %v\n%s", err, bad)
+		}
+	}
+}

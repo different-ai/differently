@@ -155,6 +155,10 @@ type PoolConfig struct {
 	// Preemption lets the scheduler pause running sandboxes to make room for
 	// waiting work (pools that checkpoint on pause only).
 	Preemption *api.Preemption `json:"preemption,omitempty"`
+	// Attestations record what whoever runs this pool is certified for or
+	// has signed (soc2-type2, hipaa-baa, ...). Placement requires them where
+	// a policy, classification or request says so.
+	Attestations map[string]api.Attestation `json:"attestations,omitempty"`
 }
 
 // ToPool converts to the API representation.
@@ -164,7 +168,29 @@ func (p PoolConfig) ToPool() api.Pool {
 		Name: p.Name, Adapter: p.Adapter, Trust: p.Trust, Region: p.Region, Labels: p.Labels,
 		Enabled: enabled, MaxConcurrency: p.MaxConcurrency, CostModel: p.CostModel, Config: p.Config,
 		CredentialRef: p.Credentials.String(), Source: "config", Preemption: p.Preemption,
+		Attestations: p.Attestations,
 	}
+}
+
+// ValidateAttestationNames checks names used to declare or require
+// attestations.
+func ValidateAttestationNames(names ...string) error {
+	for _, n := range names {
+		if !api.ValidAttestationName(n) {
+			return fmt.Errorf("attestation name %q must be 1 to 63 lowercase letters, digits, '.', '_' or '-', starting with a letter or digit", n)
+		}
+	}
+	return nil
+}
+
+// ValidateAttestations checks the attestations declared on a pool.
+func ValidateAttestations(m map[string]api.Attestation) error {
+	names := make([]string, 0, len(m))
+	for n := range m {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	return ValidateAttestationNames(names...)
 }
 
 // ValidatePreemption checks a pool's preemption policy.
@@ -424,6 +450,12 @@ func (c Config) Validate() error {
 		if err := ValidatePreemption(p.Preemption); err != nil {
 			bad("pool %s: %v", p.Name, err)
 		}
+		if err := ValidateAttestations(p.Attestations); err != nil {
+			bad("pool %s: %v", p.Name, err)
+		}
+	}
+	if err := ValidateAttestationNames(c.Policy.RequiredAttestations...); err != nil {
+		bad("policy.requiredAttestations: %v", err)
 	}
 	for _, o := range c.CORS.AllowedOrigins {
 		u, err := url.Parse(o)
@@ -439,6 +471,9 @@ func (c Config) Validate() error {
 		classes[cl.Name] = true
 		if _, ok := map[string]bool{api.ExternalNever: true, api.ExternalOverflow: true, api.ExternalAllowed: true}[cl.External]; !ok {
 			bad("classification %s: external must be never, overflow or allowed", cl.Name)
+		}
+		if err := ValidateAttestationNames(cl.RequiredAttestations...); err != nil {
+			bad("classification %s: %v", cl.Name, err)
 		}
 	}
 	if !classes[c.Defaults.Classification] {

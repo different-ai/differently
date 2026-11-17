@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/different-ai/differently/internal/auth"
+	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/internal/id"
 	"github.com/different-ai/differently/internal/policy"
 	"github.com/different-ai/differently/internal/store"
@@ -509,6 +510,9 @@ func (s *Server) putPolicy(w http.ResponseWriter, r *http.Request, p auth.Princi
 	if pol.Strategy != "" && !policy.ValidStrategy(pol.Strategy) {
 		return api.Errorf(api.CodeInvalidRequest, "unknown strategy %q", pol.Strategy)
 	}
+	if err := config.ValidateAttestationNames(pol.RequiredAttestations...); err != nil {
+		return api.Errorf(api.CodeInvalidRequest, "requiredAttestations: %v", err)
+	}
 	if err := s.Store.PutPolicy(r.Context(), pol); err != nil {
 		return err
 	}
@@ -565,14 +569,25 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request, p auth.Pri
 		Enabled      bool     `json:"enabled"`
 		Health       string   `json:"health"`
 		Capabilities []string `json:"capabilities"`
+		// Attestations names what the pool currently holds, so a tenant can
+		// see what a request may require. Evidence stays with operators.
+		Attestations []string `json:"attestations,omitempty"`
 	}
 	out := api.List[view]{Items: []view{}}
+	now := s.now()
 	for _, pl := range list {
-		if eff != nil && len(policy.PolicyReasons(*eff, pl)) > 0 {
+		if eff != nil && len(policy.PolicyReasons(*eff, pl, now)) > 0 {
 			continue
 		}
 		s.Pools.Decorate(&pl, active[pl.Name])
-		out.Items = append(out.Items, view{Pool: pl.Name, Adapter: pl.Adapter, Trust: pl.Trust, Region: pl.Region, Enabled: pl.Enabled && !pl.Draining, Health: pl.Health.Status, Capabilities: pl.Capabilities})
+		var held []string
+		for name := range pl.Attestations {
+			if len(pl.MissingAttestations([]string{name}, now)) == 0 {
+				held = append(held, name)
+			}
+		}
+		sort.Strings(held)
+		out.Items = append(out.Items, view{Pool: pl.Name, Adapter: pl.Adapter, Trust: pl.Trust, Region: pl.Region, Enabled: pl.Enabled && !pl.Draining, Health: pl.Health.Status, Capabilities: pl.Capabilities, Attestations: held})
 	}
 	writeJSON(w, 200, out)
 	return nil

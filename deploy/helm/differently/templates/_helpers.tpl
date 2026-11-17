@@ -225,6 +225,7 @@ api-key
 {{- if $o.pool.labels }}{{ $_ := set $pool "labels" $o.pool.labels }}{{ end -}}
 {{- if $o.pool.maxConcurrency }}{{ $_ := set $pool "maxConcurrency" $o.pool.maxConcurrency }}{{ end -}}
 {{- if $o.pool.costModel }}{{ $_ := set $pool "costModel" $o.pool.costModel }}{{ end -}}
+{{- if $o.pool.attestations }}{{ $_ := set $pool "attestations" $o.pool.attestations }}{{ end -}}
 {{- toJson $pool -}}
 {{- end -}}
 
@@ -271,6 +272,7 @@ chart-managed keys (listen, dataDir, store.driver), the OpenSandbox pool
 {{- if $p.pool.labels }}{{ $_ := set $pool "labels" $p.pool.labels }}{{ end -}}
 {{- if $p.pool.maxConcurrency }}{{ $_ := set $pool "maxConcurrency" $p.pool.maxConcurrency }}{{ end -}}
 {{- if $p.pool.costModel }}{{ $_ := set $pool "costModel" $p.pool.costModel }}{{ end -}}
+{{- if $p.pool.attestations }}{{ $_ := set $pool "attestations" $p.pool.attestations }}{{ end -}}
 {{- if $p.pool.config }}{{ $_ := set $pool "config" $p.pool.config }}{{ end -}}
 {{- $pools = append $pools $pool -}}
 {{- end -}}

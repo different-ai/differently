@@ -221,7 +221,7 @@ func sandboxCmd() *cobra.Command {
 		profile, template, class, strategy, external string
 		cpu, mem, disk, ttl, idle                    int
 		wait                                         bool
-		envs, labels, caps, pools                    []string
+		envs, labels, caps, pools, attests           []string
 	)
 	create := &cobra.Command{
 		Use: "create", Short: "Create a sandbox",
@@ -230,8 +230,8 @@ func sandboxCmd() *cobra.Command {
 			if cpu > 0 || mem > 0 || disk > 0 {
 				req.Resources = &api.Resources{CPU: cpu, MemoryMiB: mem, DiskGiB: disk}
 			}
-			if strategy != "" || external != "" || len(pools) > 0 {
-				req.Placement = &api.Placement{Strategy: strategy, External: external, AllowedPools: pools}
+			if strategy != "" || external != "" || len(pools) > 0 || len(attests) > 0 {
+				req.Placement = &api.Placement{Strategy: strategy, External: external, AllowedPools: pools, RequiredAttestations: attests}
 			}
 			req.Env, req.Labels = kv(envs), kv(labels)
 			sb, err := cli().CreateSandbox(ctx(), req, wait)
@@ -259,6 +259,7 @@ func sandboxCmd() *cobra.Command {
 	f.StringVar(&strategy, "strategy", "", "placement strategy: private-first, cost or spread")
 	f.StringVar(&external, "external", "", "narrow external placement: never or overflow")
 	f.StringSliceVar(&pools, "pool", nil, "restrict to these pools")
+	f.StringSliceVar(&attests, "require-attestation", nil, "only pools that hold these attestations, e.g. soc2-type2,hipaa-baa")
 	f.StringSliceVar(&caps, "capability", nil, "required capabilities, e.g. snapshots.disk")
 	f.StringArrayVarP(&envs, "env", "e", nil, "environment KEY=VALUE")
 	f.StringArrayVarP(&labels, "label", "l", nil, "label KEY=VALUE")
@@ -587,7 +588,7 @@ func secretCmd() *cobra.Command {
 // stored in Differently as <name>-key first, so no Kubernetes Secret is needed.
 func poolAddCmd() *cobra.Command {
 	var adapterKind, trust, region, secret, credential string
-	var settings []string
+	var settings, attests []string
 	var maxConcurrency int
 	var keyStdin bool
 	cmd := &cobra.Command{Use: "add NAME", Args: cobra.ExactArgs(1), Short: "Add a provider pool (e.g. Daytona or Freestyle) at runtime", RunE: func(_ *cobra.Command, a []string) error {
@@ -629,6 +630,14 @@ func poolAddCmd() *cobra.Command {
 		if maxConcurrency > 0 {
 			body["maxConcurrency"] = maxConcurrency
 		}
+		if len(attests) > 0 {
+			held := map[string]any{}
+			for _, a := range attests {
+				name, evidence, _ := strings.Cut(a, "=")
+				held[name] = map[string]string{"evidence": evidence}
+			}
+			body["attestations"] = held
+		}
 		return raw("POST", "/v1/admin/pools", body)
 	}}
 	f := cmd.Flags()
@@ -637,6 +646,7 @@ func poolAddCmd() *cobra.Command {
 	f.StringArrayVar(&settings, "config", nil, "adapter setting key=value (repeatable), e.g. apiURL=https://app.daytona.io/api")
 	f.StringVar(&region, "region", "", "region label")
 	f.IntVar(&maxConcurrency, "max-concurrency", 0, "most sandboxes at once (0: quotas only)")
+	f.StringArrayVar(&attests, "attestation", nil, "what the provider is certified for or has signed, NAME[=EVIDENCE] (repeatable), e.g. soc2-type2=https://trust.example.com")
 	f.StringVar(&secret, "secret", "", "use a credential stored with 'admin secret put'")
 	f.BoolVar(&keyStdin, "api-key-stdin", false, "read the provider's API key from stdin and store it as --secret (default <name>-key)")
 	f.StringVar(&credential, "credential", "", "reference instead of storing: env:NAME or file:/path on the server")

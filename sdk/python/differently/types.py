@@ -40,6 +40,8 @@ class Placement(TypedDict, total=False):
     allowedPools: List[str]
     regions: List[str]
     external: ExternalMode
+    requiredAttestations: List[str]
+    """Attestations a pool must hold to take this sandbox, for example ``soc2-type2``."""
 
 
 class _CandidateRequired(TypedDict):
@@ -67,6 +69,7 @@ class _DecisionRequired(TypedDict):
 
 class PlacementDecision(_DecisionRequired, total=False):
     pool: str
+    requiredAttestations: List[str]
 
 
 class _SandboxRequired(TypedDict):
@@ -268,6 +271,16 @@ class UsePoolResult(TypedDict, total=False):
     policy: "PlacementPolicy"
 
 
+class Attestation(TypedDict, total=False):
+    """An operator's record that whoever runs a pool holds a certification or
+    agreement. Differently filters placement on it and does not verify it."""
+
+    evidence: str
+    validUntil: str
+    recordedBy: str
+    recordedAt: str
+
+
 class _PoolRequired(TypedDict):
     name: str
     adapter: str
@@ -286,6 +299,7 @@ class Pool(_PoolRequired, total=False):
     config: Dict[str, str]
     credentialRef: str
     capabilities: List[str]
+    attestations: Dict[str, Attestation]
     health: Dict[str, str]
     capacity: Dict[str, object]
     preemption: Dict[str, object]
@@ -305,6 +319,7 @@ class PoolCapabilities(_PoolCapabilitiesRequired, total=False):
     """A pool as tenants see it: no config or credentials."""
 
     region: str
+    attestations: List[str]
 
 
 class PlacementPolicy(TypedDict, total=False):
@@ -319,6 +334,7 @@ class PlacementPolicy(TypedDict, total=False):
     strategy: PlacementStrategy
     maxCostPerHour: float
     maxQueueSeconds: int
+    requiredAttestations: List[str]
     updatedAt: str
     updatedBy: str
 
@@ -330,6 +346,7 @@ class _ClassificationRequired(TypedDict):
 
 class Classification(_ClassificationRequired, total=False):
     description: str
+    requiredAttestations: List[str]
 
 
 class _ProfileRequired(TypedDict):

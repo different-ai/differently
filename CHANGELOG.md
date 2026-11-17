@@ -6,6 +6,22 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added
+
+- Placement filters on provider attestations. A pool can declare what
+  whoever runs it is certified for or has signed (`attestations`, by name:
+  `soc2-type2`, `iso27001`, `hipaa-baa`, ...), each with an evidence
+  reference and an optional `validUntil`. A classification, a policy at any
+  scope or a single request lists `requiredAttestations`; the requirements
+  add up and a pool that lacks one, or holds an expired one, is ruled out
+  with the reason `missing attestations: ...`. Private pools are not exempt.
+  With no qualifying pool the create call answers `422 no_eligible_pool`
+  and names what was required. Available in the config file, the Helm
+  chart, `POST`/`PATCH /v1/admin/pools`, the CLI (`pool add --attestation`,
+  `sandbox create --require-attestation`), the SDK types, the placement
+  explanation, `GET /v1/capabilities` (names only) and the trust report.
+  Differently enforces these declarations and does not verify them.
+
 ### Tests
 
 - The server acceptance scenarios (`internal/server`) run on Postgres as well
