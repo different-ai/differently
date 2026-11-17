@@ -269,7 +269,8 @@ Limits of the model:
 The model is a separate program that imitates the rules. To watch the
 scheduler itself under load, `internal/loadsim` runs the whole control plane
 (API, placement, scheduler, in-memory store) in one process against fake
-backends with the same kind of users, and the website's
+backends, with clients that keep a long-lived computer as the model's users do
+or run short tasks, and the website's
 [simulator](https://different-ai.github.io/differently/simulator/) is that
 program in a browser. It shows scheduling decisions as they happen; it does
 not replace the table above, which averages five simulated days over five

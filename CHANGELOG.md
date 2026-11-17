@@ -26,18 +26,26 @@ All notable changes are recorded here. The format follows
 - The website has a load simulator at `/simulator/`. It runs the control
   plane itself in the visitor's browser: the HTTP API, admission, the
   placement policy, the scheduler and the in-memory store, compiled to
-  WebAssembly, with simulated people who each create a computer and come back
-  to it. The visitor sets the load, the private pool's slots, what a pause
-  does, the preemption mode and whether creates may overflow, can send
-  everyone in at once or take the private backend offline, and watches
-  placement, the resume queue, checkpoints, overflow and the scheduler's
-  audit log. Both pools are the fake adapter with delays and the clock is
-  sped up (it stands still while the program computes), so the page shows
-  scheduling decisions and says nothing about performance. The program is
-  `internal/loadsim` (tested natively), built for the browser by
-  `cmd/differently-loadsim`; the site build compiles it (3.8 MB compressed)
-  and the `site` workflow now also runs when `internal/**`, `pkg/**` or
-  `go.mod` change. `make vet` vets the browser build.
+  WebAssembly, with simulated clients. The page fills the window and is built
+  around the console's live routing diagram: your apps, Differently, and five
+  pools named after providers (OpenSandbox as the private cluster, Daytona,
+  Freestyle, E2B and Northflank) with their logos and list prices from the
+  comparison's data, a dot for every slot and a packet for every placement.
+  While it runs the visitor can turn a provider on or off, change its slots
+  or make its backend fail, change the strategy and the external gate, and
+  switch from placement by policy to a split by percentage, where each create
+  is pinned to a provider with `placement.allowedPools`. Provider and policy
+  changes go through the admin API. Clients run tasks (a sandbox per task,
+  deleted after) or keep one long-lived computer that pauses and resumes.
+  Every pool is the fake adapter with delays and the clock is sped up (it
+  stands still while the program computes), so the page shows routing and
+  scheduling decisions and says nothing about a provider or about
+  performance. The program is `internal/loadsim` (tested natively), built for
+  the browser by `cmd/differently-loadsim`; the site build compiles it
+  (3.8 MB compressed) and the `site` workflow also runs when `internal/**`,
+  `pkg/**` or `go.mod` change. `make vet` vets the browser build. The landing
+  page links to it from the hero and shows the diagram in a section of its
+  own.
 
 ### Fixed
 

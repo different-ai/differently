@@ -6,11 +6,12 @@
 //
 //	GOOS=js GOARCH=wasm go build -o differently.wasm ./cmd/differently-loadsim
 //
-// The worker sets differentlySimConfig (JSON, a loadsim.Config with a "load"
-// object) before the program starts and defines differentlySimEmit(kind,
-// json). The program answers with differentlySimSend(json), which takes
-// {"op": "load" | "spike" | "outage" | "snapshot", ...}. Commands only queue:
-// a JavaScript callback must never block on Go's timers.
+// The worker sets differentlySimConfig (JSON, a loadsim.Config with "load"
+// and "routing" objects) before the program starts and defines
+// differentlySimEmit(kind, json). The program answers with
+// differentlySimSend(json), which takes
+// {"op": "load" | "routing" | "spike" | "outage" | "snapshot", ...}. Commands
+// only queue: a JavaScript callback must never block on Go's timers.
 package main
 
 import (
@@ -22,10 +23,12 @@ import (
 )
 
 type command struct {
-	Op     string       `json:"op"`
-	Load   loadsim.Load `json:"load"`
-	Share  float64      `json:"share"`
-	Outage bool         `json:"outage"`
+	Op      string          `json:"op"`
+	Load    loadsim.Load    `json:"load"`
+	Routing loadsim.Routing `json:"routing"`
+	Share   float64         `json:"share"`
+	Pool    string          `json:"pool"`
+	Outage  bool            `json:"outage"`
 }
 
 func main() {
@@ -36,7 +39,8 @@ func main() {
 	}
 	var start struct {
 		loadsim.Config
-		Load loadsim.Load `json:"load"`
+		Load    loadsim.Load    `json:"load"`
+		Routing loadsim.Routing `json:"routing"`
 	}
 	if err := json.Unmarshal([]byte(global.Get("differentlySimConfig").String()), &start); err != nil {
 		emit("error", err.Error())
@@ -44,6 +48,10 @@ func main() {
 	}
 	world, err := loadsim.New(start.Config)
 	if err != nil {
+		emit("error", err.Error())
+		return
+	}
+	if err := world.SetRouting(start.Routing); err != nil {
 		emit("error", err.Error())
 		return
 	}
@@ -68,8 +76,12 @@ func main() {
 			world.SetLoad(c.Load)
 		case "spike":
 			world.Spike(c.Share)
+		case "routing":
+			if err := world.SetRouting(c.Routing); err != nil {
+				emit("error", err.Error())
+			}
 		case "outage":
-			world.SetOutage(c.Outage)
+			world.SetOutage(c.Pool, c.Outage)
 		case "snapshot":
 			emit("snapshot", world.Snapshot())
 		}

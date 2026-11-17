@@ -3,6 +3,13 @@ import '../styles/landing.css';
 import { Code } from 'astro:components';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+// The simulator's teaser: the same three pools the simulator starts with.
+const simProviders = [
+  { name: 'OpenSandbox', logo: 'opensandbox.png', sub: 'private · your cluster', external: false, slots: 8, used: 8 },
+  { name: 'Daytona', logo: 'daytona.png', sub: 'external · overflow', external: true, slots: 12, used: 3 },
+  { name: 'Freestyle', logo: 'freestyle.png', sub: 'external · overflow', external: true, slots: 12, used: 7 },
+];
 const repo = 'https://github.com/different-ai/differently';
 const releases = `${repo}/releases`;
 const version = 'v0.1.0-alpha.4';
@@ -296,6 +303,58 @@ const compare = [
             <figcaption>{videoTitle}</figcaption>
           </figure>
         )}
+      </section>
+
+      <section class="simtease wrap" id="simulator">
+        <div class="simtease-head">
+          <div class="section-head">
+            <p class="eyebrow">Simulator · runs in your browser</p>
+            <h2>Put load on it and watch it route.</h2>
+            <p>
+              The control plane itself, compiled to WebAssembly, placing simulated work across providers in your tab.
+              Turn providers on and off, split work between them by percentage, change the policy while it runs, and read why each sandbox went where it did.
+            </p>
+          </div>
+          <a class="btn primary" href={`${base}/simulator/`}>Open the simulator</a>
+        </div>
+        <a class="simtease-fig" href={`${base}/simulator/`} aria-label="Open the simulator">
+          <svg viewBox="0 0 960 372" role="img" aria-labelledby="simtitle">
+            <title id="simtitle">Your apps send work to Differently, which places each sandbox on OpenSandbox in your cluster, on Daytona or on Freestyle.</title>
+            <path class="wire" id="sw-app" d="M190 186 C245 186 245 186 300 186" />
+            <path class="wire" id="sw-0" d="M500 186 C570 186 570 62 640 62" />
+            <path class="wire ext" id="sw-1" d="M500 186 C570 186 570 186 640 186" />
+            <path class="wire ext" id="sw-2" d="M500 186 C570 186 570 310 640 310" />
+
+            <g class="node"><rect x="20" y="142" width="170" height="88" rx="14" /><text x="40" y="178">your apps</text><text x="40" y="202" class="sub">agents running tasks</text></g>
+            <g class="node ours"><rect x="300" y="142" width="200" height="88" rx="14" /><text x="320" y="178">differently</text><text x="320" y="202" class="sub">policy · quotas · audit</text></g>
+
+            {simProviders.map((p, i) => (
+              <g class={`node ${p.external ? 'ext' : ''}`} transform={`translate(640 ${16 + i * 124})`}>
+                <rect width="300" height="92" rx="14" />
+                <rect class="logo" x="14" y="14" width="30" height="30" rx="7" />
+                <image href={`${base}/providers/${p.logo}`} x="14" y="14" width="30" height="30" clip-path="inset(0 round 7px)" />
+                <text x="54" y="27">{p.name}</text>
+                <text x="54" y="45" class="sub">{p.sub}</text>
+                {Array.from({ length: p.slots }, (_, k) => <rect class={`dot ${k < p.used ? 'on' : ''}`} x={14 + k * 18} y="62" width="14" height="14" rx="4" />)}
+              </g>
+            ))}
+
+            <g class="packets">
+              {[0, 1, 2].map((i) => (
+                <>
+                  <rect class={`packet ${i ? 'ext' : ''}`} x="-6" y="-6" width="12" height="12" rx="4" opacity="0">
+                    <animateMotion dur="3.6s" begin={`${i * 1.2}s`} repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.3;1" calcMode="linear"><mpath href="#sw-app" /></animateMotion>
+                    <animate attributeName="opacity" dur="3.6s" begin={`${i * 1.2}s`} repeatCount="indefinite" values="1;1;0;0" keyTimes="0;0.3;0.31;1" />
+                  </rect>
+                  <rect class={`packet ${i ? 'ext' : ''}`} x="-6" y="-6" width="12" height="12" rx="4" opacity="0">
+                    <animateMotion dur="3.6s" begin={`${i * 1.2}s`} repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.3;0.7;1" calcMode="linear"><mpath href={`#sw-${i}`} /></animateMotion>
+                    <animate attributeName="opacity" dur="3.6s" begin={`${i * 1.2}s`} repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.3;0.31;0.7;0.71;1" />
+                  </rect>
+                </>
+              ))}
+            </g>
+          </svg>
+        </a>
       </section>
 
       <section class="how wrap" id="how">
