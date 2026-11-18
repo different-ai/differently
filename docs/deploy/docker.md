@@ -17,8 +17,8 @@ which has no isolation, and before a server for a team
 > with the published image this file names. First run 2026-11-18, x86_64,
 > Docker Engine 29.4.2 and Compose 5.1.3: the start took 17 s including the
 > pulls, and creating the first sandbox, running `echo hello` in it and
-> deleting it took 9 s. It has not been run on Docker Desktop, on rootless
-> Docker, on Podman or on arm64. CI stops after the first sandbox and a
+> deleting it took 9 s. It has not been run on Docker Desktop, on Colima,
+> on rootless Docker, on Podman or on arm64. CI stops after the first sandbox and a
 > recreation of the containers: the sections from
 > [Use it from your machine](#use-it-from-your-machine) on describe how
 > Compose and the server behave and have not been run on this stack.
@@ -34,9 +34,10 @@ Know what you are getting:
   controls this Docker host. Do not run this next to containers that must
   stay out of its reach.
 
-You need Docker Engine 25 or newer with Docker Compose 2.23.1 or newer
-(`docker compose version`), on Linux or in a Linux VM such as Colima, and
-about 1.1 GB of disk for the five images it pulls.
+You need a Linux host with Docker Engine 25 or newer and Docker Compose
+2.23.1 or newer (`docker compose version`), and about 1.1 GB of disk for the
+five images it pulls. On macOS or Windows, read
+[Docker in a VM](#docker-in-a-vm-colima-docker-desktop) first.
 
 ## 1. Download the file
 
@@ -161,6 +162,20 @@ docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'
 # then, in .env:  SANDBOX_PUBLISH_HOST=<that address>
 ```
 
+### Docker in a VM (Colima, Docker Desktop)
+
+This file has not been run there. OpenSandbox reaches a sandbox at
+`host.docker.internal`, which on a Linux host is the bridge gateway. A
+Docker that runs in a VM may point that name at your Mac or PC instead,
+where a port published on `172.17.0.1` does not exist; the first sandbox
+would then never become ready.
+
+`SANDBOX_PUBLISH_HOST=0.0.0.0` in `.env` publishes sandbox ports on every
+interface of the Docker host, which is OpenSandbox's default and how the
+[end-to-end suite](../../test/e2e/README.md) has run on Colima. Use it only
+where no network you distrust can reach those interfaces, such as a VM on
+your own laptop, never on a server.
+
 ## Settings
 
 Add these to `.env`, then run `docker compose up -d --force-recreate`:
@@ -203,6 +218,7 @@ pool options.
 | `docker compose` rejects the file: `start_interval`, or the `content` of a config | Docker Engine older than 25, or Docker Compose older than 2.23.1 |
 | The `server` container cannot publish port 8080 | Something else uses it: set `DIFFERENTLY_PORT` |
 | A sandbox fails to start with a Docker error about publishing a port | Another bridge address: set `SANDBOX_PUBLISH_HOST` as above |
+| The stack is healthy but a sandbox never becomes ready, on Colima or Docker Desktop | See [Docker in a VM](#docker-in-a-vm-colima-docker-desktop) |
 | The server cannot sign in to Postgres after `.env` was recreated | The database kept its first password. Restore the old `.env`, or start over with `docker compose down -v` |
 
 `docker compose logs server` and `docker compose logs opensandbox-server`

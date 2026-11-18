@@ -218,7 +218,7 @@ mode is refused by the Helm chart. Follow one guide from start to finish:
   Differently from published images, with one downloaded file and
   `docker compose up`. The quickest real stack, for one machine and code
   the person trusts: sandboxes are containers. CI starts it on every pull
-  request; it has not been run on Docker Desktop.
+  request on Linux; it has not been run on Docker Desktop or Colima.
 - [One Linux VM on any cloud](../deploy/single-vm.md): k3s, OpenSandbox and
   Differently on a single machine. Run end to end on Azure; the same steps
   on other clouds have not been run.

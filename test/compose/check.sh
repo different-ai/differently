@@ -52,12 +52,14 @@ echo "default image: $default_image"
 # images and runtime settings.
 step "the same images and runtime settings as the end-to-end stack"
 for src in test/e2e/compose.yaml test/e2e/config.yaml test/opensandbox/config.toml; do
-	grep -E '^[[:space:]]*(image|execd_image|lineEndings|network_mode|host_ip|drop_capabilities|no_new_privileges|pids_limit|resolve_internal|isolation)[[:space:]]*[:=]' "$repo/$src" |
-		grep -v 'differently-server:e2e' | sed 's/^[[:space:]]*//; s/[[:space:]]*#.*$//' |
-		while IFS= read -r line; do
-			grep -qF -- "$line" "$file" || fail "$src has '$line', deploy/compose/compose.yaml does not"
-			echo "same: $line"
-		done
+	[ -f "$repo/$src" ] || fail "$src is missing"
+	settings=$(grep -E '^[[:space:]]*(image|execd_image|lineEndings|network_mode|host_ip|drop_capabilities|no_new_privileges|pids_limit|resolve_internal|isolation)[[:space:]]*[:=]' "$repo/$src" |
+		grep -v 'differently-server:e2e' | sed 's/^[[:space:]]*//; s/[[:space:]]*#.*$//')
+	[ -n "$settings" ] || fail "$src has no image or runtime setting to compare"
+	printf '%s\n' "$settings" | while IFS= read -r line; do
+		grep -qF -- "$line" "$file" || fail "$src has '$line', deploy/compose/compose.yaml does not"
+		echo "same: $line"
+	done
 done
 
 [ "${1:-}" != "--static" ] || exit 0
@@ -70,10 +72,18 @@ port=${DIFFERENTLY_PORT:-8080}
 publish=${SANDBOX_PUBLISH_HOST:-172.17.0.1}
 # Only the generated .env may supply these.
 unset DIFFERENTLY_BOOTSTRAP_TOKEN DIFFERENTLY_SECRETS_KEY POSTGRES_PASSWORD OPENSANDBOX_API_KEY
+# The file names its project `differently`, which is also the project of a
+# stack someone installed from the guide on this Docker host. This run ends
+# with `down -v`, so it must be a project of its own or it would recreate
+# that stack's containers and delete its database.
+COMPOSE_PROJECT_NAME=differently-check-$$
+export COMPOSE_PROJECT_NAME
+unset COMPOSE_FILE
 
 work=$(mktemp -d)
 started=
 id=
+before=
 cleanup() {
 	status=$?
 	trap - EXIT INT TERM
@@ -83,22 +93,39 @@ cleanup() {
 			docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Ports}}' || true
 			docker compose logs --no-color --tail 200 || true
 			# A sandbox is a container beside the stack: do not leave it behind.
-			[ -z "$id" ] || cli sandbox delete "$id" >/dev/null 2>&1 || true
+			# Delete is asynchronous, so wait for the container before the stack goes.
+			if [ -n "$id" ] && cli sandbox delete "$id" >/dev/null 2>&1; then
+				tries=0
+				while [ -n "$(sandbox_bindings)" ] && [ "$tries" -lt 15 ]; do
+					tries=$((tries + 1))
+					sleep 2
+				done
+			fi
 		fi
 		docker compose down -v --remove-orphans >/dev/null 2>&1 || true
 	fi
 	rm -rf "$work"
 	exit "$status"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# A signal must end the run as a failure, whatever command it interrupted.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 cd "$work"
 cp "$file" compose.yaml # the one file a user downloads
 cli() { docker compose exec -T server differently "$@"; }
 # first_id PREFIX reads the first "id" with that prefix from indented JSON.
 first_id() { sed -n "s/.*\"id\": *\"\\($1_[^\"]*\\)\".*/\\1/p" | head -n 1; }
-# Every published port of the containers that publish a sandbox control port (44772).
-sandbox_bindings() { docker ps --format '{{.Ports}}' | grep -e '->44772/tcp' | tr ',' '\n' | sed 's/^ *//' | grep -e '->' || true; }
+# Every published port of the containers that publish a sandbox control port
+# (44772) and were not running before this run created its sandbox ($before),
+# so another stack's sandboxes on the same host are left out.
+sandbox_bindings() {
+	docker ps --format '{{.ID}} {{.Ports}}' | while read -r cid ports; do
+		case " $before " in *" $cid "*) continue ;; esac
+		printf '%s\n' "$ports"
+	done | grep -e '->44772/tcp' | tr ',' '\n' | sed 's/^ *//' | grep -e '->' || true
+}
 
 step "without .env it refuses to start and says what to do"
 if out=$(docker compose config -q 2>&1); then
@@ -154,13 +181,20 @@ except urllib.error.HTTPError as e:
 echo "401"
 
 step "create an organization with a default project"
-project=$(cli admin org create first-team | first_id prj)
-[ -n "$project" ] || fail "no project ID in the answer"
+created=$(cli admin org create first-team)
+project=$(printf '%s\n' "$created" | first_id prj)
+[ -n "$project" ] || fail "no project ID in the answer: $created"
 echo "$project"
 
 step "create a sandbox, run a command in it, delete it"
-id=$(cli --project "$project" sandbox create --wait -o json | first_id sbx)
-[ -n "$id" ] || fail "no sandbox ID in the answer"
+before=$(docker ps -q | tr '\n' ' ')
+# On a failure the CLI still prints the sandbox, so keep its ID for the cleanup.
+created=$(cli --project "$project" sandbox create --wait -o json) || {
+	id=$(printf '%s\n' "$created" | first_id sbx)
+	fail "the sandbox did not start: $created"
+}
+id=$(printf '%s\n' "$created" | first_id sbx)
+[ -n "$id" ] || fail "no sandbox ID in the answer: $created"
 echo "$id is running"
 out=$(cli sandbox exec "$id" -- echo hello)
 [ "$out" = hello ] || fail "echo hello printed: $out"

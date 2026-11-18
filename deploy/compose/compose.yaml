@@ -4,7 +4,7 @@
 #
 # Guide: https://different-ai.github.io/differently/docs/deploy/docker/
 # Needs: Docker Engine 25 or newer and Docker Compose 2.23.1 or newer (the
-#        first with inline `configs`), on Linux or in a Linux VM.
+#        first with inline `configs`), on a Linux host.
 #
 # 1. Create the four secrets, once, in a file named `.env` beside this one.
 #    Nothing in this file is a default credential, and the stack refuses to
@@ -19,7 +19,7 @@
 #      EOF
 #      chmod 600 .env
 #
-# 2. Start it, then run a command in a first sandbox:
+# 2. Start it and check it. The guide goes on to a first sandbox:
 #
 #      docker compose up -d --wait
 #      docker compose exec server differently doctor

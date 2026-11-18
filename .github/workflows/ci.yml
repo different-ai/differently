@@ -158,8 +158,9 @@ jobs:
   # sandbox created, used and deleted with the CLI in the server image
   # (test/compose/check.sh). Once with the server image built from this
   # commit, and once with the published image the file names, which is what a
-  # user gets. The second is skipped with a notice while that image does not
+  # user gets. The second is skipped with a notice while that tag does not
   # exist: a release pull request names its version before the tag is pushed.
+  # Any other registry error fails it.
   compose:
     name: docker host stack (${{ matrix.image }} image)
     runs-on: ubuntu-latest
@@ -182,10 +183,14 @@ jobs:
         id: published
         run: |
           image=$(test/compose/check.sh --default-image)
-          if docker manifest inspect "$image" >/dev/null; then
+          if out=$(docker manifest inspect "$image" 2>&1); then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
+          elif printf '%s' "$out" | grep -qiE 'manifest unknown|no such manifest'; then
             echo "::notice::$image is not published, so the stack was not started with it"
+          else
+            # A registry error is not a missing tag: do not skip on it.
+            printf '%s\n' "$out"
+            exit 1
           fi
       - name: start it as downloaded, with the published image, and run a sandbox
         if: matrix.image == 'published' && steps.published.outputs.exists == 'true'
