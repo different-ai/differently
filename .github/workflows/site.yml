@@ -11,6 +11,7 @@ on:
       - console/README.md
       - cmd/differently/**
       - install.sh
+      - deploy/compose/**
       # The simulator page runs the control plane itself, built from these.
       - cmd/differently-loadsim/**
       - internal/**
@@ -26,6 +27,7 @@ on:
       - console/README.md
       - cmd/differently/**
       - install.sh
+      - deploy/compose/**
       # The simulator page runs the control plane itself, built from these.
       - cmd/differently-loadsim/**
       - internal/**

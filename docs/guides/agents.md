@@ -208,14 +208,19 @@ serves at `/openapi.yaml`. Every CLI command is in the
 
 ### Task C: deploy it for a team
 
-Ask first: where it should run (one Linux VM, or an existing Kubernetes
-cluster), whether an OpenSandbox server already exists there, and which
-hostname people will use to reach it.
+Ask first: where it should run (one Docker host, one Linux VM, or an
+existing Kubernetes cluster), whether an OpenSandbox server already exists
+there, and which hostname people will use to reach it.
 
 Do not improvise this from the dev-mode steps. A real installation needs a
 sandbox runtime (an OpenSandbox server by default) and Postgres, and dev
 mode is refused by the Helm chart. Follow one guide from start to finish:
 
+- [One Docker host](../deploy/docker.md): Postgres, OpenSandbox and
+  Differently from published images, with one downloaded file and
+  `docker compose up`. The quickest real stack, for one machine and code
+  the person trusts: sandboxes are containers. CI starts it on every pull
+  request on Linux; it has not been run on Docker Desktop or Colima.
 - [One Linux VM on any cloud](../deploy/single-vm.md): k3s, OpenSandbox and
   Differently on a single machine. Run end to end on Azure; the same steps
   on other clouds have not been run.

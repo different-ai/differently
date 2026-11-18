@@ -29,6 +29,7 @@ at [Use Differently with a coding agent](guides/agents.md).
 | Guide | For |
 |---|---|
 | [Deployment overview and support matrix](deploy/README.md) | Where to run it, and what is tested, documented or unverified |
+| [One Docker host](deploy/docker.md) | The real stack from published images: one downloaded Compose file, then a first sandbox in a container |
 | [One Linux VM on any cloud](deploy/single-vm.md) | The quickest team setup: k3s, OpenSandbox and Differently on Azure, AWS, Google Cloud or bare metal |
 | [Azure VMs serving OpenWork](deploy/azure-vms.md) | A verified two-VM install with Fast Sandbox microVMs, managed Postgres, a registry and Key Vault, and Freestyle and Daytona as external pools |
 | [Prerequisites](deploy/prerequisites.md) | Cluster, Postgres and an OpenSandbox server (or another backend) |

@@ -156,7 +156,7 @@ you install with its own chart or manifests.
 
 | You have | Follow | What you get |
 |---|---|---|
-| A Docker host | [`test/e2e`](../../test/e2e/README.md): `make e2e-prepare e2e-up` from a checkout | Postgres, Differently and OpenSandbox as one stack; sandboxes are containers |
+| A Docker host | [One Docker host](../deploy/docker.md): download one file, `docker compose up -d --wait` | Postgres, Differently and OpenSandbox from published images; sandboxes are containers |
 | One Linux VM | [One Linux VM on any cloud](../deploy/single-vm.md) | k3s, OpenSandbox and Differently from release artifacts |
 | A Kubernetes cluster | [Kubernetes](../deploy/kubernetes.md) | The Helm chart next to an OpenSandbox server |
 

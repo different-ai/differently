@@ -119,8 +119,8 @@ team, the tested path is one Linux VM, where the
 you; it ran on Azure, last on 2026-10-29. The Helm chart also
 installs on a [cluster you already have](deploy/kubernetes.md): that has run
 on k3s, not yet on a managed cluster (EKS, GKE, AKS). A Docker host can run
-the whole stack without Kubernetes, from a checkout
-([test/e2e](../test/e2e/README.md)).
+the whole stack without Kubernetes, from one downloaded file and published
+images ([One Docker host](deploy/docker.md)).
 
 ### Does it slow things down?
 

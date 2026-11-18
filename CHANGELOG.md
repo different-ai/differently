@@ -177,6 +177,35 @@ All notable changes are recorded here. The format follows
   - The README, the quickstart and the landing page open with the same three
     commands; the landing page no longer opens with `helm install`.
 
+- The real stack on any Docker host takes one downloaded file and no clone,
+  Go or build: [`deploy/compose/compose.yaml`](deploy/compose/compose.yaml),
+  served at `https://different-ai.github.io/differently/compose.yaml`, and
+  the guide [One Docker host](docs/deploy/docker.md).
+  - It runs Postgres 17 with a named volume, OpenSandbox 1.2.0 with the
+    Docker runtime and the published `differently-server` image, whose
+    version is one variable (`DIFFERENTLY_VERSION`). Both config files are
+    inside it, which needs Docker Compose 2.23.1 or newer.
+  - **No credentials ship in the file.** The operator token, the secrets
+    key, the database password and the OpenSandbox key come from a `.env`
+    file that six documented lines create from the image itself
+    (`differently-server token` and `secrets-key`). Without it
+    `docker compose` refuses to start and says so.
+  - **Less is published by default.** The API is
+    published on `127.0.0.1`; Postgres, the OpenSandbox API and `/metrics`
+    are not published; sandbox control ports, which have no authentication
+    of their own, are published on Docker's bridge gateway only
+    (`publish_host`), not on every interface as OpenSandbox does by
+    default. Whether another machine can route to the gateway address
+    depends on the host's forwarding and firewall, which is untested.
+  - The server image's own CLI runs the first sandbox
+    (`docker compose exec server differently ...`), so nothing is installed.
+  - CI starts the file as the guide says on every pull request and creates,
+    uses and deletes one sandbox (`test/compose/check.sh`, the
+    `docker host stack` jobs): with the server image built from the pull
+    request, and with the published image the file names. Not run on Docker
+    Desktop, Colima, rootless Docker, Podman or arm64. `test/e2e` is unchanged and
+    still builds from the checkout.
+
 - The load simulator at `/simulator/` shows how routing is set up and lets
   the visitor configure more of it.
   - **Priority.** A Policy tab walks through who picks the provider, the rule

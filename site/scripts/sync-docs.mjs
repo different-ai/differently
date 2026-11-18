@@ -11,6 +11,7 @@
 //   llms.txt                 an index of those pages (llmstxt.org)
 //   agents.txt               docs/guides/agents.md as plain text
 //   install.sh               ../install.sh
+//   compose.yaml             ../deploy/compose/compose.yaml
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -139,11 +140,12 @@ write('reference/api', apiPage(YAML.parse(fs.readFileSync(path.join(repo, 'api/o
 // 5. CLI reference from the CLI's own help output
 write('reference/cli', cliPage());
 
-// 6. The same pages for programs: Markdown twins, llms.txt, agents.txt, install.sh
+// 6. The same pages for programs: Markdown twins, llms.txt, agents.txt, install.sh, compose.yaml
 const twins = markdownTwins();
 fs.writeFileSync(path.join(pub, 'llms.txt'), llmsTxt(twins));
 fs.writeFileSync(path.join(pub, 'agents.txt'), twins.get('guides/agents/').text);
 fs.copyFileSync(path.join(repo, 'install.sh'), path.join(pub, 'install.sh'));
+fs.copyFileSync(path.join(repo, 'deploy/compose/compose.yaml'), path.join(pub, 'compose.yaml'));
 
 console.log(`synced docs into ${path.relative(site, out)}`);
 
@@ -193,7 +195,7 @@ function checkSiteLinks(pages) {
   const exists = (p) =>
     p.startsWith('docs/') && /(^|\/)(index\.md)?$/.test(p)
       ? pages.has(p.slice(5).replace(/index\.md$/, ''))
-      : custom.includes(p) || ['llms.txt', 'agents.txt', 'install.sh'].includes(p) || fs.existsSync(path.join(pub, p));
+      : custom.includes(p) || ['llms.txt', 'agents.txt', 'install.sh', 'compose.yaml'].includes(p) || fs.existsSync(path.join(pub, p));
   const broken = [];
   for (const [route, page] of pages)
     for (const [url] of page.text.matchAll(new RegExp(`${SITE_RE}/[^\\s)>"'\`|]*`, 'g'))) {
@@ -243,6 +245,8 @@ ${link('guides/keys-and-providers/', 'storing provider keys, switching providers
 ## Deploy and operate
 
 ${link('deploy/', 'where it can run and what is tested, documented or unverified', 'Deployment overview')}
+${link('deploy/docker/', 'Postgres, OpenSandbox and Differently on one Docker host from published images: one file, docker compose up')}
+- [Compose file](${ORIGIN}${BASE}/compose.yaml): the file that guide downloads, with both config files inside it
 ${link('deploy/single-vm/', 'k3s, OpenSandbox and Differently on one machine')}
 ${link('deploy/kubernetes/', 'the Helm chart on an existing cluster')}
 ${link('deploy/prerequisites/', 'cluster, Postgres and a sandbox runtime')}

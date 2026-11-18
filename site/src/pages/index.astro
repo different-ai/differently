@@ -96,12 +96,12 @@ const ways = [
   },
   {
     title: 'Any Docker host',
-    what: 'Postgres, Differently and OpenSandbox as one Docker stack. Sandboxes are containers sharing the host kernel.',
-    cmd: 'make e2e-prepare e2e-up',
-    status: 'Verified',
+    what: 'Postgres, Differently and OpenSandbox from published images, in one Compose file you download. Sandboxes are containers sharing the host kernel.',
+    cmd: 'docker compose up -d --wait',
+    status: 'Verified in CI',
     kind: 'verified',
-    href: `${repo}/tree/pre-release/test/e2e`,
-    cta: 'Docker stack on GitHub',
+    href: `${base}/docs/deploy/docker/`,
+    cta: 'Docker host guide',
   },
   {
     title: 'One Linux VM',
