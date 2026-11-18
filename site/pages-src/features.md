@@ -6,7 +6,7 @@ description: What OpenSandbox provides, what Differently adds on top, and how th
 Differently is an orchestration and resource-management layer. It does not run sandboxes itself: it decides where each one runs and keeps account of it. Its default private runtime is [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox), run by the operator; other pools can be Daytona or Freestyle, one of the [experimental provider adapters](/differently/docs/providers/) compiled in with a build tag (E2B, the cloud providers' sandbox services and more), or any service that speaks the [adapter protocol](/differently/docs/adapters/specification/).
 
 :::caution[Pre-release]
-The end-to-end suite passes 14/14 against real OpenSandbox servers on the Docker runtime and on the Kubernetes runtime (single-node k3s), and on a Fast Sandbox microVM pool on a two-node k3s cluster (14 of 14 run). Daytona and Freestyle ran against live accounts. Node drains, more than one KVM node, managed clusters and live accounts for the other managed providers are not verified yet. See the [roadmap](/differently/docs/roadmap/).
+CI runs the end-to-end suite against a real OpenSandbox server on the Docker runtime on every pull request. On 2026-10-29 it also passed on the Kubernetes runtime (single-node k3s; 14 of 14, every test it then had), and 14 of its then 18 tests ran on a Fast Sandbox microVM pool on a two-node k3s cluster and passed; those two runs have not been repeated. Daytona and Freestyle ran against live accounts the same day. Node drains, more than one KVM node, managed clusters and live accounts for the other managed providers are not verified yet. See the [roadmap](/differently/docs/roadmap/).
 :::
 
 ## What OpenSandbox provides

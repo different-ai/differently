@@ -60,6 +60,51 @@ All notable changes are recorded here. The format follows
   - Dev mode prints its address, the token's path and the next command to
     type, and the CLI says how to start a server when nothing answers on
     this machine.
+- On a real installation a first sandbox takes three commands after reading
+  the bootstrap operator token, and no ID is copied from one into the next:
+  `differently login`, `differently admin org create NAME`,
+  `differently run -- echo hello`. Only the CLI changed: organization and
+  operator keys must still name a project on every create, and the server
+  creates no tenant by itself.
+  - **`differently admin org create NAME`** prints the IDs of the
+    organization and its first project in a short table instead of raw JSON
+    (`-o json` prints the response as before). When the CLI has no default
+    project (none saved, no `--project`, no `DIFFERENTLY_PROJECT`, no local
+    dev server), it saves the new one as the default and says so. It never
+    replaces a saved project, and it does not write into a config saved for
+    another server or into one it cannot parse.
+  - **A saved project belongs to one server.** The CLI uses it only with the
+    server it was saved for (the URL `login` saved, or the one
+    `admin org create` ran against), so it is never sent to another
+    installation and never hides a local dev server's `prj_default`. Saving
+    a project does not change which server the CLI talks to, and a key from
+    the environment is never written.
+  - **`differently login`** with a key that is not limited to one project
+    saves the only project the key can see. With none it says which command
+    makes one; with several it lists them and saves none
+    (`differently login --project ID` saves a chosen one). A project saved
+    before is kept only while the key can still see it, and the dev
+    server's `prj_default` is no longer saved when logging in to another
+    server on the same machine.
+  - **`differently key create NAME`** without `--org` and `--key-project`
+    limits a key that holds only `sandboxes:` scopes (the default) to the
+    default project and looks up its organization, so
+    `differently key create dev` works after the commands above. A key with
+    any other scope (`projects:write`, `keys:write`, `org:admin`, `admin`,
+    ...) is not narrowed, since the server refuses a project-limited key to
+    create or delete projects; `--key-project` limits it. `--key-project`
+    alone looks up the organization too, and `--org` alone still makes a
+    key for the whole organization. The output says where the new key
+    works, and when that is the default project.
+  - A create refused because no project was named now says how to get a
+    default project.
+  - The Helm chart's notes, the [Kubernetes](docs/deploy/kubernetes.md) and
+    [single-VM](docs/deploy/single-vm.md) guides and
+    [organization onboarding](docs/guides/organization-onboarding.md) show
+    this sequence instead of `curl` with `jq` or ID placeholders.
+
+  Run by hand against a server started from a config file without `--dev`
+  (memory store, one `remote` pool); not run on a cluster.
 - Entry points for people and for agents.
   - [Differently explained](docs/explainer.md): what it is in plain words,
     and what a newcomer can ignore until later.
@@ -138,9 +183,43 @@ All notable changes are recorded here. The format follows
 
 - `differently capabilities` prints a table by default. Scripts that read
   its JSON need `-o json`.
+- `differently admin org create` prints a table by default. Scripts that
+  read its JSON need `-o json`.
+- `differently key create` without `--org` and `--key-project` limits a
+  key that holds only `sandboxes:` scopes to the CLI's default project when
+  there is one. An organization key with a default project used to get an
+  organization-wide key; pass `--org` for that. A key with any other scope
+  is made as before.
+- A project saved by `differently login` is used only with the URL that
+  login saved. With `--url` or `DIFFERENTLY_URL` pointing somewhere else it
+  is no longer sent.
 - `docs/storage-and-lifecycle.md` said the `templates` list was
   informational. It routes: a template with `images` is placed only on the
   pools it maps.
+
+### Fixed (documentation)
+
+- The guides no longer contradict each other about what has been verified.
+  Several pages still said that only OpenSandbox's Docker runtime had run
+  with Differently, or that the Helm chart had never been installed on a
+  cluster, while others recorded the Kubernetes and Fast Sandbox runs of
+  2026-10-28 and 29. They now say the same thing: all three runtimes have
+  run; the Kubernetes and Fast Sandbox runs and the installs on a cluster
+  have not been repeated since 2026-10-29, and no published release after
+  0.1.0-alpha.1 is recorded as installed on a cluster; and isolation inside
+  a microVM has not been probed.
+- End-to-end counts say what they count. "14/14" was every test the suite
+  had on 2026-10-29. The suite has grown since, and CI runs it on the Docker
+  runtime on every pull request; `test/e2e/README.md` keeps the current
+  count.
+- Corrected values: the default OpenSandbox URL points at namespace
+  `opensandbox-system`, not `opensandbox`; the chart's NetworkPolicy allows
+  OpenSandbox on port 80, so a standalone server on 8090 needs
+  `networkPolicy.server.egress.opensandbox.port` set; the adapter was checked
+  with `execd` `release-1.2.0` and `v1.1.0`; and a checkout's chart is
+  version 0.3.0 while a release packages it as `differently-<version>.tgz`.
+  The comment in `values.yaml` lists the config keys the chart really writes
+  and refuses.
 
 ## [0.1.0-alpha.5] — 2026-11-17
 

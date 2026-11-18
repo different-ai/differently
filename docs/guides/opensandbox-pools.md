@@ -13,11 +13,14 @@ Background: the [OpenSandbox spike](../research/opensandbox-spike.md).
 > the Docker runtime (arm64, Colima) and the Kubernetes runtime (single-node
 > k3s on Azure, x86_64, installed from OpenSandbox's and Differently's Helm
 > charts). Both runs are recorded and replayed in every `go test`
-> ([test/opensandbox](../../test/opensandbox/README.md)). Fast Sandbox is not
-> verified yet
-> ([POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter));
-> for the Kubernetes runtime's open items see
-> [POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime).
+> ([test/opensandbox](../../test/opensandbox/README.md)). Fast Sandbox ran
+> live on Azure under nested KVM on 2026-10-29
+> ([below](#fast-sandbox-runtime-microvms-pause-with-memory-native-idle)).
+> The Kubernetes and Fast Sandbox runs have not been repeated since. Open
+> items: [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter)
+> for Fast Sandbox,
+> [POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime) for
+> the Kubernetes runtime.
 
 ## Install OpenSandbox
 
@@ -125,7 +128,7 @@ other's live sandboxes alone, but it adds no isolation.
 | Image that cannot be pulled | the sandbox fails or is retried with a reason naming the image, and the pool stays healthy for other tenants. The Docker runtime reports the failed pull at once (the sandbox fails after one attempt); the Kubernetes runtime only reports that the pod did not become ready within 60 s (`POD_READY_TIMEOUT`), which is also what a slow first pull looks like, so it is retried up to `scheduler.maxAttempts` |
 | Pause / resume (memory kept) | the Docker runtime only. The Kubernetes runtime keeps no memory, so with `runtime: kubernetes` the pool offers stop/start instead and refuses pause |
 | Stop / start (disk kept) | with `runtime: kubernetes` and the controller's snapshot registry: OpenSandbox's pause commits the root filesystem as an image and frees the pod, and resume recreates it. About 3.7 s and 2.7 s on single-node k3s. The Docker runtime has no stop |
-| Snapshots and fork | disk snapshots on both runtimes; the Kubernetes runtime needs the snapshot registry (otherwise `unsupported_operation`, from OpenSandbox's `RegistryNotConfigured`). Memory snapshots: not on Docker or Kubernetes; add `snapshots.memory` only for a runtime that captures memory (Fast Sandbox, unverified) |
+| Snapshots and fork | disk snapshots on both runtimes; the Kubernetes runtime needs the snapshot registry (otherwise `unsupported_operation`, from OpenSandbox's `RegistryNotConfigured`). Memory snapshots: not on Docker or Kubernetes; add `snapshots.memory` only for a runtime that captures memory (Fast Sandbox documents it; restoring a sandbox from one is not verified, so the pool does not advertise it) |
 | Port URLs | with `ports: signed`: OpenSandbox's ingress gateway in route mode `uri` with Secure Access signing keys. Sandboxes are created with secure access, and `ports.expose` returns `https://<gateway>/{sandbox}/{port}/{expires}/{signature}`, valid for `portURLSeconds` (default 3600), with no header or key. Without it there are no port URLs: direct endpoints are runtime-internal. Endpoints that need a header are always refused |
 | Idle auto-stop | with `runtime: fastsandbox`, OpenSandbox's native idle policy pauses the microVM and its gateway wakes it (see below). Otherwise, in Differently: `idleTimeoutSeconds` on a sandbox (or `defaults.idleTimeoutSeconds`) stops it on the Kubernetes runtime (disk kept) or pauses it on Docker (memory kept) once no exec, file, port or `keepalive` call has come in that long; the next such call wakes it. Requests straight to a port URL do not count, so viewers call `POST /v1/sandboxes/{id}/keepalive` |
 | Provider-side TTL backstop | yes: OpenSandbox's `timeout` is set from the sandbox's TTL at creation (minimum 60 s), and a TTL change moves it (`renew-expiration`) to five minutes after Differently's own expiry |
@@ -142,8 +145,9 @@ them only if the runtime really provides them.
 
 ## Kubernetes runtime: snapshot registry, signed ports and egress
 
-Verified on single-node k3s with OpenSandbox 1.2.0 from its own charts: the
-end-to-end suite passes 13/13, and the run is recorded as
+Verified on single-node k3s with OpenSandbox 1.2.0 from its own charts on
+2026-10-29: the end-to-end suite passed 14/14 (all the tests it had then;
+[results](../../test/e2e/README.md#verified-on)), and the run is recorded as
 `internal/adapters/opensandbox/testdata/recordings/kubernetes-registry-1.2.0.json`.
 
 1. **A snapshot registry** for stop/start, snapshots and fork: any OCI

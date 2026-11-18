@@ -2,7 +2,8 @@
 
 Status: k3s, RKE2 and a plain Linux host running OpenSandbox are
 **documented**; Talos is **unverified**. Nothing here has been run on real
-hardware yet.
+hardware yet. k3s itself has run with Differently on cloud VMs
+([single-vm.md](single-vm.md), [azure-vms.md](azure-vms.md)).
 
 Differently's control plane needs no privilege or KVM, so any of these
 distributions can run it. Sandboxes run on an OpenSandbox server, installed in the
@@ -11,7 +12,8 @@ Fast Sandbox runtime: `/dev/kvm` comes straight from the CPU, with no nested
 virtualization. Enable VT-x/AMD-V (and VT-d if you like) in firmware, and
 confirm the host checks in
 [prerequisites.md](prerequisites.md#kvm-hosts-fast-sandbox-only). Fast
-Sandbox has not been run with Differently yet.
+Sandbox has run with Differently only under nested KVM on Azure VMs
+([azure-vms.md](azure-vms.md)), not on bare metal.
 
 ## Kubernetes distributions
 
@@ -79,10 +81,10 @@ Set a strong server `api_key`, and pin the server and `execd` image versions.
 
 [`test/opensandbox/`](../../test/opensandbox/README.md) is a working example
 of the Docker-runtime shape: `compose.yaml` runs `opensandbox/server:release-1.2.0`
-with the host's Docker socket, and `config.toml` sets `execd` `v1.1.0`, drops
-container capabilities, sets `no_new_privileges` and a PID limit. That is the
-configuration the adapter was checked against. Its API key is a test value;
-never reuse it.
+with the host's Docker socket, and `config.toml` sets `execd`
+`release-1.2.0`, drops container capabilities, sets `no_new_privileges` and
+a PID limit. That is the configuration CI's end-to-end suite runs against.
+Its API key is a test value; never reuse it.
 
 ### 2. Open the network paths
 
@@ -90,7 +92,7 @@ never reuse it.
 |---|---|
 | Control plane to host | TCP to the OpenSandbox server's port (8090 in the example). With the default `useServerProxy`, exec and file traffic also goes through this port |
 | Firewall on the host | Accept the server port **only** from the control plane's egress addresses (node IPs or NAT gateway). Clients never need to reach it |
-| Chart NetworkPolicy | Allow server egress to the host's address on that port: `networkPolicy.server.egress.opensandbox.cidrs` (and `port` if it is not 8090) |
+| Chart NetworkPolicy | Allow server egress to the host's address on that port: `networkPolicy.server.egress.opensandbox.cidrs`, and `port`: the chart's default is 80 (OpenSandbox's own chart), so set it to the host's port, 8090 in the example |
 
 - **Encryption.** Every request carries the OpenSandbox API key. Across any
   network you do not fully control, serve OpenSandbox over `https` or put the

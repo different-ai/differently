@@ -17,6 +17,11 @@ type = "docker"
 execd_image = "opensandbox/execd:release-1.2.0"
 
 [egress]
+# The tag OpenSandbox's own example config names at release-1.2.0. This stack
+# never starts it: the Docker-runtime tests send no network policy, so the tag
+# is unexercised by Differently. The Kubernetes-runtime runs that checked
+# egress used egress:release-1.2.0, the tag in OpenSandbox's server chart
+# (docs/deploy/single-vm.md).
 image = "opensandbox/egress:v1.1.7"
 readiness_timeout_seconds = 30.0
 

@@ -60,9 +60,9 @@ with its own tooling and registered as a pool with `trust: private`.
 |---|---|---|
 | `opensandbox` adapter | ✅ live (Docker, Kubernetes, Fast Sandbox) | `internal/adapters/opensandbox`; fake-server tests plus `TestLiveOpenSandbox` against OpenSandbox `release-1.2.0` on each runtime, recorded and replayed in every `go test` ([spike](research/opensandbox-spike.md)) |
 | OpenSandbox as the default private runtime | ✅ decided | The Helm chart's `opensandbox:` values render a pool named `opensandbox` |
-| OpenSandbox Kubernetes runtime | ✅ live (single node) | Single-node k3s on Azure: e2e 14/14 with a snapshot registry (stop/start, snapshots, fork), signed port URLs and egress policy, and recorded adapter runs; multi-node and drain not run ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
-| OpenSandbox Fast Sandbox (Firecracker microVMs) | ✅ live (one KVM node) | First on a single node under nested KVM, then on a two-node k3s cluster on Azure with a dedicated KVM node: the recorded adapter scenario, the end-to-end suite on the microVM pool, and Workbot's desktop (streamed, paused and resumed with memory, forked, idled and woken); a pause takes minutes ([azure-vms.md](deploy/azure-vms.md), [E18](backlog.md#e18-fast-sandbox-spike)) |
-| End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (14/14, arm64 Colima) and the Kubernetes runtime (14/14, k3s on Azure, Helm install), and on a Fast Sandbox microVM pool (14 of 14 run), 2026-10-29 ([results](../test/e2e/README.md)) |
+| OpenSandbox Kubernetes runtime | ✅ live (single node) | Single-node k3s on Azure, 2026-10-29: e2e 14/14 (every test it then had) with a snapshot registry (stop/start, snapshots, fork), signed port URLs and egress policy, and recorded adapter runs; not repeated since; node drain not run ([POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
+| OpenSandbox Fast Sandbox (Firecracker microVMs) | ✅ live (one KVM node) | First on a single node under nested KVM, then on a two-node k3s cluster on Azure with a dedicated KVM node: the recorded adapter scenario, 14 of the end-to-end suite's then 18 tests on the microVM pool, and Workbot's desktop (streamed, paused and resumed with memory, forked, idled and woken); a pause takes minutes ([azure-vms.md](deploy/azure-vms.md), [E18](backlog.md#e18-fast-sandbox-spike)) |
+| End-to-end suite against a real OpenSandbox server | ✅ | `test/e2e` runs Postgres, `differently-server` and OpenSandbox 1.2.0 on the Docker runtime (14/14, arm64 Colima) and the Kubernetes runtime (14/14, k3s on Azure, Helm install), every test it then had, and on a Fast Sandbox microVM pool (14 of its then 18 tests ran, and passed), all on 2026-10-29. CI has run it on the Docker runtime on every pull request since 2026-11-10; the other two runs have not been repeated ([results](../test/e2e/README.md)) |
 | Sandbox egress control | 🟡 | Per pool: `egress: none` or `allowlist`, enforced by OpenSandbox's egress sidecar (checked live on the Kubernetes runtime); placement and per-request allow-lists not yet ([E19](backlog.md#e19-opensandbox-network-policy-and-egress)) |
 | Node agent: lifecycle, capacity, heartbeat, `doctor` | ⛔ | Removed (`internal/agent`, `cmd/differently-agent`) |
 | Firecracker API client | ⛔ | Removed (`internal/firecracker`) |
@@ -113,9 +113,12 @@ security gaps, and add the features users hit first.
 
 > **[E18 Fast Sandbox spike](backlog.md#e18-fast-sandbox-spike) ran on
 > 2026-10-29** on one node under nested KVM, through the adapter and with
-> Workbot's desktop; on 2026-10-29 the end-to-end suite passed on a
-> two-node cluster ([azure-vms.md](deploy/azure-vms.md)). Next: node drains
-> and more than one KVM node.
+> Workbot's desktop; the same day 14 of the end-to-end suite's then 18
+> tests ran on a two-node cluster and passed
+> ([azure-vms.md](deploy/azure-vms.md)). Still open in the epic: isolation
+> probes inside a microVM (E18.4) and steps 5 to 9 of
+> [POC 11](proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter).
+> Next: those, node drains and more than one KVM node.
 >
 > Also landed in this phase: paused sandboxes on checkpointing pools give
 > their slot back, with a resume queue, preemption and lifecycle limits
@@ -127,7 +130,7 @@ Ordered by priority. P0 items gate any production recommendation.
 
 | Priority | Epic | Status |
 |---|---|---|
-| P0 | **[E18 Fast Sandbox spike](backlog.md#e18-fast-sandbox-spike)** (POC 11) | ✅ one KVM node, end-to-end suite included, 2026-10-29 |
+| P0 | **[E18 Fast Sandbox spike](backlog.md#e18-fast-sandbox-spike)** (POC 11) | 🟡 partial: ran on one KVM node on 2026-10-29, with 14 of the end-to-end suite's then 18 tests; isolation probes (E18.4) and POC 11's steps 5 to 9 not done |
 | P0 | [E0 Correctness and security fixes from the code review](backlog.md#e0-correctness-and-security-fixes-from-the-code-review) | 📋 |
 | P0 | [E2 External adapters on live accounts](backlog.md#e2-external-adapters-on-live-accounts) (POC 7) | 🟡 Daytona and Freestyle live |
 | P1 | [E19 OpenSandbox network policy and egress](backlog.md#e19-opensandbox-network-policy-and-egress) (replaces E12) | 📋 |
