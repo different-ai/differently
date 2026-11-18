@@ -88,6 +88,41 @@ Auth plugin, move users to Postgres with a Better Auth database adapter, or
 replace the email allowlist with your own rule. See the
 [Better Auth documentation](https://www.better-auth.com/docs) for the options.
 
+## Providers, prices and budgets
+
+The **Providers** page is where an operator decides what each pool charges and
+how much it may spend.
+
+- **Your pools** lists every pool with its prices, this month's estimated
+  spend against its budget, and the attestations recorded for it. **Manage**
+  sets the pool's prices (per vCPU, per GiB of memory, per sandbox and per GiB
+  of disk, each per hour), its monthly budget, its attestations, how many
+  sandboxes it may run at once, and whether placement may use it.
+- **A budget** stops new sandboxes on the pool once the estimate reaches it,
+  until the month ends (UTC) or the budget is raised; sandboxes already there
+  keep running. It needs prices, because the estimate is the prices times how
+  long sandboxes ran. It is not an invoice.
+- **The catalog** shows the same 27 providers as the website's
+  [comparison](https://different-ai.github.io/differently/compare/): list
+  price, how each bills, what it documents and what it states about
+  compliance. A pool is matched to its entry by adapter; a pool on a remote
+  plugin is matched by its `provider` label, then by its name. For a pool
+  with an entry, Manage offers the provider's list price ("Use list prices")
+  and the certifications the provider states ("Record SOC 2 Type II"), which
+  you record only after seeing the proof: Differently does not verify them.
+- Providers whose adapter is in the server's default build are added from the
+  catalog with their list price and a budget in one step. The others link to
+  their provider page.
+- A pool declared in the server's config file keeps its budget and
+  attestations there; the page says so and leaves those fields read-only.
+
+The catalog is `site/src/data/providers.ts` and the marks are
+`site/public/providers/`, bundled into the console at build time, so the page
+needs no network access beyond Differently itself. List prices were read from
+provider pages on the date the page shows. For a provider that bills only what
+a sandbox uses, the list rates are those of a sandbox that is busy all the
+time, so spend estimated from them is an upper bound.
+
 ## Live routing
 
 The **Live routing** page shows where sandboxes are going as it happens, in
@@ -156,3 +191,8 @@ With `differently-server --dev` running, connect with the token in
 - `src/lib/providers.ts` lists the provider kinds and their main fields; keep
   it in step with `internal/dashboard/static/app.js` and
   [docs/providers/](../docs/providers/README.md).
+- `src/lib/catalog.ts` is the Providers page's model: a pool's catalog entry,
+  list prices as a cost model, where a pool stands against its budget. It
+  reads `../site/src/data/providers.ts`, the one file the website's comparison
+  is built from; `npm test` checks that each provider's list rates add up to
+  the hourly figure that page shows.

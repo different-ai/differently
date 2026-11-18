@@ -453,6 +453,18 @@ export interface UpdatePoolParams {
   region?: string;
   /** API-registered pools only: `env:NAME`, `file:/path` or `secret:name`. */
   credentialRef?: string;
+  /** Replaces the pool's preemption policy; `{ mode: "off" }` turns it off. */
+  preemption?: Preemption;
+  /**
+   * API-registered pools only. Replaces the whole set the pool holds, so send the ones
+   * to keep as well; `{}` clears it. `recordedBy` and `recordedAt` are set by the server.
+   */
+  attestations?: Record<string, Pick<Attestation, "evidence" | "validUntil">>;
+  /**
+   * API-registered pools only. `{ monthly: 0 }` removes the budget. A budget needs a
+   * cost model, which the spend estimate is computed from.
+   */
+  budget?: Budget;
 }
 
 /** A provider credential stored in Differently. Its value is never returned. */
