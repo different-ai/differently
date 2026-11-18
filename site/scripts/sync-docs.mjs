@@ -69,6 +69,10 @@ function rewriteLinks(md, fromRepoPath) {
   });
 }
 
+// Literal text inside a RegExp: the dots of a host name must not match any character.
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const SITE_RE = escapeRe(`${ORIGIN}${BASE}`);
+
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // ```mermaid fences become <pre class="mermaid">, rendered client-side by public/mermaid-init.js.
@@ -151,18 +155,26 @@ function markdownTwins() {
   const dir = path.join(pub, 'docs');
   fs.rmSync(dir, { recursive: true, force: true });
   const unescapeHtml = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  // Notes to maintainers. Repeated until nothing is left, so removing one
+  // comment cannot leave the start of another behind.
+  const withoutComments = (t) => {
+    for (let before; before !== t; ) {
+      before = t;
+      t = t.replace(/<!--[\s\S]*?-->\n?/g, '');
+    }
+    return t;
+  };
   const pages = new Map();
   for (const abs of walk(out).filter((f) => f.endsWith('.md'))) {
     const rel = path.relative(out, abs).split(path.sep).join('/');
     const route = rel.replace(/(^|\/)index\.md$/, '$1').replace(/\.md$/, '/');
     const [, front, body] = fs.readFileSync(abs, 'utf8').match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
     const { title, description } = YAML.parse(front);
-    const md = body
+    const md = withoutComments(body)
       .replace(/<pre class="mermaid">([\s\S]*?)<\/pre>\n/g, (_, src) => '```mermaid\n' + unescapeHtml(src) + '\n```\n')
-      .replace(/<!--[\s\S]*?-->\n?/g, '') // notes to maintainers
       .replace(/<small>(Source: .*)<\/small>/, '$1')
-      .replace(new RegExp(`\\]\\(${BASE}/`, 'g'), `](${ORIGIN}${BASE}/`)
-      .replace(new RegExp(`\\]\\(${ORIGIN}${BASE}/docs/((?:[^)\\s#/]+/)*)(?=[#)\\s])`, 'g'), (_, r) => `](${ORIGIN}${BASE}/docs/${r}index.md`);
+      .replace(new RegExp(`\\]\\(${escapeRe(BASE)}/`, 'g'), `](${ORIGIN}${BASE}/`)
+      .replace(new RegExp(`\\]\\(${SITE_RE}/docs/((?:[^)\\s#/]+/)*)(?=[#)\\s])`, 'g'), (_, r) => `](${ORIGIN}${BASE}/docs/${r}index.md`);
     const text = `# ${title}\n\n${description ? `> ${description}\n\n` : ''}${md.trim()}\n`;
     const file = path.join(dir, route, 'index.md');
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -184,7 +196,7 @@ function checkSiteLinks(pages) {
       : custom.includes(p) || ['llms.txt', 'agents.txt', 'install.sh'].includes(p) || fs.existsSync(path.join(pub, p));
   const broken = [];
   for (const [route, page] of pages)
-    for (const [url] of page.text.matchAll(new RegExp(`${ORIGIN}${BASE}/[^\\s)>"'\`|]*`, 'g'))) {
+    for (const [url] of page.text.matchAll(new RegExp(`${SITE_RE}/[^\\s)>"'\`|]*`, 'g'))) {
       const p = url.slice(`${ORIGIN}${BASE}/`.length).split(/[#?]/)[0].replace(/[.,;:]+$/, '');
       if (!exists(p)) broken.push(`docs/${route}: ${url}`);
     }
