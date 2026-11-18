@@ -4,8 +4,11 @@
 # with console.enabled=true.
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS build
 WORKDIR /src
-# The console compiles the TypeScript SDK from source.
+# The console compiles the TypeScript SDK from source, and its provider
+# catalog is the website's: the data file and the providers' marks.
 COPY sdk/typescript/src sdk/typescript/src
+COPY site/src/data/providers.ts site/src/data/providers.ts
+COPY site/public/providers site/public/providers
 COPY console/package.json console/package-lock.json console/
 RUN cd console && npm ci --no-audit --no-fund
 COPY console console
