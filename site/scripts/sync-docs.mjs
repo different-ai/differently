@@ -225,6 +225,7 @@ ${link('explainer/', 'what it is in plain words, the five terms to know, what yo
 ${link('guides/quickstart/', 'install, start a local server, run a first sandbox, call it from code, step up to a real backend')}
 - [Instructions for agents](${ORIGIN}${BASE}/agents.txt): step-by-step tasks with checks for installing it, calling it from code and deploying it
 - [Install script](${ORIGIN}${BASE}/install.sh): installs the CLI and the server from the newest GitHub release, with a checksum check
+${link('faq/', 'short answers on snapshots across providers, switching, outages, trust and readiness')}
 ${link('features/', 'what the control plane does, feature by feature')}
 
 ## Use it
@@ -235,6 +236,7 @@ ${link('reference/cli/', 'every differently command and flag, generated from its
 ${link('sdks/typescript/', 'install, quickstart, streaming, errors')}
 ${link('sdks/python/', 'install, quickstart, streaming, errors')}
 ${link('sdks/go/', 'the Go client the CLI is built on')}
+${link('guides/baselines/', 'one template name for each provider\'s own image or snapshot, and what stays on its pool')}
 ${link('guides/organization-onboarding/', 'organizations, projects, quotas, scoped keys and policies')}
 ${link('guides/keys-and-providers/', 'storing provider keys, switching providers, rotating keys')}
 

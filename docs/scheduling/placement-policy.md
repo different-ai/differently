@@ -102,6 +102,7 @@ Each pool starts eligible; every failed rule adds a reason
 | Pool lacks a required attestation, or holds an expired one | `missing attestations: a, b (expired 2026-06-30)` |
 | Missing requested capabilities | `missing capabilities: a, b` |
 | Over adapter limits or template unavailable | `cpu above adapter maximum`, `memory above adapter maximum`, `disk above adapter maximum`, `template <t> not available` |
+| The template maps images per pool and has none for this one, or its `pools` list leaves this one out ([one baseline on every provider](../guides/baselines.md)) | `template <t> has no image for this pool`, `template <t> is not offered on this pool` |
 | Estimated cost above ceiling | `estimated cost X/h exceeds ceiling Y/h` |
 
 Estimated cost uses the pool's `costModel`:
@@ -267,7 +268,7 @@ adapter and by `remote` plugins that choose to.
 |---|---|---|---|
 | `placed` | At least one ranked pool | Admitted as `queued` (202) | Activate in rank order (§9) |
 | `waiting` | Some pool is eligible but none is ready | Admitted as `queued` (202) | Stay queued; `statusReason` = `waiting for capacity: <pool (reasons)>`; next attempt in 2 s; fail if `maxQueueSeconds` has passed since creation |
-| `rejected` | No pool is eligible | `422 unsupported_capability` if every policy-eligible pool was ruled out only by missing capabilities (detail `capabilities`), else `422 no_eligible_pool` (detail `classification`; plus `requiredAttestations` and the reason "no permitted pool holds the required attestations" when a pool the policy otherwise permits lacks only those) | Sandbox `failed` with the reason (a policy change can turn a waiting sandbox into a rejected one) |
+| `rejected` | No pool is eligible | `422 unsupported_capability` if every policy-eligible pool was ruled out only by missing capabilities (detail `capabilities`), else `422 no_eligible_pool` (detail `classification`). Its reason is the most specific one that applies: "no permitted pool holds the required attestations" (detail `requiredAttestations`) when a pool the policy otherwise permits lacks only those; for a restore or fork, "a sandbox started from a snapshot runs on the pool that holds it, <pool>, and that pool cannot take this one" (detail `pool`); "no permitted pool has template <t>" (detail `template`) when a pool the policy otherwise permits lacks only the template; otherwise "no pool satisfies placement policy for this sandbox" | Sandbox `failed` with the reason (a policy change can turn a waiting sandbox into a rejected one) |
 
 Admission runs the full decision once to fail fast. A suspended organization's
 queued sandboxes wait with reason `organization suspended`.

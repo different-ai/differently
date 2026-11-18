@@ -100,6 +100,10 @@ config:
 
   # Sandbox templates listed by the API (GET /v1/templates). Optional; an
   # OpenSandbox pool with opensandbox.templateId reports that template too.
+  # A template gives one name to each pool's own image, so the same request
+  # can run on any pool that has one (docs/guides/baselines.md):
+  #   - name: python
+  #     images: {opensandbox: registry.example.com/python:3.12, daytona: python-312}
   templates: []
 
   # Additional execution pools. The default private pool comes from the

@@ -125,10 +125,16 @@ func (c Capabilities) Accepts(r api.Resources, template string) (bool, string) {
 		return false, "memory above adapter maximum"
 	case c.MaxDiskGiB > 0 && r.DiskGiB > c.MaxDiskGiB:
 		return false, "disk above adapter maximum"
-	case template != "" && len(c.Templates) > 0 && !slices.Contains(c.Templates, template):
+	case !c.OffersTemplate(template):
 		return false, "template " + template + " not available"
 	}
 	return true, ""
+}
+
+// OffersTemplate reports whether the backend can boot template. A backend
+// that lists no templates takes any name, and no name is always accepted.
+func (c Capabilities) OffersTemplate(template string) bool {
+	return template == "" || len(c.Templates) == 0 || slices.Contains(c.Templates, template)
 }
 
 // Capacity is the free capacity an adapter currently reports. Unbounded

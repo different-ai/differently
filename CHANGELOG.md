@@ -8,6 +8,33 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- The answer to "don't I need my snapshot on every provider?", in the
+  product and in the docs. Each backend boots its own images, so the
+  baseline has to exist on each provider; a template gives those baselines
+  one name (`templates[].images`, which existed but was only described in
+  the OpenWork guide).
+  - **`differently templates`** shows each template and what every pool
+    boots for it, with a dash where a pool has none.
+  - **`differently capabilities`** now puts the pools side by side, one
+    feature per row, so what a provider cannot do is a dash next to the
+    others' yes. `-o json` prints the API response as before.
+  - **`--from-snapshot`** on `differently sandbox create` and
+    `differently run` starts a sandbox from a snapshot. The API and the SDKs
+    already could.
+  - **Refusals say what is missing.** A request for a template that no
+    permitted pool has fails with "no permitted pool has template <name>"
+    (detail `template`), and a restore or fork that the snapshot's pool
+    cannot take names that pool (detail `pool`). Both keep the code
+    `no_eligible_pool`; before, both said only that no pool satisfied the
+    policy.
+  - [One baseline on every provider](docs/guides/baselines.md): what is
+    shared across providers (the name) and what is not (the image, a running
+    sandbox, a snapshot), the three steps, and a two-pool example that runs
+    in dev mode.
+  - [Questions people ask](docs/faq.md): short answers on snapshots,
+    switching providers, outages, trust and readiness, each saying where
+    Differently stops. The landing page shows six of them.
+
 - A first sandbox takes three commands and no toolchain, account, cluster or
   database: install, `differently-server --dev`, `differently run -- echo hello`.
   - **`install.sh`**, served at
@@ -77,6 +104,14 @@ All notable changes are recorded here. The format follows
   `AddProvider`, `SetQuota`, `VerifyAudit`, a keep share in the load and the
   policy's ranking in each snapshot. The WebAssembly build is about 5 MB
   compressed.
+
+### Changed
+
+- `differently capabilities` prints a table by default. Scripts that read
+  its JSON need `-o json`.
+- `docs/storage-and-lifecycle.md` said the `templates` list was
+  informational. It routes: a template with `images` is placed only on the
+  pools it maps.
 
 ## [0.1.0-alpha.5] — 2026-11-17
 

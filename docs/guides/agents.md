@@ -24,7 +24,8 @@ isolation, so it is for learning the API, not for code you do not trust.
 
 Other things you can ask for the same way: "add Differently to this
 project", "deploy Differently on this VM", or "explain what Differently
-would change for us".
+would change for us". Concerns such as snapshots across providers are
+answered in [questions people ask](../faq.md).
 
 Prefer to do it yourself? The [quickstart](quickstart.md) is three commands.
 
@@ -180,8 +181,12 @@ the sandbox is gone afterwards (`differently sandbox list` shows it
 
 Write application code so that it:
 
-- never names a backend. Ask for a profile, a capability or a data
-  classification, and let the server's policy place the sandbox;
+- never names a backend. Ask for a profile, a template, a capability or a
+  data classification, and let the server's policy place the sandbox;
+- does not assume a sandbox or a snapshot can move. A sandbox stays on the
+  pool it was created on, and a restore (`fromSnapshot`) or fork runs on the
+  pool that holds the snapshot. Each provider boots its own images, which a
+  template gives one name ([one baseline on every provider](baselines.md));
 - deletes sandboxes it creates, or sets `ttlSeconds`;
 - branches on the error `code`, not the message. The codes are
   `invalid_request`, `unauthenticated`, `permission_denied`, `not_found`,
@@ -237,6 +242,9 @@ to run before pushing, and where each part of the code lives.
 | Environment variables | `DIFFERENTLY_URL`, `DIFFERENTLY_API_KEY`, `DIFFERENTLY_PROJECT` |
 | Default sandbox size | profile `small`: 1 CPU, 1024 MiB memory, 5 GiB disk |
 | Default placement | private pools only (`external: never`) |
+| What each pool can do | `differently capabilities` (features side by side) |
+| What each pool boots for a template | `differently templates` |
+| Portability | none after create: a sandbox and its snapshots stay on their pool |
 | State in dev mode | in memory; gone when the server stops |
 | License and telemetry | Apache-2.0; none |
 | Source | <https://github.com/different-ai/differently> |
