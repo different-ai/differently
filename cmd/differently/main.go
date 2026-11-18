@@ -163,7 +163,7 @@ func main() {
 	root.PersistentFlags().StringVarP(&flagOutput, "output", "o", "table", "output format: table or json")
 	root.AddCommand(runCmd(), loginCmd(), sandboxCmd(), projectCmd(), keyCmd(), usageCmd(), adminCmd(), doctorCmd(),
 		&cobra.Command{Use: "whoami", Short: "Show the current key", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/me", nil) }},
-		&cobra.Command{Use: "capabilities", Short: "List pools and their capabilities", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/capabilities", nil) }},
+		capabilitiesCmd(), templatesCmd(),
 	)
 	if err := root.Execute(); err != nil {
 		reportError(os.Stderr, err)
@@ -232,15 +232,15 @@ func loginCmd() *cobra.Command {
 func sandboxCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "sandbox", Aliases: []string{"sb", "sandboxes"}, Short: "Create, use and delete sandboxes"}
 	var (
-		profile, template, class, strategy, external string
-		cpu, mem, disk, ttl, idle                    int
-		wait                                         bool
-		envs, labels, caps, pools, attests           []string
+		profile, template, class, strategy, external, fromSnapshot string
+		cpu, mem, disk, ttl, idle                                  int
+		wait                                                       bool
+		envs, labels, caps, pools, attests                         []string
 	)
 	create := &cobra.Command{
 		Use: "create", Short: "Create a sandbox",
 		RunE: func(*cobra.Command, []string) error {
-			req := api.CreateSandboxRequest{ProjectID: load().Project, Profile: profile, Template: template, Classification: class, TTLSeconds: ttl, Capabilities: caps, IdleTimeoutSeconds: idle}
+			req := api.CreateSandboxRequest{ProjectID: load().Project, Profile: profile, Template: template, FromSnapshot: fromSnapshot, Classification: class, TTLSeconds: ttl, Capabilities: caps, IdleTimeoutSeconds: idle}
 			if cpu > 0 || mem > 0 || disk > 0 {
 				req.Resources = &api.Resources{CPU: cpu, MemoryMiB: mem, DiskGiB: disk}
 			}
@@ -263,7 +263,8 @@ func sandboxCmd() *cobra.Command {
 	}
 	f := create.Flags()
 	f.StringVar(&profile, "profile", "", "resource profile (see GET /v1/profiles)")
-	f.StringVar(&template, "template", "", "image template")
+	f.StringVar(&template, "template", "", "template to boot (see: differently templates)")
+	f.StringVar(&fromSnapshot, "from-snapshot", "", "start from this snapshot (snp_...), on the pool that holds it")
 	f.StringVar(&class, "classification", "", "data classification, e.g. private-only")
 	f.IntVar(&cpu, "cpu", 0, "vCPUs")
 	f.IntVar(&mem, "memory", 0, "memory in MiB")
@@ -441,7 +442,7 @@ func printExecEvent(stdout, stderr io.Writer) func(api.ExecEvent) {
 
 // runCmd is the shortest way to a result: one sandbox for one command.
 func runCmd() *cobra.Command {
-	var profile, template, cwd string
+	var profile, template, fromSnapshot, cwd string
 	var envs []string
 	var keep bool
 	cmd := &cobra.Command{
@@ -460,7 +461,7 @@ With --keep the sandbox stays, and its ID is printed for later commands.`,
 			return nil
 		},
 		RunE: func(_ *cobra.Command, a []string) error {
-			req := api.CreateSandboxRequest{ProjectID: load().Project, Profile: profile, Template: template}
+			req := api.CreateSandboxRequest{ProjectID: load().Project, Profile: profile, Template: template, FromSnapshot: fromSnapshot}
 			code, err := runOnce(ctx(), cli(), req, execRequest(a, cwd, envs), keep, os.Stdout, os.Stderr)
 			if err != nil {
 				return err
@@ -473,7 +474,8 @@ With --keep the sandbox stays, and its ID is printed for later commands.`,
 	}
 	f := cmd.Flags()
 	f.StringVar(&profile, "profile", "", "resource profile (default: the server's)")
-	f.StringVar(&template, "template", "", "image template (default: the server's)")
+	f.StringVar(&template, "template", "", "template to boot (default: the server's; see: differently templates)")
+	f.StringVar(&fromSnapshot, "from-snapshot", "", "start from this snapshot (snp_...), on the pool that holds it")
 	f.StringVar(&cwd, "cwd", "", "working directory")
 	f.StringArrayVarP(&envs, "env", "e", nil, "environment KEY=VALUE")
 	f.BoolVar(&keep, "keep", false, "leave the sandbox running instead of deleting it")

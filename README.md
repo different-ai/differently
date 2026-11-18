@@ -131,6 +131,16 @@ New here? [Differently explained](docs/explainer.md) is the five-minute
 version of what it is and what you can ignore until later. The
 [quickstart](docs/guides/quickstart.md) has the longer tour.
 
+**"Don't I need my snapshot on every provider?"** Yes, and that is the one
+thing nothing can do for you. Differently makes it one name: build the
+baseline once per provider, register them as a template, and your code asks
+for the name. Requests go only to pools that have it, each backend gets its
+own image, and `differently templates` and `differently capabilities` show
+what every provider has and can do. A sandbox is placed once and stays put,
+and so do its snapshots. See
+[one baseline on every provider](docs/guides/baselines.md) and the other
+[questions people ask](docs/faq.md).
+
 ## Deploy anywhere
 
 | Where | How | Status |

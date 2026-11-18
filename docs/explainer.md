@@ -70,6 +70,11 @@ Your application never names a backend. It says what it needs, such as a
 size, a capability or "this data must stay private", and operators change
 where work goes without touching application code.
 
+The choice is made once. A sandbox stays on the pool it was created on, and
+so do its snapshots: nothing moves between providers afterwards. What you
+can share across providers is the starting point, by giving each provider's
+own image [one name](guides/baselines.md).
+
 ## What you need
 
 To **try it**, you need one command to install it and nothing else: no
@@ -110,5 +115,7 @@ beyond the default, quotas, the admin console and the experimental adapters.
 | Have a coding agent set it up | [Use Differently with an agent](guides/agents.md) |
 | Put it on a server for a team | [Deployment overview](deploy/README.md) |
 | See it route load in a browser | [Load simulator](https://different-ai.github.io/differently/simulator/) |
+| Use the same image on every provider | [One baseline on every provider](guides/baselines.md) |
+| Check a concern before you commit | [Questions people ask](faq.md) |
 | Compare it with other products | [Feature parity](feature-parity.md) |
 | Understand how it is built | [Architecture](architecture/README.md) |

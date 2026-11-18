@@ -11,6 +11,8 @@ at [Use Differently with a coding agent](guides/agents.md).
 |---|---|
 | [Differently explained](explainer.md) | What it is, the five words to know, what you need to start and what can wait |
 | [Quickstart](guides/quickstart.md) | Install, a local server, the first sandbox, SDK snippets, the step up to a real backend |
+| [One baseline on every provider](guides/baselines.md) | One template name for each provider's own image or snapshot; what stays on its pool (sandboxes, snapshots) and how to see what each provider has and can do |
+| [Questions people ask](faq.md) | Short answers on snapshots, switching providers, outages, trust and readiness |
 | [Use Differently with a coding agent](guides/agents.md) | A prompt to paste, and step-by-step instructions written for the agent (also served as `/agents.txt`) |
 | [Organization onboarding](guides/organization-onboarding.md) | One installation per organization vs shared; orgs, projects, quotas, scoped keys, policies |
 | [Hybrid overflow](guides/hybrid-overflow.md) | Authorizing Daytona or Freestyle as policy-gated external capacity |

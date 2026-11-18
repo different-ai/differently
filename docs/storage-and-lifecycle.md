@@ -173,6 +173,10 @@ sequenceDiagram
 
 ## 8. What is not portable
 
+Placement happens once, at create, and a sandbox then stays on its pool. The
+[questions page](faq.md#images-snapshots-and-moving-between-providers) has
+the short version of this section.
+
 | Thing | Why | What to do instead |
 |---|---|---|
 | A running sandbox moving to another pool or provider | No live migration; backends have different runtimes and memory formats | Snapshot and recreate on the same pool; for cross-backend moves, copy files through the API |
@@ -215,8 +219,11 @@ For Fast Sandbox this is part of
   placement refuses requests that name any other template. Without it, the
   pool advertises no templates and passes any template name to OpenSandbox as
   an image URI.
-- The config's `templates` list is informational (served by
-  `GET /v1/templates`).
+- The config's `templates` list (served by `GET /v1/templates`) gives one
+  name to each pool's own image: a template with `images` is placed only on
+  the pools it maps, and each backend receives its own value. A name with
+  no entry is passed to the backend as given.
+  [One baseline on every provider](guides/baselines.md) has the steps.
 - Registry allow-lists, signature checks and image caching are the runtime's
   (see the [hardening checklist](security/hardening-checklist.md#backend-runtimes-opensandbox)).
   Differently does not inspect images.

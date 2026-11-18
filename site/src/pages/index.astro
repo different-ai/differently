@@ -164,6 +164,47 @@ const agentPrompt = `Read ${site}/agents.txt and follow it:
 install Differently on this machine, start it in dev mode, run one sandbox to
 prove it works, then show me how to create a sandbox from my code.`;
 
+// Concerns people raise first, answered with where Differently stops. The
+// full list is docs/faq.md; keep these in step with it.
+const questions = [
+  {
+    q: 'Do I need my snapshot on every provider?',
+    a: 'Yes: each backend boots its own images, and nothing copies one across. You build the baseline once per provider and give them one name. Your code asks for the name, requests go only to pools that have it, and each backend gets its own image.',
+    href: '/docs/guides/baselines/',
+    cta: 'One baseline on every provider',
+  },
+  {
+    q: 'Can a sandbox or a snapshot move between providers?',
+    a: 'No. The pool is chosen once, when the sandbox is created, and the sandbox and its snapshots stay there. Differently remembers which pool holds a snapshot and sends every restore and fork to it, so adding or draining a provider never disturbs running work.',
+    href: '/docs/faq/#are-snapshots-portable-between-providers',
+    cta: 'What stays where',
+  },
+  {
+    q: 'Do all providers do the same things?',
+    a: 'No. One takes memory snapshots, another cannot fork. `differently capabilities` puts them side by side, and a request that needs a feature is placed only where it exists, or refused with the feature named.',
+    href: '/docs/providers/',
+    cta: 'Provider catalog',
+  },
+  {
+    q: 'Does my code change when we switch provider?',
+    a: 'No. Code asks for a size, a template, a feature or a data classification, never a backend. Operators add, drain or switch pools, and new sandboxes follow.',
+    href: '/docs/faq/#does-my-code-change-when-we-add-or-switch-a-provider',
+    cta: 'How switching works',
+  },
+  {
+    q: 'Could my code end up on a provider I did not choose?',
+    a: 'Not unless an operator allows it. The default is private pools only; an external provider gets work only after it is approved in policy, and every sandbox records why it landed where it did.',
+    href: '/docs/scheduling/placement-policy/',
+    cta: 'Placement policy',
+  },
+  {
+    q: 'What happens when a provider is down?',
+    a: 'New sandboxes go to another pool that policy permits, or wait until one is ready. Sandboxes already on the unreachable pool are not moved; calls to them fail until it is back.',
+    href: '/docs/faq/#what-happens-when-a-provider-is-down',
+    cta: 'All questions',
+  },
+];
+
 const features = [
   {
     k: '01',
@@ -562,6 +603,23 @@ const compare = [
             <b>Install with Helm →</b>
             <span>On an existing Kubernetes cluster: EKS, GKE, AKS, k3s or RKE2.</span>
           </a>
+        </div>
+      </section>
+
+      <section class="questions wrap" id="questions">
+        <div class="section-head">
+          <p class="eyebrow">Questions</p>
+          <h2>What people ask first</h2>
+          <p>Straight answers, including where Differently stops. The rest are on the <a href={`${base}/docs/faq/`}>questions page</a>.</p>
+        </div>
+        <div class="grid">
+          {questions.map((x) => (
+            <article>
+              <h3>{x.q}</h3>
+              <p>{x.a.split('`').map((part, i) => (i % 2 ? <code>{part}</code> : part))}</p>
+              <a href={`${base}${x.href}`}>{x.cta} →</a>
+            </article>
+          ))}
         </div>
       </section>
 

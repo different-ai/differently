@@ -81,6 +81,7 @@ A sandbox you keep, with files, a fork and the placement decision:
 
 ```bash
 differently doctor                                   # server, key and pools
+differently capabilities                             # what each pool can do, side by side
 differently sandbox create --wait                    # prints the sandbox ID
 ID=<the ID it printed>
 differently sandbox exec $ID -- 'echo "hello from $(uname -sm)"'
@@ -101,6 +102,12 @@ sandbox that never starts:
 differently sandbox create --capability gpu
 # error [unsupported_capability]: no permitted pool supports the requested capabilities
 ```
+
+`differently sandbox snapshot $ID` prints a snapshot ID, and
+`differently run --from-snapshot <snp-id> -- <command>` starts from it.
+Snapshots stay on the pool that took them, and each provider boots its own
+images: [one baseline on every provider](baselines.md) explains how one name
+covers them all.
 
 Every command is in the [CLI reference](https://different-ai.github.io/differently/docs/reference/cli/).
 
