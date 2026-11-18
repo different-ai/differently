@@ -61,6 +61,10 @@ export interface Placement {
 }
 
 export interface CreateSandboxParams {
+  /**
+   * Organization and operator keys must name a project, here or as the
+   * client's default (`projectId` option or DIFFERENTLY_PROJECT).
+   */
   projectId?: string;
   template?: string;
   profile?: string;
@@ -593,6 +597,20 @@ export interface Template {
   description?: string;
   pools?: string[];
   /** Each pool's own image for this template, by pool name. */
+  images?: Record<string, string>;
+  /** Where it is defined: the server's config file, or the admin API. The config file wins a shared name. */
+  source?: "config" | "api";
+  /** The last change made through the API. */
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+/** What `admin.templates.set` changes. A field left out is left as it was. */
+export interface SetTemplateParams {
+  description?: string;
+  /** Replaces the pools the template is restricted to; `[]` removes the restriction. */
+  pools?: string[];
+  /** Pool name to the image or snapshot its backend boots. Added to, or replacing, what is stored. */
   images?: Record<string, string>;
 }
 

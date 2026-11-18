@@ -2,7 +2,8 @@
 
 Status: k3s, RKE2 and a plain Linux host running OpenSandbox are
 **documented**; Talos is **unverified**. Nothing here has been run on real
-hardware yet.
+hardware yet. k3s itself has run with Differently on cloud VMs
+([single-vm.md](single-vm.md), [azure-vms.md](azure-vms.md)).
 
 Differently's control plane needs no privilege or KVM, so any of these
 distributions can run it. Sandboxes run on an OpenSandbox server, installed in the
@@ -11,7 +12,8 @@ Fast Sandbox runtime: `/dev/kvm` comes straight from the CPU, with no nested
 virtualization. Enable VT-x/AMD-V (and VT-d if you like) in firmware, and
 confirm the host checks in
 [prerequisites.md](prerequisites.md#kvm-hosts-fast-sandbox-only). Fast
-Sandbox has not been run with Differently yet.
+Sandbox has run with Differently only under nested KVM on Azure VMs
+([azure-vms.md](azure-vms.md)), not on bare metal.
 
 ## Kubernetes distributions
 
@@ -79,19 +81,53 @@ Set a strong server `api_key`, and pin the server and `execd` image versions.
 
 [`test/opensandbox/`](../../test/opensandbox/README.md) is a working example
 of the Docker-runtime shape: `compose.yaml` runs `opensandbox/server:release-1.2.0`
-with the host's Docker socket, and `config.toml` sets `execd` `v1.1.0`, drops
-container capabilities, sets `no_new_privileges` and a PID limit. That is the
-configuration the adapter was checked against. Its API key is a test value;
-never reuse it.
+with the host's Docker socket, and `config.toml` sets `execd`
+`release-1.2.0`, drops container capabilities, sets `no_new_privileges` and
+a PID limit. That is the configuration CI's end-to-end suite runs against.
+Its API key is a test value; never reuse it.
+
+#### Keep sandbox ports off public interfaces
+
+The example leaves one setting at a default that suits a test host only.
+With the Docker runtime in bridge mode, every sandbox publishes ports on the
+Docker host: two per sandbox (its `execd` control port 44772 and port 8080;
+a third when it has OpenSandbox's egress sidecar), taken from 40000 to 60000
+(`port_range_min`, `port_range_max`). They have no authentication of their
+own, because the Docker runtime does not support OpenSandbox's secure access:
+anyone who can reach a sandbox's `execd` port can run commands in it.
+
+`[docker].publish_host` (OpenSandbox release 1.2.0) is the host address those
+ports are published on. Its default, `0.0.0.0`, which the example keeps, is
+every interface of the host. Set it to an address that only the OpenSandbox
+server uses:
+
+| The OpenSandbox server runs | `publish_host` | Status |
+|---|---|---|
+| In a container, as in the example | The gateway of Docker's default bridge, usually `172.17.0.1` | Run in CI on a GitHub-hosted Linux runner, with OpenSandbox 1.2.0 from the Compose file of [pull request #120](https://github.com/different-ai/differently/pull/120): sandbox ports were published on that address only, and a sandbox ran a command. Not run with the example's files |
+| Directly on the host | `127.0.0.1` | From OpenSandbox's description of the setting. **Not run** with Differently |
+
+```sh
+docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'   # the bridge gateway
+```
+
+```toml
+[docker]
+publish_host = "172.17.0.1"   # an IPv4 address; OpenSandbox rejects a name
+```
 
 ### 2. Open the network paths
 
 | Path | Requirement |
 |---|---|
 | Control plane to host | TCP to the OpenSandbox server's port (8090 in the example). With the default `useServerProxy`, exec and file traffic also goes through this port |
-| Firewall on the host | Accept the server port **only** from the control plane's egress addresses (node IPs or NAT gateway). Clients never need to reach it |
-| Chart NetworkPolicy | Allow server egress to the host's address on that port: `networkPolicy.server.egress.opensandbox.cidrs` (and `port` if it is not 8090) |
+| Firewall on the host | Accept the server port **only** from the control plane's egress addresses (node IPs or NAT gateway). Clients never need to reach it. With the Docker runtime, accept nothing from outside the host on the sandbox port range, 40000 to 60000: only the OpenSandbox server uses it |
+| Chart NetworkPolicy | Allow server egress to the host's address on that port: `networkPolicy.server.egress.opensandbox.cidrs`, and `port`: the chart's default is 80 (OpenSandbox's own chart), so set it to the host's port, 8090 in the example |
 
+- **Sandbox ports.** A rule in the host's own firewall may not cover them:
+  Docker forwards published ports before `ufw`'s rules apply
+  ([Docker's documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw)).
+  Set [`publish_host`](#keep-sandbox-ports-off-public-interfaces), and block
+  the range in the network or cloud firewall too.
 - **Encryption.** Every request carries the OpenSandbox API key. Across any
   network you do not fully control, serve OpenSandbox over `https` or put the
   path inside a WireGuard or IPsec tunnel, or a private interconnect.

@@ -196,8 +196,9 @@ func (s *Scheduler) Policies(ctx context.Context, orgID, projectID string) ([]ap
 }
 
 // PlacementInput assembles the policy input for a sandbox. It fails rather
-// than decide on a partial read of the policies or of the snapshot that pins
-// the sandbox to a pool.
+// than decide on a partial read of the policies, of the snapshot that pins
+// the sandbox to a pool, or of the template that says which pools have an
+// image for it.
 func (s *Scheduler) PlacementInput(ctx context.Context, rec store.SandboxRecord, active map[string]int) (policy.Input, error) {
 	policies, err := s.Policies(ctx, rec.OrgID, rec.ProjectID)
 	if err != nil {
@@ -218,9 +219,16 @@ func (s *Scheduler) PlacementInput(ctx context.Context, rec store.SandboxRecord,
 			return policy.Input{}, fmt.Errorf("read snapshot %s: %w", rec.FromSnapshot, err)
 		}
 	}
-	if t, ok := s.Config.Template(rec.Template); ok && rec.Template != "" {
+	t, ok, err := s.Template(ctx, rec.Template)
+	if err != nil {
+		return policy.Input{}, err
+	}
+	if ok {
 		in.Template = &t
 	}
+	// A sandbox admitted or placed under a template does not fall back to
+	// the plain name when the template is removed.
+	in.TemplateRemoved = !ok && rec.TemplateDefined
 	return in, nil
 }
 
@@ -307,10 +315,20 @@ func (s *Scheduler) dispatch(ctx context.Context) {
 		}
 		in, err := s.PlacementInput(ctx, rec, active)
 		if err != nil {
-			// Fail closed: leave it queued until the policies can be read.
+			// Fail closed: leave it queued until the policies and the
+			// template can be read.
 			s.Log.Warn("placement input unavailable; sandbox stays queued", "sandbox", rec.ID, "err", err)
-			s.wait(ctx, rec.ID, "waiting: placement policy could not be read", nil)
+			s.wait(ctx, rec.ID, "waiting: placement policy or template could not be read", nil)
 			continue
+		}
+		if in.Template != nil && !rec.TemplateDefined {
+			// Remember that a template governs this placement before acting
+			// on it, so removing the template later cannot turn the sandbox
+			// into one that boots the plain name.
+			if _, err := s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error { r.TemplateDefined = true; return nil }); err != nil {
+				s.Log.Warn("could not record the sandbox's template; it stays queued", "sandbox", rec.ID, "err", err)
+				continue
+			}
 		}
 		res := policy.Decide(in)
 		if (res.Err != nil || len(res.Ranked) == 0) && len(in.ExcludedPools) > 0 {
@@ -461,6 +479,29 @@ func (s *Scheduler) provision(ctx context.Context, rec store.SandboxRecord) {
 		s.retry(ctx, rec, err)
 		return
 	}
+	// The template is read again here: it may have changed since placement.
+	// Unreadable, the sandbox waits for the next tick rather than boot the
+	// name as given; removed, or no longer offered on this pool, it is placed
+	// again.
+	image := rec.Template
+	t, known, err := s.Template(ctx, rec.Template)
+	if err != nil {
+		s.Log.Warn("template unavailable; provisioning waits", "sandbox", rec.ID, "pool", rec.Pool, "err", err)
+		return
+	}
+	switch {
+	case known:
+		if ok, why := t.Offers(rec.Pool); !ok {
+			s.placeAgain(ctx, rec, why)
+			return
+		}
+		image = t.ImageFor(rec.Pool)
+	case rec.TemplateDefined:
+		// Placed under a template that has since been removed: placement
+		// decides again, and refuses it rather than boot the plain name.
+		s.placeAgain(ctx, rec, "template "+rec.Template+" was removed after this sandbox was placed")
+		return
+	}
 	// The timeout bounds the backend call only: recording its outcome, a
 	// retry included, must not run on a context that has already expired.
 	createCtx, cancel := context.WithTimeout(ctx, time.Duration(s.Config.Scheduler.ProvisionTimeoutSeconds)*time.Second)
@@ -471,7 +512,7 @@ func (s *Scheduler) provision(ctx context.Context, rec store.SandboxRecord) {
 	}
 	start := s.Now()
 	inst, err := a.Create(createCtx, adapter.CreateRequest{
-		ID: rec.ID, Installation: s.Installation, Template: s.Config.BackendTemplate(rec.Template, rec.Pool), Resources: rec.Resources,
+		ID: rec.ID, Installation: s.Installation, Template: image, Resources: rec.Resources,
 		Env: rec.Env, Labels: labels, TTLSeconds: rec.TTLSeconds, FromSnapshot: rec.SnapshotBackendRef,
 		IdleTimeoutSeconds: rec.IdleTimeoutSeconds,
 	})

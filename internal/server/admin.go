@@ -45,6 +45,7 @@ func (s *Server) adminRoutes(authed func(string, handlerFunc)) {
 	admin("GET /v1/admin/audit/verify", s.verifyAudit)
 	s.registerSecrets(admin)
 	s.registerStacks(admin)
+	s.registerTemplates(admin)
 	admin("POST /v1/admin/reconcile", func(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
 		s.Scheduler.Reconcile(r.Context())
 		s.audit(r, p, "admin.reconcile", "installation", "", "", nil)
@@ -421,10 +422,25 @@ func (s *Server) deletePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 	if slices.ContainsFunc(s.Config.Pools, func(pc config.PoolConfig) bool { return pc.Name == name }) {
 		return api.Errorf(api.CodeConflict, "pool %s is declared in the config file; remove it there", name)
 	}
+	// Templates set through the API name pools. One that can run only here
+	// keeps the pool: without the pool it would run nowhere, and without its
+	// entry it would run everywhere.
+	exists, err := s.poolNames(r.Context())
+	if err != nil {
+		return err
+	}
+	bound, named, err := s.templatesBoundTo(r.Context(), name, exists)
+	if err != nil {
+		return err
+	}
+	if exists[name] && len(bound) > 0 {
+		return api.Errorf(api.CodeConflict, "pool %s is the only pool that can run template %s; remove the template (DELETE /v1/admin/templates/{name}) or give it an image on another pool first", name, strings.Join(bound, ", ")).With("templates", strings.Join(bound, ","))
+	}
 	if err := s.Store.DeletePool(r.Context(), name); err != nil {
 		return err
 	}
 	_ = s.SyncPools(r.Context())
+	s.forgetPool(r, p, name, named)
 	s.audit(r, p, "pool.delete", name, "", "", nil)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
@@ -688,7 +704,7 @@ func (s *Server) trustReport(w http.ResponseWriter, r *http.Request, _ auth.Prin
 	for i := len(events) - 1; i >= 0 && len(rep.AdminActions) < 50; i-- {
 		ev := events[i]
 		if strings.HasPrefix(ev.Action, "admin.") || strings.HasPrefix(ev.Action, "pool.") || strings.HasPrefix(ev.Action, "policy.") ||
-			strings.HasPrefix(ev.Action, "org.") || strings.HasPrefix(ev.Action, "secret.") || ev.Action == "key.create" || ev.Action == "key.revoke" || ev.Action == "key.rotate" {
+			strings.HasPrefix(ev.Action, "org.") || strings.HasPrefix(ev.Action, "secret.") || strings.HasPrefix(ev.Action, "template.") || ev.Action == "key.create" || ev.Action == "key.revoke" || ev.Action == "key.rotate" {
 			rep.AdminActions = append(rep.AdminActions, ev)
 		}
 	}

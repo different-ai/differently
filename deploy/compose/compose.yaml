@@ -1,0 +1,187 @@
+# Differently on one Docker host, from published images: Postgres, an
+# OpenSandbox server with the Docker runtime, and the Differently control
+# plane. Sandboxes are containers on this host. This file is all you download.
+#
+# Guide: https://different-ai.github.io/differently/docs/deploy/docker/
+# Needs: Docker Engine 25 or newer and Docker Compose 2.23.1 or newer (the
+#        first with inline `configs`), on a Linux host.
+#
+# 1. Create the four secrets, once, in a file named `.env` beside this one.
+#    Nothing in this file is a default credential, and the stack refuses to
+#    start without them. An `.env` that is already there is kept:
+#
+#      img=ghcr.io/different-ai/differently-server:0.1.0-alpha.6
+#      if [ -e .env ]; then
+#        echo "Keeping the .env that is already here: it holds the only copy of this stack's secrets."
+#      elif docker run --rm $img version >/dev/null; then
+#        (umask 077 && cat > .env <<EOF
+#      DIFFERENTLY_BOOTSTRAP_TOKEN=$(docker run --rm $img token)
+#      DIFFERENTLY_SECRETS_KEY=$(docker run --rm $img secrets-key)
+#      POSTGRES_PASSWORD=$(docker run --rm $img token)
+#      OPENSANDBOX_API_KEY=$(docker run --rm $img token)
+#      EOF
+#        )
+#      fi
+#
+# 2. Start it and check it. The guide goes on to a first sandbox:
+#
+#      docker compose up -d --wait
+#      docker compose exec server differently doctor
+#
+# Optional settings, as lines in `.env` or variables in the environment:
+#
+#   DIFFERENTLY_VERSION   image tag of the control plane, without a leading
+#                         `v` (default below). An exported value wins over .env
+#   DIFFERENTLY_IMAGE     image repository, for a mirror or your own build
+#   DIFFERENTLY_BIND      host address the API is published on (127.0.0.1)
+#   DIFFERENTLY_PORT      host port of the API (8080)
+#   SANDBOX_PUBLISH_HOST  host address sandbox ports are published on: the
+#                         gateway of Docker's default bridge (172.17.0.1)
+name: differently
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?create .env first, as described at the top of compose.yaml}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # OpenSandbox starts each sandbox as a sibling container through the Docker
+  # socket, so this service controls the host's Docker daemon. Its API is not
+  # published on the host: only the control plane calls it.
+  opensandbox-server:
+    image: opensandbox/server:release-1.2.0
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
+      OPENSANDBOX_SERVER_API_KEY: "${OPENSANDBOX_API_KEY:?create .env first, as described at the top of compose.yaml}"
+    configs:
+      - source: opensandbox
+        target: /etc/opensandbox/config.toml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  server:
+    image: "${DIFFERENTLY_IMAGE:-ghcr.io/different-ai/differently-server}:${DIFFERENTLY_VERSION:-0.1.0-alpha.6}"
+    restart: unless-stopped
+    command: ["--config", "/etc/differently/config.yaml"]
+    environment:
+      # Creates the first operator key. Sign in to the dashboard with it.
+      DIFFERENTLY_BOOTSTRAP_TOKEN: "${DIFFERENTLY_BOOTSTRAP_TOKEN:?create .env first, as described at the top of compose.yaml}"
+      # Seals provider credentials stored through the API.
+      DIFFERENTLY_SECRETS_KEY: "${DIFFERENTLY_SECRETS_KEY:?create .env first, as described at the top of compose.yaml}"
+      DIFFERENTLY_DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres?sslmode=disable"
+      DIFFERENTLY_OPENSANDBOX_API_KEY: "${OPENSANDBOX_API_KEY}"
+      # For the CLI in this image (`docker compose exec server differently ...`)
+      # and for the health check below. The same value as the bootstrap token.
+      DIFFERENTLY_API_KEY: "${DIFFERENTLY_BOOTSTRAP_TOKEN}"
+    configs:
+      - source: differently
+        target: /etc/differently/config.yaml
+    ports:
+      - "${DIFFERENTLY_BIND:-127.0.0.1}:${DIFFERENTLY_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensandbox-server:
+        condition: service_healthy
+    # Healthy means the API answers and accepts the operator key.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/differently", "doctor"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
+
+volumes:
+  postgres-data:
+
+configs:
+  # The control plane's config: one private OpenSandbox pool. Edit it here and
+  # run `docker compose up -d --force-recreate`. Reference:
+  # https://different-ai.github.io/differently/docs/guides/opensandbox-pools/
+  differently:
+    content: |
+      listen: ":8080"
+      store:
+        driver: postgres
+      pools:
+        - name: opensandbox
+          adapter: opensandbox
+          trust: private
+          region: local
+          maxConcurrency: 20
+          config:
+            apiURL: http://opensandbox-server:8090/v1
+            image: debian:bookworm-slim
+            isolation: container
+            lineEndings: kept
+          credentials:
+            env: DIFFERENTLY_OPENSANDBOX_API_KEY
+      profiles:
+        - name: small
+          resources: { cpu: 1, memoryMiB: 512, diskGiB: 1 }
+        - name: medium
+          resources: { cpu: 2, memoryMiB: 1024, diskGiB: 1 }
+      defaults:
+        profile: small
+        ttlSeconds: 3600
+      policy:
+        external: never
+      audit:
+        failClosed: true
+      metrics:
+        listen: ":9091"
+
+  # OpenSandbox lifecycle server, release 1.2.0, Docker runtime. Its API key
+  # comes from OPENSANDBOX_SERVER_API_KEY above.
+  opensandbox:
+    content: |
+      [server]
+      host = "0.0.0.0"
+      port = 8090
+
+      [proxy]
+      # The server reaches sandboxes through ports published on the Docker host.
+      resolve_internal = false
+
+      [log]
+      level = "INFO"
+
+      [runtime]
+      type = "docker"
+      execd_image = "opensandbox/execd:release-1.2.0"
+
+      [egress]
+      image = "opensandbox/egress:v1.1.7"
+      readiness_timeout_seconds = 30.0
+
+      [docker]
+      network_mode = "bridge"
+      host_ip = "host.docker.internal"
+      # Sandbox ports have no authentication of their own, so they are
+      # published on the bridge gateway only, not on every interface.
+      publish_host = "${SANDBOX_PUBLISH_HOST:-172.17.0.1}"
+      port_range_min = 40000
+      port_range_max = 60000
+      drop_capabilities = ["AUDIT_WRITE", "MKNOD", "NET_ADMIN", "NET_RAW", "SYS_ADMIN", "SYS_MODULE", "SYS_PTRACE", "SYS_TIME", "SYS_TTY_CONFIG"]
+      no_new_privileges = true
+      pids_limit = 4096
+
+      [ingress]
+      mode = "direct"

@@ -8,13 +8,31 @@ Cloud-specific notes are in [aws.md](aws.md), [gcp.md](gcp.md) and
 [azure.md](azure.md), and self-managed distributions are in
 [bare-metal.md](bare-metal.md).
 
-Status: **documented**. These steps have not been run on a real cluster or
-against a live OpenSandbox server. The chart (version 0.3.0) passes `helm lint`
-and `helm template` locally for the value sets in `deploy/helm/differently/ci/`.
+Status: **the chart has run on k3s; this page's steps as written are
+documented.** Differently's chart has been installed on real clusters against
+a live OpenSandbox server: single-node k3s on Azure
+([one Linux VM](single-vm.md), 2026-10-28 and 29) and two-node k3s on Azure
+([azure-vms.md](azure-vms.md), 2026-10-29). Not run: this page's steps in
+this order, managed clusters (EKS, GKE, AKS) and node drains. The last
+recorded install on a cluster was on 2026-10-29, with pre-release code; the
+only published release recorded as installed on one is `v0.1.0-alpha.1`.
+Since then CI has linted and rendered the chart (`helm lint`, and
+`helm template` with each value set in `deploy/helm/differently/ci/`)
+without installing it; the [changelog](../../CHANGELOG.md) says what ran for
+each release.
 
-The examples use namespace `differently`, release `dly` and the chart from
-this repository (`deploy/helm/differently`). The resources are named
-`dly-differently-*`.
+The examples use namespace `differently`, release `dly` and the chart from a
+checkout of this repository (`deploy/helm/differently`). The resources are
+named `dly-differently-*`.
+
+Chart versions: in a checkout, `Chart.yaml` says `version: 0.3.0`, and its
+`appVersion` names the release whose images it installs. Each
+[release](https://github.com/different-ai/differently/releases) publishes
+the same chart packaged under the release's own version,
+`differently-<version>.tgz` (for example `differently-0.1.0-alpha.6.tgz`).
+To install exactly what was released, check out the release tag, or download
+that file and pass it to `helm install` in place of `deploy/helm/differently`
+([single-vm.md](single-vm.md#3-install-differently) does this).
 
 ## 1. Check prerequisites
 
@@ -29,12 +47,14 @@ Install OpenSandbox with its own Helm chart or manifests, following its
 documentation. This chart does not do it for you. Decide:
 
 - **Runtime.** Docker or Kubernetes for containers (they share the host
-  kernel), or Fast Sandbox for Firecracker microVMs on KVM nodes. The Docker
-  runtime and the Kubernetes runtime (single-node k3s, from OpenSandbox's own
-  charts) have run with Differently, and Fast Sandbox has run on one
-  nested-KVM node without the end-to-end suite
-  ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime),
-  [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter)).
+  kernel), or Fast Sandbox for Firecracker microVMs on KVM nodes. All three
+  have run with Differently: the Docker runtime (in CI on every pull
+  request), the Kubernetes runtime (k3s on Azure, from OpenSandbox's own
+  charts) and Fast Sandbox (Azure under nested KVM, one KVM node). The
+  [support matrix](README.md#support-matrix) says what each run covered; what
+  is still open is in
+  [POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime) and
+  [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter).
 - **OpenSandbox's charts.** Install `base` (the CRDs) first and let it create
   its namespaces (`opensandbox-system`, `opensandbox-dataplane`); creating
   them yourself makes `base` refuse to install. The charts default to images
@@ -46,8 +66,12 @@ documentation. This chart does not do it for you. Decide:
 - **API key.** Set the server's `api_key`. Without one, OpenSandbox refuses to
   start unless insecure mode is acknowledged; do not run it that way.
 - **Versions.** Pin the server and `execd` images. The adapter was checked
-  against server `release-1.2.0` with `execd` `release-1.2.0` (set
-  `opensandbox.lineEndings: kept`) and `v1.1.0`.
+  against server `release-1.2.0` with two `execd` versions: `release-1.2.0`,
+  which every run since 2026-10-28 and CI use and which needs
+  `opensandbox.lineEndings: kept`, and `v1.1.0`, which the first runs used
+  and which needs `lineEndings: stripped`. The chart leaves `lineEndings`
+  empty, and the adapter then uses `stripped`: set `kept` for
+  `release-1.2.0` or later.
 - **Location.** The chart's default `apiURL` assumes a Service
   `opensandbox-server` in namespace `opensandbox-system` on port 80, which is
   where OpenSandbox's own chart puts it. Note the real URL if yours differs.
@@ -257,12 +281,15 @@ A global policy set through `PUT /v1/policies/global` replaces
 [hybrid-overflow.md](../guides/hybrid-overflow.md) and
 [keys-and-providers.md](../guides/keys-and-providers.md).
 
-## 6. Create an organization, a project and a project key
+## 6. Log in and create an organization
 
 The bootstrap token is an operator key (`admin` scope). Use it to set up
 tenancy, then use narrower keys day to day. To create a named operator key
 and retire the bootstrap key, see
 [the bootstrap operator token](../guides/keys-and-providers.md#the-bootstrap-operator-token).
+
+These two steps use the CLI (`differently`); the
+[quickstart](../guides/quickstart.md#1-install) installs it with one command.
 
 ```sh
 export DIFFERENTLY_API_KEY=$(kubectl -n differently get secret dly-differently-tokens \
@@ -270,6 +297,37 @@ export DIFFERENTLY_API_KEY=$(kubectl -n differently get secret dly-differently-t
 kubectl -n differently port-forward svc/dly-differently-server 8080:8080 &
 export DIFFERENTLY_URL=http://127.0.0.1:8080                  # or https://differently.example.com
 
+differently login                      # saves the URL and the operator token
+differently admin org create acme      # an organization and its first project
+```
+
+`admin org create` prints the IDs of the organization and its project and
+saves the project as the CLI's default, so there is no ID to copy into the
+next step. You can also open `$DIFFERENTLY_URL/dashboard/` and sign in with
+the token.
+
+## 7. Create the first sandbox
+
+```sh
+differently run -- echo ok             # one sandbox: created, used, deleted
+```
+
+It prints the pool the sandbox ran on, then `ok`. For an application, create
+a key that works only in that project instead of handing out the operator
+token:
+
+```sh
+differently key create first-sandbox   # limited to the default project
+```
+
+The token is shown only once, so store it in your secret manager. To replace
+it later without downtime, rotate it with a grace period
+([rotate Differently API keys](../guides/keys-and-providers.md#rotate-differently-api-keys-without-downtime)).
+
+<details>
+<summary>The same with the HTTP API instead of the CLI</summary>
+
+```sh
 ORG=$(curl -fsS -X POST "$DIFFERENTLY_URL/v1/admin/organizations" \
   -H "Authorization: Bearer $DIFFERENTLY_API_KEY" -H 'Content-Type: application/json' \
   -d '{"name":"acme","defaultProject":"default"}')
@@ -280,27 +338,7 @@ PROJECT_KEY=$(curl -fsS -X POST "$DIFFERENTLY_URL/v1/api-keys" \
   -H "Authorization: Bearer $DIFFERENTLY_API_KEY" -H 'Content-Type: application/json' \
   -d "{\"name\":\"first-sandbox\",\"orgId\":\"$ORG_ID\",\"projectId\":\"$PROJECT_ID\",
        \"scopes\":[\"sandboxes:read\",\"sandboxes:write\",\"sandboxes:exec\"]}" | jq -r .token)
-echo "$PROJECT_ID"
-```
 
-The token is shown only once, so store `PROJECT_KEY` in your secret manager.
-To replace it later without downtime, rotate it with a grace period
-([rotate Differently API keys](../guides/keys-and-providers.md#rotate-differently-api-keys-without-downtime)).
-You can also open `$DIFFERENTLY_URL/dashboard/` and sign in with a key.
-
-## 7. Create the first sandbox
-
-With the CLI (`differently`, configured by `DIFFERENTLY_URL` and `DIFFERENTLY_API_KEY`):
-
-```sh
-export DIFFERENTLY_API_KEY=$PROJECT_KEY
-differently sandbox create --profile small --wait        # prints the sbx_... ID
-differently sandbox exec <sbx_id> -- echo ok
-```
-
-Or with the HTTP API directly:
-
-```sh
 SBX=$(curl -fsS -X POST "$DIFFERENTLY_URL/v1/sandboxes" \
   -H "Authorization: Bearer $PROJECT_KEY" -H 'Content-Type: application/json' \
   -d '{"profile":"small"}' | jq -r .id)
@@ -312,6 +350,8 @@ curl -fsS -X POST "$DIFFERENTLY_URL/v1/sandboxes/$SBX/exec" \
 curl -fsS "$DIFFERENTLY_URL/v1/sandboxes/$SBX/placement" -H "Authorization: Bearer $PROJECT_KEY" | jq .
 curl -fsS -X DELETE "$DIFFERENTLY_URL/v1/sandboxes/$SBX" -H "Authorization: Bearer $PROJECT_KEY"
 ```
+
+</details>
 
 If the sandbox stays `queued` or fails, the placement explanation and
 `statusReason` say why. Usual causes:
@@ -326,12 +366,15 @@ If the sandbox stays `queued` or fails, the placement explanation and
 
 ## 8. Run the smoke test
 
-The test Pod creates a sandbox, runs `echo ok` and deletes it. With the
-bootstrap key it needs the project ID from step 6. Alternatively, put a
-project-scoped key in a Secret and set `test.existingSecret`.
+The test Pod creates a sandbox, runs `echo ok` and deletes it. It runs in
+the cluster and cannot see the CLI's saved default, so with the bootstrap key
+it needs the project ID that step 6 printed (`differently project list`
+shows it again). Alternatively, put a project-scoped key in a Secret and set
+`test.existingSecret`.
 
 ```sh
-helm upgrade dly deploy/helm/differently -n differently --reuse-values --set test.projectId=$PROJECT_ID
+helm upgrade dly deploy/helm/differently -n differently --reuse-values \
+  --set test.projectId=prj_...          # the project ID from step 6
 helm test dly -n differently --logs
 ```
 

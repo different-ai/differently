@@ -595,8 +595,9 @@ Not recorded:
 - a credential changing in a mounted file or an environment variable;
 - adapter rebuilds.
 
-The trust report's `recentAdminActions` includes `pool.*`, `policy.*` and
-`key.*` events, but not `secret.*` events.
+The trust report's `recentAdminActions` holds the last 50 admin actions,
+which include `pool.*`, `policy.*` and `secret.*` events and `key.create`,
+`key.revoke` and `key.rotate`.
 
 ## What is verified
 

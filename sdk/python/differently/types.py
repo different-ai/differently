@@ -429,6 +429,9 @@ class Template(_TemplateRequired, total=False):
     description: str
     pools: List[str]
     images: Dict[str, str]  # each pool's own image, by pool name
+    source: str  # "config" (the server's config file) or "api"; the config file wins a shared name
+    updatedAt: str  # the last change made through the API
+    updatedBy: str
 
 
 class _AuditEventRequired(TypedDict):

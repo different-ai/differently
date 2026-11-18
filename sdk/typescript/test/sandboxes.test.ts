@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 import { Differently, DifferentlyError, type ExecEvent } from "../src/index.js";
+import { withEnv } from "./env.js";
 import { delay, MockServer, reply, sandboxInfo, sendError, sendJson } from "./mock-server.js";
 
 let mock: MockServer;
@@ -8,7 +9,8 @@ let client: Differently;
 
 before(async () => {
   mock = await MockServer.start();
-  client = new Differently({ apiKey: "dly_test_secret", baseUrl: mock.url });
+  // No default project: these tests compare whole create bodies.
+  client = withEnv({ DIFFERENTLY_PROJECT: undefined }, () => new Differently({ apiKey: "dly_test_secret", baseUrl: mock.url }));
 });
 after(() => mock.close());
 beforeEach(() => mock.reset());

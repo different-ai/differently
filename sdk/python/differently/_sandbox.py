@@ -293,8 +293,9 @@ class Sandbox:
 
 
 class Sandboxes:
-    def __init__(self, http: HttpClient) -> None:
+    def __init__(self, http: HttpClient, project_id: Optional[str] = None) -> None:
         self._http = http
+        self._project_id = project_id
 
     def create(
         self,
@@ -321,10 +322,11 @@ class Sandboxes:
     ) -> Sandbox:
         """Creates a sandbox and, unless ``wait=False``, waits until it is running.
 
-        Creation is retried safely under a per-call idempotency key.
+        Without ``project_id`` it goes to the client's default project, if one
+        is set. Creation is retried safely under a per-call idempotency key.
         """
         body = compact(
-            projectId=project_id,
+            projectId=project_id or self._project_id,
             template=template,
             profile=profile,
             resources=resources,

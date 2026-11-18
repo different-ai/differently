@@ -1,13 +1,19 @@
 # Differently documentation
 
-Start with the [project README](../README.md) for what Differently is and a
-two-minute local quickstart.
+New here? Read [Differently explained](explainer.md) for what it is in plain
+words, then run it with the [quickstart](guides/quickstart.md): three
+commands, no account or cluster. Working through a coding agent? Point it
+at [Use Differently with a coding agent](guides/agents.md).
 
 ## Use it
 
 | Guide | For |
 |---|---|
-| [Quickstart](guides/quickstart.md) | Laptop dev mode, first sandbox, SDK snippets |
+| [Differently explained](explainer.md) | What it is, the five words to know, what you need to start and what can wait |
+| [Quickstart](guides/quickstart.md) | Install, a local server, the first sandbox, SDK snippets, the step up to a real backend |
+| [One baseline on every provider](guides/baselines.md) | One template name for each provider's own image or snapshot; what stays on its pool (sandboxes, snapshots) and how to see what each provider has and can do |
+| [Questions people ask](faq.md) | Short answers on snapshots, switching providers, outages, trust and readiness |
+| [Use Differently with a coding agent](guides/agents.md) | A prompt to paste, and step-by-step instructions written for the agent (also served as `/agents.txt`) |
 | [Organization onboarding](guides/organization-onboarding.md) | One installation per organization vs shared; orgs, projects, quotas, scoped keys, policies |
 | [Hybrid overflow](guides/hybrid-overflow.md) | Authorizing Daytona or Freestyle as policy-gated external capacity |
 | [OpenWork on Differently](guides/openwork.md) | OpenWork's sandbox contract mapped onto Differently; Workbot computers routed across OpenSandbox, Daytona and Freestyle |
@@ -23,6 +29,7 @@ two-minute local quickstart.
 | Guide | For |
 |---|---|
 | [Deployment overview and support matrix](deploy/README.md) | Where to run it, and what is tested, documented or unverified |
+| [One Docker host](deploy/docker.md) | The real stack from published images: one downloaded Compose file, then a first sandbox in a container |
 | [One Linux VM on any cloud](deploy/single-vm.md) | The quickest team setup: k3s, OpenSandbox and Differently on Azure, AWS, Google Cloud or bare metal |
 | [Azure VMs serving OpenWork](deploy/azure-vms.md) | A verified two-VM install with Fast Sandbox microVMs, managed Postgres, a registry and Key Vault, and Freestyle and Daytona as external pools |
 | [Prerequisites](deploy/prerequisites.md) | Cluster, Postgres and an OpenSandbox server (or another backend) |

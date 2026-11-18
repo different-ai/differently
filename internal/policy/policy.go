@@ -46,7 +46,12 @@ type Input struct {
 	// Template is the configured template the sandbox asks for, if any; it
 	// limits the pools and names each pool's own image.
 	Template *api.Template
-	Now      time.Time
+	// TemplateRemoved says the sandbox was admitted or placed under a
+	// template that no longer exists. The template limited where it could
+	// run, so it must not now run with the name passed to a backend as
+	// given: no pool is eligible.
+	TemplateRemoved bool
+	Now             time.Time
 }
 
 // Effective is the merged policy for one request.
@@ -215,7 +220,7 @@ func Decide(in Input) Result {
 		pv   PoolView
 	}
 	var cands []cand
-	capabilityOnly, attestationOnly := 0, 0
+	capabilityOnly, attestationOnly, templateOnly := 0, 0, 0
 	for _, pv := range in.Pools {
 		p := pv.Pool
 		ev := api.CandidateEvaluation{Pool: p.Name, Trust: p.Trust, Eligible: true}
@@ -249,14 +254,23 @@ func Decide(in Input) Result {
 			reject("missing capabilities: %s", strings.Join(missing, ", "))
 		}
 		image := sb.Template
+		templateReasons := 0 // how many of this pool's reasons are the template
+		if in.TemplateRemoved {
+			reject("template %s was removed after this sandbox was requested", sb.Template)
+			templateReasons++
+		}
 		if in.Template != nil {
 			if ok, why := in.Template.Offers(p.Name); !ok {
 				reject("%s", why)
+				templateReasons++
 			}
 			image = in.Template.ImageFor(p.Name)
 		}
 		if ok, why := pv.Capabilities.Accepts(sb.Resources, image); !ok {
 			reject("%s", why)
+			if !pv.Capabilities.OffersTemplate(image) {
+				templateReasons++
+			}
 		}
 		cost := p.CostModel.HourlyCost(sb.Resources)
 		ev.EstimatedCost = cost
@@ -265,6 +279,9 @@ func Decide(in Input) Result {
 		}
 		if policyOK && !ev.Eligible && len(missing) > 0 && len(ev.Reasons) == 1 {
 			capabilityOnly++
+		}
+		if policyOK && templateReasons > 0 && len(ev.Reasons) == templateReasons {
+			templateOnly++ // policy would let work go here if the pool had the template
 		}
 		if ev.Eligible {
 			ev.HasCapacity = true
@@ -374,6 +391,12 @@ func Decide(in Input) Result {
 	default:
 		dec.Outcome = "rejected"
 		switch {
+		case in.TemplateRemoved:
+			// Nothing else matters: whatever the pools could do, this
+			// sandbox was limited by a template and must not outlive it as
+			// a plain name.
+			dec.Reason = "template " + sb.Template + " was removed after this sandbox was requested, and its name is not passed to a backend as given"
+			res.Err = api.Errorf(api.CodeNoEligiblePool, "%s", dec.Reason).With("classification", sb.Classification).With("template", sb.Template)
 		case capabilityOnly > 0:
 			dec.Reason = "no permitted pool supports the requested capabilities"
 			res.Err = api.Errorf(api.CodeUnsupportedCapability, "%s", dec.Reason).With("capabilities", strings.Join(sb.Capabilities, ","))
@@ -381,6 +404,18 @@ func Decide(in Input) Result {
 			dec.Reason = "no permitted pool holds the required attestations"
 			res.Err = api.Errorf(api.CodeNoEligiblePool, "%s", dec.Reason).With("classification", sb.Classification).
 				With("requiredAttestations", strings.Join(eff.RequiredAttestations, ","))
+		case in.PinnedPool != "":
+			// A snapshot stays with the backend that took it, so a restore
+			// or fork can only run there. The snapshot's own record already
+			// names its pool to whoever can read it.
+			dec.Reason = "a sandbox started from a snapshot runs on the pool that holds it, " + in.PinnedPool + ", and that pool cannot take this one"
+			res.Err = api.Errorf(api.CodeNoEligiblePool, "%s", dec.Reason).With("classification", sb.Classification).With("pool", in.PinnedPool)
+		case templateOnly > 0:
+			// Every backend boots its own images, so a template has to exist
+			// on each pool that should run it. Say that this is what is
+			// missing, and name only the template the caller asked for.
+			dec.Reason = "no permitted pool has template " + sb.Template
+			res.Err = api.Errorf(api.CodeNoEligiblePool, "%s", dec.Reason).With("classification", sb.Classification).With("template", sb.Template)
 		default:
 			dec.Reason = "no pool satisfies placement policy for this sandbox"
 			res.Err = api.Errorf(api.CodeNoEligiblePool, "%s", dec.Reason).With("classification", sb.Classification)

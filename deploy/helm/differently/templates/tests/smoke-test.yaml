@@ -37,7 +37,8 @@ spec:
             set -- "$@" --project "$SMOKE_PROJECT_ID"
           elif [ "$SMOKE_OPERATOR_KEY" = "true" ]; then
             echo "The bootstrap token is an operator key, and operator keys must name a project." >&2
-            echo "Create an organization and project (docs/deploy/kubernetes.md, step 7), then:" >&2
+            echo "Create an organization and project with 'differently admin org create NAME'" >&2
+            echo "(docs/deploy/kubernetes.md, step 6), then give the test the project ID it prints:" >&2
             echo "  helm upgrade <release> <chart> --reuse-values --set test.projectId=prj_..." >&2
             exit 1
           fi

@@ -1,59 +1,155 @@
 # Quickstart
 
-Two ways to try Differently: a laptop with no isolation (minutes), or a
-Kubernetes cluster with an OpenSandbox server as the sandbox runtime (the
-real thing).
+Install Differently, start it on your machine and run a first sandbox. Three
+commands, no account, no cluster, no database. New to the project?
+[Differently explained](../explainer.md) is the five-minute version of what
+it is.
 
-## 1. Laptop (dev mode)
+Using a coding agent? Paste this into it and skip the rest of the page:
 
-Dev mode runs an in-memory store and a `devhost` pool. Commands run **directly
-on your machine as your user** — never point it at untrusted code.
-
-```bash
-git clone https://github.com/different-ai/differently && cd differently
-make build
-./bin/differently-server --dev
+```text
+Read https://different-ai.github.io/differently/agents.txt and follow it:
+install Differently on this machine, start it in dev mode, run one sandbox to
+prove it works, then show me how to create a sandbox from my code.
 ```
 
-The server writes an operator token to `~/.differently/dev/token`, creates an
-organization `org_default` with project `prj_default`, and serves:
+## 1. Install
 
-- API: `http://localhost:8080/v1/...` ([OpenAPI](../../api/openapi.yaml))
-- Dashboard: `http://localhost:8080/dashboard/`
-- Metrics: `http://localhost:8080/metrics`
+```bash
+curl -fsSL https://different-ai.github.io/differently/install.sh | sh
+```
+
+This puts two programs in `~/.local/bin`: `differently` (the CLI) and
+`differently-server`. It works on macOS and Linux (on Windows, use WSL),
+checks the download against the release's checksums and does not use `sudo`.
+If the script says `~/.local/bin` is not on your `PATH`, run the `export`
+line it prints.
+
+Other ways to get them:
+
+- **By hand.** Download the archive for your machine from the
+  [releases page](https://github.com/different-ai/differently/releases) and
+  put its two programs anywhere on your `PATH`.
+- **From source** (needs Go 1.26 or newer):
+  `git clone https://github.com/different-ai/differently && cd differently && make build`.
+  The programs land in `./bin/`.
+- **A specific version or directory:** set `DIFFERENTLY_VERSION` or
+  `DIFFERENTLY_INSTALL_DIR` before running the script.
+
+## 2. Start a local server
+
+```bash
+differently-server --dev
+```
+
+Leave it running. It prints its address, where its token is and the next
+command to try. Dev mode needs no configuration: it keeps everything in
+memory and creates one organization (`org_default`) with one project
+(`prj_default`).
+
+> **Dev mode has no isolation.** Sandboxes are directories on your machine
+> and commands run as you. Use it to learn the API, never to run code you do
+> not trust.
+
+## 3. Run something
 
 In a second terminal:
 
 ```bash
-./bin/differently doctor
-ID=$(./bin/differently sandbox create --profile small --wait -o json | jq -r .id)
-./bin/differently sandbox exec "$ID" -- 'echo "hello from $(hostname)"'
-./bin/differently sandbox files put "$ID" ./go.mod /work/go.mod
-./bin/differently sandbox files cat "$ID" /work/go.mod
-FORK=$(./bin/differently sandbox fork "$ID" -o json | jq -r .id)
-./bin/differently sandbox placement "$ID"
-./bin/differently sandbox delete "$ID" "$FORK"
-./bin/differently admin verify-audit
+differently run -- echo hello
+```
+
+That created a sandbox, ran the command in it, printed its output and deleted
+the sandbox. The CLI found the local server and its token by itself.
+
+The dashboard at <http://localhost:8080/dashboard/> shows sandboxes, pools
+and the audit trail.
+
+## A longer tour
+
+A sandbox you keep, with files, a fork and the placement decision:
+
+```bash
+differently doctor                                   # server, key and pools
+differently capabilities                             # what each pool can do, side by side
+differently sandbox create --wait                    # prints the sandbox ID
+ID=<the ID it printed>
+differently sandbox exec $ID -- 'echo "hello from $(uname -sm)"'
+echo "a note" > note.txt
+differently sandbox files put $ID note.txt /work/note.txt
+differently sandbox files cat $ID /work/note.txt
+differently sandbox fork $ID                         # a copy, with its own ID
+differently sandbox placement $ID                    # where it runs and why
+differently sandbox list
+differently sandbox delete $ID
+differently admin verify-audit                       # the audit chain is intact
 ```
 
 Ask for something no pool provides and you get a precise error instead of a
 sandbox that never starts:
 
 ```bash
-./bin/differently sandbox create --capability gpu
+differently sandbox create --capability gpu
 # error [unsupported_capability]: no permitted pool supports the requested capabilities
 ```
 
-## 2. Kubernetes with OpenSandbox
+`differently sandbox snapshot $ID` prints a snapshot ID, and
+`differently run --from-snapshot <snp-id> -- <command>` starts from it.
+Snapshots stay on the pool that took them, and each provider boots its own
+images: [one baseline on every provider](baselines.md) explains how one name
+covers them all.
 
-Differently does not run sandboxes itself. Install an
-[OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) server first,
-with its own chart or manifests, and choose its runtime: Docker or
-Kubernetes containers, or Fast Sandbox microVMs on KVM nodes. The Docker and
-Kubernetes runtimes have run with Differently; Fast Sandbox hasn't yet. On a
-fresh Linux VM, [One Linux VM on any cloud](../deploy/single-vm.md) does all
-of this with release artifacts. On an existing cluster, follow
-[deploy/kubernetes.md](../deploy/kubernetes.md). In short:
+Every command is in the [CLI reference](https://different-ai.github.io/differently/docs/reference/cli/).
+
+## From your code
+
+Against the local server the SDKs need no key and no project: on this
+machine they read the dev server's token and use `prj_default`, like the
+CLI.
+
+```ts
+import { Differently } from "@differently/sdk";
+
+const differently = new Differently();
+const sandbox = await differently.sandboxes.create();
+for await (const ev of sandbox.execStream("uname -sm")) {
+  if (ev.type === "stdout") process.stdout.write(ev.data);
+}
+await sandbox.delete();
+```
+
+```python
+from differently import Differently
+
+with Differently().sandboxes.create() as sandbox:
+    print(sandbox.exec("uname -sm").stdout)
+```
+
+The SDKs are not on npm or PyPI yet. Each page says how to install it from
+the repository: [TypeScript](../../sdk/typescript/README.md),
+[Python](../../sdk/python/README.md), [Go](../../pkg/client/client.go). Any
+other language can use the [HTTP API](../../api/openapi.yaml) directly; a
+running server serves the contract at `/openapi.yaml`.
+
+Against any other server, set `DIFFERENTLY_URL` and `DIFFERENTLY_API_KEY`
+(and `DIFFERENTLY_PROJECT` when the key is not limited to one project), or
+run `differently login` once for the CLI.
+
+## Next: a real backend
+
+Dev mode proves the API. To run code in real isolation, Differently needs a
+sandbox runtime to place work on. It does not run sandboxes itself: by
+default it uses an
+[OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) server that
+you install with its own chart or manifests.
+
+| You have | Follow | What you get |
+|---|---|---|
+| A Docker host | [One Docker host](../deploy/docker.md): download one file, `docker compose up -d --wait` | Postgres, Differently and OpenSandbox from published images; sandboxes are containers |
+| One Linux VM | [One Linux VM on any cloud](../deploy/single-vm.md) | k3s, OpenSandbox and Differently from release artifacts |
+| A Kubernetes cluster | [Kubernetes](../deploy/kubernetes.md) | The Helm chart next to an OpenSandbox server |
+
+On Kubernetes the install is, in short:
 
 ```bash
 kubectl create namespace differently
@@ -67,28 +163,7 @@ kubectl -n differently get secret differently-tokens -o jsonpath='{.data.bootstr
 
 The chart registers the server as a pool named `opensandbox` with
 `trust: private`. Then create a tenant and a scoped key as described in
-[organization-onboarding.md](organization-onboarding.md). Pool options and
-what OpenSandbox supports are in [opensandbox-pools.md](opensandbox-pools.md).
-
-To try a real runtime on one machine instead, `test/opensandbox/compose.yaml`
-starts an OpenSandbox server with the Docker runtime, and
-`test/e2e/config.yaml` shows a server config with an `opensandbox` pool
-pointing at one.
-
-## 3. Use an SDK
-
-```ts
-import { Differently } from "@differently/sdk";
-const differently = new Differently(); // reads DIFFERENTLY_URL and DIFFERENTLY_API_KEY
-const sandbox = await differently.sandboxes.create({ profile: "small" });
-for await (const ev of sandbox.execStream("npm test")) {
-  if (ev.type === "stdout") process.stdout.write(ev.data);
-}
-await sandbox.delete();
-```
-
-```python
-from differently import Differently
-with Differently().sandboxes.create(profile="small") as sandbox:
-    print(sandbox.exec("uname -sm").stdout)
-```
+[organization onboarding](organization-onboarding.md). Pool options and what
+OpenSandbox supports are in [OpenSandbox pools](opensandbox-pools.md), and
+the [deployment overview](../deploy/README.md) says which paths have been
+tested.

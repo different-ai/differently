@@ -15,7 +15,9 @@
 
 <p align="center">
   <b><a href="https://different-ai.github.io/differently/">Website</a></b> ·
-  <b><a href="https://different-ai.github.io/differently/docs/guides/quickstart/">Get started</a></b> ·
+  <b><a href="#get-started">Get started</a></b> ·
+  <b><a href="docs/explainer.md">Explainer</a></b> ·
+  <b><a href="docs/guides/agents.md">For agents</a></b> ·
   <b><a href="docs/deploy/README.md">Deploy anywhere</a></b> ·
   <b><a href="https://different-ai.github.io/differently/docs/">Docs</a></b> ·
   <b><a href="https://github.com/different-ai/differently/releases">Releases</a></b> ·
@@ -45,7 +47,7 @@ Apache-2.0, fully self-hosted, no telemetry. Built by the
   <br><sub>▶ <a href="https://different-ai.github.io/differently/#video">Watch the 36-second intro</a></sub>
 </p>
 
-> **Pre-release ([`v0.1.0-alpha.5`](https://github.com/different-ai/differently/releases)).**
+> **Pre-release ([`v0.1.0-alpha.6`](https://github.com/different-ai/differently/releases)).**
 > The whole platform is implemented and tested end to end against real
 > OpenSandbox servers (Docker, Kubernetes and Fast Sandbox microVM
 > runtimes). It isn't ready for production workloads yet: see
@@ -75,58 +77,71 @@ that layer.
 
 ## Get started
 
-**1. Try it on your laptop (2 minutes).** Needs Go 1.26+. Dev mode keeps
-state in memory and runs commands **on your machine with no isolation**, to
-explore the API, CLI and SDKs:
+Three commands, on macOS or Linux. No account, no cluster, no database.
 
 ```bash
-make build
-./bin/differently-server --dev                      # writes an operator token to ~/.differently/dev/token
-./bin/differently sandbox create --profile small --wait   # in another terminal
-./bin/differently sandbox exec <sandbox-id> -- 'echo hello from $(uname -s)'
-./bin/differently sandbox placement <sandbox-id>    # why it ran where it ran
+curl -fsSL https://different-ai.github.io/differently/install.sh | sh   # the CLI and the server, into ~/.local/bin
+differently-server --dev                                                # a local server; leave it running
+differently run -- echo hello                                           # in a second terminal
 ```
 
-The dashboard is at <http://localhost:8080/dashboard/>. The [admin console](console/README.md)
-is the same idea as a separate app you can host anywhere: as static files,
-or on Node with sign-in.
+`run` creates a sandbox, runs the command in it and deletes it. Dev mode
+keeps state in memory and runs commands **on your machine with no
+isolation**: it is for learning the API, CLI and SDKs, not for code you do
+not trust. The dashboard is at <http://localhost:8080/dashboard/>.
 
-**2. Run the real stack on any Docker host (10 minutes).** Postgres,
-Differently and a real OpenSandbox server, as the end-to-end suite runs it:
+**With a coding agent.** Paste this into Claude Code, Codex, Cursor or any
+agent that can run commands:
 
-```bash
-make e2e-prepare e2e-up    # API on :18090, OpenSandbox on :18091
-make e2e                   # optional: the end-to-end tests
+```text
+Read https://different-ai.github.io/differently/agents.txt and follow it:
+install Differently on this machine, start it in dev mode, run one sandbox to
+prove it works, then show me how to create a sandbox from my code.
 ```
 
-**3. Deploy it for your team.** On [one Linux VM on any cloud](docs/deploy/single-vm.md)
-(k3s, OpenSandbox and Differently, about 30 minutes), or with Helm on
-[your Kubernetes cluster](docs/deploy/kubernetes.md) using the chart and
-images from the [latest release](https://github.com/different-ai/differently/releases).
-
-Then call it from code ([TypeScript](sdk/typescript), [Python](sdk/python),
-[Go](pkg/client)). The SDKs are not on npm or PyPI yet; each README says how
-to install it from this repository.
+**From your code** ([TypeScript](sdk/typescript), [Python](sdk/python),
+[Go](pkg/client)). Against the local server the SDKs need no key and no
+project. They are not on npm or PyPI yet; each README says how to install
+from this repository.
 
 ```ts
 import { Differently } from "@differently/sdk";
 
-const differently = new Differently({ apiKey: process.env.DIFFERENTLY_API_KEY });
-const sandbox = await differently.sandboxes.create({
-  // projectId: "prj_default", // needed with an operator key, such as the dev token
-  profile: "small",
-  placement: { strategy: "private-first", external: "never" },
-});
+const differently = new Differently(); // or { baseUrl, apiKey } for a deployed server
+const sandbox = await differently.sandboxes.create();
 console.log((await sandbox.exec("uname -sm")).stdout);
 await sandbox.delete();
 ```
+
+**Then, when you want real isolation:**
+
+| Step up to | How | Time |
+|---|---|---|
+| The real stack on any Docker host | [One file and `docker compose up -d --wait`](docs/deploy/docker.md): Postgres, Differently and an OpenSandbox server from published images | about 5 minutes |
+| A server for your team | [One Linux VM on any cloud](docs/deploy/single-vm.md): k3s, OpenSandbox and Differently | about 30 minutes |
+| Your Kubernetes cluster | The [Helm chart](docs/deploy/kubernetes.md) and images from the [latest release](https://github.com/different-ai/differently/releases) | |
+
+New here? [Differently explained](docs/explainer.md) is the five-minute
+version of what it is and what you can ignore until later. The
+[quickstart](docs/guides/quickstart.md) has the longer tour.
+
+**"Don't I need my snapshot on every provider?"** Yes, and that is the one
+thing nothing can do for you. Differently makes it one name: build the
+baseline once per provider, register them as a template
+(`differently admin template set python --image POOL=IMAGE`, on a running
+server), and your code asks for the name. Requests go only to pools that have it, each backend gets its
+own image, and `differently templates` and `differently capabilities` show
+what every provider has and can do. A sandbox is placed once and stays put,
+and so do its snapshots. See
+[one baseline on every provider](docs/guides/baselines.md) and the other
+[questions people ask](docs/faq.md).
 
 ## Deploy anywhere
 
 | Where | How | Status |
 |---|---|---|
 | Laptop | `differently-server --dev` | Verified (no isolation; for trying it) |
-| Any Docker host | [`test/e2e`](test/e2e/README.md) Compose stack | Verified: end-to-end suite 14/14 |
+| Any Docker host | [One Compose file](docs/deploy/docker.md), published images | Verified in CI on every pull request: the file alone in an empty directory, started, one sandbox run. CI also runs the [end-to-end suite](test/e2e/README.md) on the same services |
 | One Linux VM: Azure, AWS, Google Cloud, bare metal | [k3s + Helm](docs/deploy/single-vm.md) | Verified on Azure; same steps elsewhere, not yet run |
 | Existing Kubernetes: EKS, GKE, AKS, k3s, RKE2 | [Helm chart](docs/deploy/kubernetes.md) | Helm install verified on k3s; managed clusters documented |
 | Cloud notes | [AWS](docs/deploy/aws.md) · [Google Cloud](docs/deploy/gcp.md) · [Azure](docs/deploy/azure.md) · [Bare metal](docs/deploy/bare-metal.md) | Documented |
@@ -139,8 +154,10 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 ## Status
 
 **Verified** (2026-10-28 and 29):
-- the end-to-end suite passes 14/14 on OpenSandbox's Docker runtime and on its
-  Kubernetes runtime (k3s on Azure, both installed with Helm);
+- the end-to-end suite on OpenSandbox's Docker runtime, 14/14, and on its
+  Kubernetes runtime (k3s on Azure, both installed with Helm), 14/14: every
+  test it then had. CI now runs the suite on the Docker runtime on every
+  pull request ([results](test/e2e/README.md#verified-on));
 - on the Kubernetes runtime: stop/start keeping the disk, snapshots and fork
   through a snapshot registry, signed port URLs (including WebSockets) and
   egress policy;
@@ -158,11 +175,16 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
   through Differently as a sandbox gateway, behind a flag, desktops on Fast
   Sandbox microVMs included, driven by OpenWork's runner;
 - Fast Sandbox microVMs on Azure (two-node k3s with one KVM node): the
-  adapter scenario (recorded), the end-to-end suite on the microVM pool, and
-  Workbot's desktop streamed over a port URL, paused and resumed with its
-  memory, idled and woken by a request (pause takes minutes).
+  adapter scenario (recorded), the end-to-end suite on the microVM pool (14
+  of the 18 tests it then had ran, and passed), and Workbot's desktop
+  streamed over a port URL, paused and resumed with its memory, idled and
+  woken by a request (pause takes minutes).
 
 **Not verified yet:**
+- any published release after `v0.1.0-alpha.1` on a cluster: none is
+  recorded as installed on one. The Kubernetes and Fast Sandbox runs above
+  used pre-release code and have not been repeated since 2026-10-29; the
+  [changelog](CHANGELOG.md) says what ran for each release;
 - node drains, and more than one KVM node;
 - managed EKS, GKE and AKS;
 - the other 12 provider adapters against live accounts: each is tested
@@ -215,7 +237,8 @@ under a control plane you run. See the
 - **Contribute:** [CONTRIBUTING.md](CONTRIBUTING.md) covers the branch model
   (PRs target `pre-release`), DCO sign-off and releases.
   [AGENTS.md](AGENTS.md) is the entry point for coding agents and
-  maintainers.
+  maintainers who change Differently; agents that install or use it start
+  at [docs/guides/agents.md](docs/guides/agents.md).
 - **Get help:** [SUPPORT.md](SUPPORT.md).
 - **Report a vulnerability:** [SECURITY.md](SECURITY.md), privately.
 - **Conduct and decisions:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
@@ -232,7 +255,7 @@ under a control plane you run. See the
 | `api/openapi.yaml` | The HTTP API contract (a test keeps it in sync with the router) |
 | `sdk/typescript`, `sdk/python` | Official SDKs |
 | `console/` | The admin console: static files for any host, or Node with sign-in |
-| `deploy/` | Helm chart (control plane only), Terraform (AWS) |
+| `deploy/` | Helm chart (control plane only), the Compose file for one Docker host, Terraform (AWS) |
 | `docs/` | Guides, deployment, architecture, security, roadmap |
 | `site/` | The website and docs site |
 | `test/e2e`, `test/opensandbox` | The real-stack end-to-end suite and the live OpenSandbox checks |

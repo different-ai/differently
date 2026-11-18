@@ -309,6 +309,33 @@ func (c *Client) ListSecrets(ctx context.Context) ([]api.Secret, error) {
 	return out.Items, c.Do(ctx, http.MethodGet, "/v1/admin/secrets", nil, &out)
 }
 
+// ListTemplates lists every template: the config file's and those set
+// through the API.
+func (c *Client) ListTemplates(ctx context.Context) ([]api.Template, error) {
+	var out api.List[api.Template]
+	return out.Items, c.Do(ctx, http.MethodGet, "/v1/templates", nil, &out)
+}
+
+// SetTemplate gives a template name an image on each pool named in req
+// (operator keys). It merges: images already set for other pools stay.
+func (c *Client) SetTemplate(ctx context.Context, name string, req api.PutTemplateRequest) (api.Template, error) {
+	var out api.Template
+	return out, c.Do(ctx, http.MethodPut, "/v1/admin/templates/"+url.PathEscape(name), req, &out)
+}
+
+// RemoveTemplateImage stops offering a template on one pool. The server
+// refuses to remove a template's last image; delete the template instead.
+func (c *Client) RemoveTemplateImage(ctx context.Context, name, pool string) (api.Template, error) {
+	var out api.Template
+	return out, c.Do(ctx, http.MethodDelete, "/v1/admin/templates/"+url.PathEscape(name)+"/images/"+url.PathEscape(pool), nil, &out)
+}
+
+// DeleteTemplate removes a template set through the API. A request that
+// names it afterwards has the name passed to the backend as given.
+func (c *Client) DeleteTemplate(ctx context.Context, name string) error {
+	return c.Do(ctx, http.MethodDelete, "/v1/admin/templates/"+url.PathEscape(name), nil, nil)
+}
+
 // UsePool sends new sandboxes to a pool, draining the others.
 func (c *Client) UsePool(ctx context.Context, name string, approveExternal bool) (api.UsePoolResponse, error) {
 	var out api.UsePoolResponse

@@ -40,9 +40,19 @@ commonLabels: {}
 # unknown keys are errors, and values.schema.json mirrors that schema so
 # typos fail at `helm install` time.
 #
-# Chart-managed keys you cannot set here: listen (from server.containerPort),
-# dataDir (/var/lib/differently, an emptyDir), dev (always false), auth (env
-# variable names), store.dsnEnv (DIFFERENTLY_DATABASE_URL).
+# Keys the chart writes itself:
+#   - listen (from server.containerPort), dataDir (/var/lib/differently, an
+#     emptyDir) and metrics (from metrics.port);
+#   - store.driver (memory unless you set it below) and publicURL (the first
+#     ingress host when empty);
+#   - pools: the opensandbox block first, then config.pools, then providers.*.
+#
+# Keys you cannot set here, because the schema rejects them: listen, dataDir,
+# metrics, dev, auth and store.dsnEnv. The templates refuse dev a second time
+# (dev mode enables the devhost adapter, which has no isolation). auth and
+# store.dsnEnv stay unset, so the server reads its default variables,
+# DIFFERENTLY_BOOTSTRAP_TOKEN and DIFFERENTLY_DATABASE_URL, which the chart
+# sets from Secrets.
 #
 # Secrets never belong in this block. Pools reference credentials by
 # environment variable (credentials: {env: NAME}); the chart wires the
@@ -100,6 +110,14 @@ config:
 
   # Sandbox templates listed by the API (GET /v1/templates). Optional; an
   # OpenSandbox pool with opensandbox.templateId reports that template too.
+  # A template gives one name to each pool's own image, so the same request
+  # can run on any pool that has one (docs/guides/baselines.md):
+  #   - name: python
+  #     images: {opensandbox: registry.example.com/python:3.12, daytona: python-312}
+  # Templates can also be set on a running server, with no upgrade:
+  #   differently admin template set python --image daytona=python-312
+  # Those are kept in the database. A template declared here wins over one
+  # of the same name set that way, and is changed only here (helm upgrade).
   templates: []
 
   # Additional execution pools. The default private pool comes from the

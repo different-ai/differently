@@ -61,7 +61,8 @@ API spec has run ahead of the images its server deploys by default (the
 by the adapter), so treat every upgrade as a contract change:
 
 1. Keep the server and `execd` image versions pinned. The adapter was checked
-   against server `release-1.2.0` with `execd` `v1.1.0`.
+   against server `release-1.2.0` with `execd` `release-1.2.0`
+   (`lineEndings: kept`) and, in its first runs, `execd` `v1.1.0`.
 2. Before upgrading production, run the adapter's live test against a staging
    server on the new versions. It creates and deletes real sandboxes:
 
@@ -164,7 +165,7 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: migrate
-          image: ghcr.io/different-ai/differently-server:0.1.0-alpha.5
+          image: ghcr.io/different-ai/differently-server:0.1.0-alpha.6
           args: ["migrate", "--config", "/etc/differently/config.yaml"]
           env:
             - name: DIFFERENTLY_DATABASE_URL

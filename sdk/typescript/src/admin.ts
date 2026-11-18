@@ -12,9 +12,11 @@ import type {
   SandboxInfo,
   PutStackParams,
   Secret,
+  SetTemplateParams,
   Stack,
   SuspendOrganizationParams,
   SuspendOrganizationResult,
+  Template,
   TrustReport,
   UpdateOrganizationParams,
   UpdatePoolParams,
@@ -171,6 +173,37 @@ export class AdminStacks {
   }
 }
 
+/**
+ * Templates set on a running server: one name for each pool's own image or snapshot.
+ * `client.templates.list()` lists them, with the config file's. A template the config
+ * file declares is changed there; these calls refuse it.
+ */
+export class AdminTemplates {
+  readonly #http: HttpClient;
+
+  constructor(http: HttpClient) {
+    this.#http = http;
+  }
+
+  /**
+   * Sets what the named pools boot for a template, creating it if needed. It merges:
+   * pools not named in `images` keep theirs. Applies from the next placement, with no restart.
+   */
+  set(name: string, params: SetTemplateParams): Promise<Template> {
+    return this.#http.json<Template>({ method: "PUT", path: `/v1/admin/templates/${enc(name)}`, json: params });
+  }
+
+  /** Stops offering the template on one pool. A template's last image cannot be removed; delete the template. */
+  removeImage(name: string, pool: string): Promise<Template> {
+    return this.#http.json<Template>({ method: "DELETE", path: `/v1/admin/templates/${enc(name)}/images/${enc(pool)}` });
+  }
+
+  /** Removes the template. A request that names it afterwards has the name passed to the backend as given. */
+  async delete(name: string): Promise<void> {
+    await this.#http.json<void>({ method: "DELETE", path: `/v1/admin/templates/${enc(name)}` });
+  }
+}
+
 /** Operator-only endpoints. Every call needs a key with the `admin` scope. */
 export class Admin {
   readonly organizations: AdminOrganizations;
@@ -178,6 +211,7 @@ export class Admin {
   readonly pools: AdminPools;
   readonly secrets: AdminSecrets;
   readonly stacks: AdminStacks;
+  readonly templates: AdminTemplates;
   readonly #http: HttpClient;
 
   constructor(http: HttpClient) {
@@ -187,6 +221,7 @@ export class Admin {
     this.pools = new AdminPools(http);
     this.secrets = new AdminSecrets(http);
     this.stacks = new AdminStacks(http);
+    this.templates = new AdminTemplates(http);
   }
 
   /** Where workloads can go, where they went, and what Differently cannot prove. */

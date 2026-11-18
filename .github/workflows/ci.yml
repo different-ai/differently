@@ -152,6 +152,53 @@ jobs:
         if: always()
         run: make e2e-down
 
+  # The stack people install (deploy/compose/compose.yaml), started the way
+  # docs/deploy/docker.md says: the file alone in an empty directory, the
+  # secrets from the guide's own commands, `docker compose up`, then one
+  # sandbox created, used and deleted with the CLI in the server image
+  # (test/compose/check.sh). Once with the server image built from this
+  # commit, and once with the published image the file names, which is what a
+  # user gets. The second is skipped with a notice while that tag does not
+  # exist: a release pull request names its version before the tag is pushed.
+  # Any other registry error fails it.
+  compose:
+    name: docker host stack (${{ matrix.image }} image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [built, published]
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker and compose versions
+        run: |
+          docker version --format 'engine {{.Server.Version}}'
+          docker compose version
+      - name: start it with the server image built from this commit, and run a sandbox
+        if: matrix.image == 'built'
+        run: make compose-check-built
+      - name: is the image the file names published?
+        if: matrix.image == 'published'
+        id: published
+        run: |
+          image=$(test/compose/check.sh --default-image)
+          if out=$(docker manifest inspect "$image" 2>&1); then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$out" | grep -qiE 'manifest unknown|no such manifest'; then
+            echo "::notice::$image is not published, so the stack was not started with it"
+          else
+            # A registry error is not a missing tag: do not skip on it.
+            printf '%s\n' "$out"
+            exit 1
+          fi
+      - name: start it as downloaded, with the published image, and run a sandbox
+        if: matrix.image == 'published' && steps.published.outputs.exists == 'true'
+        run: make compose-check
+      - name: images the stack pulled
+        if: always()
+        run: docker image ls
+
   helm:
     name: helm chart
     runs-on: ubuntu-latest
@@ -231,7 +278,7 @@ jobs:
   # again. It approves what CI checked, not what a reviewer read.
   approve:
     name: approve when CI passes
-    needs: [go, go-experimental, postgres, e2e, sdk-typescript, console, sdk-python, helm, images, dco, release-source]
+    needs: [go, go-experimental, postgres, e2e, compose, sdk-typescript, console, sdk-python, helm, images, dco, release-source]
     if: >-
       always() &&
       github.event_name == 'pull_request' &&

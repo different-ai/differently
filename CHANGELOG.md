@@ -6,7 +6,263 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.6] — 2026-11-18
+
+Sixth alpha, published as a GitHub pre-release. Not for production. This one
+is about the first hour with Differently: getting it, running a first
+sandbox, and getting straight answers before committing to it. Installing is
+one command and a first sandbox is one more (`differently run`); the SDKs
+find a local server by themselves; a real installation gives a first sandbox
+with no ID copied by hand; the whole stack starts on a Docker host from one
+downloaded Compose file and published images; one template name covers each
+provider's own image and can be set on a running server; and the website
+gains an explainer, a page of questions people ask, `/agents.txt` and
+`/llms.txt`. The guides were also made to agree on what has been verified.
+
+What ran for this release: the unit and in-process tests, the Postgres
+conformance and acceptance job, the end-to-end suite on OpenSandbox's Docker
+runtime and the container image builds, in CI on each pull request (#115 to
+#123). From #120 on, CI also starts the new Compose file on a runner and
+runs one sandbox through it, with the server image built from the commit
+and with the published `0.1.0-alpha.5` image. The merged tree passed
+`make verify`, `make test-postgres` against a local PostgreSQL and the site
+build before this release was prepared. By hand: the three commands with an
+empty home directory, from a release of the branch served locally, and both
+SDK snippets with nothing configured; `login`, `admin org create` and `run`
+against a server started from a config file without `--dev`, with a `remote`
+plugin as its pool; the template commands against a dev-mode server with
+three pools, one process throughout; and the guides' laptop examples as
+written.
+
+What has not run: `install.sh` against a GitHub release before this one was
+published; the Compose file anywhere but GitHub's Linux runner (not Docker
+Desktop, Colima, rootless Docker, Podman or arm64), and anything in its
+guide after the first sandbox; templates and the no-copied-ID sequence
+against a real sandbox backend or a cluster, and stored templates with two
+server processes on one database; the Helm chart on a cluster; the SDKs'
+local-server fallback on Windows, Deno, Bun or Node below 20.16; and the
+live adapter tests against Daytona and Freestyle accounts and the Kubernetes
+and Fast Sandbox runtimes, which last ran on earlier code (see `Verified`
+under 0.1.0-alpha.2).
+
+Upgrading from 0.1.0-alpha.5: the Postgres store gains migration
+`0006_templates` (one new table), applied by `differently-server migrate` as
+the chart already runs it; like every migration it is forward only. A server
+older than this release does not know templates set through the API, so set
+them once every replica runs this release, and move them into the config
+file before rolling back. In the CLI, `differently capabilities` and
+`differently admin org create` print a table and need `-o json` for the old
+output; `differently key create` with neither `--org` nor `--key-project`
+limits a key that holds only `sandboxes:` scopes to the default project
+(`--org` gives the old result); and a saved project is used only with the
+server it was saved for. In the API, a refusal with `no_eligible_pool` can
+carry a more specific reason and a `template` or `pool` detail under the
+same code; a sandbox whose template is removed before it boots fails instead
+of booting the plain name; `POST /v1/sandboxes` refuses control characters
+in `template`; `DELETE /v1/admin/pools/{name}` answers 409 while the pool is
+the only one a stored template can run on; and items of `GET /v1/templates`
+gain `source`. The audit log gains the actions `template.put`,
+`template.image_delete`, `template.delete` and `sandbox.placed_again`.
+
 ### Added
+
+- **A template can be set on a running server**, with no config edit and no
+  restart. Until now templates lived only in the server's config file.
+  - `differently admin template set python --image POOL=IMAGE ...` gives a
+    name an image on each pool named, creating the template if needed.
+    Running it again with one `--image` adds a provider or points one at a
+    new baseline; the other pools keep theirs.
+    `differently admin template remove python --pool POOL` stops offering it
+    on one pool, and without `--pool` removes the template.
+    `differently templates` gains a `SET BY` column: `command` or
+    `config file`.
+  - API, operator keys only: `PUT /v1/admin/templates/{name}` (merges: every
+    image named is added or replaced, a field left out stays),
+    `DELETE /v1/admin/templates/{name}` and
+    `DELETE /v1/admin/templates/{name}/images/{pool}`. `GET /v1/templates`
+    lists both kinds, each with `source` (`config` or `api`). Both SDKs gain
+    `admin.templates.set`, `removeImage` / `remove_image` and `delete`, and
+    the Go client `SetTemplate`, `RemoveTemplateImage`, `DeleteTemplate` and
+    `ListTemplates`.
+  - **The config file wins** a name both define: the API refuses to change
+    or remove a template the file declares (409, saying so), and a stored
+    template of that name is ignored, with a warning at start. Removing the
+    name through the API clears that stored copy and leaves the file's in
+    force.
+  - A template set this way is held to the config file's rules. An image
+    for a pool that does not exist is refused with the pool named, and
+    control characters in an image or a description are refused as invalid.
+    A template's last image on a pool that exists cannot be removed on its
+    own, since with none the name would be passed to every pool as given;
+    removing the template does that explicitly.
+  - Deleting a pool (`DELETE /v1/admin/pools/{name}`) removes it from the
+    stored templates that name it, so a pool created later under the same
+    name inherits no image. The deletion is refused (409) while the pool is
+    the only one a stored template can run on.
+  - Stored templates are read from the database at each placement, as
+    placement policies are, so a change needs no restart and no refresh: a
+    replica uses it at its next decision. This was tested with a second
+    scheduler on the same store, on the memory store and on Postgres; two
+    server processes against one database were not run. If a template
+    cannot be read, sandboxes that ask for it wait instead of having the
+    name passed to a backend as given.
+  - A sandbox never falls back from a template to the plain name. If the
+    template is removed after the sandbox was admitted or placed, the
+    sandbox fails with "template <name> was removed after this sandbox was
+    requested"; if only its pool's image is removed between placement and
+    provisioning, it is placed again (`sandbox.placed_again` in the audit
+    log).
+  - `POST /v1/sandboxes` refuses a `template` with control characters
+    (`invalid_request`), on both stores.
+  - **Upgrading and rolling back.** A server older than this release does
+    not know stored templates: during a rolling upgrade, or after a
+    rollback, it passes the name to the backend as given, on any pool the
+    placement policy permits. Set templates through the API once every
+    replica runs this release, and move them into the config file before
+    rolling back.
+  - Changes are audited as `template.put`, `template.image_delete` and
+    `template.delete`, and appear in the trust report's recent admin
+    actions.
+  - Postgres gains the `templates` table (migration `0006_templates.sql`,
+    applied at start).
+
+- The answer to "don't I need my snapshot on every provider?", in the
+  product and in the docs. Each backend boots its own images, so the
+  baseline has to exist on each provider; a template gives those baselines
+  one name (`templates[].images`, which existed but was only described in
+  the OpenWork guide).
+  - **`differently templates`** shows each template and what every pool
+    boots for it, with a dash where a pool has none.
+  - **`differently capabilities`** now puts the pools side by side, one
+    feature per row, so what a provider cannot do is a dash next to the
+    others' yes. `-o json` prints the API response as before.
+  - **`--from-snapshot`** on `differently sandbox create` and
+    `differently run` starts a sandbox from a snapshot. The API and the SDKs
+    already could.
+  - **Refusals say what is missing.** A request for a template that no
+    permitted pool has fails with "no permitted pool has template <name>"
+    (detail `template`), and a restore or fork that the snapshot's pool
+    cannot take names that pool (detail `pool`). Both keep the code
+    `no_eligible_pool`; before, both said only that no pool satisfied the
+    policy.
+  - [One baseline on every provider](docs/guides/baselines.md): what is
+    shared across providers (the name) and what is not (the image, a running
+    sandbox, a snapshot), the three steps, and a two-pool example that runs
+    in dev mode.
+  - [Questions people ask](docs/faq.md): short answers on snapshots,
+    switching providers, outages, trust and readiness, each saying where
+    Differently stops. The landing page shows six of them.
+
+- A first sandbox takes three commands and no toolchain, account, cluster or
+  database: install, `differently-server --dev`, `differently run -- echo hello`.
+  - **`install.sh`**, served at
+    `https://different-ai.github.io/differently/install.sh`. It downloads the
+    release archive for the machine (macOS or Linux, amd64 or arm64), checks
+    it against the release's `checksums.txt`, and puts `differently` and
+    `differently-server` in `~/.local/bin` without `sudo`.
+    `DIFFERENTLY_VERSION`, `DIFFERENTLY_INSTALL_DIR` and
+    `DIFFERENTLY_DOWNLOAD_URL` (for a mirror) change what it installs, where
+    to, and where from. `test/install` runs it against a release served
+    locally; it has not been run against the GitHub release itself.
+  - **`differently run -- COMMAND`** creates a sandbox, waits for it, runs
+    the command with its output streamed, deletes the sandbox and exits with
+    the command's code. `--keep` leaves the sandbox. It is deleted on a
+    failure or an interrupt too.
+  - **The SDKs find a local dev server by themselves**, as the CLI already
+    did. With no key set and a URL on this machine, the TypeScript and Python
+    clients read `~/.differently/dev/token` and use `prj_default`, so
+    `new Differently()` and `sandboxes.create()` need no arguments. The token
+    is never read for another host. Both gain a default project
+    (`projectId` / `project_id`, or `DIFFERENTLY_PROJECT`) for organization
+    and operator keys.
+  - Dev mode prints its address, the token's path and the next command to
+    type, and the CLI says how to start a server when nothing answers on
+    this machine.
+- On a real installation a first sandbox takes three commands after reading
+  the bootstrap operator token, and no ID is copied from one into the next:
+  `differently login`, `differently admin org create NAME`,
+  `differently run -- echo hello`. Only the CLI changed: organization and
+  operator keys must still name a project on every create, and the server
+  creates no tenant by itself.
+  - **`differently admin org create NAME`** prints the IDs of the
+    organization and its first project in a short table instead of raw JSON
+    (`-o json` prints the response as before). When the CLI has no default
+    project (none saved, no `--project`, no `DIFFERENTLY_PROJECT`, no local
+    dev server), it saves the new one as the default and says so. It never
+    replaces a saved project, and it does not write into a config saved for
+    another server or into one it cannot parse.
+  - **A saved project belongs to one server.** The CLI uses it only with the
+    server it was saved for (the URL `login` saved, or the one
+    `admin org create` ran against), so it is never sent to another
+    installation and never hides a local dev server's `prj_default`. Saving
+    a project does not change which server the CLI talks to, and a key from
+    the environment is never written.
+  - **`differently login`** with a key that is not limited to one project
+    saves the only project the key can see. With none it says which command
+    makes one; with several it lists them and saves none
+    (`differently login --project ID` saves a chosen one). A project saved
+    before is kept only while the key can still see it, and the dev
+    server's `prj_default` is no longer saved when logging in to another
+    server on the same machine.
+  - **`differently key create NAME`** without `--org` and `--key-project`
+    limits a key that holds only `sandboxes:` scopes (the default) to the
+    default project and looks up its organization, so
+    `differently key create dev` works after the commands above. A key with
+    any other scope (`projects:write`, `keys:write`, `org:admin`, `admin`,
+    ...) is not narrowed, since the server refuses a project-limited key to
+    create or delete projects; `--key-project` limits it. `--key-project`
+    alone looks up the organization too, and `--org` alone still makes a
+    key for the whole organization. The output says where the new key
+    works, and when that is the default project.
+  - A create refused because no project was named now says how to get a
+    default project.
+  - The Helm chart's notes, the [Kubernetes](docs/deploy/kubernetes.md) and
+    [single-VM](docs/deploy/single-vm.md) guides and
+    [organization onboarding](docs/guides/organization-onboarding.md) show
+    this sequence instead of `curl` with `jq` or ID placeholders.
+
+  Run by hand against a server started from a config file without `--dev`
+  (memory store, one `remote` pool); not run on a cluster.
+- Entry points for people and for agents.
+  - [Differently explained](docs/explainer.md): what it is in plain words,
+    and what a newcomer can ignore until later.
+  - [Use Differently with a coding agent](docs/guides/agents.md): a prompt to
+    paste, and tasks written for the agent with a check after each step. The
+    website serves it as `/agents.txt`.
+  - The website serves `/llms.txt`, an index of the documentation, and every
+    docs page as Markdown at its address plus `index.md`. A link in them to a
+    page the site does not have fails the build.
+  - The README, the quickstart and the landing page open with the same three
+    commands; the landing page no longer opens with `helm install`.
+
+- The real stack on any Docker host takes one downloaded file and no clone,
+  Go or build: [`deploy/compose/compose.yaml`](deploy/compose/compose.yaml),
+  served at `https://different-ai.github.io/differently/compose.yaml`, and
+  the guide [One Docker host](docs/deploy/docker.md).
+  - It runs Postgres 17 with a named volume, OpenSandbox 1.2.0 with the
+    Docker runtime and the published `differently-server` image, whose
+    version is one variable (`DIFFERENTLY_VERSION`). Both config files are
+    inside it, which needs Docker Compose 2.23.1 or newer.
+  - **No credentials ship in the file.** The operator token, the secrets
+    key, the database password and the OpenSandbox key come from a `.env`
+    file that six documented lines create from the image itself
+    (`differently-server token` and `secrets-key`). Without it
+    `docker compose` refuses to start and says so.
+  - **Less is published by default.** The API is
+    published on `127.0.0.1`; Postgres, the OpenSandbox API and `/metrics`
+    are not published; sandbox control ports, which have no authentication
+    of their own, are published on Docker's bridge gateway only
+    (`publish_host`), not on every interface as OpenSandbox does by
+    default. Whether another machine can route to the gateway address
+    depends on the host's forwarding and firewall, which is untested.
+  - The server image's own CLI runs the first sandbox
+    (`docker compose exec server differently ...`), so nothing is installed.
+  - CI starts the file as the guide says on every pull request and creates,
+    uses and deletes one sandbox (`test/compose/check.sh`, the
+    `docker host stack` jobs): with the server image built from the pull
+    request, and with the published image the file names. Not run on Docker
+    Desktop, Colima, rootless Docker, Podman or arm64. `test/e2e` is unchanged and
+    still builds from the checkout.
 
 - The load simulator at `/simulator/` shows how routing is set up and lets
   the visitor configure more of it.
@@ -40,6 +296,48 @@ All notable changes are recorded here. The format follows
   `AddProvider`, `SetQuota`, `VerifyAudit`, a keep share in the load and the
   policy's ranking in each snapshot. The WebAssembly build is about 5 MB
   compressed.
+
+### Changed
+
+- `differently capabilities` prints a table by default. Scripts that read
+  its JSON need `-o json`.
+- `differently admin org create` prints a table by default. Scripts that
+  read its JSON need `-o json`.
+- `differently key create` without `--org` and `--key-project` limits a
+  key that holds only `sandboxes:` scopes to the CLI's default project when
+  there is one. An organization key with a default project used to get an
+  organization-wide key; pass `--org` for that. A key with any other scope
+  is made as before.
+- A project saved by `differently login` is used only with the URL that
+  login saved. With `--url` or `DIFFERENTLY_URL` pointing somewhere else it
+  is no longer sent.
+- `docs/storage-and-lifecycle.md` said the `templates` list was
+  informational. It routes: a template with `images` is placed only on the
+  pools it maps.
+
+### Fixed (documentation)
+
+- The guides no longer contradict each other about what has been verified.
+  Several pages still said that only OpenSandbox's Docker runtime had run
+  with Differently, or that the Helm chart had never been installed on a
+  cluster, while others recorded the Kubernetes and Fast Sandbox runs of
+  2026-10-28 and 29. They now say the same thing: all three runtimes have
+  run; the Kubernetes and Fast Sandbox runs and the installs on a cluster
+  have not been repeated since 2026-10-29, and no published release after
+  0.1.0-alpha.1 is recorded as installed on a cluster; and isolation inside
+  a microVM has not been probed.
+- End-to-end counts say what they count. "14/14" was every test the suite
+  had on 2026-10-29. The suite has grown since, and CI runs it on the Docker
+  runtime on every pull request; `test/e2e/README.md` keeps the current
+  count.
+- Corrected values: the default OpenSandbox URL points at namespace
+  `opensandbox-system`, not `opensandbox`; the chart's NetworkPolicy allows
+  OpenSandbox on port 80, so a standalone server on 8090 needs
+  `networkPolicy.server.egress.opensandbox.port` set; the adapter was checked
+  with `execd` `release-1.2.0` and `v1.1.0`; and a checkout's chart is
+  version 0.3.0 while a release packages it as `differently-<version>.tgz`.
+  The comment in `values.yaml` lists the config keys the chart really writes
+  and refuses.
 
 ## [0.1.0-alpha.5] — 2026-11-17
 
@@ -855,7 +1153,8 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.5...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.6...pre-release
+[0.1.0-alpha.6]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.3

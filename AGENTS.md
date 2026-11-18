@@ -1,7 +1,10 @@
 # Guidance for coding agents
 
 This file is the entry point for automated contributors (and a quick primer
-for humans).
+for humans). It is about changing Differently. If you were asked to install,
+try, deploy or call Differently instead, read
+[docs/guides/agents.md](docs/guides/agents.md), which is also served as
+<https://different-ai.github.io/differently/agents.txt>.
 
 ## Where to work
 
@@ -25,8 +28,9 @@ make verify
 ```
 
 It runs gofmt, go vet, Go tests with `-race`, the same build, vet and tests
-with `-tags experimental_adapters` (`make experimental`), the SDK tests and
-the Helm lint, including the replay of recorded OpenSandbox runtimes. For changes touching
+with `-tags experimental_adapters` (`make experimental`), the SDK tests, the
+Helm lint and the Compose file's static checks (`make compose-lint`),
+including the replay of recorded OpenSandbox runtimes. For changes touching
 `internal/store` or `internal/server`, also run `make test-postgres` (the
 store conformance suite and the server acceptance scenarios on Postgres). For `console/`, run
 `npm run typecheck && npm run build && npm run build:server` there; for
@@ -58,6 +62,14 @@ that covers it, and say in the PR what did not run.
 - Recorded runtimes: `internal/adapters/opensandbox/testdata/recordings`,
   replayed by `TestReplayRecordings`; re-record with the live test after an
   OpenSandbox upgrade or a new adapter call.
+- The stack people install on one Docker host: `deploy/compose/compose.yaml`
+  (published images, both config files inside it, secrets from a `.env`
+  the guide generates; the site serves it as `/compose.yaml`),
+  [docs/deploy/docker.md](docs/deploy/docker.md), and
+  `test/compose/check.sh`, which starts it and runs a sandbox
+  (`make compose-check-built`, CI's `docker host stack` jobs). It is
+  separate from `test/e2e/compose.yaml`, which builds from the checkout
+  and uses fixed test credentials.
 - Stored credentials: `internal/secrets` (sealed values, `secret:` refs).
 - Capacity: `internal/scheduler/capacity.go` (slots, resume queue,
   preemption, lifecycle limits) and its model `internal/capsim`
@@ -68,6 +80,28 @@ that covers it, and say in the PR what did not run.
 - Interfaces: `internal/dashboard` (the built-in dashboard), `console/` (the
   separate admin app, static or on Node with sign-in), `site/` (the website;
   its docs sync from `docs/**`).
+- First contact: `install.sh` (tested by `test/install` against a release
+  served locally), `differently run` and the dev-mode welcome in `cmd/`,
+  [docs/guides/quickstart.md](docs/guides/quickstart.md),
+  [docs/explainer.md](docs/explainer.md) and
+  [docs/guides/agents.md](docs/guides/agents.md). The site build turns the
+  last into `/agents.txt`, lists the docs in `/llms.txt`, serves every docs
+  page as Markdown at its address plus `index.md`, and copies `install.sh`
+  (`site/scripts/sync-docs.mjs`). Keep the three commands the same in the
+  README, the quickstart, the agents guide and the landing page.
+- Concerns people raise: [docs/faq.md](docs/faq.md) and, for images and
+  snapshots across providers, [docs/guides/baselines.md](docs/guides/baselines.md)
+  (`templates[].images`, `differently templates`, `differently capabilities`).
+  An answer there must say where Differently stops, and match the code.
+- Templates: the config file's (`config.Templates`) and those set through
+  the API (`internal/server/templates.go`, stored by `internal/store`) are
+  one list, `scheduler.Templates`. The config file wins a shared name, and
+  the scheduler reads the store at each decision, so no replica caches them.
+  A change must never widen where a template runs as a side effect: `PUT`
+  merges, the last image is removed only with the template, deleting a pool
+  takes it out of stored templates, and a sandbox admitted or placed under a
+  template is refused, never booted from the plain name, if the template is
+  removed first (`SandboxRecord.TemplateDefined`).
 - How to change, prove, re-record, optimise and release:
   [docs/maintaining.md](docs/maintaining.md).
 - Docs that must stay truthful: `docs/feature-parity.md`, `docs/roadmap.md`,

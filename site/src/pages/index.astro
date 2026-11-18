@@ -12,7 +12,7 @@ const simProviders = [
 ];
 const repo = 'https://github.com/different-ai/differently';
 const releases = `${repo}/releases`;
-const version = 'v0.1.0-alpha.5';
+const version = 'v0.1.0-alpha.6';
 
 // Launch video slot. Set videoSrc to a video URL (and optionally a poster image and a
 // WebVTT captions file) to show it under the hero. While videoSrc is '' nothing renders.
@@ -66,8 +66,11 @@ with client.sandboxes.create(
     id: 'cli',
     label: 'CLI',
     lang: 'sh',
-    code: `differently doctor
-differently sandbox create --profile small --wait
+    code: `# One sandbox for one command: created, used, deleted
+differently run -- echo hello
+
+# Or keep one. This prints its ID.
+differently sandbox create --wait
 differently sandbox exec sbx_123 -- 'echo hello from $(uname -s)'
 differently sandbox files put sbx_123 ./README.md /work/README.md
 
@@ -85,6 +88,7 @@ const ways = [
   {
     title: 'Laptop',
     what: 'Dev mode: an in-memory server with a devhost pool that runs commands directly on the host, with no isolation. For trying the API.',
+    cmd: 'differently-server --dev',
     status: 'Verified',
     kind: 'verified',
     href: `${base}/docs/guides/quickstart/`,
@@ -92,12 +96,12 @@ const ways = [
   },
   {
     title: 'Any Docker host',
-    what: 'Postgres, Differently and OpenSandbox as one Docker stack. Sandboxes are containers sharing the host kernel.',
-    cmd: 'make e2e-prepare e2e-up',
-    status: 'Verified',
+    what: 'Postgres, Differently and OpenSandbox from published images, in one Compose file you download. Sandboxes are containers sharing the host kernel.',
+    cmd: 'docker compose up -d --wait',
+    status: 'Verified in CI',
     kind: 'verified',
-    href: `${repo}/tree/pre-release/test/e2e`,
-    cta: 'Docker stack on GitHub',
+    href: `${base}/docs/deploy/docker/`,
+    cta: 'Docker host guide',
   },
   {
     title: 'One Linux VM',
@@ -131,7 +135,7 @@ const ways = [
 
 // Project status. verified: ran against real infrastructure. notVerified: not run yet.
 const verified = [
-  ['End-to-end suite', "14 of 14 tests pass on OpenSandbox's Docker runtime (arm64), its Kubernetes runtime (single-node k3s on Azure, installed with Helm) and a Fast Sandbox microVM pool (two-node k3s)."],
+  ['End-to-end suite', "CI runs it on OpenSandbox's Docker runtime on every pull request. On the Kubernetes runtime (single-node k3s on Azure, installed with Helm) it passed 14 of 14 on 2026-10-29, every test it then had, and on a Fast Sandbox microVM pool (two-node k3s) 14 of its then 18 tests ran and passed."],
   ['Kubernetes runtime', 'Stop/start with the disk kept, snapshots and fork through a snapshot registry, signed port URLs including WebSockets, and egress policy.'],
   ['Idle auto-stop', 'Idle sandboxes stop (Kubernetes) or pause (Docker) and wake on the next call.'],
   ['Release artifacts', 'The published chart and images install from public registries; the first sandbox runs in about 2 s.'],
@@ -140,20 +144,67 @@ const verified = [
   ['Failure isolation', 'An image that cannot be pulled fails that sandbox only; the shared pool stays healthy.'],
   ['agent-sandbox', 'The experimental adapter runs against a Kubernetes cluster (kind, runc).'],
   ['Daytona and Freestyle', 'The adapters run against live accounts: exec, files, port URLs, stop/start and snapshots on both, and egress policy, pause/resume, memory snapshots and fork on Freestyle.'],
-  ['Fast Sandbox', "Firecracker microVMs on Azure: the end-to-end suite passes on the microVM pool, and Workbot's desktop streams over a port URL, pauses and resumes with its memory (a pause takes minutes), idles and wakes on a request."],
+  ['Fast Sandbox', "Firecracker microVMs on Azure: 14 of the end-to-end suite's then 18 tests ran on the microVM pool and passed, and Workbot's desktop streams over a port URL, pauses and resumes with its memory (a pause takes minutes), idles and wakes on a request."],
 ];
 const notVerified = [
+  'A published release after v0.1.0-alpha.1 on a cluster: none is recorded as installed on one. The Kubernetes and Fast Sandbox runs used pre-release code and have not been repeated since 2026-10-29',
   'Node drains, and more than one KVM node',
   'Managed EKS, GKE and AKS clusters',
   'The other 12 provider adapters against live accounts; each is tested against a fake of its published API, is experimental and is left out of the published build',
 ];
 const inProgress: string[] = [];
 
-const tryIt = `make build
-./bin/differently-server --dev
+const site = 'https://different-ai.github.io/differently';
+const installCmd = `curl -fsSL ${site}/install.sh | sh`;
+const tryIt = `${installCmd}
+differently-server --dev
 
 # in a second terminal
-./bin/differently sandbox create --profile small --wait`;
+differently run -- echo hello`;
+const agentPrompt = `Read ${site}/agents.txt and follow it:
+install Differently on this machine, start it in dev mode, run one sandbox to
+prove it works, then show me how to create a sandbox from my code.`;
+
+// Concerns people raise first, answered with where Differently stops. The
+// full list is docs/faq.md; keep these in step with it.
+const questions = [
+  {
+    q: 'Do I need my snapshot on every provider?',
+    a: 'Yes: each backend boots its own images, and nothing copies one across. You build the baseline once per provider and give them one name. Your code asks for the name, requests go only to pools that have it, and each backend gets its own image.',
+    href: '/docs/guides/baselines/',
+    cta: 'One baseline on every provider',
+  },
+  {
+    q: 'Can a sandbox or a snapshot move between providers?',
+    a: 'No. The pool is chosen once, when the sandbox is created, and the sandbox and its snapshots stay there. Differently remembers which pool holds a snapshot and sends every restore and fork to it, so adding or draining a provider never disturbs running work.',
+    href: '/docs/faq/#are-snapshots-portable-between-providers',
+    cta: 'What stays where',
+  },
+  {
+    q: 'Do all providers do the same things?',
+    a: 'No. One takes memory snapshots, another cannot fork. `differently capabilities` puts them side by side, and a request that needs a feature is placed only where it exists, or refused with the feature named.',
+    href: '/docs/providers/',
+    cta: 'Provider catalog',
+  },
+  {
+    q: 'Does my code change when we switch provider?',
+    a: 'No. Code asks for a size, a template, a feature or a data classification, never a backend. Operators add, drain or switch pools, and new sandboxes follow.',
+    href: '/docs/faq/#does-my-code-change-when-we-add-or-switch-a-provider',
+    cta: 'How switching works',
+  },
+  {
+    q: 'Could my code end up on a provider I did not choose?',
+    a: 'Not unless an operator allows it. The default is private pools only; an external provider gets work only after it is approved in policy, and every sandbox records why it landed where it did.',
+    href: '/docs/scheduling/placement-policy/',
+    cta: 'Placement policy',
+  },
+  {
+    q: 'What happens when a provider is down?',
+    a: 'New sandboxes go to another pool that policy permits, or wait until one is ready. Sandboxes already on the unreachable pool are not moved; calls to them fail until it is back.',
+    href: '/docs/faq/#what-happens-when-a-provider-is-down',
+    cta: 'All questions',
+  },
+];
 
 const features = [
   {
@@ -234,6 +285,7 @@ const compare = [
     <title>Differently · Open-source sandbox orchestration</title>
     <meta name="description" content="Open-source, self-hosted control plane for sandboxes: one API, quotas, policy-based placement and audit across OpenSandbox, Daytona, Freestyle and plugins." />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <link rel="alternate" type="text/plain" title="llms.txt" href={`${base}/llms.txt`} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -256,6 +308,7 @@ const compare = [
         Differently
       </a>
       <nav>
+        <a class="desk-only" href="#start">Get started</a>
         <a href="#stack">Features</a>
         <a href={`${base}/compare/`}>Compare</a>
         <a class="wide-only" href={`${base}/simulator/`}>Simulator</a>
@@ -285,8 +338,12 @@ const compare = [
           <a class="btn" href={repo}>View on GitHub</a>
         </div>
         <div class="install">
-          <span>$</span><code>helm install differently deploy/helm/differently</code>
+          <span>$</span><code>{installCmd}</code>
         </div>
+        <p class="install-note">
+          macOS and Linux. Then <a href="#start">two more commands</a> for a first sandbox, with no account, cluster or database.
+          Using a coding agent? Give it <a href={`${base}/agents.txt`}>agents.txt</a>.
+        </p>
         <ul class="pillars">
           <li><b>One API.</b> Applications request resources and capabilities, not a backend.</li>
           <li><b>Many backends.</b> Self-hosted runtimes and managed providers behind one adapter contract.</li>
@@ -512,14 +569,31 @@ const compare = [
       <section class="start wrap" id="start">
         <div class="section-head">
           <p class="eyebrow">Get started</p>
-          <h2>Run it locally</h2>
-          <p>From a clone of <a href={repo}>the repository</a>:</p>
+          <h2>Three commands to a first sandbox</h2>
+          <p>On macOS or Linux, with no account, no cluster and no database. The first installs the CLI and the server into <code>~/.local/bin</code>, the second starts a local server, the third runs a command in a sandbox and deletes it.</p>
         </div>
         <div class="panel">
           <Code code={tryIt} lang="sh" themes={{ light: 'github-light', dark: 'github-dark' }} />
         </div>
         <p class="warn"><strong>Dev mode has no isolation.</strong> State is kept in memory and the devhost pool runs commands directly on the host as the current user. Use it to try the API, not for untrusted code.</p>
+
+        <div class="section-head agent-head">
+          <h3>Or hand it to a coding agent</h3>
+          <p>Paste this into Claude Code, Codex, Cursor or any agent that can run commands. <a href={`${base}/agents.txt`}>agents.txt</a> holds step-by-step tasks with a check after each one, and <a href={`${base}/llms.txt`}>llms.txt</a> lists the documentation as Markdown.</p>
+        </div>
+        <div class="panel">
+          <Code code={agentPrompt} lang="text" themes={{ light: 'github-light', dark: 'github-dark' }} />
+        </div>
+
         <div class="next">
+          <a href={`${base}/docs/explainer/`}>
+            <b>Differently explained →</b>
+            <span>What it is in plain words, and what you can ignore until later.</span>
+          </a>
+          <a href={`${base}/docs/guides/quickstart/`}>
+            <b>Quickstart →</b>
+            <span>The longer tour: files, forks, placement, and calling it from your code.</span>
+          </a>
           <a href={`${base}/docs/deploy/single-vm/`}>
             <b>Deploy on one Linux VM →</b>
             <span>k3s, OpenSandbox and Differently on AWS, Google Cloud, Azure or bare metal.</span>
@@ -528,6 +602,23 @@ const compare = [
             <b>Install with Helm →</b>
             <span>On an existing Kubernetes cluster: EKS, GKE, AKS, k3s or RKE2.</span>
           </a>
+        </div>
+      </section>
+
+      <section class="questions wrap" id="questions">
+        <div class="section-head">
+          <p class="eyebrow">Questions</p>
+          <h2>What people ask first</h2>
+          <p>Straight answers, including where Differently stops. The rest are on the <a href={`${base}/docs/faq/`}>questions page</a>.</p>
+        </div>
+        <div class="grid">
+          {questions.map((x) => (
+            <article>
+              <h3>{x.q}</h3>
+              <p>{x.a.split('`').map((part, i) => (i % 2 ? <code>{part}</code> : part))}</p>
+              <a href={`${base}${x.href}`}>{x.cta} →</a>
+            </article>
+          ))}
         </div>
       </section>
 

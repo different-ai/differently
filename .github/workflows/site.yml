@@ -10,6 +10,8 @@ on:
       - sdk/*/README.md
       - console/README.md
       - cmd/differently/**
+      - install.sh
+      - deploy/compose/**
       # The simulator page runs the control plane itself, built from these.
       - cmd/differently-loadsim/**
       - internal/**
@@ -24,6 +26,8 @@ on:
       - sdk/*/README.md
       - console/README.md
       - cmd/differently/**
+      - install.sh
+      - deploy/compose/**
       # The simulator page runs the control plane itself, built from these.
       - cmd/differently-loadsim/**
       - internal/**

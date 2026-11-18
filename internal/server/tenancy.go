@@ -40,10 +40,7 @@ func (s *Server) tenancyRoutes(authed func(string, handlerFunc)) {
 		writeJSON(w, 200, api.List[api.Profile]{Items: s.Config.Profiles})
 		return nil
 	})
-	authed("GET /v1/templates", func(w http.ResponseWriter, _ *http.Request, _ auth.Principal) error {
-		writeJSON(w, 200, api.List[api.Template]{Items: append([]api.Template{}, s.Config.Templates...)})
-		return nil
-	})
+	authed("GET /v1/templates", s.listTemplates)
 	authed("GET /v1/classifications", func(w http.ResponseWriter, _ *http.Request, _ auth.Principal) error {
 		writeJSON(w, 200, api.List[api.Classification]{Items: s.Config.Classifications})
 		return nil

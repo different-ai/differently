@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-10-28, after the move to OpenSandbox removed Differently's Firecracker node agent. Differently stores records; sandbox filesystems, memory and snapshots live in the backend. OpenSandbox behaviour below is checked live with its Docker runtime unless marked otherwise; its Kubernetes and Fast Sandbox runtimes are unverified. |
+| Status | Describes the code as of 2026-10-28, after the move to OpenSandbox removed Differently's Firecracker node agent. Differently stores records; sandbox filesystems, memory and snapshots live in the backend. OpenSandbox behaviour below is checked live with its Docker runtime unless marked otherwise. Where this page mentions the Kubernetes and Fast Sandbox runtimes, the [OpenSandbox pools guide](guides/opensandbox-pools.md) records what their live runs showed. |
 | Code | `internal/adapters/opensandbox/opensandbox.go`, `internal/server/sandboxes.go` (`lifecycle`, `snapshot`, `forkSandbox`), `internal/scheduler/scheduler.go` (`provision`, `expire`, `reconcilePool`) |
 | Related | [OpenSandbox pools](guides/opensandbox-pools.md) · [Adapter specification §9](adapters/specification.md#9-built-in-adapters) · [Placement policy](scheduling/placement-policy.md) · [OpenSandbox spike](research/opensandbox-spike.md) |
 
@@ -173,6 +173,10 @@ sequenceDiagram
 
 ## 8. What is not portable
 
+Placement happens once, at create, and a sandbox then stays on its pool. The
+[questions page](faq.md#images-snapshots-and-moving-between-providers) has
+the short version of this section.
+
 | Thing | Why | What to do instead |
 |---|---|---|
 | A running sandbox moving to another pool or provider | No live migration; backends have different runtimes and memory formats | Snapshot and recreate on the same pool; for cross-backend moves, copy files through the API |
@@ -215,8 +219,14 @@ For Fast Sandbox this is part of
   placement refuses requests that name any other template. Without it, the
   pool advertises no templates and passes any template name to OpenSandbox as
   an image URI.
-- The config's `templates` list is informational (served by
-  `GET /v1/templates`).
+- A template (listed by `GET /v1/templates`) gives one name to each pool's
+  own image: a template with `images` is placed only on the pools it maps,
+  and each backend receives its own value. A name with no template is passed
+  to the backend as given. Templates come from the config's `templates` list
+  or are set on a running server (`differently admin template set`,
+  `PUT /v1/admin/templates/{name}`); the config file wins a name both
+  define. [One baseline on every provider](guides/baselines.md) has the
+  steps.
 - Registry allow-lists, signature checks and image caching are the runtime's
   (see the [hardening checklist](security/hardening-checklist.md#backend-runtimes-opensandbox)).
   Differently does not inspect images.

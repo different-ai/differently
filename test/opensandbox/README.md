@@ -43,14 +43,18 @@ OPENSANDBOX_URL=http://localhost:8090/v1 OPENSANDBOX_RECORD=docker-1.2.0 \
 
 | Recording | Runtime | Recorded on |
 |---|---|---|
-| `docker-1.2.0` | Docker, `execd` release-1.2.0 | Colima 0.10.3, arm64, 2026-10-28 |
+| `docker-1.2.0` | Docker, `execd` release-1.2.0 | Colima 0.10.3, arm64, 2026-10-29 |
 | `kubernetes-1.2.0` | Kubernetes (BatchSandbox), `execd` release-1.2.0, no snapshot registry | k3s v1.36.5 on Azure, x86_64, 2026-10-29 |
 | `kubernetes-registry-1.2.0` | Kubernetes with a snapshot registry (`runtime: kubernetes`: stop/start, snapshots, fork), signed gateway port URLs and an egress allowlist | k3s v1.36.5 on Azure, x86_64, 2026-10-29 |
-| `fastsandbox-1.2.0` | Fast Sandbox (Firecracker microVMs, template mode): pause and resume with memory, snapshot and fork, route-scope port URLs over HTTPS | k3s on Azure Standard_D8s_v6, nested KVM, 2026-10-29 |
+| `fastsandbox-1.2.0` | Fast Sandbox (Firecracker microVMs, template mode): pause and resume with memory, snapshot and fork, route-scope port URLs over HTTPS | Two-node k3s on Azure, Standard_D16s_v6 KVM node, nested KVM, 2026-10-29 |
 
 The API key in `config.toml` is a test value. Sandboxes are Docker
 containers on the same host, so this checks the API contract, not
-isolation.
+isolation. The config is for a throwaway test host: it leaves
+`publish_host` at OpenSandbox's default, so each sandbox's ports (two, from
+40000 to 60000, with no authentication of their own) are published on every
+interface of the Docker host; for a host that stays up, see
+[bare-metal.md](../../docs/deploy/bare-metal.md#keep-sandbox-ports-off-public-interfaces).
 
 Verified 2026-10-28 on Colima (`colima-differently`, arm64) with server
 1.2.0 and `execd` v1.1.0: passes; sandbox creation 0.5–0.9 s. Re-verified
