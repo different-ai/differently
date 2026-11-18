@@ -80,6 +80,10 @@ that covers it, and say in the PR what did not run.
   page as Markdown at its address plus `index.md`, and copies `install.sh`
   (`site/scripts/sync-docs.mjs`). Keep the three commands the same in the
   README, the quickstart, the agents guide and the landing page.
+- Concerns people raise: [docs/faq.md](docs/faq.md) and, for images and
+  snapshots across providers, [docs/guides/baselines.md](docs/guides/baselines.md)
+  (`templates[].images`, `differently templates`, `differently capabilities`).
+  An answer there must say where Differently stops, and match the code.
 - How to change, prove, re-record, optimise and release:
   [docs/maintaining.md](docs/maintaining.md).
 - Docs that must stay truthful: `docs/feature-parity.md`, `docs/roadmap.md`,
