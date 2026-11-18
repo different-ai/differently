@@ -32,6 +32,12 @@ it is one trust domain and should be registered as **one pool**. Steps and
 cloud notes: [deploy/kubernetes.md](../deploy/kubernetes.md#2-install-opensandbox-and-choose-its-runtime),
 [deploy/prerequisites.md](../deploy/prerequisites.md#opensandbox).
 
+With the Docker runtime on a host of your own, each sandbox publishes two
+ports on that host, from 40000 to 60000, with no authentication of their
+own, and OpenSandbox's default publishes them on every interface. Set
+`[docker].publish_host` to an address only the OpenSandbox server uses:
+[which one, and what has been run](../deploy/bare-metal.md#keep-sandbox-ports-off-public-interfaces).
+
 ## Configure the pool with Helm
 
 The chart's `opensandbox:` block is enabled by default and renders the

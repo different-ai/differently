@@ -163,6 +163,11 @@ OpenSandbox server, and is marked as such.
       capabilities, set `no_new_privileges`, limit PIDs, use seccomp or
       AppArmor profiles. `test/opensandbox/config.toml` shows the Docker
       options the live test used; it is a test setup, not a recommendation.
+- [ ] With the Docker runtime, set `[docker].publish_host`. OpenSandbox's
+      default, which the test setup keeps, publishes every sandbox's ports
+      (two per sandbox, 40000 to 60000, no authentication of their own) on
+      every interface of the host
+      ([bare-metal.md](../deploy/bare-metal.md#keep-sandbox-ports-off-public-interfaces)).
 - [ ] Keep sandbox hosts dedicated to sandboxes, patched, and administered by
       as few people as possible. Their administrators can read every
       sandbox.
