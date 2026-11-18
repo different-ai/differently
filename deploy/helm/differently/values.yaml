@@ -104,6 +104,10 @@ config:
   # can run on any pool that has one (docs/guides/baselines.md):
   #   - name: python
   #     images: {opensandbox: registry.example.com/python:3.12, daytona: python-312}
+  # Templates can also be set on a running server, with no upgrade:
+  #   differently admin template set python --image daytona=python-312
+  # Those are kept in the database. A template declared here wins over one
+  # of the same name set that way, and is changed only here (helm upgrade).
   templates: []
 
   # Additional execution pools. The default private pool comes from the

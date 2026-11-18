@@ -36,21 +36,22 @@ func TestCapabilityRowsPutPoolsSideBySide(t *testing.T) {
 // name itself for a template that maps nothing.
 func TestTemplateRowsShowEachPoolsImage(t *testing.T) {
 	header, rows := templateRows([]api.Template{
-		{Name: "python", Description: "Python 3.12", Images: map[string]string{"onprem": "registry.example.com/python:3.12", "freestyle": "python-312"}},
-		{Name: "node", Images: map[string]string{"onprem": "registry.example.com/node:22"}},
+		{Name: "python", Description: "Python 3.12", Source: "config", Images: map[string]string{"onprem": "registry.example.com/python:3.12", "freestyle": "python-312"}},
+		{Name: "node", Source: "api", Images: map[string]string{"onprem": "registry.example.com/node:22"}},
 		{Name: "ubuntu:24.04"},
 		{Name: "gpu", Pools: []string{"lab"}},
 	}, []string{"onprem", "daytona"})
 	// freestyle and lab are named by templates but not usable by this key:
-	// they still get a column, after the usable pools.
-	if !reflect.DeepEqual(header, []string{"TEMPLATE", "onprem", "daytona", "freestyle", "lab", "DESCRIPTION"}) {
+	// they still get a column, after the usable pools. SET BY says where to
+	// change the template: the config file, or the admin template command.
+	if !reflect.DeepEqual(header, []string{"TEMPLATE", "onprem", "daytona", "freestyle", "lab", "SET BY", "DESCRIPTION"}) {
 		t.Fatalf("header %v", header)
 	}
 	want := [][]string{
-		{"python", "registry.example.com/python:3.12", "-", "python-312", "-", "Python 3.12"},
-		{"node", "registry.example.com/node:22", "-", "-", "-", ""},
-		{"ubuntu:24.04", "ubuntu:24.04", "ubuntu:24.04", "ubuntu:24.04", "ubuntu:24.04", ""},
-		{"gpu", "-", "-", "-", "gpu", ""},
+		{"python", "registry.example.com/python:3.12", "-", "python-312", "-", "config file", "Python 3.12"},
+		{"node", "registry.example.com/node:22", "-", "-", "-", "command", ""},
+		{"ubuntu:24.04", "ubuntu:24.04", "ubuntu:24.04", "ubuntu:24.04", "ubuntu:24.04", "-", ""},
+		{"gpu", "-", "-", "-", "gpu", "-", ""},
 	}
 	if !reflect.DeepEqual(rows, want) {
 		t.Fatalf("rows\n%v\nwant\n%v", rows, want)

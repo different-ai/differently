@@ -24,6 +24,8 @@ func Run(t *testing.T, newStore func(t *testing.T) store.Store) {
 	t.Run("Idempotency", func(t *testing.T) { idempotency(t, newStore(t)) })
 	t.Run("Secrets", func(t *testing.T) { secrets(t, newStore(t)) })
 	t.Run("Stacks", func(t *testing.T) { stacks(t, newStore(t)) })
+	t.Run("Templates", func(t *testing.T) { templates(t, newStore(t)) })
+	t.Run("ConcurrentTemplateUpdatesKeepEveryImage", func(t *testing.T) { concurrentTemplates(t, newStore(t)) })
 	t.Run("FairOrderAcrossOrgs", func(t *testing.T) { fairOrder(t, newStore(t)) })
 	t.Run("AuditChain", func(t *testing.T) { auditChain(t, newStore(t)) })
 	t.Run("ProjectDeleteGuard", func(t *testing.T) { projectGuard(t, newStore(t)) })
@@ -280,6 +282,114 @@ func stacks(t *testing.T, s store.Store) {
 	}
 	if err := s.DeleteStack(ctx, "prod"); !api.IsCode(err, api.CodeNotFound) {
 		t.Fatalf("deleting a missing stack: %v", err)
+	}
+}
+
+func templates(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if _, err := s.GetTemplate(ctx, "python"); !api.IsCode(err, api.CodeNotFound) {
+		t.Fatalf("a template nobody set: %v", err)
+	}
+	if list, err := s.ListTemplates(ctx); err != nil || len(list) != 0 {
+		t.Fatalf("empty list %v %v", list, err)
+	}
+	created, err := s.UpdateTemplate(ctx, "python", func(tpl *api.Template, found bool) error {
+		if found || tpl.Name != "" || len(tpl.Images) != 0 {
+			t.Errorf("a new template starts empty, got found=%v %+v", found, *tpl)
+		}
+		tpl.Description, tpl.Source = "Python 3.12", api.TemplateSourceAPI
+		tpl.Images = map[string]string{"onprem": "registry.example.com/python:3.12"}
+		tpl.UpdatedAt, tpl.UpdatedBy = &now, "key:op"
+		return nil
+	})
+	if err != nil || created.Name != "python" || created.Images["onprem"] == "" {
+		t.Fatalf("created %+v %v", created, err)
+	}
+	// A change starts from what is stored, so adding one image keeps the rest.
+	merged, err := s.UpdateTemplate(ctx, "python", func(tpl *api.Template, found bool) error {
+		if !found || tpl.Name != "python" || tpl.Images["onprem"] != "registry.example.com/python:3.12" {
+			t.Errorf("an existing template arrives as stored, got found=%v %+v", found, *tpl)
+		}
+		tpl.Images["daytona"] = "python-312"
+		return nil
+	})
+	if err != nil || len(merged.Images) != 2 {
+		t.Fatalf("merged %+v %v", merged, err)
+	}
+	got, err := s.GetTemplate(ctx, "python")
+	if err != nil || got.Description != "Python 3.12" || got.Source != api.TemplateSourceAPI || len(got.Images) != 2 ||
+		got.Images["daytona"] != "python-312" || got.UpdatedAt == nil || !got.UpdatedAt.Equal(now) || got.UpdatedBy != "key:op" {
+		t.Fatalf("stored template %+v %v", got, err)
+	}
+	// An error from fn changes nothing, for an existing template and a new one.
+	refused := api.Errorf(api.CodeInvalidRequest, "refused")
+	if _, err := s.UpdateTemplate(ctx, "python", func(tpl *api.Template, _ bool) error {
+		tpl.Images = nil
+		return refused
+	}); !api.IsCode(err, api.CodeInvalidRequest) {
+		t.Fatalf("fn's error was not returned: %v", err)
+	}
+	if got, _ := s.GetTemplate(ctx, "python"); len(got.Images) != 2 {
+		t.Fatalf("a refused change was stored: %+v", got)
+	}
+	if _, err := s.UpdateTemplate(ctx, "ghost", func(*api.Template, bool) error { return refused }); !api.IsCode(err, api.CodeInvalidRequest) {
+		t.Fatalf("fn's error was not returned: %v", err)
+	}
+	if _, err := s.GetTemplate(ctx, "ghost"); !api.IsCode(err, api.CodeNotFound) {
+		t.Fatalf("a refused create left a template behind: %v", err)
+	}
+	// The name is the key: fn cannot store a template under another one.
+	if renamed, err := s.UpdateTemplate(ctx, "node", func(tpl *api.Template, _ bool) error {
+		tpl.Name, tpl.Images = "other", map[string]string{"onprem": "registry.example.com/node:22"}
+		return nil
+	}); err != nil || renamed.Name != "node" {
+		t.Fatalf("renamed %+v %v", renamed, err)
+	}
+	if list, err := s.ListTemplates(ctx); err != nil || len(list) != 2 || list[0].Name != "node" || list[1].Name != "python" {
+		t.Fatalf("list is not every template in name order: %v %v", list, err)
+	}
+	if err := s.DeleteTemplate(ctx, "python"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetTemplate(ctx, "python"); !api.IsCode(err, api.CodeNotFound) {
+		t.Fatalf("deleted template still there: %v", err)
+	}
+	if err := s.DeleteTemplate(ctx, "python"); !api.IsCode(err, api.CodeNotFound) {
+		t.Fatalf("deleting a missing template: %v", err)
+	}
+	if list, _ := s.ListTemplates(ctx); len(list) != 1 || list[0].Name != "node" {
+		t.Fatalf("list after delete %v", list)
+	}
+}
+
+// Two operators adding an image for different pools at the same moment both
+// keep theirs: an update never starts from a copy another one is changing,
+// not even when the template does not exist yet.
+func concurrentTemplates(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	const writers = 16
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			pool := "pool-" + string(rune('a'+i))
+			if _, err := s.UpdateTemplate(ctx, "python", func(tpl *api.Template, _ bool) error {
+				if tpl.Images == nil {
+					tpl.Images = map[string]string{}
+				}
+				tpl.Images[pool] = "image-for-" + pool
+				return nil
+			}); err != nil {
+				t.Errorf("update for %s: %v", pool, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	got, err := s.GetTemplate(ctx, "python")
+	if err != nil || len(got.Images) != writers {
+		t.Fatalf("%d of %d images survived: %+v %v", len(got.Images), writers, got.Images, err)
 	}
 }
 

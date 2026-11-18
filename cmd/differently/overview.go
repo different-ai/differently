@@ -131,7 +131,7 @@ func templateRows(templates []api.Template, pools []string) (header []string, ro
 	}
 	sort.Strings(extra)
 	pools = append(slices.Clone(pools), extra...)
-	header = append(append([]string{"TEMPLATE"}, pools...), "DESCRIPTION")
+	header = append(append([]string{"TEMPLATE"}, pools...), "SET BY", "DESCRIPTION")
 	for _, t := range templates {
 		row := []string{t.Name}
 		for _, p := range pools {
@@ -141,9 +141,21 @@ func templateRows(templates []api.Template, pools []string) (header []string, ro
 				row = append(row, "-")
 			}
 		}
-		rows = append(rows, append(row, t.Description))
+		rows = append(rows, append(row, setBy(t), t.Description))
 	}
 	return header, rows
+}
+
+// setBy says where a template is defined, which is also where to change it:
+// the server's config file, or "differently admin template set".
+func setBy(t api.Template) string {
+	switch t.Source {
+	case api.TemplateSourceConfig:
+		return "config file"
+	case api.TemplateSourceAPI:
+		return "command"
+	}
+	return "-" // a server from before templates could be set at runtime
 }
 
 func templatesCmd() *cobra.Command {
@@ -155,8 +167,10 @@ func templatesCmd() *cobra.Command {
 image or snapshot that pool's backend boots for it. A dash means the pool has
 none, so a sandbox that asks for the template is never placed there.
 
-Each backend boots its own images: a template gives them one name. With
--o json it prints the API response.`,
+Each backend boots its own images: a template gives them one name. Set one
+on a running server with "differently admin template set", or declare it in
+the server's config file; SET BY says which. With -o json it prints the API
+response.`,
 		RunE: func(*cobra.Command, []string) error {
 			if flagOutput == "json" {
 				return raw("GET", "/v1/templates", nil)
@@ -166,8 +180,9 @@ Each backend boots its own images: a template gives them one name. With
 				return err
 			}
 			if len(list.Items) == 0 {
-				fmt.Println("No templates are configured: a template named in a request is passed to the backend as given.")
-				fmt.Println("To give one name an image on every pool, see " + baselinesGuide)
+				fmt.Println("No templates are set: a template named in a request is passed to the backend as given.")
+				fmt.Println("To give one name an image on every pool: differently admin template set NAME --image POOL=IMAGE")
+				fmt.Println("More in " + baselinesGuide)
 				return nil
 			}
 			pools, err := visiblePools()

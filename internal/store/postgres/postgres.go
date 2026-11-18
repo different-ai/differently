@@ -369,6 +369,50 @@ func (s *Store) DeletePool(ctx context.Context, name string) error {
 	})
 }
 
+func (s *Store) GetTemplate(ctx context.Context, name string) (api.Template, error) {
+	return getDoc[api.Template](ctx, s.pool, "template", name, "SELECT doc FROM templates WHERE name = $1", name)
+}
+
+func (s *Store) ListTemplates(ctx context.Context) ([]api.Template, error) {
+	return listDocs[api.Template](ctx, s.pool, "SELECT doc FROM templates ORDER BY name")
+}
+
+func (s *Store) UpdateTemplate(ctx context.Context, name string, fn func(*api.Template, bool) error) (api.Template, error) {
+	var out api.Template
+	err := s.tx(ctx, func(tx pgx.Tx) error {
+		// A row lock cannot hold a template that does not exist yet, so two
+		// replicas creating one name would both start from nothing. Writers
+		// take the table instead; they are rare, and readers are not held.
+		if _, err := tx.Exec(ctx, "LOCK TABLE templates IN SHARE ROW EXCLUSIVE MODE"); err != nil {
+			return err
+		}
+		t, err := getDoc[api.Template](ctx, tx, "template", name, "SELECT doc FROM templates WHERE name = $1", name)
+		found := err == nil
+		if err != nil && !api.IsCode(err, api.CodeNotFound) {
+			return err
+		}
+		if err := fn(&t, found); err != nil {
+			return err
+		}
+		t.Name = name
+		out = t
+		_, err = tx.Exec(ctx, "INSERT INTO templates (name, doc) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET doc = EXCLUDED.doc", name, t)
+		return err
+	})
+	if err != nil {
+		return api.Template{}, err
+	}
+	return out, nil
+}
+
+func (s *Store) DeleteTemplate(ctx context.Context, name string) error {
+	tag, err := s.pool.Exec(ctx, "DELETE FROM templates WHERE name = $1", name)
+	if err == nil && tag.RowsAffected() == 0 {
+		return store.NotFound("template", name)
+	}
+	return err
+}
+
 func (s *Store) PutPolicy(ctx context.Context, p api.PlacementPolicy) error {
 	_, err := s.pool.Exec(ctx, "INSERT INTO policies (scope, doc) VALUES ($1, $2) ON CONFLICT (scope) DO UPDATE SET doc = EXCLUDED.doc", p.Scope, p)
 	return err

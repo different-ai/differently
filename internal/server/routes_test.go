@@ -20,7 +20,7 @@ func TestOpenAPICoversRoutes(t *testing.T) {
 		t.Fatalf("api/openapi.yaml does not parse as OpenAPI 3.1: %v", err)
 	}
 	var src strings.Builder
-	for _, f := range []string{"server.go", "sandboxes.go", "tenancy.go", "admin.go", "secrets.go", "stacks.go"} {
+	for _, f := range []string{"server.go", "sandboxes.go", "tenancy.go", "admin.go", "secrets.go", "stacks.go", "templates.go"} {
 		b, _ := os.ReadFile(f)
 		src.Write(b)
 	}

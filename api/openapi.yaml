@@ -274,7 +274,7 @@ paths:
   /v1/profiles:
     get: { tags: [Policy], summary: Resource profiles, responses: { "200": { description: Profiles } } }
   /v1/templates:
-    get: { tags: [Policy], summary: Image templates, responses: { "200": { description: Templates } } }
+    get: { tags: [Policy], summary: "Templates: the config file's, then those set through the API (each says which in source)", responses: { "200": { description: Templates, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Template" } } } } } } } } }
   /v1/classifications:
     get: { tags: [Policy], summary: Data classifications, responses: { "200": { description: Classifications } } }
 
@@ -337,6 +337,26 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PutSecretRequest" } } } }
       responses: { "201": { description: Stored, content: { application/json: { schema: { $ref: "#/components/schemas/Secret" } } } }, "200": { description: Replaced, content: { application/json: { schema: { $ref: "#/components/schemas/Secret" } } } }, "409": { $ref: "#/components/responses/Error" } }
     delete: { tags: [Admin], summary: Delete a credential no pool or stack uses, responses: { "204": { description: Deleted }, "409": { $ref: "#/components/responses/Error" } } }
+  /v1/admin/templates/{name}:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,62}$" } }]
+    put:
+      tags: [Admin]
+      summary: Set a template, giving one name to each pool's own image or snapshot
+      description: Merges into the stored template. Every image named is added or replaced and the others stay, so a call can add one pool without restating the rest; a field left out is left as it was. Takes effect for the next placement on every replica, with no restart. Refused for a template the config file declares (409), an empty image, an image for a pool that does not exist or that the template's pools list leaves out (400). A template only narrows placement; the placement policy still decides which pools may run the work.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PutTemplateRequest" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } } }, "200": { description: Changed, content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } } }, "400": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" } }
+    delete:
+      tags: [Admin]
+      summary: Remove a template set through the API
+      description: From then on a request that names it has the name passed to the backend as given. Refused for a template the config file declares (409).
+      responses: { "204": { description: Removed }, "404": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" } }
+  /v1/admin/templates/{name}/images/{pool}:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string } }, { name: pool, in: path, required: true, schema: { type: string } }]
+    delete:
+      tags: [Admin]
+      summary: Stop offering a template on one pool
+      description: Removes that pool's image, so the template is no longer placed there. A template's last image cannot be removed (409), since with none the name would be passed to every pool as given; remove the template instead.
+      responses: { "200": { description: The template without that pool's image, content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } } }, "404": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" } }
   /v1/admin/stacks:
     get: { tags: [Admin], summary: List the application stacks this installation watches, responses: { "200": { description: Stacks with the last health of each component, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Stack" } } } } } } } } }
   /v1/admin/stacks/{name}:
@@ -621,6 +641,22 @@ components:
     RotateAPIKeyRequest:
       type: object
       properties: { graceSeconds: { type: integer, minimum: 0, maximum: 604800, description: How long the old key stays valid; 0 revokes it at once } }
+    Template:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        pools: { type: array, items: { type: string }, description: Restricts the template to these pools; empty means any pool }
+        images: { type: object, additionalProperties: { type: string }, description: "Pool name to that backend's own image or snapshot. When set, only these pools run the template" }
+        source: { type: string, enum: [config, api], description: "Where it is defined: the server's config file, or the admin API. The config file wins a shared name" }
+        updatedAt: { type: string, format: date-time, description: Last change through the API }
+        updatedBy: { type: string }
+    PutTemplateRequest:
+      type: object
+      properties:
+        description: { type: string, maxLength: 1024 }
+        pools: { type: array, items: { type: string }, description: Replaces the pools the template is restricted to; an empty list removes the restriction }
+        images: { type: object, additionalProperties: { type: string, minLength: 1, maxLength: 1024 }, description: "Pool name to the image or snapshot its backend boots. Added to, or replacing, what is stored" }
     Secret:
       type: object
       properties:

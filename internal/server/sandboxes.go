@@ -147,11 +147,11 @@ func (s *Server) admit(w http.ResponseWriter, r *http.Request, p auth.Principal,
 }
 
 // placementUnavailable reports that placement could not be evaluated because
-// a policy or snapshot read failed. The cause is logged, not returned: it can
-// name internal hosts.
+// a policy, snapshot or template read failed. The cause is logged, not
+// returned: it can name internal hosts.
 func (s *Server) placementUnavailable(err error) error {
 	s.Log.Warn("placement input unavailable", "err", err)
-	return api.Errorf(api.CodeProviderUnavailable, "placement policy could not be read; nothing was changed, retry shortly")
+	return api.Errorf(api.CodeProviderUnavailable, "placement policy or template could not be read; nothing was changed, retry shortly")
 }
 
 func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.CreateSandboxRequest) (store.SandboxRecord, error) {

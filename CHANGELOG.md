@@ -8,6 +8,44 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- **A template can be set on a running server**, with no config edit and no
+  restart. Until now templates lived only in the server's config file.
+  - `differently admin template set python --image POOL=IMAGE ...` gives a
+    name an image on each pool named, creating the template if needed.
+    Running it again with one `--image` adds a provider or points one at a
+    new baseline; the other pools keep theirs.
+    `differently admin template remove python --pool POOL` stops offering it
+    on one pool, and without `--pool` removes the template.
+    `differently templates` gains a `SET BY` column: `command` or
+    `config file`.
+  - API, operator keys only: `PUT /v1/admin/templates/{name}` (merges: every
+    image named is added or replaced, a field left out stays),
+    `DELETE /v1/admin/templates/{name}` and
+    `DELETE /v1/admin/templates/{name}/images/{pool}`. `GET /v1/templates`
+    lists both kinds, each with `source` (`config` or `api`). Both SDKs gain
+    `admin.templates.set`, `removeImage` / `remove_image` and `delete`, and
+    the Go client `SetTemplate`, `RemoveTemplateImage`, `DeleteTemplate` and
+    `ListTemplates`.
+  - **The config file wins** a name both define: the API refuses to change
+    or remove a template the file declares (409, saying so), and a stored
+    template of that name is ignored, with a warning at start.
+  - A template set this way is held to the config file's rules, and an image
+    for a pool that does not exist is refused with the pool named. A
+    template's last image cannot be removed on its own, since with none the
+    name would be passed to every pool as given; removing the template does
+    that explicitly.
+  - Stored templates are read from the database at each placement, as
+    placement policies are, so a change reaches every replica at its next
+    decision. If a template cannot be read, sandboxes that ask for it wait
+    instead of having the name passed to a backend as given. A sandbox whose
+    template lost its pool's image between placement and provisioning is
+    placed again (`sandbox.placed_again` in the audit log).
+  - Changes are audited as `template.put`, `template.image_delete` and
+    `template.delete`, and appear in the trust report's recent admin
+    actions.
+  - Postgres gains the `templates` table (migration `0006_templates.sql`,
+    applied at start).
+
 - The answer to "don't I need my snapshot on every provider?", in the
   product and in the docs. Each backend boots its own images, so the
   baseline has to exist on each provider; a template gives those baselines

@@ -836,7 +836,7 @@ func adminCmd() *cobra.Command {
 		&cobra.Command{Use: "drain NAME", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("POST", "/v1/admin/pools/"+a[0]+"/drain", nil) }},
 		&cobra.Command{Use: "undrain NAME", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("POST", "/v1/admin/pools/"+a[0]+"/undrain", nil) }},
 	)
-	cmd.AddCommand(org, pool, secretCmd(),
+	cmd.AddCommand(org, pool, secretCmd(), adminTemplateCmd(),
 		&cobra.Command{Use: "trust-report", Short: "Where work can go, where it went, and what cannot be proven", RunE: func(*cobra.Command, []string) error {
 			return raw("GET", "/v1/admin/trust-report", nil)
 		}},

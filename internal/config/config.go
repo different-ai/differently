@@ -552,21 +552,11 @@ func (c Config) Validate() error {
 	}
 	templates := map[string]bool{}
 	for _, t := range c.Templates {
-		switch {
-		case t.Name == "":
-			bad("every template needs a name")
-		case templates[t.Name]:
+		if templates[t.Name] && t.Name != "" {
 			bad("duplicate template %s", t.Name)
 		}
 		templates[t.Name] = true
-		for pool, image := range t.Images {
-			if image == "" {
-				bad("template %s: images.%s is empty", t.Name, pool)
-			}
-			if len(t.Pools) > 0 && !slices.Contains(t.Pools, pool) {
-				bad("template %s: images names pool %s, which its pools list leaves out", t.Name, pool)
-			}
-		}
+		errs = append(errs, ValidateTemplate(t)...)
 	}
 	if c.Metrics.Listen != "" && c.Metrics.Listen == c.Listen {
 		bad("metrics.listen must differ from listen")
@@ -589,24 +579,42 @@ func (c Config) Classification(name string) (api.Classification, bool) {
 	return api.Classification{}, false
 }
 
-// Template returns a configured template by name.
+// ValidateTemplate reports what is wrong with one template. The config file
+// and the admin API (PUT /v1/admin/templates/{name}) hold a template to the
+// same rules: it has a name, no image is empty, and images name only pools
+// its pools list allows.
+func ValidateTemplate(t api.Template) []error {
+	if t.Name == "" {
+		return []error{errors.New("every template needs a name")}
+	}
+	var errs []error
+	pools := make([]string, 0, len(t.Images))
+	for pool := range t.Images {
+		pools = append(pools, pool)
+	}
+	slices.Sort(pools)
+	for _, pool := range pools {
+		if t.Images[pool] == "" {
+			errs = append(errs, fmt.Errorf("template %s: images.%s is empty", t.Name, pool))
+		}
+		if len(t.Pools) > 0 && !slices.Contains(t.Pools, pool) {
+			errs = append(errs, fmt.Errorf("template %s: images names pool %s, which its pools list leaves out", t.Name, pool))
+		}
+	}
+	return errs
+}
+
+// Template returns a template the config file declares, by name. Templates
+// set through the API live in the store; the scheduler's Template and
+// Templates give both as one list.
 func (c Config) Template(name string) (api.Template, bool) {
 	for _, t := range c.Templates {
 		if t.Name == name {
+			t.Source, t.UpdatedAt, t.UpdatedBy = api.TemplateSourceConfig, nil, ""
 			return t, true
 		}
 	}
 	return api.Template{}, false
-}
-
-// BackendTemplate is what the backend of pool should boot for template name:
-// the pool's mapped image for a configured template, otherwise the name as
-// given.
-func (c Config) BackendTemplate(name, pool string) string {
-	if t, ok := c.Template(name); ok && name != "" {
-		return t.ImageFor(pool)
-	}
-	return name
 }
 
 // Profile returns a profile by name.

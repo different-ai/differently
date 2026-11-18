@@ -579,6 +579,34 @@ type Template struct {
 	// name can be placed on any pool listed here. When set, only those pools
 	// can run the template.
 	Images map[string]string `json:"images,omitempty"`
+	// Source says where the template is defined: "config" for the server's
+	// configuration file, "api" for one set through the admin API. The config
+	// file wins when both define a name, and the API does not change a
+	// template the config file declares.
+	Source string `json:"source,omitempty"`
+	// UpdatedAt and UpdatedBy record the last change made through the API.
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+	UpdatedBy string     `json:"updatedBy,omitempty"`
+}
+
+// Where a template is defined.
+const (
+	TemplateSourceConfig = "config"
+	TemplateSourceAPI    = "api"
+)
+
+// PutTemplateRequest sets a template through the admin API. It merges into
+// the stored template: every image named here is added or replaced and the
+// others stay, so a call can add one provider without restating the rest. A
+// field left out is left as it was. Removing an image or the template is a
+// separate, explicit call.
+type PutTemplateRequest struct {
+	Description *string `json:"description,omitempty"`
+	// Pools replaces the list of pools the template is restricted to; an
+	// empty list removes the restriction.
+	Pools *[]string `json:"pools,omitempty"`
+	// Images maps a pool name to the image or snapshot its backend boots.
+	Images map[string]string `json:"images,omitempty"`
 }
 
 // Offers reports whether pool can run the template, with the reason if not.

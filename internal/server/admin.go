@@ -45,6 +45,7 @@ func (s *Server) adminRoutes(authed func(string, handlerFunc)) {
 	admin("GET /v1/admin/audit/verify", s.verifyAudit)
 	s.registerSecrets(admin)
 	s.registerStacks(admin)
+	s.registerTemplates(admin)
 	admin("POST /v1/admin/reconcile", func(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
 		s.Scheduler.Reconcile(r.Context())
 		s.audit(r, p, "admin.reconcile", "installation", "", "", nil)
@@ -688,7 +689,7 @@ func (s *Server) trustReport(w http.ResponseWriter, r *http.Request, _ auth.Prin
 	for i := len(events) - 1; i >= 0 && len(rep.AdminActions) < 50; i-- {
 		ev := events[i]
 		if strings.HasPrefix(ev.Action, "admin.") || strings.HasPrefix(ev.Action, "pool.") || strings.HasPrefix(ev.Action, "policy.") ||
-			strings.HasPrefix(ev.Action, "org.") || strings.HasPrefix(ev.Action, "secret.") || ev.Action == "key.create" || ev.Action == "key.revoke" || ev.Action == "key.rotate" {
+			strings.HasPrefix(ev.Action, "org.") || strings.HasPrefix(ev.Action, "secret.") || strings.HasPrefix(ev.Action, "template.") || ev.Action == "key.create" || ev.Action == "key.revoke" || ev.Action == "key.rotate" {
 			rep.AdminActions = append(rep.AdminActions, ev)
 		}
 	}
