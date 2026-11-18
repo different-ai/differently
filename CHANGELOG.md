@@ -296,6 +296,18 @@ gain `source`. The audit log gains the actions `template.put`,
   `AddProvider`, `SetQuota`, `VerifyAudit`, a keep share in the load and the
   policy's ranking in each snapshot. The WebAssembly build is about 5 MB
   compressed.
+- `groundbox` adapter for [Groundbox](docs/providers/groundbox.md), a hosted
+  sandbox service (Firecracker microVMs), always external and experimental
+  (`experimental_adapters` build tag): exec, streamed exec and stdin over
+  Groundbox's WebSocket endpoint, files, stop/start keeping the disk,
+  pause/resume, Groundbox's own idle pause with wake on request (the adapter
+  is an `adapter.NativeIdler`), memory snapshots that outlive their sandbox
+  and fork from them, sandboxes from a template or a Docker image, port URLs
+  (share links or public), egress allow and deny lists, and the auto-stop
+  time as the TTL backstop. Tested with a fake
+  server, and run against Groundbox's live API and through a Differently
+  server on 2026-11-18 by a Groundbox maintainer; the Differently maintainers
+  have not run it. It is on the comparison page with its list price.
 
 ### Changed
 

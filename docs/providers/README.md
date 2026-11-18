@@ -20,7 +20,7 @@ code and published documentation.
 
 ## Providers
 
-26 providers are covered: 16 with an adapter in this repository, 8 reachable
+27 providers are covered: 17 with an adapter in this repository, 8 reachable
 through a [remote plugin](remote.md), and 2 that cannot be supported.
 
 ### What the server contains
@@ -30,11 +30,12 @@ provider adapters, each verified against a real backend: `opensandbox`,
 `daytona` and `freestyle`. They also contain [`remote`](remote.md), the
 plugin protocol, and the dev-mode `devhost`.
 
-The other 13 adapters are **experimental**. Their code and tests are in the
+The other 14 adapters are **experimental**. Their code and tests are in the
 repository and CI builds and tests them, but they are compiled into the
 server only with the Go build tag `experimental_adapters`. Twelve have been
 tested only against fake servers; `agent-sandbox` also ran live once, on a
-kind cluster. A server built without the tag refuses a pool of one of these
+kind cluster, and `groundbox` ran live against Groundbox's API, run by a
+Groundbox maintainer. A server built without the tag refuses a pool of one of these
 kinds, in the config file and through the API, with an error that names the
 tag.
 
@@ -66,6 +67,7 @@ add an experimental pool in the config file, with
 | Provider | Status | Trust |
 |---|---|---|
 | [agent-sandbox](agent-sandbox.md) `agent-sandbox` | **Verified live**: kind cluster, runc, 2026-10-28 | declared |
+| [Groundbox](groundbox.md) `groundbox` | **Verified live**: Groundbox's own image and a Docker image, 2026-11-18, run by a Groundbox maintainer | external |
 | [E2B](e2b.md) `e2b` | Tested with a fake server | declared |
 | [Boat](boat.md) `boat` | Tested with a fake server | external |
 | [Morph Cloud](morph.md) `morph` | Tested with a fake server | external |
@@ -110,6 +112,7 @@ start from one. "Build" is `default` for the adapters in every server and
 | Azure sessions | tag | Hyper-V | — | — | — |
 | Google Cloud sandboxes | tag | container | stop/start | memory + fork | — |
 | Northflank | tag | microVM or gVisor | — | — | public |
+| Groundbox | tag | microVM | stop/start, pause | memory + fork | share link or public |
 
 Every adapter offers exec and files. Streamed exec, stdin, egress control and
 size limits differ: each page has the full table.

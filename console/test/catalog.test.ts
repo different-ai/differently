@@ -126,7 +126,7 @@ test('the catalog filters by kind and by what is typed', () => {
   assert.equal(search('all', '').length, providers.length);
   assert.deepEqual(search('open', '').map((p) => p.id), ['opensandbox', 'agent-sandbox', 'cubesandbox']);
   assert.deepEqual(search('all', 'azure').map((p) => p.id), ['azure-sandboxes', 'azure-sessions']);
-  assert.deepEqual(search('hosted', '  FIRECRACKER ').map((p) => p.id), ['e2b', 'vercel', 'fly', 'cloudflare', 'codesandbox', 'tensorlake']);
+  assert.deepEqual(search('hosted', '  FIRECRACKER ').map((p) => p.id), ['e2b', 'groundbox', 'vercel', 'fly', 'cloudflare', 'codesandbox', 'tensorlake']);
   assert.deepEqual(search('cloud', 'daytona'), []);
   assert.deepEqual(tags(entry('e2b')), ['Own kernel', 'Keeps memory', 'Forks', 'Port URLs', 'Your infrastructure']);
 });

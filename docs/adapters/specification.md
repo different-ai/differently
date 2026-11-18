@@ -8,7 +8,7 @@
 An **execution adapter** creates and manages sandbox instances on one backend.
 The control plane holds one adapter per [pool](../architecture/README.md#4-the-three-layers).
 Adapters run in-process (`opensandbox`, `daytona` and `freestyle` in every
-build, 13 experimental provider adapters behind the `experimental_adapters`
+build, 14 experimental provider adapters behind the `experimental_adapters`
 build tag, all listed in the [provider catalog](../providers/README.md),
 plus the development-only `devhost` and `fake`) or out of process behind the HTTP protocol in
 `pkg/adapter/adapterhttp`, which `remote` pools use. The

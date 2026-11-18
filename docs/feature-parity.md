@@ -151,9 +151,9 @@ Boat is the developer-experience reference. Boat paths are relative to
 What each adapter in the default build advertises today (from the adapters'
 code). A request that needs a capability is only placed on pools that
 advertise it; an operation a backend lacks returns `unsupported_operation`
-(501). The 13 experimental adapters, compiled in only with the
-`experimental_adapters` build tag and, apart from `agent-sandbox`, tested
-only against fake servers, are in the
+(501). The 14 experimental adapters, compiled in only with the
+`experimental_adapters` build tag and, apart from `agent-sandbox` and
+`groundbox`, tested only against fake servers, are in the
 [provider catalog](providers/README.md#what-the-server-contains).
 
 | Capability | `opensandbox` (default private runtime) | `daytona` | `freestyle` | `remote` (plugin) | `devhost` (dev only) |
