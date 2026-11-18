@@ -17,6 +17,18 @@ flowchart LR
   D -.->|no baseline: never chosen| P3[Freestyle]
 ```
 
+<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
+> **Version note.** The mapping of one template name to each pool's image is
+> in `v0.1.0-alpha.5`, the latest release. These are newer:
+> `differently templates`, `differently run`, the `--from-snapshot` flag,
+> the side-by-side table from `differently capabilities`, and the two
+> refusal messages quoted below. With that release, `differently
+> capabilities` prints the same facts as JSON, `GET /v1/templates` lists the
+> templates, a sandbox starts from a snapshot through the API or an SDK
+> (`fromSnapshot`), and a refusal says only that no pool satisfies the
+> policy. Building from source (`make build`) gives you everything on this
+> page.
+
 ## What is shared and what is not
 
 | | Shared across providers? | What Differently does |

@@ -58,7 +58,11 @@ prints that version or an older one:
 - give the SDKs the key and the project yourself: set
   `DIFFERENTLY_API_KEY` to the contents of `~/.differently/dev/token` and
   pass `projectId: "prj_default"` (Python: `project_id="prj_default"`) to
-  `sandboxes.create`.
+  `sandboxes.create`;
+- `differently templates` and `--from-snapshot` do not exist, and
+  `differently capabilities` prints JSON instead of a table. Read
+  `GET /v1/templates`, and start from a snapshot with `fromSnapshot` in the
+  API or an SDK.
 
 ### Task A: install it and run a first sandbox
 
