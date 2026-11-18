@@ -1,13 +1,17 @@
 # Differently documentation
 
-Start with the [project README](../README.md) for what Differently is and a
-two-minute local quickstart.
+New here? Read [Differently explained](explainer.md) for what it is in plain
+words, then run it with the [quickstart](guides/quickstart.md): three
+commands, no account or cluster. Working through a coding agent? Point it
+at [Use Differently with a coding agent](guides/agents.md).
 
 ## Use it
 
 | Guide | For |
 |---|---|
-| [Quickstart](guides/quickstart.md) | Laptop dev mode, first sandbox, SDK snippets |
+| [Differently explained](explainer.md) | What it is, the five words to know, what you need to start and what can wait |
+| [Quickstart](guides/quickstart.md) | Install, a local server, the first sandbox, SDK snippets, the step up to a real backend |
+| [Use Differently with a coding agent](guides/agents.md) | A prompt to paste, and step-by-step instructions written for the agent (also served as `/agents.txt`) |
 | [Organization onboarding](guides/organization-onboarding.md) | One installation per organization vs shared; orgs, projects, quotas, scoped keys, policies |
 | [Hybrid overflow](guides/hybrid-overflow.md) | Authorizing Daytona or Freestyle as policy-gated external capacity |
 | [OpenWork on Differently](guides/openwork.md) | OpenWork's sandbox contract mapped onto Differently; Workbot computers routed across OpenSandbox, Daytona and Freestyle |

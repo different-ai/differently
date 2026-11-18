@@ -66,8 +66,11 @@ with client.sandboxes.create(
     id: 'cli',
     label: 'CLI',
     lang: 'sh',
-    code: `differently doctor
-differently sandbox create --profile small --wait
+    code: `# One sandbox for one command: created, used, deleted
+differently run -- echo hello
+
+# Or keep one. This prints its ID.
+differently sandbox create --wait
 differently sandbox exec sbx_123 -- 'echo hello from $(uname -s)'
 differently sandbox files put sbx_123 ./README.md /work/README.md
 
@@ -85,6 +88,7 @@ const ways = [
   {
     title: 'Laptop',
     what: 'Dev mode: an in-memory server with a devhost pool that runs commands directly on the host, with no isolation. For trying the API.',
+    cmd: 'differently-server --dev',
     status: 'Verified',
     kind: 'verified',
     href: `${base}/docs/guides/quickstart/`,
@@ -149,11 +153,16 @@ const notVerified = [
 ];
 const inProgress: string[] = [];
 
-const tryIt = `make build
-./bin/differently-server --dev
+const site = 'https://different-ai.github.io/differently';
+const installCmd = `curl -fsSL ${site}/install.sh | sh`;
+const tryIt = `${installCmd}
+differently-server --dev
 
 # in a second terminal
-./bin/differently sandbox create --profile small --wait`;
+differently run -- echo hello`;
+const agentPrompt = `Read ${site}/agents.txt and follow it:
+install Differently on this machine, start it in dev mode, run one sandbox to
+prove it works, then show me how to create a sandbox from my code.`;
 
 const features = [
   {
@@ -234,6 +243,7 @@ const compare = [
     <title>Differently · Open-source sandbox orchestration</title>
     <meta name="description" content="Open-source, self-hosted control plane for sandboxes: one API, quotas, policy-based placement and audit across OpenSandbox, Daytona, Freestyle and plugins." />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <link rel="alternate" type="text/plain" title="llms.txt" href={`${base}/llms.txt`} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -256,6 +266,7 @@ const compare = [
         Differently
       </a>
       <nav>
+        <a class="desk-only" href="#start">Get started</a>
         <a href="#stack">Features</a>
         <a href={`${base}/compare/`}>Compare</a>
         <a class="wide-only" href={`${base}/simulator/`}>Simulator</a>
@@ -285,8 +296,12 @@ const compare = [
           <a class="btn" href={repo}>View on GitHub</a>
         </div>
         <div class="install">
-          <span>$</span><code>helm install differently deploy/helm/differently</code>
+          <span>$</span><code>{installCmd}</code>
         </div>
+        <p class="install-note">
+          macOS and Linux. Then <a href="#start">two more commands</a> for a first sandbox, with no account, cluster or database.
+          Using a coding agent? Give it <a href={`${base}/agents.txt`}>agents.txt</a>.
+        </p>
         <ul class="pillars">
           <li><b>One API.</b> Applications request resources and capabilities, not a backend.</li>
           <li><b>Many backends.</b> Self-hosted runtimes and managed providers behind one adapter contract.</li>
@@ -512,14 +527,33 @@ const compare = [
       <section class="start wrap" id="start">
         <div class="section-head">
           <p class="eyebrow">Get started</p>
-          <h2>Run it locally</h2>
-          <p>From a clone of <a href={repo}>the repository</a>:</p>
+          <h2>Three commands to a first sandbox</h2>
+          <p>On macOS or Linux, with no account, no cluster and no database. The first installs the CLI and the server into <code>~/.local/bin</code>, the second starts a local server, the third runs a command in a sandbox and deletes it.</p>
         </div>
         <div class="panel">
           <Code code={tryIt} lang="sh" themes={{ light: 'github-light', dark: 'github-dark' }} />
         </div>
         <p class="warn"><strong>Dev mode has no isolation.</strong> State is kept in memory and the devhost pool runs commands directly on the host as the current user. Use it to try the API, not for untrusted code.</p>
+        {/* Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. */}
+        <p class="note"><code>differently run</code> is newer than v0.1.0-alpha.5, the latest release. The <a href={`${base}/docs/guides/quickstart/`}>quickstart</a> says what to type with that release, and how to build from source.</p>
+
+        <div class="section-head agent-head">
+          <h3>Or hand it to a coding agent</h3>
+          <p>Paste this into Claude Code, Codex, Cursor or any agent that can run commands. <a href={`${base}/agents.txt`}>agents.txt</a> holds step-by-step tasks with a check after each one, and <a href={`${base}/llms.txt`}>llms.txt</a> lists the documentation as Markdown.</p>
+        </div>
+        <div class="panel">
+          <Code code={agentPrompt} lang="text" themes={{ light: 'github-light', dark: 'github-dark' }} />
+        </div>
+
         <div class="next">
+          <a href={`${base}/docs/explainer/`}>
+            <b>Differently explained →</b>
+            <span>What it is in plain words, and what you can ignore until later.</span>
+          </a>
+          <a href={`${base}/docs/guides/quickstart/`}>
+            <b>Quickstart →</b>
+            <span>The longer tour: files, forks, placement, and calling it from your code.</span>
+          </a>
           <a href={`${base}/docs/deploy/single-vm/`}>
             <b>Deploy on one Linux VM →</b>
             <span>k3s, OpenSandbox and Differently on AWS, Google Cloud, Azure or bare metal.</span>

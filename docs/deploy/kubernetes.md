@@ -290,7 +290,9 @@ You can also open `$DIFFERENTLY_URL/dashboard/` and sign in with a key.
 
 ## 7. Create the first sandbox
 
-With the CLI (`differently`, configured by `DIFFERENTLY_URL` and `DIFFERENTLY_API_KEY`):
+With the CLI (`differently`, configured by `DIFFERENTLY_URL` and
+`DIFFERENTLY_API_KEY`; the [quickstart](../guides/quickstart.md#1-install)
+installs it with one command):
 
 ```sh
 export DIFFERENTLY_API_KEY=$PROJECT_KEY

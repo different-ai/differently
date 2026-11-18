@@ -15,7 +15,9 @@
 
 <p align="center">
   <b><a href="https://different-ai.github.io/differently/">Website</a></b> ·
-  <b><a href="https://different-ai.github.io/differently/docs/guides/quickstart/">Get started</a></b> ·
+  <b><a href="#get-started">Get started</a></b> ·
+  <b><a href="docs/explainer.md">Explainer</a></b> ·
+  <b><a href="docs/guides/agents.md">For agents</a></b> ·
   <b><a href="docs/deploy/README.md">Deploy anywhere</a></b> ·
   <b><a href="https://different-ai.github.io/differently/docs/">Docs</a></b> ·
   <b><a href="https://github.com/different-ai/differently/releases">Releases</a></b> ·
@@ -75,51 +77,59 @@ that layer.
 
 ## Get started
 
-**1. Try it on your laptop (2 minutes).** Needs Go 1.26+. Dev mode keeps
-state in memory and runs commands **on your machine with no isolation**, to
-explore the API, CLI and SDKs:
+Three commands, on macOS or Linux. No account, no cluster, no database.
 
 ```bash
-make build
-./bin/differently-server --dev                      # writes an operator token to ~/.differently/dev/token
-./bin/differently sandbox create --profile small --wait   # in another terminal
-./bin/differently sandbox exec <sandbox-id> -- 'echo hello from $(uname -s)'
-./bin/differently sandbox placement <sandbox-id>    # why it ran where it ran
+curl -fsSL https://different-ai.github.io/differently/install.sh | sh   # the CLI and the server, into ~/.local/bin
+differently-server --dev                                                # a local server; leave it running
+differently run -- echo hello                                           # in a second terminal
 ```
 
-The dashboard is at <http://localhost:8080/dashboard/>. The [admin console](console/README.md)
-is the same idea as a separate app you can host anywhere: as static files,
-or on Node with sign-in.
+`run` creates a sandbox, runs the command in it and deletes it. Dev mode
+keeps state in memory and runs commands **on your machine with no
+isolation**: it is for learning the API, CLI and SDKs, not for code you do
+not trust. The dashboard is at <http://localhost:8080/dashboard/>.
 
-**2. Run the real stack on any Docker host (10 minutes).** Postgres,
-Differently and a real OpenSandbox server, as the end-to-end suite runs it:
+<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
+> `differently run`, and the SDKs finding a local server by themselves, are
+> newer than `v0.1.0-alpha.5`, the latest release. The
+> [quickstart](docs/guides/quickstart.md) says what to type with that
+> release, and how to build from source instead (`make build`, Go 1.26+).
 
-```bash
-make e2e-prepare e2e-up    # API on :18090, OpenSandbox on :18091
-make e2e                   # optional: the end-to-end tests
+**With a coding agent.** Paste this into Claude Code, Codex, Cursor or any
+agent that can run commands:
+
+```text
+Read https://different-ai.github.io/differently/agents.txt and follow it:
+install Differently on this machine, start it in dev mode, run one sandbox to
+prove it works, then show me how to create a sandbox from my code.
 ```
 
-**3. Deploy it for your team.** On [one Linux VM on any cloud](docs/deploy/single-vm.md)
-(k3s, OpenSandbox and Differently, about 30 minutes), or with Helm on
-[your Kubernetes cluster](docs/deploy/kubernetes.md) using the chart and
-images from the [latest release](https://github.com/different-ai/differently/releases).
-
-Then call it from code ([TypeScript](sdk/typescript), [Python](sdk/python),
-[Go](pkg/client)). The SDKs are not on npm or PyPI yet; each README says how
-to install it from this repository.
+**From your code** ([TypeScript](sdk/typescript), [Python](sdk/python),
+[Go](pkg/client)). Against the local server the SDKs need no key and no
+project. They are not on npm or PyPI yet; each README says how to install
+from this repository.
 
 ```ts
 import { Differently } from "@differently/sdk";
 
-const differently = new Differently({ apiKey: process.env.DIFFERENTLY_API_KEY });
-const sandbox = await differently.sandboxes.create({
-  // projectId: "prj_default", // needed with an operator key, such as the dev token
-  profile: "small",
-  placement: { strategy: "private-first", external: "never" },
-});
+const differently = new Differently(); // or { baseUrl, apiKey } for a deployed server
+const sandbox = await differently.sandboxes.create();
 console.log((await sandbox.exec("uname -sm")).stdout);
 await sandbox.delete();
 ```
+
+**Then, when you want real isolation:**
+
+| Step up to | How | Time |
+|---|---|---|
+| The real stack on any Docker host | `make e2e-prepare e2e-up` from a checkout: Postgres, Differently and an OpenSandbox server ([test/e2e](test/e2e/README.md)) | about 10 minutes |
+| A server for your team | [One Linux VM on any cloud](docs/deploy/single-vm.md): k3s, OpenSandbox and Differently | about 30 minutes |
+| Your Kubernetes cluster | The [Helm chart](docs/deploy/kubernetes.md) and images from the [latest release](https://github.com/different-ai/differently/releases) | |
+
+New here? [Differently explained](docs/explainer.md) is the five-minute
+version of what it is and what you can ignore until later. The
+[quickstart](docs/guides/quickstart.md) has the longer tour.
 
 ## Deploy anywhere
 
@@ -215,7 +225,8 @@ under a control plane you run. See the
 - **Contribute:** [CONTRIBUTING.md](CONTRIBUTING.md) covers the branch model
   (PRs target `pre-release`), DCO sign-off and releases.
   [AGENTS.md](AGENTS.md) is the entry point for coding agents and
-  maintainers.
+  maintainers who change Differently; agents that install or use it start
+  at [docs/guides/agents.md](docs/guides/agents.md).
 - **Get help:** [SUPPORT.md](SUPPORT.md).
 - **Report a vulnerability:** [SECURITY.md](SECURITY.md), privately.
 - **Conduct and decisions:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),

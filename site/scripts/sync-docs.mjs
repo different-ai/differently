@@ -5,6 +5,12 @@
 //   ../cmd/differently       -> docs/reference/cli (from the CLI's own --help, needs Go)
 //   ./pages-src/**           -> hand-written pages (Go SDK, notes)
 // Relative links are rewritten to site routes, or to GitHub for files outside the site.
+//
+// It also writes what programs read instead of people, into public/ (git-ignored):
+//   docs/**/index.md         every docs page as Markdown, at the page's address plus index.md
+//   llms.txt                 an index of those pages (llmstxt.org)
+//   agents.txt               docs/guides/agents.md as plain text
+//   install.sh               ../install.sh
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,6 +21,8 @@ import YAML from 'yaml';
 const site = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repo = path.resolve(site, '..');
 const out = path.join(site, 'src/content/docs/docs');
+const pub = path.join(site, 'public');
+const ORIGIN = 'https://different-ai.github.io';
 const BASE = '/differently';
 const GITHUB = 'https://github.com/different-ai/differently';
 const BRANCH = 'pre-release';
@@ -60,6 +68,10 @@ function rewriteLinks(md, fromRepoPath) {
     return `${bang}](${url}${hash ? '#' + hash : ''}${title})`;
   });
 }
+
+// Literal text inside a RegExp: the dots of a host name must not match any character.
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const SITE_RE = escapeRe(`${ORIGIN}${BASE}`);
 
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -127,7 +139,135 @@ write('reference/api', apiPage(YAML.parse(fs.readFileSync(path.join(repo, 'api/o
 // 5. CLI reference from the CLI's own help output
 write('reference/cli', cliPage());
 
+// 6. The same pages for programs: Markdown twins, llms.txt, agents.txt, install.sh
+const twins = markdownTwins();
+fs.writeFileSync(path.join(pub, 'llms.txt'), llmsTxt(twins));
+fs.writeFileSync(path.join(pub, 'agents.txt'), twins.get('guides/agents/').text);
+fs.copyFileSync(path.join(repo, 'install.sh'), path.join(pub, 'install.sh'));
+
 console.log(`synced docs into ${path.relative(site, out)}`);
+
+// markdownTwins writes each generated page to public/docs/<route>/index.md
+// with absolute links, so a program that fetched one page can follow its
+// links and stay in Markdown. It returns the pages by route ('' is the docs
+// home, 'guides/quickstart/' a page).
+function markdownTwins() {
+  const dir = path.join(pub, 'docs');
+  fs.rmSync(dir, { recursive: true, force: true });
+  const unescapeHtml = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  // Notes to maintainers. Repeated until nothing is left, so removing one
+  // comment cannot leave the start of another behind.
+  const withoutComments = (t) => {
+    for (let before; before !== t; ) {
+      before = t;
+      t = t.replace(/<!--[\s\S]*?-->\n?/g, '');
+    }
+    return t;
+  };
+  const pages = new Map();
+  for (const abs of walk(out).filter((f) => f.endsWith('.md'))) {
+    const rel = path.relative(out, abs).split(path.sep).join('/');
+    const route = rel.replace(/(^|\/)index\.md$/, '$1').replace(/\.md$/, '/');
+    const [, front, body] = fs.readFileSync(abs, 'utf8').match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+    const { title, description } = YAML.parse(front);
+    const md = withoutComments(body)
+      .replace(/<pre class="mermaid">([\s\S]*?)<\/pre>\n/g, (_, src) => '```mermaid\n' + unescapeHtml(src) + '\n```\n')
+      .replace(/<small>(Source: .*)<\/small>/, '$1')
+      .replace(new RegExp(`\\]\\(${escapeRe(BASE)}/`, 'g'), `](${ORIGIN}${BASE}/`)
+      .replace(new RegExp(`\\]\\(${SITE_RE}/docs/((?:[^)\\s#/]+/)*)(?=[#)\\s])`, 'g'), (_, r) => `](${ORIGIN}${BASE}/docs/${r}index.md`);
+    const text = `# ${title}\n\n${description ? `> ${description}\n\n` : ''}${md.trim()}\n`;
+    const file = path.join(dir, route, 'index.md');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+    pages.set(route, { title, description, text, url: `${ORIGIN}${BASE}/docs/${route}index.md` });
+  }
+  checkSiteLinks(pages);
+  return pages;
+}
+
+// checkSiteLinks fails the build when generated Markdown links to an address
+// on this site that the build will not produce. The docs write such links in
+// full (https://...), which Starlight's link check skips.
+function checkSiteLinks(pages) {
+  const custom = fs.readdirSync(path.join(site, 'src/pages')).map((f) => (f === 'index.astro' ? '' : f.replace(/\.astro$/, '/')));
+  const exists = (p) =>
+    p.startsWith('docs/') && /(^|\/)(index\.md)?$/.test(p)
+      ? pages.has(p.slice(5).replace(/index\.md$/, ''))
+      : custom.includes(p) || ['llms.txt', 'agents.txt', 'install.sh'].includes(p) || fs.existsSync(path.join(pub, p));
+  const broken = [];
+  for (const [route, page] of pages)
+    for (const [url] of page.text.matchAll(new RegExp(`${SITE_RE}/[^\\s)>"'\`|]*`, 'g'))) {
+      const p = url.slice(`${ORIGIN}${BASE}/`.length).split(/[#?]/)[0].replace(/[.,;:]+$/, '');
+      if (!exists(p)) broken.push(`docs/${route}: ${url}`);
+    }
+  if (broken.length) throw new Error(`links to pages this site does not have:\n  ${broken.join('\n  ')}`);
+}
+
+// llmsTxt lists the pages an assistant should read, most useful first. A
+// route that no longer has a page fails the build, so the list cannot rot.
+function llmsTxt(pages) {
+  const link = (route, note, label) => {
+    const page = pages.get(route);
+    if (!page) throw new Error(`llms.txt lists docs/${route}, which has no page`);
+    return `- [${label ?? page.title}](${page.url}): ${note}`;
+  };
+  return `# Differently
+
+> Differently is an open-source, self-hosted control plane for sandboxes. Applications and agents call one API (REST, CLI, and SDKs for TypeScript, Python and Go) to create sandboxes, run commands and move files. Differently checks keys and quotas, decides which backend each sandbox runs on, and keeps an audit trail. By default work goes to an OpenSandbox server on your own infrastructure; managed providers such as Daytona or Freestyle get work only where policy allows it. Apache-2.0, no telemetry, pre-release (alpha).
+
+To try it: \`curl -fsSL ${ORIGIN}${BASE}/install.sh | sh\`, then \`differently-server --dev\`, then \`differently run -- echo hello\` in a second terminal. Dev mode runs commands on the local machine with no isolation.
+
+An agent asked to install, call or deploy Differently should read ${ORIGIN}${BASE}/agents.txt first. Every page below is Markdown; any docs page is available as Markdown by adding \`index.md\` to its address.
+
+## Start here
+
+${link('explainer/', 'what it is in plain words, the five terms to know, what you need to start and what can wait')}
+${link('guides/quickstart/', 'install, start a local server, run a first sandbox, call it from code, step up to a real backend')}
+- [Instructions for agents](${ORIGIN}${BASE}/agents.txt): step-by-step tasks with checks for installing it, calling it from code and deploying it
+- [Install script](${ORIGIN}${BASE}/install.sh): installs the CLI and the server from the newest GitHub release, with a checksum check
+${link('features/', 'what the control plane does, feature by feature')}
+
+## Use it
+
+${link('reference/api/', 'every HTTP route, parameter and schema, generated from the OpenAPI contract')}
+- [OpenAPI contract](https://raw.githubusercontent.com/different-ai/differently/${BRANCH}/api/openapi.yaml): the machine-readable API description; a running server serves it at /openapi.yaml
+${link('reference/cli/', 'every differently command and flag, generated from its help output')}
+${link('sdks/typescript/', 'install, quickstart, streaming, errors')}
+${link('sdks/python/', 'install, quickstart, streaming, errors')}
+${link('sdks/go/', 'the Go client the CLI is built on')}
+${link('guides/organization-onboarding/', 'organizations, projects, quotas, scoped keys and policies')}
+${link('guides/keys-and-providers/', 'storing provider keys, switching providers, rotating keys')}
+
+## Deploy and operate
+
+${link('deploy/', 'where it can run and what is tested, documented or unverified', 'Deployment overview')}
+${link('deploy/single-vm/', 'k3s, OpenSandbox and Differently on one machine')}
+${link('deploy/kubernetes/', 'the Helm chart on an existing cluster')}
+${link('deploy/prerequisites/', 'cluster, Postgres and a sandbox runtime')}
+${link('deploy/day-2/', 'upgrades, migrations, backups, drains, uninstall')}
+${link('guides/opensandbox-pools/', 'the default private runtime and its options')}
+${link('guides/hybrid-overflow/', 'approving Daytona or Freestyle as policy-gated external capacity')}
+${link('providers/', 'every backend, with its tested status, capabilities and configuration', 'Provider catalog')}
+${link('security/hardening-checklist/', 'what to do before production')}
+
+## How it works
+
+${link('architecture/', 'layers, components, request lifecycle, state machine', 'Architecture')}
+${link('scheduling/placement-policy/', 'how policies merge and how a pool is chosen')}
+${link('scheduling/capacity/', 'pool slots, the resume queue, preemption and lifecycle limits')}
+${link('security/trust-model/', 'threats, boundaries, enforced controls, residual risks')}
+${link('storage-and-lifecycle/', 'persistence, snapshots, fork, portability limits')}
+${link('adapters/specification/', 'the backend contract and the HTTP plugin protocol')}
+
+## Optional
+
+${link('feature-parity/', 'Differently next to other sandbox products, and the backend capability matrix')}
+${link('competitive-landscape/', 'ownership models and where Differently fits')}
+${link('roadmap/', 'phases and current status')}
+${link('maintaining/', 'for people and agents changing Differently itself')}
+- [Source code](${GITHUB}): the repository; AGENTS.md there is the entry point for contributors
+`;
+}
 
 function apiPage(spec) {
   const ref = (r) => r.split('/').pop();
@@ -220,7 +360,7 @@ function cliPage() {
     'description: Every differently command, generated from the CLI help output.',
     '---',
     '',
-    `Generated from the help output of [\`cmd/differently\`](${GITHUB}/tree/${BRANCH}/cmd/differently). Build it with \`make build\`; the binary lands in \`bin/differently\`.`,
+    `Generated from the help output of [\`cmd/differently\`](${GITHUB}/tree/${BRANCH}/cmd/differently). The [quickstart](${BASE}/docs/guides/quickstart/) installs it; from a checkout, \`make build\` puts it in \`bin/differently\`.`,
     '',
     'Configuration comes from flags, then `DIFFERENTLY_URL`, `DIFFERENTLY_API_KEY` and `DIFFERENTLY_PROJECT`, then the file written by `differently login`. Against a local `--dev` server the CLI picks up the operator token from `~/.differently/dev/token`.',
     '',

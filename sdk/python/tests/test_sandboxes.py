@@ -1,6 +1,8 @@
+import os
 import re
 import time
 import unittest
+from unittest import mock as patch
 
 from mock_server import MockServer, no_content, reply, sandbox_info, send_error, send_json, stream_events
 
@@ -11,7 +13,10 @@ class SandboxTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.mock = MockServer()
-        cls.client = Differently("dly_test_secret", base_url=cls.mock.url)
+        # No default project: these tests compare whole create bodies.
+        with patch.patch.dict(os.environ):
+            os.environ.pop("DIFFERENTLY_PROJECT", None)
+            cls.client = Differently("dly_test_secret", base_url=cls.mock.url)
 
     @classmethod
     def tearDownClass(cls) -> None:

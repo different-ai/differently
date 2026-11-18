@@ -29,13 +29,17 @@ export default defineConfig({
           },
         },
         { tag: 'script', attrs: { type: 'module', src: '/differently/mermaid-init.js' } },
+        // Where a program finds the docs as Markdown (scripts/sync-docs.mjs writes it).
+        { tag: 'link', attrs: { rel: 'alternate', type: 'text/plain', title: 'llms.txt', href: '/differently/llms.txt' } },
       ],
       plugins: [starlightLinksValidator({ errorOnLocalLinks: false })],
       sidebar: [
         { label: 'Start here', items: [
           { label: 'Overview', link: '/docs/' },
-          { label: 'Features', link: '/docs/features/' },
+          { label: 'Differently explained', link: '/docs/explainer/' },
           { label: 'Quickstart', link: '/docs/guides/quickstart/' },
+          { label: 'With a coding agent', link: '/docs/guides/agents/' },
+          { label: 'Features', link: '/docs/features/' },
           { label: 'Deploy anywhere', link: '/docs/deploy/' },
           { label: 'Admin console', link: '/docs/guides/console/' },
           { label: 'OpenSandbox pools', link: '/docs/guides/opensandbox-pools/' },

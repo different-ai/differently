@@ -4,6 +4,7 @@ import os
 from typing import Mapping, Optional
 
 from ._admin import Admin
+from ._devserver import DEV_PROJECT_ID, is_loopback_url, read_dev_token
 from ._errors import DifferentlyError
 from ._http import HttpClient
 from ._resources import ApiKeys, AuditEvents, Listing, Policies, Projects, Quotas, Snapshots, Usage
@@ -17,10 +18,17 @@ class Differently:
     """Client for the Differently /v1 API.
 
     ``api_key`` defaults to ``DIFFERENTLY_API_KEY`` and ``base_url`` to
-    ``DIFFERENTLY_URL``, then http://localhost:8080. ``timeout`` is the socket
-    timeout in seconds; long polls and streams size their own. Idempotent
-    requests are retried up to ``max_retries`` times on 429 (rate limited),
-    503 and connection errors.
+    ``DIFFERENTLY_URL``, then http://localhost:8080. With no key, and only
+    when the URL is this machine, the client uses the token a local
+    ``differently-server --dev`` wrote to ~/.differently/dev/token.
+
+    ``project_id`` is the project ``sandboxes.create`` uses when the call
+    names none. It defaults to ``DIFFERENTLY_PROJECT``, then to ``prj_default``
+    when the dev server's token is used.
+
+    ``timeout`` is the socket timeout in seconds; long polls and streams size
+    their own. Idempotent requests are retried up to ``max_retries`` times on
+    429 (rate limited), 503 and connection errors.
     """
 
     def __init__(
@@ -28,22 +36,34 @@ class Differently:
         api_key: Optional[str] = None,
         *,
         base_url: Optional[str] = None,
+        project_id: Optional[str] = None,
         timeout: float = 120.0,
         max_retries: int = 3,
         headers: Optional[Mapping[str, str]] = None,
     ) -> None:
+        base_url = base_url or os.environ.get("DIFFERENTLY_URL") or DEFAULT_BASE_URL
         api_key = api_key or os.environ.get("DIFFERENTLY_API_KEY")
+        project_id = project_id or os.environ.get("DIFFERENTLY_PROJECT") or None
+        # A local dev server writes an operator token; use it for this machine only.
+        if not api_key and is_loopback_url(base_url):
+            api_key = read_dev_token()
+            if api_key and not project_id:
+                project_id = DEV_PROJECT_ID
         if not api_key:
-            raise DifferentlyError("unauthenticated", "missing API key: pass api_key or set DIFFERENTLY_API_KEY")
+            raise DifferentlyError(
+                "unauthenticated",
+                'missing API key: pass api_key or set DIFFERENTLY_API_KEY (a local "differently-server --dev" needs neither)',
+            )
         self._http = HttpClient(
             api_key=api_key,
-            base_url=base_url or os.environ.get("DIFFERENTLY_URL") or DEFAULT_BASE_URL,
+            base_url=base_url,
             timeout=timeout,
             max_retries=max_retries,
             headers=headers or {},
         )
         self.base_url = self._http.base_url
-        self.sandboxes = Sandboxes(self._http)
+        self._project_id = project_id
+        self.sandboxes = Sandboxes(self._http, project_id)
         self.snapshots = Snapshots(self._http)
         self.projects = Projects(self._http)
         self.api_keys = ApiKeys(self._http)
@@ -61,6 +81,11 @@ class Differently:
 
     def __repr__(self) -> str:
         return f"Differently(base_url={self.base_url!r})"
+
+    @property
+    def project_id(self) -> Optional[str]:
+        """The project ``sandboxes.create`` uses when the call names none, if one is configured."""
+        return self._project_id
 
     def me(self) -> Principal:
         """Describes the calling key: organization, project, scopes and operator status."""

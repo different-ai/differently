@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -160,14 +161,26 @@ func main() {
 	root.PersistentFlags().StringVar(&flagKey, "api-key", "", "API key (env DIFFERENTLY_API_KEY)")
 	root.PersistentFlags().StringVar(&flagProject, "project", "", "project ID for org/operator keys (env DIFFERENTLY_PROJECT)")
 	root.PersistentFlags().StringVarP(&flagOutput, "output", "o", "table", "output format: table or json")
-	root.AddCommand(loginCmd(), sandboxCmd(), projectCmd(), keyCmd(), usageCmd(), adminCmd(), doctorCmd(),
+	root.AddCommand(runCmd(), loginCmd(), sandboxCmd(), projectCmd(), keyCmd(), usageCmd(), adminCmd(), doctorCmd(),
 		&cobra.Command{Use: "whoami", Short: "Show the current key", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/me", nil) }},
 		&cobra.Command{Use: "capabilities", Short: "List pools and their capabilities", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/capabilities", nil) }},
 	)
 	if err := root.Execute(); err != nil {
 		reportError(os.Stderr, err)
+		if hint := startHint(err, load().URL); hint != "" {
+			fmt.Fprintln(os.Stderr, hint)
+		}
 		os.Exit(1)
 	}
+}
+
+// startHint says how to get a server when nothing answers on this machine,
+// which is what a first run without one looks like.
+func startHint(err error, url string) string {
+	if !errors.Is(err, syscall.ECONNREFUSED) || !isLoopbackURL(url) {
+		return ""
+	}
+	return "nothing is listening at " + url + ". Start a local server with: differently-server --dev"
 }
 
 // reportError prints a failed command's error. API errors show their code and
@@ -312,17 +325,7 @@ func sandboxCmd() *cobra.Command {
 	exec := &cobra.Command{
 		Use: "exec ID -- COMMAND [ARGS...]", Short: "Run a command and stream its output", Args: cobra.MinimumNArgs(2),
 		RunE: func(_ *cobra.Command, a []string) error {
-			req := api.ExecRequest{Args: a[1:], Cwd: cwd, Env: kv(execEnv)}
-			if len(a) == 2 && strings.ContainsAny(a[1], " |&;$<>") {
-				req = api.ExecRequest{Command: a[1], Cwd: cwd, Env: kv(execEnv)}
-			}
-			code, err := cli().ExecStream(ctx(), a[0], req, func(ev api.ExecEvent) {
-				if ev.Stream == "stderr" {
-					fmt.Fprint(os.Stderr, ev.Data)
-				} else {
-					fmt.Print(ev.Data)
-				}
-			})
+			code, err := cli().ExecStream(ctx(), a[0], execRequest(a[1:], cwd, execEnv), printExecEvent(os.Stdout, os.Stderr))
 			if err != nil {
 				return err
 			}
@@ -371,7 +374,7 @@ func sandboxCmd() *cobra.Command {
 			return os.WriteFile(a[2], b, 0o644)
 		}},
 	)
-	cmd.AddCommand(create, list, get, del, waitCmd, exec, files)
+	cmd.AddCommand(create, list, get, del, waitCmd, exec, files, runCmd())
 	for _, action := range []string{"stop", "start", "pause", "resume"} {
 		cmd.AddCommand(&cobra.Command{Use: action + " ID", Args: cobra.ExactArgs(1), Short: strings.ToUpper(action[:1]) + action[1:] + " a sandbox", RunE: func(_ *cobra.Command, a []string) error {
 			sb, err := cli().Action(ctx(), a[0], action)
@@ -414,6 +417,95 @@ func sandboxCmd() *cobra.Command {
 		&cobra.Command{Use: "snapshots", Short: "List snapshots", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/snapshots", nil) }},
 	)
 	return cmd
+}
+
+// execRequest builds the request for a command line. A single argument
+// holding shell syntax runs through the shell; anything else runs directly.
+func execRequest(argv []string, cwd string, env []string) api.ExecRequest {
+	if len(argv) == 1 && strings.ContainsAny(argv[0], " |&;$<>") {
+		return api.ExecRequest{Command: argv[0], Cwd: cwd, Env: kv(env)}
+	}
+	return api.ExecRequest{Args: argv, Cwd: cwd, Env: kv(env)}
+}
+
+// printExecEvent copies a command's output to the matching local stream.
+func printExecEvent(stdout, stderr io.Writer) func(api.ExecEvent) {
+	return func(ev api.ExecEvent) {
+		if ev.Stream == "stderr" {
+			fmt.Fprint(stderr, ev.Data)
+		} else {
+			fmt.Fprint(stdout, ev.Data)
+		}
+	}
+}
+
+// runCmd is the shortest way to a result: one sandbox for one command.
+func runCmd() *cobra.Command {
+	var profile, template, cwd string
+	var envs []string
+	var keep bool
+	cmd := &cobra.Command{
+		Use:   "run [flags] -- COMMAND [ARGS...]",
+		Short: "Run one command in a new sandbox, then delete the sandbox",
+		Long: `Run creates a sandbox, waits until it is running, runs the command with its
+output streamed here, and deletes the sandbox. The exit code is the command's.
+With --keep the sandbox stays, and its ID is printed for later commands.`,
+		Example: `  differently run -- echo hello
+  differently run 'uname -sm && id -un'
+  differently run --keep -- npm test`,
+		Args: func(_ *cobra.Command, a []string) error {
+			if len(a) == 0 {
+				return errors.New("run needs a command, for example: differently run -- echo hello")
+			}
+			return nil
+		},
+		RunE: func(_ *cobra.Command, a []string) error {
+			req := api.CreateSandboxRequest{ProjectID: load().Project, Profile: profile, Template: template}
+			code, err := runOnce(ctx(), cli(), req, execRequest(a, cwd, envs), keep, os.Stdout, os.Stderr)
+			if err != nil {
+				return err
+			}
+			if code != 0 {
+				os.Exit(code)
+			}
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&profile, "profile", "", "resource profile (default: the server's)")
+	f.StringVar(&template, "template", "", "image template (default: the server's)")
+	f.StringVar(&cwd, "cwd", "", "working directory")
+	f.StringArrayVarP(&envs, "env", "e", nil, "environment KEY=VALUE")
+	f.BoolVar(&keep, "keep", false, "leave the sandbox running instead of deleting it")
+	return cmd
+}
+
+// runOnce creates a sandbox, runs one command in it and returns the
+// command's exit code. Unless keep is set the sandbox is deleted whatever
+// happened, including an interrupt, so a run never leaves one behind.
+func runOnce(c context.Context, cl *client.Client, req api.CreateSandboxRequest, cmd api.ExecRequest, keep bool, stdout, stderr io.Writer) (int, error) {
+	sb, err := cl.CreateSandbox(c, req, true)
+	remove := func() {
+		if sb.ID == "" {
+			return
+		}
+		if keep {
+			fmt.Fprintf(stderr, "kept %s; delete it with: differently sandbox delete %s\n", sb.ID, sb.ID)
+			return
+		}
+		// The run's own context may already be cancelled by an interrupt.
+		done, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := cl.DeleteSandbox(done, sb.ID); err != nil {
+			fmt.Fprintf(stderr, "could not delete %s (%v); delete it with: differently sandbox delete %s\n", sb.ID, err, sb.ID)
+		}
+	}
+	defer remove()
+	if err != nil {
+		return -1, err
+	}
+	fmt.Fprintf(stderr, "sandbox %s running on pool %s (%s)\n", sb.ID, sb.Pool, sb.Trust)
+	return cl.ExecStream(c, sb.ID, cmd, printExecEvent(stdout, stderr))
 }
 
 func kv(pairs []string) map[string]string {

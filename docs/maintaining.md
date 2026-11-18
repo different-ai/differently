@@ -31,6 +31,7 @@ control plane does with it.
 | The OpenWork integration | This repository's API and [docs/guides/openwork.md](guides/openwork.md); the client lives in OpenWork (`packages/sandbox-differently`) | OpenWork's provider tests against a running Differently |
 | The built-in dashboard | `internal/dashboard/static` | Load it against `differently-server --dev` |
 | The admin console | `console/` ([README](../console/README.md)); `src/lib/providers.ts` follows the dashboard's `kinds` | `npm run typecheck`, `npm run build` and `npm run build:server` (CI's `console` job); its pages against dev mode |
+| A newcomer's first minutes | `install.sh`; `differently run` and the dev-mode welcome in `cmd/`; the SDKs' `devserver` modules; [quickstart](guides/quickstart.md), [explainer](explainer.md) and [agents guide](guides/agents.md), which the site also serves as `/agents.txt` and lists in `/llms.txt` (`site/scripts/sync-docs.mjs`) | `test/install` (the script against a release served locally); the `run` tests in `cmd/differently`; the SDKs' `devserver` tests. Then by hand: the three commands with an empty home directory. Keep those commands identical in the README, the quickstart, the agents guide and the landing page |
 | The website | `site/src/pages/index.astro` (landing page), `site/pages-src/features.md`, the sidebar in `site/astro.config.mjs`; every other page syncs from `docs/**` and the READMEs | `npm run build` in `site/` validates every link |
 
 Docs that must stay truthful with the code: [feature-parity.md](feature-parity.md),

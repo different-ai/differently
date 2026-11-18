@@ -43,6 +43,13 @@ text = sandbox.files.read_text("/work/a.txt")
 sandbox.delete()
 ```
 
+Against a local `differently-server --dev` the client needs no key and no
+project: `Differently()` and `sandboxes.create()` work without arguments. The
+dev server writes its operator token to `~/.differently/dev/token` and creates
+the project `prj_default`; with no key set, the client uses both. It reads the
+token only when the URL is this machine (`localhost`, `*.localhost` or a
+loopback address).
+
 A sandbox is also a context manager that deletes itself on exit:
 
 ```python
@@ -134,11 +141,17 @@ for sb in client.sandboxes.iterate(status="running", labels={"team": "ml"}):
 Differently(
     api_key="dly_...",       # default: DIFFERENTLY_API_KEY
     base_url="https://...",  # default: DIFFERENTLY_URL, then http://localhost:8080
+    project_id="prj_...",    # default: DIFFERENTLY_PROJECT
     timeout=120.0,           # socket timeout in seconds; waits and streams set their own
     max_retries=3,
     headers={},              # extra headers on every request
 )
 ```
+
+`project_id` is the project `sandboxes.create` uses when the call names none; a
+`project_id` in the call wins. Organization and operator keys must name a
+project one way or the other. Nothing else uses it. The value is
+readable as `client.project_id`.
 
 Plain `exec` uses the client timeout unless you pass `timeout_seconds`. For long
 commands, pass `timeout_seconds` or use `exec_stream`, which has no socket

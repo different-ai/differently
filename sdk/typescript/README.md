@@ -41,6 +41,13 @@ const text = await sandbox.files.readText("/work/a.txt");
 await sandbox.delete();
 ```
 
+Against a local `differently-server --dev` the client needs no key and no
+project: `new Differently()` and `sandboxes.create()` work without arguments.
+The dev server writes its operator token to `~/.differently/dev/token` and
+creates the project `prj_default`; with no key set, the client uses both. It
+reads the token only when the URL is this machine (`localhost`, `*.localhost`
+or a loopback address). This needs Node.js 20.16 or newer (22.3 on the 22 line).
+
 ## Streaming output
 
 ```ts
@@ -120,12 +127,18 @@ for await (const sb of differently.sandboxes.iterate({ status: "running", labels
 new Differently({
   apiKey: "dly_...",        // default: DIFFERENTLY_API_KEY
   baseUrl: "https://...",   // default: DIFFERENTLY_URL, then http://localhost:8080
+  projectId: "prj_...",     // default: DIFFERENTLY_PROJECT
   timeoutMs: 120_000,       // per request; waits and streams set their own
   maxRetries: 3,
   headers: {},              // extra headers on every request
   fetch,                    // custom fetch implementation
 });
 ```
+
+`projectId` is the project `sandboxes.create` uses when the call names none; a
+`projectId` in the call wins. Organization and operator keys must name a
+project one way or the other. Nothing else uses it. The value is
+readable as `differently.projectId`.
 
 Plain `exec` uses the client timeout unless you pass `timeoutSeconds`. For long
 commands, pass `timeoutSeconds` or use `execStream`, which has no client

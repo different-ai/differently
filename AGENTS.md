@@ -1,7 +1,10 @@
 # Guidance for coding agents
 
 This file is the entry point for automated contributors (and a quick primer
-for humans).
+for humans). It is about changing Differently. If you were asked to install,
+try, deploy or call Differently instead, read
+[docs/guides/agents.md](docs/guides/agents.md), which is also served as
+<https://different-ai.github.io/differently/agents.txt>.
 
 ## Where to work
 
@@ -68,6 +71,15 @@ that covers it, and say in the PR what did not run.
 - Interfaces: `internal/dashboard` (the built-in dashboard), `console/` (the
   separate admin app, static or on Node with sign-in), `site/` (the website;
   its docs sync from `docs/**`).
+- First contact: `install.sh` (tested by `test/install` against a release
+  served locally), `differently run` and the dev-mode welcome in `cmd/`,
+  [docs/guides/quickstart.md](docs/guides/quickstart.md),
+  [docs/explainer.md](docs/explainer.md) and
+  [docs/guides/agents.md](docs/guides/agents.md). The site build turns the
+  last into `/agents.txt`, lists the docs in `/llms.txt`, serves every docs
+  page as Markdown at its address plus `index.md`, and copies `install.sh`
+  (`site/scripts/sync-docs.mjs`). Keep the three commands the same in the
+  README, the quickstart, the agents guide and the landing page.
 - How to change, prove, re-record, optimise and release:
   [docs/maintaining.md](docs/maintaining.md).
 - Docs that must stay truthful: `docs/feature-parity.md`, `docs/roadmap.md`,
