@@ -21,6 +21,7 @@ from .types import (
     UsePoolResult,
     SandboxInfo,
     SuspendOrganizationResult,
+    Template,
     TrustReport,
 )
 
@@ -212,6 +213,50 @@ class AdminStacks:
         self._http.json("DELETE", f"/v1/admin/stacks/{path_segment(name)}")
 
 
+class AdminTemplates:
+    """Templates set on a running server: one name for each pool's own image or snapshot.
+
+    ``client.templates.list()`` lists them, with the config file's. A template the
+    config file declares is changed there; these calls refuse it.
+    """
+
+    def __init__(self, http: HttpClient) -> None:
+        self._http = http
+
+    def set(
+        self,
+        name: str,
+        *,
+        images: Optional[Mapping[str, str]] = None,
+        description: Optional[str] = None,
+        pools: Optional[Sequence[str]] = None,
+    ) -> Template:
+        """Sets what the named pools boot for a template, creating it if needed.
+
+        It merges: pools not named in ``images`` keep theirs, and an argument left
+        out leaves that field as it was. ``pools`` replaces the list of pools the
+        template is restricted to (``[]`` removes the restriction). Applies from
+        the next placement, with no restart.
+        """
+        body = compact(
+            description=description,
+            pools=list(pools) if pools is not None else None,
+            images=dict(images) if images is not None else None,
+        )
+        return self._http.json("PUT", f"/v1/admin/templates/{path_segment(name)}", json=body)
+
+    def remove_image(self, name: str, pool: str) -> Template:
+        """Stops offering the template on one pool.
+
+        A template's last image cannot be removed; delete the template.
+        """
+        return self._http.json("DELETE", f"/v1/admin/templates/{path_segment(name)}/images/{path_segment(pool)}")
+
+    def delete(self, name: str) -> None:
+        """Removes the template. A request that names it afterwards has the name passed to the backend as given."""
+        self._http.json("DELETE", f"/v1/admin/templates/{path_segment(name)}")
+
+
 class Admin:
     """Operator-only endpoints. Every call needs a key with the ``admin`` scope."""
 
@@ -222,6 +267,7 @@ class Admin:
         self.pools = AdminPools(http)
         self.secrets = AdminSecrets(http)
         self.stacks = AdminStacks(http)
+        self.templates = AdminTemplates(http)
 
     def trust_report(self) -> TrustReport:
         """Where workloads can go, where they went, and what Differently cannot prove."""

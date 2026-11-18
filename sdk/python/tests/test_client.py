@@ -184,6 +184,29 @@ class ClientTests(unittest.TestCase):
         self.client.admin.stacks.delete("prod")
         self.assertEqual(len(self.mock.calls("DELETE /v1/admin/stacks/prod")), 1)
 
+    def test_templates_are_set_narrowed_and_removed(self) -> None:
+        python = {"name": "python", "source": "api", "updatedAt": "t", "updatedBy": "k", "images": {"onprem": "registry.example.com/python:3.12", "daytona": "python-312"}}
+        self.mock.on("PUT /v1/admin/templates/python", reply(201, python))
+        self.mock.on("PUT /v1/admin/templates/python", reply(200, python))
+        self.mock.on("PUT /v1/admin/templates/python:3.12", reply(201, {**python, "name": "python:3.12"}))
+        self.mock.on("DELETE /v1/admin/templates/python/images/daytona", reply(200, {**python, "images": {"onprem": python["images"]["onprem"]}}))
+        self.mock.on("DELETE /v1/admin/templates/python", no_content)
+        self.mock.on("GET /v1/templates", reply(200, {"items": [python]}))
+
+        created = self.client.admin.templates.set("python", images=python["images"], description="Python 3.12")
+        self.assertEqual(created["source"], "api")
+        self.assertEqual(self.mock.calls("PUT /v1/admin/templates/python")[0].json(), {"description": "Python 3.12", "images": python["images"]})
+        # Only what is passed is sent, so adding a pool cannot clear the rest; an empty pools list is sent.
+        self.client.admin.templates.set("python", pools=[])
+        self.assertEqual(self.mock.calls("PUT /v1/admin/templates/python")[1].json(), {"pools": []})
+        # A name is one path segment, whatever it holds.
+        self.assertEqual(self.client.admin.templates.set("python:3.12", images={"daytona": "python-312"})["name"], "python:3.12")
+        self.assertEqual(list(self.client.admin.templates.remove_image("python", "daytona")["images"]), ["onprem"])
+        self.assertEqual(len(self.mock.calls("DELETE /v1/admin/templates/python/images/daytona")), 1)
+        self.client.admin.templates.delete("python")
+        self.assertEqual(len(self.mock.calls("DELETE /v1/admin/templates/python")), 1)
+        self.assertEqual(self.client.templates.list()[0]["source"], "api")
+
     def test_audit_events_iterate_with_after_seq(self) -> None:
         def event(seq):
             return {"seq": seq, "time": "t", "actor": "k", "action": "sandbox.create", "resource": "sbx", "outcome": "ok", "prevHash": "", "hash": ""}

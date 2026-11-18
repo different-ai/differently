@@ -5,10 +5,11 @@ Short, honest answers to the questions that come up when someone first hears
 Differently does about the concern and where it stops.
 
 <!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
-> Two commands named below, `differently templates` and the side-by-side
-> table from `differently capabilities`, are newer than `v0.1.0-alpha.5`,
-> the latest release. What they show is true of that release too; the
-> [baselines guide](guides/baselines.md) says how to see it there.
+> Three commands named below, `differently admin template set`,
+> `differently templates` and the side-by-side table from `differently
+> capabilities`, are newer than `v0.1.0-alpha.5`, the latest release. What
+> they do and show is possible with that release too; the
+> [baselines guide](guides/baselines.md) says how.
 
 ## Images, snapshots and moving between providers
 
@@ -16,12 +17,19 @@ Differently does about the concern and where it stops.
 
 Yes. Each backend boots its own images, and nothing copies one between
 providers. You build the baseline once on each provider you want to use and
-register them under **one name**. Your code asks for that name, and
-Differently sends the request only to pools that have it, handing each
-backend its own image. `differently templates` shows which pool has what,
-and a request for a baseline that no permitted pool has fails at once with
-that reason. [One baseline on every provider](guides/baselines.md) has the
-steps.
+register them under **one name**, with one command on a running server:
+
+```bash
+differently admin template set python --image opensandbox=registry.example.com/python:3.12 --image daytona=python-312
+```
+
+Your code asks for that name, and Differently sends the request only to
+pools that have it, handing each backend its own image. Adding a provider
+later is the same command with one `--image`; nothing restarts. (The
+server's config file can declare templates too.) `differently templates`
+shows which pool has what, and a request for a baseline that no permitted
+pool has fails at once with that reason.
+[One baseline on every provider](guides/baselines.md) has the steps.
 
 ### Are snapshots portable between providers?
 

@@ -119,6 +119,16 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 			return err
 		}
 	}
+	// The config file wins a template name it shares with one set through the
+	// API. Say so once, so the stored one is not a surprise if the name ever
+	// leaves the file.
+	if stored, err := s.Store.ListTemplates(ctx); err == nil {
+		for _, t := range stored {
+			if _, ok := s.Config.Template(t.Name); ok {
+				s.Log.Warn("template is declared in the config file and was also set through the API; the config file's definition is used. Remove the stored one with: differently admin template remove "+t.Name, "template", t.Name)
+			}
+		}
+	}
 	if s.Config.Dev {
 		if _, err := s.Store.GetOrg(ctx, "org_default"); api.IsCode(err, api.CodeNotFound) {
 			_ = s.Store.CreateOrg(ctx, api.Organization{ID: "org_default", Name: "Default", Quota: s.Config.Defaults.OrgQuota, CreatedAt: s.now()})

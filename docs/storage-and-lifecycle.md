@@ -219,11 +219,14 @@ For Fast Sandbox this is part of
   placement refuses requests that name any other template. Without it, the
   pool advertises no templates and passes any template name to OpenSandbox as
   an image URI.
-- The config's `templates` list (served by `GET /v1/templates`) gives one
-  name to each pool's own image: a template with `images` is placed only on
-  the pools it maps, and each backend receives its own value. A name with
-  no entry is passed to the backend as given.
-  [One baseline on every provider](guides/baselines.md) has the steps.
+- A template (listed by `GET /v1/templates`) gives one name to each pool's
+  own image: a template with `images` is placed only on the pools it maps,
+  and each backend receives its own value. A name with no template is passed
+  to the backend as given. Templates come from the config's `templates` list
+  or are set on a running server (`differently admin template set`,
+  `PUT /v1/admin/templates/{name}`); the config file wins a name both
+  define. [One baseline on every provider](guides/baselines.md) has the
+  steps.
 - Registry allow-lists, signature checks and image caching are the runtime's
   (see the [hardening checklist](security/hardening-checklist.md#backend-runtimes-opensandbox)).
   Differently does not inspect images.

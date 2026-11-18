@@ -110,7 +110,7 @@ POSTs are never retried.
 | `auditEvents` | `list`, `iterate` |
 | `policies` | `list`, `put`, `delete` |
 | `capabilities`, `profiles`, `templates`, `classifications` | `list` |
-| `admin` | `organizations.{list,create,get,update,suspend,resume}`, `projects.setQuota`, `pools.{list,get,create,update,drain,undrain,use,delete}`, `secrets.{list,put,delete}`, `trustReport`, `verifyAudit`, `terminateSandbox`, `reconcile` |
+| `admin` | `organizations.{list,create,get,update,suspend,resume}`, `projects.setQuota`, `pools.{list,get,create,update,drain,undrain,use,delete}`, `secrets.{list,put,delete}`, `templates.{set,removeImage,delete}`, `trustReport`, `verifyAudit`, `terminateSandbox`, `reconcile` |
 | client | `me`, `version` |
 
 `list` returns one page (`{ items, nextCursor }`); `iterate` walks every page.

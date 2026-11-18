@@ -8,6 +8,66 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- **A template can be set on a running server**, with no config edit and no
+  restart. Until now templates lived only in the server's config file.
+  - `differently admin template set python --image POOL=IMAGE ...` gives a
+    name an image on each pool named, creating the template if needed.
+    Running it again with one `--image` adds a provider or points one at a
+    new baseline; the other pools keep theirs.
+    `differently admin template remove python --pool POOL` stops offering it
+    on one pool, and without `--pool` removes the template.
+    `differently templates` gains a `SET BY` column: `command` or
+    `config file`.
+  - API, operator keys only: `PUT /v1/admin/templates/{name}` (merges: every
+    image named is added or replaced, a field left out stays),
+    `DELETE /v1/admin/templates/{name}` and
+    `DELETE /v1/admin/templates/{name}/images/{pool}`. `GET /v1/templates`
+    lists both kinds, each with `source` (`config` or `api`). Both SDKs gain
+    `admin.templates.set`, `removeImage` / `remove_image` and `delete`, and
+    the Go client `SetTemplate`, `RemoveTemplateImage`, `DeleteTemplate` and
+    `ListTemplates`.
+  - **The config file wins** a name both define: the API refuses to change
+    or remove a template the file declares (409, saying so), and a stored
+    template of that name is ignored, with a warning at start. Removing the
+    name through the API clears that stored copy and leaves the file's in
+    force.
+  - A template set this way is held to the config file's rules. An image
+    for a pool that does not exist is refused with the pool named, and
+    control characters in an image or a description are refused as invalid.
+    A template's last image on a pool that exists cannot be removed on its
+    own, since with none the name would be passed to every pool as given;
+    removing the template does that explicitly.
+  - Deleting a pool (`DELETE /v1/admin/pools/{name}`) removes it from the
+    stored templates that name it, so a pool created later under the same
+    name inherits no image. The deletion is refused (409) while the pool is
+    the only one a stored template can run on.
+  - Stored templates are read from the database at each placement, as
+    placement policies are, so a change needs no restart and no refresh: a
+    replica uses it at its next decision. This was tested with a second
+    scheduler on the same store, on the memory store and on Postgres; two
+    server processes against one database were not run. If a template
+    cannot be read, sandboxes that ask for it wait instead of having the
+    name passed to a backend as given.
+  - A sandbox never falls back from a template to the plain name. If the
+    template is removed after the sandbox was admitted or placed, the
+    sandbox fails with "template <name> was removed after this sandbox was
+    requested"; if only its pool's image is removed between placement and
+    provisioning, it is placed again (`sandbox.placed_again` in the audit
+    log).
+  - `POST /v1/sandboxes` refuses a `template` with control characters
+    (`invalid_request`), on both stores.
+  - **Upgrading and rolling back.** A server older than this release does
+    not know stored templates: during a rolling upgrade, or after a
+    rollback, it passes the name to the backend as given, on any pool the
+    placement policy permits. Set templates through the API once every
+    replica runs this release, and move them into the config file before
+    rolling back.
+  - Changes are audited as `template.put`, `template.image_delete` and
+    `template.delete`, and appear in the trust report's recent admin
+    actions.
+  - Postgres gains the `templates` table (migration `0006_templates.sql`,
+    applied at start).
+
 - The answer to "don't I need my snapshot on every provider?", in the
   product and in the docs. Each backend boots its own images, so the
   baseline has to exist on each provider; a template gives those baselines

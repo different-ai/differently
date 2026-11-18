@@ -133,8 +133,9 @@ version of what it is and what you can ignore until later. The
 
 **"Don't I need my snapshot on every provider?"** Yes, and that is the one
 thing nothing can do for you. Differently makes it one name: build the
-baseline once per provider, register them as a template, and your code asks
-for the name. Requests go only to pools that have it, each backend gets its
+baseline once per provider, register them as a template
+(`differently admin template set python --image POOL=IMAGE`, on a running
+server), and your code asks for the name. Requests go only to pools that have it, each backend gets its
 own image, and `differently templates` and `differently capabilities` show
 what every provider has and can do. A sandbox is placed once and stays put,
 and so do its snapshots. See

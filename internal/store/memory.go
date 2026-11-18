@@ -23,6 +23,7 @@ type Memory struct {
 	pools        map[string]api.Pool
 	secrets      map[string]SecretRecord
 	stacks       map[string]api.Stack
+	templates    map[string]api.Template
 	policies     map[string]api.PlacementPolicy
 	sandboxes    map[string]SandboxRecord
 	snapshots    map[string]SnapshotRecord
@@ -38,6 +39,7 @@ func NewMemory() *Memory {
 		pools:     map[string]api.Pool{},
 		secrets:   map[string]SecretRecord{},
 		stacks:    map[string]api.Stack{},
+		templates: map[string]api.Template{},
 		policies:  map[string]api.PlacementPolicy{},
 		sandboxes: map[string]SandboxRecord{},
 		snapshots: map[string]SnapshotRecord{},
@@ -342,6 +344,50 @@ func (m *Memory) DeletePool(_ context.Context, name string) error {
 		}
 	}
 	delete(m.pools, name)
+	return nil
+}
+
+func (m *Memory) GetTemplate(_ context.Context, name string) (api.Template, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.templates[name]
+	if !ok {
+		return t, NotFound("template", name)
+	}
+	return clone(t), nil
+}
+
+func (m *Memory) ListTemplates(context.Context) ([]api.Template, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]api.Template, 0, len(m.templates))
+	for _, t := range m.templates {
+		out = append(out, clone(t))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (m *Memory) UpdateTemplate(_ context.Context, name string, fn func(*api.Template, bool) error) (api.Template, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, found := m.templates[name]
+	t = clone(t)
+	if err := fn(&t, found); err != nil {
+		return api.Template{}, err
+	}
+	t.Name = name
+	m.templates[name] = clone(t)
+	return t, nil
+}
+
+func (m *Memory) DeleteTemplate(_ context.Context, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.templates[name]; !ok {
+		return NotFound("template", name)
+	}
+	delete(m.templates, name)
 	return nil
 }
 

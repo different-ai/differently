@@ -231,9 +231,10 @@ OpenSandbox server, and is marked as such.
       happens.
 - [ ] Leave `audit.recordCommands` off unless you need command lines; they can
       contain secrets.
-- [ ] Alert on `secret.put`, `secret.delete`, `pool.create`, `pool.use` and
-      `policy.update` events. The trust report's `recentAdminActions` does not
-      include `secret.*` events, so query
+- [ ] Alert on `secret.put`, `secret.delete`, `pool.create`, `pool.use`,
+      `policy.update` and `template.put` events. The trust report's
+      `recentAdminActions` lists them among the last 50 admin actions; for
+      the whole history of one, query
       `GET /v1/audit-events?action=secret.put` directly.
 - [ ] Alert on `differently_reconcile_actions_total` (orphans deleted,
       instances lost, adoptions), on pools whose health is not `healthy`, and

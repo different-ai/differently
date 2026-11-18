@@ -62,7 +62,9 @@ prints that version or an older one:
 - `differently templates` and `--from-snapshot` do not exist, and
   `differently capabilities` prints JSON instead of a table. Read
   `GET /v1/templates`, and start from a snapshot with `fromSnapshot` in the
-  API or an SDK.
+  API or an SDK;
+- `differently admin template` does not exist: declare the template under
+  `templates:` in the server's config file and restart the server.
 
 ### Task A: install it and run a first sandbox
 
@@ -248,6 +250,7 @@ to run before pushing, and where each part of the code lives.
 | Default placement | private pools only (`external: never`) |
 | What each pool can do | `differently capabilities` (features side by side) |
 | What each pool boots for a template | `differently templates` |
+| Give a baseline one name on a running server (operator key) | `differently admin template set NAME --image POOL=IMAGE` |
 | Portability | none after create: a sandbox and its snapshots stay on their pool |
 | State in dev mode | in memory; gone when the server stops |
 | License and telemetry | Apache-2.0; none |

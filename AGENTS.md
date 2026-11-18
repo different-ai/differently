@@ -84,6 +84,15 @@ that covers it, and say in the PR what did not run.
   snapshots across providers, [docs/guides/baselines.md](docs/guides/baselines.md)
   (`templates[].images`, `differently templates`, `differently capabilities`).
   An answer there must say where Differently stops, and match the code.
+- Templates: the config file's (`config.Templates`) and those set through
+  the API (`internal/server/templates.go`, stored by `internal/store`) are
+  one list, `scheduler.Templates`. The config file wins a shared name, and
+  the scheduler reads the store at each decision, so no replica caches them.
+  A change must never widen where a template runs as a side effect: `PUT`
+  merges, the last image is removed only with the template, deleting a pool
+  takes it out of stored templates, and a sandbox admitted or placed under a
+  template is refused, never booted from the plain name, if the template is
+  removed first (`SandboxRecord.TemplateDefined`).
 - How to change, prove, re-record, optimise and release:
   [docs/maintaining.md](docs/maintaining.md).
 - Docs that must stay truthful: `docs/feature-parity.md`, `docs/roadmap.md`,

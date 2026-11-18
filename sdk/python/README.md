@@ -121,7 +121,7 @@ and other POSTs are never retried.
 | `audit_events` | `list`, `iterate` |
 | `policies` | `list`, `put`, `delete` |
 | `capabilities`, `profiles`, `templates`, `classifications` | `list` |
-| `admin` | `organizations.{list,create,get,update,suspend,resume}`, `projects.set_quota`, `pools.{list,get,create,update,drain,undrain,use,delete}`, `secrets.{list,put,delete}`, `trust_report`, `verify_audit`, `terminate_sandbox`, `reconcile` |
+| `admin` | `organizations.{list,create,get,update,suspend,resume}`, `projects.set_quota`, `pools.{list,get,create,update,drain,undrain,use,delete}`, `secrets.{list,put,delete}`, `templates.{set,remove_image,delete}`, `trust_report`, `verify_audit`, `terminate_sandbox`, `reconcile` |
 | client | `me`, `version` |
 
 Keyword arguments are snake_case. Records come back as plain dicts keyed exactly

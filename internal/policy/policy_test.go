@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -368,5 +369,34 @@ func TestRestoreRefusedNamesTheSnapshotsPool(t *testing.T) {
 	in.Sandbox.Placement = nil
 	if res := Decide(in); res.Err != nil || res.Decision.Pool != "fc" || len(res.Ranked) != 1 {
 		t.Fatalf("want fc only, got %+v %+v", res.Ranked, res.Err)
+	}
+}
+
+// A sandbox that was limited by a template is not placed anywhere once the
+// template is removed: its name is never passed to a backend as given, even
+// on pools that could boot it and that policy permits.
+func TestRemovedTemplateMakesNoPoolEligible(t *testing.T) {
+	in := input(internal, overflow, pool("fc", api.TrustPrivate, 8, vmFeatures, 0.05), pool("daytona", api.TrustExternal, 0, extFeatures, 0.01))
+	in.Sandbox.Template = "python"
+	if res := Decide(in); res.Err != nil || res.Decision.Pool != "fc" {
+		t.Fatalf("a plain name runs where policy permits: %+v %+v", res.Decision, res.Err)
+	}
+	in.TemplateRemoved = true
+	res := Decide(in)
+	if res.Err == nil || res.Err.Code != api.CodeNoEligiblePool || res.Err.Details["template"] != "python" || !strings.Contains(res.Err.Message, "template python was removed") {
+		t.Fatalf("want no_eligible_pool naming the removed template, got %+v", res.Err)
+	}
+	if len(res.Ranked) != 0 {
+		t.Fatalf("ranked %v for a sandbox whose template was removed", res.Ranked)
+	}
+	for _, c := range res.Decision.Candidates {
+		if c.Eligible || !slices.Contains(c.Reasons, "template python was removed after this sandbox was requested") {
+			t.Errorf("pool %s: eligible=%v reasons=%v", c.Pool, c.Eligible, c.Reasons)
+		}
+	}
+	// It outranks every other explanation, such as a missing attestation.
+	in.Sandbox.Placement = &api.Placement{RequiredAttestations: []string{"soc2-type2"}}
+	if res := Decide(in); res.Err == nil || !strings.Contains(res.Err.Message, "template python was removed") {
+		t.Fatalf("want the removed template named first, got %+v", res.Err)
 	}
 }

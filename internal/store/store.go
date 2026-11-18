@@ -30,6 +30,12 @@ type SandboxRecord struct {
 	ExcludedPools      []string          `json:"excludedPools,omitempty"`
 	SnapshotBackendRef string            `json:"snapshotBackendRef,omitempty"`
 	ProvisionStartedAt *time.Time        `json:"provisionStartedAt,omitempty"`
+	// TemplateDefined records that the sandbox's template name was a defined
+	// template when it was admitted or when it was placed, so the template
+	// limited where it could run. Such a sandbox never has the name passed to
+	// a backend as given: if the template is removed before it boots, no pool
+	// is eligible.
+	TemplateDefined bool `json:"templateDefined,omitempty"`
 }
 
 // KeyRecord is an API key plus its secret hash.
@@ -155,6 +161,19 @@ type Store interface {
 	GetPool(ctx context.Context, name string) (api.Pool, error)
 	ListPools(ctx context.Context) ([]api.Pool, error)
 	DeletePool(ctx context.Context, name string) error
+
+	// Templates set through the admin API (source "api"). The config file's
+	// templates are not stored: scheduler.Templates gives both as one list,
+	// and the config file wins a name both define.
+	GetTemplate(ctx context.Context, name string) (api.Template, error)
+	ListTemplates(ctx context.Context) ([]api.Template, error)
+	// UpdateTemplate creates or changes a stored template in one atomic step.
+	// fn edits the stored template, or an empty one when found is false; an
+	// error from fn leaves the store as it was. Calls run one after another,
+	// so two changes never start from the same copy and lose one of them.
+	UpdateTemplate(ctx context.Context, name string, fn func(t *api.Template, found bool) error) (api.Template, error)
+	// DeleteTemplate answers not_found when no stored template has the name.
+	DeleteTemplate(ctx context.Context, name string) error
 
 	PutPolicy(ctx context.Context, p api.PlacementPolicy) error
 	GetPolicy(ctx context.Context, scope string) (api.PlacementPolicy, bool, error)

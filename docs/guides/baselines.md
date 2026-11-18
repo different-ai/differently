@@ -20,14 +20,16 @@ flowchart LR
 <!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
 > **Version note.** The mapping of one template name to each pool's image is
 > in `v0.1.0-alpha.5`, the latest release. These are newer:
-> `differently templates`, `differently run`, the `--from-snapshot` flag,
-> the side-by-side table from `differently capabilities`, and the two
-> refusal messages quoted below. With that release, `differently
-> capabilities` prints the same facts as JSON, `GET /v1/templates` lists the
-> templates, a sandbox starts from a snapshot through the API or an SDK
-> (`fromSnapshot`), and a refusal says only that no pool satisfies the
-> policy. Building from source (`make build`) gives you everything on this
-> page.
+> `differently admin template set` and `remove` (setting a template on a
+> running server), `differently templates`, `differently run`, the
+> `--from-snapshot` flag, the side-by-side table from `differently
+> capabilities`, and the two refusal messages quoted below. With that
+> release, a template is declared in the server's config file (the second
+> way in step 2), `differently capabilities` prints the same facts as JSON,
+> `GET /v1/templates` lists the templates, a sandbox starts from a snapshot
+> through the API or an SDK (`fromSnapshot`), and a refusal says only that
+> no pool satisfies the policy. Building from source (`make build`) gives
+> you everything on this page.
 
 ## What is shared and what is not
 
@@ -59,7 +61,32 @@ Use each backend's own form. This is the part nothing can do for you.
 
 ### 2. Give them one name
 
-In the server configuration (with the Helm chart, under `config:`):
+There are two ways, and both end in the same template. A template with
+images runs only on the pools it lists.
+
+**With a command, on a running server.** It needs an operator key and
+nothing else: no config edit and no restart.
+
+```bash
+differently admin template set python \
+  --image opensandbox=registry.example.com/python:3.12 \
+  --image daytona=python-312 \
+  --description "Python 3.12 with our tools"
+```
+
+`--image` is `POOL=IMAGE`: the pool's name in Differently, then whatever its
+backend calls the baseline (the value from step 1). The next request for
+`python` already uses it. Later changes name only what changes:
+
+```bash
+differently admin template set python --image freestyle=python-312-fs   # add a provider
+differently admin template set python --image daytona=python-313        # point one at a new baseline
+differently admin template remove python --pool daytona                 # stop offering it there
+differently admin template remove python                                # remove the template
+```
+
+**In the server configuration** (with the Helm chart, under `config:`), when
+you want templates reviewed and versioned with the rest of the installation:
 
 ```yaml
 templates:
@@ -70,9 +97,57 @@ templates:
       daytona: python-312
 ```
 
-A template with `images` runs only on the pools it lists. Add a provider
-later by adding one line. The server reads this at start, so apply it with a
-restart (`helm upgrade` does that).
+The server reads the file at start, so this way takes a restart
+(`helm upgrade` does that).
+
+**If both define a name, the config file wins.** A template the file
+declares cannot be changed or removed with the command, which says so
+instead of making a change the next restart would undo. `differently
+templates` shows where each one is set. If the same name was set with the
+command earlier, that stored copy is kept but not used, and the server warns
+about it at every start; `differently admin template remove NAME` clears it
+and leaves the file's template in force.
+
+What the commands will and will not do:
+
+- `set` adds to what is stored. Pools you do not name keep their image, so
+  adding a provider cannot drop another one by omission.
+- An image for a pool that does not exist is refused, with the pool named
+  and the pools that do exist listed. So is an empty image.
+- A template's last image cannot be removed with `--pool`. With none left,
+  the name would be passed to every pool as given, which is wider than what
+  you had. Removing the template does that, and says so.
+- Removing a template changes what new requests get: the name is then
+  passed to the backend as given. A sandbox that was already admitted or
+  placed under the template is refused with that reason. It is never started
+  from the plain name, which is a different request from the one that was
+  let in.
+- Deleting a pool takes it out of the templates set with the command, so a
+  pool added later under the same name inherits no image. A pool that is the
+  only place such a template can run is not deleted until you remove the
+  template or give it an image on another pool.
+- A template only narrows where a sandbox runs. Giving it an image on a pool
+  never lets work go where the [placement policy](../scheduling/placement-policy.md)
+  forbids: private-only work still stays on private pools.
+- A template named like the installation's default template
+  (`defaults.template`) or like a profile's `template` applies to every
+  request that names no template, because those requests carry that name.
+- Every change is in the audit log (`template.put`, `template.image_delete`,
+  `template.delete`) with who made it, and in the trust report's recent
+  admin actions.
+
+The same calls are in the API (`PUT /v1/admin/templates/{name}`,
+`DELETE /v1/admin/templates/{name}` and
+`DELETE /v1/admin/templates/{name}/images/{pool}`) and in both SDKs
+(`admin.templates.set`, `removeImage` / `remove_image`, `delete`).
+
+**Upgrades and rollbacks.** A server from before the release that ships
+these commands does not know templates set this way. While replicas of both
+kinds run (a rolling upgrade), or after a rollback to an older release, such
+a server passes the name to the backend as given, on any pool the placement
+policy permits. So set templates with the command once every replica runs
+the new release, and before rolling back, move the ones you rely on into the
+config file, which every release reads.
 
 ### 3. Ask for the name
 
@@ -94,12 +169,13 @@ differently templates
 ```
 
 ```text
-TEMPLATE  opensandbox                       daytona     freestyle  DESCRIPTION
-python    registry.example.com/python:3.12  python-312  -          Python 3.12 with our tools
+TEMPLATE  opensandbox                       daytona     freestyle  SET BY   DESCRIPTION
+python    registry.example.com/python:3.12  python-312  -          command  Python 3.12 with our tools
 ```
 
 A dash means that pool has no baseline for the template and will not be
-chosen for it. For a sandbox that exists, `differently sandbox placement
+chosen for it. `SET BY` says where the template is defined, which is where
+to change it: `command` or `config file`. For a sandbox that exists, `differently sandbox placement
 <id>` shows every pool that was considered, with the reason each one was
 skipped, for example `template python has no image for this pool`.
 
@@ -210,10 +286,24 @@ differently sandbox create --template node --pool burst --wait
 differently sandbox create --template python --pool burst     # refused: burst has no python
 ```
 
+Then change a template while the server runs:
+
+```bash
+differently admin template set go --image burst=go-1.23-snapshot
+differently sandbox create --template go --wait               # always burst
+differently admin template set go --image onprem=registry.example.com/go:1.23
+differently sandbox create --template go --pool onprem --wait # onprem has it now
+differently admin template remove go --pool burst
+differently sandbox create --template go --pool burst         # refused: burst no longer has go
+differently admin template set python --image burst=python-312   # refused: python is in the config file
+```
+
 ## What this does not do yet
 
-- **Templates are set in the server configuration.** Changing one needs a
-  restart. There is no command to add a template at runtime.
+- **A template in the server's config file is changed there.**
+  `differently admin template set` and `remove` change templates on a
+  running server, but not one the file declares: the file wins, and a change
+  to it takes a restart.
 - **A snapshot taken through Differently cannot be named as a template's
   image.** A baseline is registered by the backend's own name for it.
 - **Nothing copies an image or a snapshot between providers**, and a running

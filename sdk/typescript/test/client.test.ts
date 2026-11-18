@@ -189,6 +189,28 @@ test("stacks register, check and delete through their routes", async () => {
   assert.equal(mock.calls("DELETE /v1/admin/stacks/prod").length, 1);
 });
 
+test("templates are set, narrowed and removed through their routes", async () => {
+  const python = { name: "python", source: "api", updatedAt: "t", updatedBy: "k", images: { onprem: "registry.example.com/python:3.12", daytona: "python-312" } };
+  mock.on("PUT /v1/admin/templates/python", reply(201, python));
+  mock.on("PUT /v1/admin/templates/python:3.12", reply(201, { ...python, name: "python:3.12" }));
+  mock.on("DELETE /v1/admin/templates/python/images/daytona", reply(200, { ...python, images: { onprem: python.images.onprem } }));
+  mock.on("DELETE /v1/admin/templates/python", (_req, res) => void res.writeHead(204).end());
+  mock.on("GET /v1/templates", reply(200, { items: [python] }));
+
+  const params = { description: "Python 3.12", images: python.images };
+  const created = await client.admin.templates.set("python", params);
+  assert.equal(created.source, "api");
+  assert.equal(created.images?.daytona, "python-312");
+  assert.deepEqual(mock.calls("PUT /v1/admin/templates/python")[0]?.json(), params);
+  // A name is one path segment, whatever it holds.
+  assert.equal((await client.admin.templates.set("python:3.12", { images: { daytona: "python-312" } })).name, "python:3.12");
+  assert.deepEqual(Object.keys((await client.admin.templates.removeImage("python", "daytona")).images ?? {}), ["onprem"]);
+  assert.equal(mock.calls("DELETE /v1/admin/templates/python/images/daytona").length, 1);
+  await client.admin.templates.delete("python");
+  assert.equal(mock.calls("DELETE /v1/admin/templates/python").length, 1);
+  assert.equal((await client.templates.list())[0]?.source, "api");
+});
+
 test("audit events iterate with afterSeq", async () => {
   const event = (seq: number) => ({ seq, time: "t", actor: "k", action: "sandbox.create", resource: "sbx", outcome: "ok", prevHash: "", hash: "" });
   mock.on("GET /v1/audit-events", reply(200, { items: [event(1), event(2)], nextCursor: "2" }));
