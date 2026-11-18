@@ -120,6 +120,9 @@ func (s *Server) admit(w http.ResponseWriter, r *http.Request, p auth.Principal,
 	if err != nil {
 		return s.placementUnavailable(err)
 	}
+	// Admitted under a template: remembered, so the sandbox is refused, not
+	// booted from the plain name, if the template is removed before it runs.
+	rec.TemplateDefined = in.Template != nil
 	if res := policy.Decide(in); res.Err != nil {
 		// A refusal is a routing outcome too. Recording it lets the audit log
 		// and the live routing view show what was turned away and why.
@@ -197,6 +200,9 @@ func (s *Server) buildSandbox(ctx context.Context, p auth.Principal, req api.Cre
 	}
 	if req.Template != "" {
 		template = req.Template
+	}
+	if hasControl(template) {
+		return store.SandboxRecord{}, api.Errorf(api.CodeInvalidRequest, "template must not contain control characters")
 	}
 	switch {
 	case resources.CPU <= 0 || resources.CPU > 256:

@@ -374,7 +374,9 @@ func (s *Store) GetTemplate(ctx context.Context, name string) (api.Template, err
 }
 
 func (s *Store) ListTemplates(ctx context.Context) ([]api.Template, error) {
-	return listDocs[api.Template](ctx, s.pool, "SELECT doc FROM templates ORDER BY name")
+	// Byte order, as the memory store sorts: the database's collation would
+	// order names by locale ("a_b" before "B" under en_US).
+	return listDocs[api.Template](ctx, s.pool, `SELECT doc FROM templates ORDER BY name COLLATE "C"`)
 }
 
 func (s *Store) UpdateTemplate(ctx context.Context, name string, fn func(*api.Template, bool) error) (api.Template, error) {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +22,7 @@ type fakeTemplates struct {
 	calls     []string
 	bodies    []string
 	templates map[string]api.Template
+	inConfig  []api.Template // what the server's config file declares
 }
 
 func (f *fakeTemplates) start(t *testing.T) string {
@@ -84,6 +86,17 @@ func (f *fakeTemplates) start(t *testing.T) string {
 		record(r)
 		delete(f.templates, r.PathValue("name"))
 		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("GET /v1/templates", func(w http.ResponseWriter, _ *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		list := api.List[api.Template]{Items: append([]api.Template{}, f.inConfig...)}
+		for _, tpl := range f.templates {
+			if !slices.ContainsFunc(f.inConfig, func(c api.Template) bool { return c.Name == tpl.Name }) {
+				list.Items = append(list.Items, tpl)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(list)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -224,5 +237,21 @@ func TestAdminTemplatePoolsAndJSON(t *testing.T) {
 	var tpl api.Template
 	if err != nil || json.Unmarshal([]byte(out), &tpl) != nil || tpl.Images["lab"] != "gpu-image" {
 		t.Fatalf("-o json printed %q (%v)", out, err)
+	}
+}
+
+// Removing a name the config file also declares clears only the stored copy,
+// and the command says so instead of claiming the template is gone.
+func TestAdminTemplateRemoveSaysWhenTheConfigFileKeepsIt(t *testing.T) {
+	f := &fakeTemplates{
+		templates: map[string]api.Template{"workbot": {Name: "workbot", Source: api.TemplateSourceAPI, Images: map[string]string{"burst": "old"}}},
+		inConfig:  []api.Template{{Name: "workbot", Source: api.TemplateSourceConfig, Images: map[string]string{"onprem": "workbot-v3"}}},
+	}
+	out, err := f.admin(t, "template", "remove", "workbot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "the stored copy of template workbot was removed") || !strings.Contains(out, "stays in force") || strings.Contains(out, "passed to the backend as given") {
+		t.Fatalf("output:\n%s", out)
 	}
 }

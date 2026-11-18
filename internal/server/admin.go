@@ -422,10 +422,25 @@ func (s *Server) deletePool(w http.ResponseWriter, r *http.Request, p auth.Princ
 	if slices.ContainsFunc(s.Config.Pools, func(pc config.PoolConfig) bool { return pc.Name == name }) {
 		return api.Errorf(api.CodeConflict, "pool %s is declared in the config file; remove it there", name)
 	}
+	// Templates set through the API name pools. One that can run only here
+	// keeps the pool: without the pool it would run nowhere, and without its
+	// entry it would run everywhere.
+	exists, err := s.poolNames(r.Context())
+	if err != nil {
+		return err
+	}
+	bound, named, err := s.templatesBoundTo(r.Context(), name, exists)
+	if err != nil {
+		return err
+	}
+	if exists[name] && len(bound) > 0 {
+		return api.Errorf(api.CodeConflict, "pool %s is the only pool that can run template %s; remove the template (DELETE /v1/admin/templates/{name}) or give it an image on another pool first", name, strings.Join(bound, ", ")).With("templates", strings.Join(bound, ","))
+	}
 	if err := s.Store.DeletePool(r.Context(), name); err != nil {
 		return err
 	}
 	_ = s.SyncPools(r.Context())
+	s.forgetPool(r, p, name, named)
 	s.audit(r, p, "pool.delete", name, "", "", nil)
 	w.WriteHeader(http.StatusNoContent)
 	return nil

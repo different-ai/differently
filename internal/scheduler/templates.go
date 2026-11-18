@@ -63,9 +63,11 @@ func (s *Scheduler) Templates(ctx context.Context) ([]api.Template, error) {
 
 // placeAgain sends a sandbox that was activated on a pool back to the queue,
 // without counting an attempt or blaming the pool. It is for a template that
-// changed between placement and provisioning: the pool the sandbox was placed
-// on is no longer one the template offers, so booting it there would run the
-// template where its definition now says it must not.
+// changed between placement and provisioning. Either the pool the sandbox was
+// placed on is no longer one the template offers, so booting it there would
+// run the template where its definition now says it must not; or the template
+// was removed, and placement then refuses the sandbox instead of letting the
+// plain name reach a backend.
 func (s *Scheduler) placeAgain(ctx context.Context, rec store.SandboxRecord, why string) {
 	moved := false
 	_, _ = s.Store.UpdateSandbox(ctx, rec.ID, func(r *store.SandboxRecord) error {

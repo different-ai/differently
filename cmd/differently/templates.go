@@ -88,9 +88,20 @@ func templateRemove(c context.Context, cl *client.Client, out io.Writer, name, p
 		if err := cl.DeleteTemplate(c, name); err != nil {
 			return err
 		}
-		if !asJSON {
-			fmt.Fprintf(out, "template %s removed; a request that names %s now has the name passed to the backend as given\n", name, name)
+		if asJSON {
+			return nil
 		}
+		// The server's config file may declare the same name. Then what was
+		// removed is the stored copy, which was not in force.
+		if list, err := cl.ListTemplates(c); err == nil {
+			for _, t := range list {
+				if t.Name == name && t.Source == api.TemplateSourceConfig {
+					fmt.Fprintf(out, "the stored copy of template %s was removed; the server's config file declares %s too, and that definition stays in force\n", name, name)
+					return nil
+				}
+			}
+		}
+		fmt.Fprintf(out, "template %s removed; a request that names %s now has the name passed to the backend as given\n", name, name)
 		return nil
 	}
 	t, err := cl.RemoveTemplateImage(c, name, pool)
@@ -166,7 +177,12 @@ request that names it has the name passed to the backend as given.
 
 With --pool it removes only that pool's image, so the template is no longer
 placed there. A template's last image cannot be removed that way: without one
-the name would be passed to every pool as given, so remove the template.`,
+the name would be passed to every pool as given, so remove the template.
+
+Sandboxes already waiting for a removed template are refused, not started
+from the plain name. A template the server's config file declares is removed
+there; if a stored template of the same name exists it is cleared, and the
+file's stays in force.`,
 		RunE: func(cmd *cobra.Command, a []string) error {
 			if cmd.Flags().Changed("pool") && pool == "" {
 				return fmt.Errorf("--pool needs a pool name")

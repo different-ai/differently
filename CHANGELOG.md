@@ -28,18 +28,40 @@ All notable changes are recorded here. The format follows
     `ListTemplates`.
   - **The config file wins** a name both define: the API refuses to change
     or remove a template the file declares (409, saying so), and a stored
-    template of that name is ignored, with a warning at start.
-  - A template set this way is held to the config file's rules, and an image
-    for a pool that does not exist is refused with the pool named. A
-    template's last image cannot be removed on its own, since with none the
-    name would be passed to every pool as given; removing the template does
-    that explicitly.
+    template of that name is ignored, with a warning at start. Removing the
+    name through the API clears that stored copy and leaves the file's in
+    force.
+  - A template set this way is held to the config file's rules. An image
+    for a pool that does not exist is refused with the pool named, and
+    control characters in an image or a description are refused as invalid.
+    A template's last image on a pool that exists cannot be removed on its
+    own, since with none the name would be passed to every pool as given;
+    removing the template does that explicitly.
+  - Deleting a pool (`DELETE /v1/admin/pools/{name}`) removes it from the
+    stored templates that name it, so a pool created later under the same
+    name inherits no image. The deletion is refused (409) while the pool is
+    the only one a stored template can run on.
   - Stored templates are read from the database at each placement, as
-    placement policies are, so a change reaches every replica at its next
-    decision. If a template cannot be read, sandboxes that ask for it wait
-    instead of having the name passed to a backend as given. A sandbox whose
-    template lost its pool's image between placement and provisioning is
-    placed again (`sandbox.placed_again` in the audit log).
+    placement policies are, so a change needs no restart and no refresh: a
+    replica uses it at its next decision. This was tested with a second
+    scheduler on the same store, on the memory store and on Postgres; two
+    server processes against one database were not run. If a template
+    cannot be read, sandboxes that ask for it wait instead of having the
+    name passed to a backend as given.
+  - A sandbox never falls back from a template to the plain name. If the
+    template is removed after the sandbox was admitted or placed, the
+    sandbox fails with "template <name> was removed after this sandbox was
+    requested"; if only its pool's image is removed between placement and
+    provisioning, it is placed again (`sandbox.placed_again` in the audit
+    log).
+  - `POST /v1/sandboxes` refuses a `template` with control characters
+    (`invalid_request`), on both stores.
+  - **Upgrading and rolling back.** A server older than this release does
+    not know stored templates: during a rolling upgrade, or after a
+    rollback, it passes the name to the backend as given, on any pool the
+    placement policy permits. Set templates through the API once every
+    replica runs this release, and move them into the config file before
+    rolling back.
   - Changes are audited as `template.put`, `template.image_delete` and
     `template.delete`, and appear in the trust report's recent admin
     actions.

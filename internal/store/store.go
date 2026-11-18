@@ -30,6 +30,12 @@ type SandboxRecord struct {
 	ExcludedPools      []string          `json:"excludedPools,omitempty"`
 	SnapshotBackendRef string            `json:"snapshotBackendRef,omitempty"`
 	ProvisionStartedAt *time.Time        `json:"provisionStartedAt,omitempty"`
+	// TemplateDefined records that the sandbox's template name was a defined
+	// template when it was admitted or when it was placed, so the template
+	// limited where it could run. Such a sandbox never has the name passed to
+	// a backend as given: if the template is removed before it boots, no pool
+	// is eligible.
+	TemplateDefined bool `json:"templateDefined,omitempty"`
 }
 
 // KeyRecord is an API key plus its secret hash.

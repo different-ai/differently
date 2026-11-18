@@ -361,6 +361,24 @@ func templates(t *testing.T, s store.Store) {
 	if list, _ := s.ListTemplates(ctx); len(list) != 1 || list[0].Name != "node" {
 		t.Fatalf("list after delete %v", list)
 	}
+	// Name order is byte order in every store, whatever a database's
+	// collation would make of capitals, digits and punctuation.
+	for _, name := range []string{"a_b", "Node", "a:b", "B", "a.b", "Z9", "a-b", "9z", "b"} {
+		if _, err := s.UpdateTemplate(ctx, name, func(tpl *api.Template, _ bool) error { tpl.Description = name; return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := s.ListTemplates(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tpl := range list {
+		names = append(names, tpl.Name)
+	}
+	if want := []string{"9z", "B", "Node", "Z9", "a-b", "a.b", "a:b", "a_b", "b", "node"}; !slices.Equal(names, want) {
+		t.Fatalf("templates are listed as %v, want byte order %v", names, want)
+	}
 }
 
 // Two operators adding an image for different pools at the same moment both

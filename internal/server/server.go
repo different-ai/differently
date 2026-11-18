@@ -125,7 +125,7 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 	if stored, err := s.Store.ListTemplates(ctx); err == nil {
 		for _, t := range stored {
 			if _, ok := s.Config.Template(t.Name); ok {
-				s.Log.Warn("template is declared in the config file and was also set through the API; the config file's definition is used", "template", t.Name)
+				s.Log.Warn("template is declared in the config file and was also set through the API; the config file's definition is used. Remove the stored one with: differently admin template remove "+t.Name, "template", t.Name)
 			}
 		}
 	}

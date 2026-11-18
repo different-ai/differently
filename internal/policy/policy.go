@@ -46,7 +46,12 @@ type Input struct {
 	// Template is the configured template the sandbox asks for, if any; it
 	// limits the pools and names each pool's own image.
 	Template *api.Template
-	Now      time.Time
+	// TemplateRemoved says the sandbox was admitted or placed under a
+	// template that no longer exists. The template limited where it could
+	// run, so it must not now run with the name passed to a backend as
+	// given: no pool is eligible.
+	TemplateRemoved bool
+	Now             time.Time
 }
 
 // Effective is the merged policy for one request.
@@ -250,6 +255,10 @@ func Decide(in Input) Result {
 		}
 		image := sb.Template
 		templateReasons := 0 // how many of this pool's reasons are the template
+		if in.TemplateRemoved {
+			reject("template %s was removed after this sandbox was requested", sb.Template)
+			templateReasons++
+		}
 		if in.Template != nil {
 			if ok, why := in.Template.Offers(p.Name); !ok {
 				reject("%s", why)
@@ -382,6 +391,12 @@ func Decide(in Input) Result {
 	default:
 		dec.Outcome = "rejected"
 		switch {
+		case in.TemplateRemoved:
+			// Nothing else matters: whatever the pools could do, this
+			// sandbox was limited by a template and must not outlive it as
+			// a plain name.
+			dec.Reason = "template " + sb.Template + " was removed after this sandbox was requested, and its name is not passed to a backend as given"
+			res.Err = api.Errorf(api.CodeNoEligiblePool, "%s", dec.Reason).With("classification", sb.Classification).With("template", sb.Template)
 		case capabilityOnly > 0:
 			dec.Reason = "no permitted pool supports the requested capabilities"
 			res.Err = api.Errorf(api.CodeUnsupportedCapability, "%s", dec.Reason).With("capabilities", strings.Join(sb.Capabilities, ","))

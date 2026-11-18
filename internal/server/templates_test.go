@@ -165,6 +165,20 @@ func TestTemplateValidation(t *testing.T) {
 	if e := put("python", []byte(`{"image":"x"}`)); !strings.Contains(e.Message, "unknown field") {
 		t.Errorf("unknown field: %+v", e)
 	}
+	// Control characters are invalid input on every store, not a store error:
+	// PostgreSQL cannot hold NUL in text or JSON.
+	if e := put("python", map[string]any{"images": map[string]string{"fc": "py\x00thon"}}); !strings.Contains(e.Message, "images.fc must not contain control characters") {
+		t.Errorf("NUL in an image: %+v", e)
+	}
+	if e := put("python", map[string]any{"description": "Python\x00", "images": map[string]string{"fc": "a"}}); !strings.Contains(e.Message, "description must be one line of text") {
+		t.Errorf("NUL in a description: %+v", e)
+	}
+	if e := put("python", map[string]any{"description": "two\nlines", "images": map[string]string{"fc": "a"}}); !strings.Contains(e.Message, "description must be one line of text") {
+		t.Errorf("a newline in a description: %+v", e)
+	}
+	h.refused(400, api.CodeInvalidRequest, "PUT", "/v1/admin/templates/py%00", map[string]any{"images": map[string]string{"fc": "a"}})
+	h.refused(404, api.CodeNotFound, "DELETE", "/v1/admin/templates/py%00", nil)
+	h.refused(404, api.CodeNotFound, "DELETE", "/v1/admin/templates/py%00/images/fc", nil)
 	if got := h.templates(); len(got) != 0 {
 		t.Fatalf("a refused request stored a template: %+v", got)
 	}
@@ -216,6 +230,23 @@ func TestConfigTemplateWinsOverTheAPI(t *testing.T) {
 	h.tick()
 	if got := h.get(token, sb.ID); got.Pool != "fc" || h.fc.TemplateOf(sb.ID) != "workbot-image-v3" || h.ext.Count() != 0 {
 		t.Fatalf("the stored template shadowed by the file was used: %+v", got)
+	}
+	// The stored copy can be cleared, so it cannot come into force unnoticed
+	// when the name leaves the file. The file's own template stays.
+	h.must(204, "DELETE", "/v1/admin/templates/workbot", operatorToken, nil, nil)
+	if _, err := h.store.GetTemplate(context.Background(), "workbot"); !api.IsCode(err, api.CodeNotFound) {
+		t.Fatalf("the stored copy is still there: %v", err)
+	}
+	if got := h.templates(); len(got) != 2 || got[0].Name != "workbot" || got[0].Source != api.TemplateSourceConfig {
+		t.Fatalf("the file's template after clearing the stored copy: %+v", got)
+	}
+	var events api.List[api.AuditEvent]
+	h.must(200, "GET", "/v1/audit-events?resource=workbot&action=template.delete", operatorToken, nil, &events)
+	if len(events.Items) != 1 || events.Items[0].Details["shadowed"] != "true" {
+		t.Fatalf("audit of clearing the stored copy: %+v", events.Items)
+	}
+	if e := h.refused(409, api.CodeConflict, "DELETE", "/v1/admin/templates/workbot", nil); !strings.Contains(e.Message, "declared in the config file") {
+		t.Fatalf("with no stored copy left: %+v", e)
 	}
 }
 
@@ -402,5 +433,171 @@ func TestTemplateChangeReachesEveryReplica(t *testing.T) {
 	h.must(204, "DELETE", "/v1/admin/templates/python", operatorToken, nil, nil)
 	if list, err := other.Templates(ctx); err != nil || len(list) != 0 {
 		t.Fatalf("the other replica still lists a removed template: %+v %v", list, err)
+	}
+}
+
+// A template removed after a sandbox was admitted or placed under it never
+// turns that sandbox into one that boots the plain name: the template limited
+// where it could run, and "python" handed to a backend as given is a different
+// request, one placement never agreed to.
+func TestTemplateRemovedBeforeBootRefusesTheSandbox(t *testing.T) {
+	removeAfterActivation := func(st store.Store) store.Store {
+		return &changeAfterActivation{Store: st, change: func(st store.Store) {
+			if err := st.DeleteTemplate(context.Background(), "python"); err != nil {
+				t.Error(err)
+			}
+		}}
+	}
+	refused := func(h *harness, token, id, when string) {
+		t.Helper()
+		got := h.get(token, id)
+		if got.Status != api.StatusFailed || !strings.Contains(got.StatusReason, "template python was removed") {
+			t.Fatalf("%s: want it refused for the removed template, got %s (%s) on %q", when, got.Status, got.StatusReason, got.Pool)
+		}
+		if h.fc.Count() != 0 || h.ext.Count() != 0 {
+			t.Fatalf("%s: a backend booted something: fc %d (%q), burst %d (%q)", when, h.fc.Count(), h.fc.TemplateOf(id), h.ext.Count(), h.ext.TemplateOf(id))
+		}
+	}
+
+	// Removed between placement and provisioning.
+	h := newHarnessWith(t, overflowPolicy, nil, removeAfterActivation)
+	_, _, token := h.tenant("a", api.Quota{})
+	h.must(201, "PUT", "/v1/admin/templates/python", operatorToken, map[string]any{"images": map[string]string{"fc": "registry.example.com/python:3.12"}}, nil)
+	sb := h.create(token, api.CreateSandboxRequest{Template: "python"})
+	h.tick()
+	refused(h, token, sb.ID, "removed after placement")
+
+	// Removed between admission and the first placement: the sandbox was let
+	// in because burst has the template, and must not run on fc as "python".
+	h = newHarness(t, overflowPolicy)
+	_, _, token = h.tenant("a", api.Quota{})
+	h.must(201, "PUT", "/v1/admin/templates/python", operatorToken, map[string]any{"images": map[string]string{"burst": "python-312"}}, nil)
+	sb = h.create(token, api.CreateSandboxRequest{Template: "python"})
+	h.must(204, "DELETE", "/v1/admin/templates/python", operatorToken, nil, nil)
+	var explained struct {
+		Current api.PlacementDecision `json:"current"`
+	}
+	h.must(200, "GET", "/v1/sandboxes/"+sb.ID+"/placement", token, nil, &explained)
+	if explained.Current.Outcome != "rejected" || !strings.Contains(explained.Current.Reason, "template python was removed") {
+		t.Fatalf("placement explanation for the queued sandbox: %+v", explained.Current)
+	}
+	h.tick()
+	refused(h, token, sb.ID, "removed after admission")
+	// A request made after the removal names no template any more: it is a
+	// plain name, passed as given, as the guide says.
+	plain := h.create(token, api.CreateSandboxRequest{Template: "python"})
+	h.tick()
+	if got := h.get(token, plain.ID); got.Status != api.StatusRunning || h.fc.TemplateOf(plain.ID) != "python" {
+		t.Fatalf("a request made after the removal: %+v with %q", got, h.fc.TemplateOf(plain.ID))
+	}
+
+	// A template set after the sandbox was admitted governs it from its
+	// placement on, so the same holds when that template is then removed.
+	h = newHarnessWith(t, overflowPolicy, nil, removeAfterActivation)
+	_, _, token = h.tenant("a", api.Quota{})
+	sb = h.create(token, api.CreateSandboxRequest{Template: "python"}) // a plain name when admitted
+	h.must(201, "PUT", "/v1/admin/templates/python", operatorToken, map[string]any{"images": map[string]string{"fc": "registry.example.com/python:3.12"}}, nil)
+	h.tick()
+	refused(h, token, sb.ID, "set after admission, removed after placement")
+}
+
+// A sandbox's template is input a tenant sends. A control character in it is
+// refused as invalid on every store, instead of reaching the store, where
+// PostgreSQL fails on NUL and the caller would be told to retry something
+// that can never work.
+func TestSandboxTemplateRejectsControlCharacters(t *testing.T) {
+	h := newHarness(t, api.PlacementPolicy{})
+	_, _, token := h.tenant("a", api.Quota{})
+	for _, name := range []string{"py\x00", "py\nthon", "\x1b[31mpython"} {
+		var env api.ErrorEnvelope
+		if code := h.call("POST", "/v1/sandboxes", token, api.CreateSandboxRequest{Template: name}, &env); code != 400 || env.Error == nil || env.Error.Code != api.CodeInvalidRequest || !strings.Contains(env.Error.Message, "template must not contain control characters") {
+			t.Errorf("template %q: status %d, error %+v", name, code, env.Error)
+		}
+	}
+	var list api.List[api.Sandbox]
+	h.must(200, "GET", "/v1/sandboxes", token, nil, &list)
+	if len(list.Items) != 0 {
+		t.Fatalf("a refused request left a sandbox: %+v", list.Items)
+	}
+	// An ordinary image reference with its punctuation still passes.
+	sb := h.create(token, api.CreateSandboxRequest{Template: "registry.example.com/team/python:3.12@sha256:0a1b"})
+	h.tick()
+	if got := h.get(token, sb.ID); got.Status != api.StatusRunning {
+		t.Fatalf("an image reference as a template: %+v", got)
+	}
+}
+
+// Deleting a pool takes it out of the stored templates that named it, so a
+// pool created later under the same name inherits nothing. A pool that is the
+// only place a template can run is kept: without it the template would run
+// nowhere, and without its entry the name would run everywhere.
+func TestDeletingAPoolNeverWidensATemplate(t *testing.T) {
+	h := newHarness(t, overflowPolicy)
+	ctx := context.Background()
+	h.must(201, "PUT", "/v1/admin/templates/python", operatorToken, map[string]any{"images": map[string]string{"fc": "a", "burst": "b"}}, nil)
+	h.must(201, "PUT", "/v1/admin/templates/node", operatorToken, map[string]any{"images": map[string]string{"burst": "n"}}, nil)
+	h.must(201, "PUT", "/v1/admin/templates/gpu", operatorToken, map[string]any{"pools": []string{"burst", "fc"}}, nil)
+
+	// node runs only on burst, so burst stays, and nothing was changed.
+	e := h.refused(409, api.CodeConflict, "DELETE", "/v1/admin/pools/burst", nil)
+	if !strings.Contains(e.Message, "only pool that can run template node") || e.Details["templates"] != "node" {
+		t.Fatalf("deleting the only pool a template runs on: %+v", e)
+	}
+	if _, err := h.store.GetPool(ctx, "burst"); err != nil {
+		t.Fatalf("the refused deletion removed the pool: %v", err)
+	}
+	if got := h.templates(); got[2].Name != "python" || len(got[2].Images) != 2 {
+		t.Fatalf("the refused deletion changed a template: %+v", got)
+	}
+
+	// With node removed, burst can go, and python and gpu forget it.
+	h.must(204, "DELETE", "/v1/admin/templates/node", operatorToken, nil, nil)
+	h.must(204, "DELETE", "/v1/admin/pools/burst", operatorToken, nil, nil)
+	byName := map[string]api.Template{}
+	for _, tpl := range h.templates() {
+		byName[tpl.Name] = tpl
+	}
+	if tpl := byName["python"]; len(tpl.Images) != 1 || tpl.Images["fc"] != "a" {
+		t.Fatalf("python after its pool was deleted: %+v", tpl)
+	}
+	if tpl := byName["gpu"]; len(tpl.Pools) != 1 || tpl.Pools[0] != "fc" {
+		t.Fatalf("gpu's pools list after burst was deleted: %+v", tpl)
+	}
+	var events api.List[api.AuditEvent]
+	h.must(200, "GET", "/v1/audit-events?resource=python&action=template.image_delete", operatorToken, nil, &events)
+	if len(events.Items) != 1 || events.Items[0].Details["pool"] != "burst" || events.Items[0].Details["image"] != "b" || events.Items[0].Details["reason"] != "pool deleted" {
+		t.Fatalf("audit of the dropped image: %+v", events.Items)
+	}
+
+	// A pool created later under the same name starts with no image.
+	if err := h.store.UpsertPool(ctx, api.Pool{Name: "burst", Adapter: "fake", Trust: api.TrustExternal, Enabled: true, Source: "api"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tpl := range h.templates() {
+		if ok, _ := tpl.Offers("burst"); ok {
+			t.Fatalf("the new pool inherited template %s: %+v", tpl.Name, tpl)
+		}
+	}
+
+	// An entry left behind for a pool that is gone (from before this rule, or
+	// a failed cleanup) does not count as an image: the last real one stays.
+	if _, err := h.store.UpdateTemplate(ctx, "python", func(tpl *api.Template, _ bool) error {
+		tpl.Images["ghost"] = "g"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if e := h.refused(409, api.CodeInvalidState, "DELETE", "/v1/admin/templates/python/images/fc", nil); !strings.Contains(e.Message, "last image of template python on a pool that exists") {
+		t.Fatalf("removing the last real image beside a leftover entry: %+v", e)
+	}
+	// fc is all python can run on, so fc stays too.
+	if e := h.refused(409, api.CodeConflict, "DELETE", "/v1/admin/pools/fc", nil); !strings.Contains(e.Details["templates"], "python") {
+		t.Fatalf("deleting the pool that holds the last real image: %+v", e)
+	}
+	// The leftover entry itself can be cleared, either way.
+	var left api.Template
+	h.must(200, "DELETE", "/v1/admin/templates/python/images/ghost", operatorToken, nil, &left)
+	if len(left.Images) != 1 || left.Images["fc"] != "a" {
+		t.Fatalf("after clearing the leftover entry: %+v", left)
 	}
 }
