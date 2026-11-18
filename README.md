@@ -168,10 +168,6 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 - real OpenSandbox responses are recorded and replayed in every `go test`;
 - the experimental `agent-sandbox` adapter against a Kubernetes cluster
   (kind);
-- the experimental `groundbox` adapter against Groundbox's hosted API
-  (2026-11-18, run by a Groundbox maintainer): exec, streamed exec, files,
-  port URLs, egress policy, stop/start, pause/resume, idle pause and wake,
-  memory snapshots, fork and a sandbox from a Docker image;
 - the Daytona (container class) and Freestyle adapters against live
   accounts: exec, files, port URLs, stop/start and snapshots on both, and
   egress policy, pause/resume, memory snapshots and fork on Freestyle;

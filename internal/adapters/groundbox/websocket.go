@@ -283,7 +283,9 @@ func (a *Adapter) ExecStream(ctx context.Context, ref string, req api.ExecReques
 	if req.Stdin != "" {
 		// Sent while the output is read below, so neither side waits on the
 		// other. As base64, so that bytes that are not text arrive as written.
-		go func() {
+		// On the connection the command started on: a re-attach replaces conn,
+		// and stdin does not follow it.
+		go func(conn *wsConn) {
 			for in := []byte(req.Stdin); len(in) > 0; {
 				n := min(len(in), stdinChunk)
 				if conn.writeJSON(map[string]string{"type": "stdin", "data_base64": base64.StdEncoding.EncodeToString(in[:n])}) != nil {
@@ -292,7 +294,7 @@ func (a *Adapter) ExecStream(ctx context.Context, ref string, req api.ExecReques
 				in = in[n:]
 			}
 			conn.writeJSON(map[string]string{"type": "stdin_end"})
-		}()
+		}(conn)
 	}
 	var execID string
 	var seq int64

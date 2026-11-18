@@ -658,7 +658,15 @@ func (a *Adapter) ReadFile(ctx context.Context, ref, path string) ([]byte, error
 		return nil, classify(err)
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(io.LimitReader(resp.Body, maxFileBytes))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFileBytes+1))
+	if err != nil {
+		return nil, adapter.Unavailable(fmt.Errorf("groundbox: read %s: %w", path, err))
+	}
+	if len(data) > maxFileBytes {
+		// Never hand back the start of a file as if it were all of it.
+		return nil, api.Errorf(api.CodeInvalidRequest, "groundbox: %s is larger than the %d MiB one call moves", path, maxFileBytes>>20)
+	}
+	return data, nil
 }
 
 // WriteFile uploads the bytes; Groundbox creates missing parent folders.
