@@ -87,25 +87,43 @@ All notable changes are recorded here. The format follows
   plane itself in the visitor's browser: the HTTP API, admission, the
   placement policy, the scheduler and the in-memory store, compiled to
   WebAssembly, with simulated clients. The page fills the window and is built
-  around the console's live routing diagram: your apps, Differently, and five
-  pools named after providers (OpenSandbox as the private cluster, Daytona,
-  Freestyle, E2B and Northflank) with their logos and list prices from the
+  around the console's live routing diagram: your apps, Differently, and
+  pools named after providers with their logos and list prices from the
   comparison's data, a dot for every slot and a packet for every placement.
-  While it runs the visitor can turn a provider on or off, change its slots
-  or make its backend fail, change the strategy and the external gate, and
-  switch from placement by policy to a split by percentage, where each create
-  is pinned to a provider with `placement.allowedPools`. Provider and policy
-  changes go through the admin API. Clients run tasks (a sandbox per task,
-  deleted after) or keep one long-lived computer that pauses and resumes.
-  Every pool is the fake adapter with delays and the clock is sped up (it
-  stands still while the program computes), so the page shows routing and
-  scheduling decisions and says nothing about a provider or about
-  performance. The program is `internal/loadsim` (tested natively), built for
-  the browser by `cmd/differently-loadsim`; the site build compiles it
-  (3.8 MB compressed) and the `site` workflow also runs when `internal/**`,
-  `pkg/**` or `go.mod` change. `make vet` vets the browser build. The landing
-  page links to it from the hero and shows the diagram in a section of its
-  own.
+  - **Providers.** It starts with OpenSandbox as the private cluster,
+    Daytona, Freestyle, E2B and Northflank; any provider of the comparison
+    can be added while it runs, and each can be switched off, resized,
+    removed or made to fail.
+  - **Policy.** The strategy and the external gate change live. The page
+    shows the priority for the next sandbox: the placement policy's own
+    ranking, asked several times a second, with the policy's reason for each
+    provider it holds back, and the configuration that produces it. Work can
+    instead be split by percentage, where each create is pinned to a provider
+    with `placement.allowedPools`.
+  - **Quotas.** The tenant's `maxActiveSandboxes` and `maxQueued`, set
+    through the admin API: over the first a sandbox stays queued, over the
+    second a create is refused.
+  - **Audit.** The decisions are read from the audit log; the page can show
+    every entry with its sequence number and hash, and asks the control
+    plane to verify the chain.
+  - **Lifecycle.** Starts and lengths are random. A chosen share of
+    sandboxes is kept after its session: it hibernates when idle (a pause,
+    a snapshot where the pool takes one), is woken by its client's next
+    session, and is deleted by `maxPausedSeconds`. What a snapshot, a wake
+    and a cold start take is set on the page.
+  - **Timeline.** A run lasts one, four or eight simulated hours or has no
+    limit, at 1x to 240x; the bar shows the simulated time, the progress and
+    what has been spent at list price.
+
+  Provider, policy and quota changes go through the admin API. Every pool is
+  the fake adapter with delays and the clock is sped up (it stands still
+  while the program computes), so the page shows routing and scheduling
+  decisions and says nothing about a provider or about performance. The
+  program is `internal/loadsim` (tested natively), built for the browser by
+  `cmd/differently-loadsim`; the site build compiles it (about 5 MB compressed)
+  and the `site` workflow also runs when `internal/**`, `pkg/**` or `go.mod`
+  change. `make vet` vets the browser build. The landing page links to it
+  from the hero and shows the diagram in a section of its own.
 
 ### Fixed
 

@@ -21,7 +21,7 @@
 .sim-btn.primary, .sim-btn[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 .sim-btn.alert[aria-pressed='true'] { background: var(--wait); border-color: var(--wait); color: var(--bg); }
 .sim-btn.tiny { font-size: 0.75rem; padding: 3px 10px; }
-.sim-btn:focus-visible, .sim-seg button:focus-visible, .sim-presets button:focus-visible, .switch input:focus-visible + i { outline: 2px solid var(--ink); outline-offset: 2px; }
+.sim-btn:focus-visible, .sim-seg button:focus-visible, .premove:focus-visible, .switch input:focus-visible + i { outline: 2px solid var(--ink); outline-offset: 2px; }
 .sim-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--bg); }
 .sim-seg button { font: 0.8125rem var(--mono); padding: 6px 11px; border: 0; background: none; color: var(--muted); cursor: pointer; }
 .sim-seg.words { display: flex; }
@@ -31,8 +31,8 @@
 .sim-clock b { color: var(--ink); font-weight: 500; }
 
 /* The app fills the window under the bar. */
-.sim-app { display: grid; grid-template-columns: 284px minmax(0, 1fr) 320px; height: calc(100vh - var(--bar-h)); min-height: 620px; border-bottom: 1px solid var(--line); }
-.sim-side { padding: 16px; border-right: 1px solid var(--line); overflow-y: auto; display: grid; gap: 20px; align-content: start; }
+.sim-app { display: grid; grid-template-columns: 236px minmax(0, 1fr) 344px; height: calc(100vh - var(--bar-h)); min-height: 620px; border-bottom: 1px solid var(--line); }
+.sim-side { padding: 14px; border-right: 1px solid var(--line); overflow-y: auto; display: grid; gap: 18px; align-content: start; }
 .sim-side fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 11px; min-width: 0; }
 .sim-side legend, .sim-side summary { padding: 0; font-size: 0.8125rem; font-weight: 600; margin-bottom: 9px; }
 .sim-side legend small, .sim-side summary small { font-weight: 400; color: var(--muted); margin-left: 6px; }
@@ -46,12 +46,6 @@
 .sim-field select, .pctl input[type='number'] { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); width: 100%; }
 .sim-field:has(:disabled) > span { opacity: 0.55; }
 .sim-note { margin: 0; font-size: 0.75rem; line-height: 1.45; color: var(--muted); }
-.sim-presets { display: grid; gap: 6px; }
-.sim-presets button { font: inherit; text-align: left; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--muted); cursor: pointer; font-size: 0.75rem; line-height: 1.4; }
-.sim-presets button:hover { border-color: var(--ink); }
-.sim-presets button[aria-pressed='true'] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
-.sim-presets b { display: block; color: var(--ink); font-size: 0.8125rem; font-weight: 600; }
-
 /* The stage: the diagram, then the numbers. */
 /* landing.css pads every section; this one is a pane of the app. */
 main section.sim-stage { padding: 0; border-top: 0; }
@@ -114,6 +108,15 @@ main section.sim-stage { padding: 0; border-top: 0; }
 @keyframes flow-hit { 0% { transform: scale(1.03); } 100% { transform: scale(1); } }
 @keyframes flow-refuse { 0% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--wait) 45%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
 
+.prank { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); color: var(--bg); font: 600 0.6875rem/20px var(--mono); text-align: center; }
+.prank[hidden] { display: none; }
+.premove { flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font: 1rem/1 var(--sans); cursor: pointer; }
+.premove:hover { color: var(--ink); background: var(--surface); }
+.padd { display: flex; align-items: center; gap: 10px; padding: 9px 13px; border: 1.5px dashed color-mix(in srgb, var(--muted) 55%, transparent); border-radius: 14px; background: var(--bg); font-size: 0.8125rem; font-weight: 500; }
+.padd span { white-space: nowrap; }
+.padd select { flex: 1; min-width: 0; font: inherit; font-weight: 400; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+.fgate[hidden] { display: none; }
+
 /* One sandbox, as a dot. */
 .sb { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--ink); background: var(--bg); }
 .sb[data-s='free'] { border: 1px dashed color-mix(in srgb, var(--muted) 50%, transparent); }
@@ -146,16 +149,37 @@ main section.sim-stage { padding: 0; border-top: 0; }
 .sim-cover small { color: var(--muted); font-size: 0.8125rem; max-width: 420px; }
 .sim-cover .err { color: var(--wait); }
 
+/* Routing: who picks, the rule, and the order that follows from it. */
+.sim-right { border-left: 1px solid var(--line); display: grid; grid-template-rows: auto auto minmax(120px, 1fr); min-width: 0; min-height: 0; overflow-y: auto; }
+.sim-routing { padding: 14px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 12px; min-width: 0; }
+.sim-routing h2, .sim-log h2 { font-size: 0.875rem; letter-spacing: -0.01em; }
+.sim-routing h2 small { font-weight: 400; color: var(--muted); font-size: 0.75rem; letter-spacing: 0; margin-left: 8px; }
+.rstep { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; }
+.rstep > div { display: grid; gap: 7px; min-width: 0; }
+.rstep b { font-size: 0.8125rem; font-weight: 600; }
+.rnum { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--ink); font: 600 0.6875rem/17px var(--mono); text-align: center; }
+.rstep .sim-field { grid-template-columns: 112px minmax(0, 1fr); align-items: center; gap: 8px; }
+.rstep .sim-field select { padding: 4px 8px; font-family: var(--mono); font-size: 0.75rem; }
+.prio { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.prio li { display: grid; grid-template-columns: 30px 20px minmax(0, auto) minmax(0, 1fr); align-items: center; gap: 7px; font-size: 0.8125rem; }
+.prio li b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prio img { width: 20px; height: 20px; border-radius: 5px; background: #ffffff; border: 1px solid var(--line); object-fit: contain; }
+.prio .plead { font: 600 0.6875rem/20px var(--mono); text-align: center; border-radius: 999px; background: var(--ink); color: var(--bg); font-variant-numeric: tabular-nums; }
+.prio .pwhy { color: var(--muted); font-size: 0.75rem; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prio li.out .plead { background: none; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }
+.prio li.out b { color: var(--muted); }
+.rconf summary { cursor: pointer; font-size: 0.8125rem; font-weight: 500; }
+.rconf pre { margin: 8px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font: 0.6875rem/1.55 var(--mono); overflow-x: auto; max-height: 220px; }
+
 /* History and the log. */
-.sim-right { border-left: 1px solid var(--line); display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
-.sim-trends { padding: 16px; border-bottom: 1px solid var(--line); display: grid; gap: 12px; }
+.sim-trends { padding: 12px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
 .sim-trend { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: end; font-size: 0.8125rem; color: var(--muted); }
 .sim-trend b { font: 500 0.8125rem var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
-.sim-trend svg { grid-column: 1 / -1; width: 100%; height: 36px; display: block; overflow: visible; }
+.sim-trend svg { grid-column: 1 / -1; width: 100%; height: 24px; display: block; overflow: visible; }
 .sim-trend polyline { fill: none; stroke: var(--ink); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .sim-trend.wait polyline { stroke: var(--wait); }
 .sim-log { padding: 16px 16px 0; min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.sim-log h2 { font-size: 0.875rem; letter-spacing: -0.01em; margin-bottom: 10px; }
+.sim-log h2 { margin-bottom: 10px; }
 .sim-log h2 small { font-weight: 400; color: var(--muted); font-size: 0.75rem; letter-spacing: 0; margin-left: 8px; }
 .sim-log ol { list-style: none; margin: 0; padding: 0 0 16px; overflow-y: auto; font: 0.6875rem/1.55 var(--mono); color: var(--muted); }
 .sim-log li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; padding: 2px 0; }
@@ -177,7 +201,8 @@ main section.sim-stage { padding: 0; border-top: 0; }
   .sim-app { grid-template-columns: minmax(0, 1fr); height: auto; }
   .sim-stage { order: 1; min-height: 0; }
   .sim-side { order: 2; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-  .sim-right { order: 3; border-left: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); grid-template-rows: none; }
+  .sim-right { order: 3; border-left: 0; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1.4fr); grid-template-rows: none; overflow: visible; }
+  .sim-routing { border-bottom: 0; border-right: 1px solid var(--line); }
   .sim-trends { border-bottom: 0; border-right: 1px solid var(--line); align-content: start; }
   .sim-log ol { max-height: 260px; }
 }
@@ -186,8 +211,43 @@ main section.sim-stage { padding: 0; border-top: 0; }
   .sim-clock { white-space: normal; }
   .pctl { flex-wrap: wrap; }
   .sim-right { grid-template-columns: minmax(0, 1fr); }
-  .sim-trends { border-right: 0; border-bottom: 1px solid var(--line); }
+  .sim-routing, .sim-trends { border-right: 0; border-bottom: 1px solid var(--line); }
   .sim-scroll { padding: 16px; }
   .flow { grid-template-columns: 1fr; gap: 14px; align-self: start; }
   .flow-wires { display: none; }
+}
+
+/* The timeline: how long to simulate, how far it is, and what it has cost. */
+.sim-bar { position: sticky; }
+.sim-run { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; color: var(--muted); }
+.sim-run select { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--ink); }
+.sim-progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; }
+.sim-progress i { display: block; height: 100%; width: 0; background: var(--ink); }
+#cost b { color: var(--ink); }
+
+/* The box in the middle: its three words open their settings. */
+.fopen button { font: inherit; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.fopen button:hover, .fopen button.on { color: var(--bg); text-decoration-style: solid; }
+.fopen button:focus-visible { outline: 2px solid var(--bg); outline-offset: 2px; border-radius: 3px; }
+.sim-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); }
+.sim-tabs button { font: inherit; font-size: 0.8125rem; font-weight: 500; padding: 10px 8px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); cursor: pointer; }
+.sim-tabs button[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--ink); }
+.sim-tabs button:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.sim-routing[hidden] { display: none; }
+.sim-right { grid-template-rows: auto auto auto minmax(120px, 1fr); }
+.sim-check { display: flex; gap: 8px; align-items: flex-start; font-size: 0.8125rem; color: var(--muted); }
+.sim-check input { margin: 3px 0 0; accent-color: var(--ink); }
+.sim-check b { display: block; color: var(--ink); font-weight: 500; }
+.sim-usage { margin: 0; font: 0.75rem/1.5 var(--mono); color: var(--muted); }
+.sim-usage b { color: var(--ink); font-weight: 500; }
+.sim-usage .hot { color: var(--wait); }
+.sim-note code { font-size: 0.6875rem; }
+.sim-log li i { display: none; font-style: normal; color: var(--muted); }
+.sim-log ol.chain li i { display: block; }
+@media (max-width: 1180px) {
+  .sim-right { grid-template-rows: auto auto; }
+  .sim-tabs { grid-column: 1 / -1; }
+}
+@media (max-width: 860px) {
+  .sim-right { grid-template-rows: none; }
 }
