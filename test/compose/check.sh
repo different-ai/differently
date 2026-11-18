@@ -200,7 +200,9 @@ except urllib.error.HTTPError as e:
 echo "401"
 
 step "create an organization with a default project"
-created=$(cli admin org create first-team)
+# -o json: a release after v0.1.0-alpha.5 prints a table here, and both it and
+# that release print the API's answer when asked for JSON.
+created=$(cli admin org create first-team -o json)
 project=$(printf '%s\n' "$created" | first_id prj)
 [ -n "$project" ] || fail "no project ID in the answer: $created"
 echo "$project"
