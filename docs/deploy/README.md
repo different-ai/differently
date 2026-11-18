@@ -6,7 +6,7 @@
 |---|---|---|---|
 | A laptop | [Quickstart](../guides/quickstart.md) (`differently-server --dev`, no isolation) | 2 minutes | tested |
 | Any Docker host | The [end-to-end stack](../../test/e2e/README.md): Postgres, Differently and OpenSandbox in Compose | 10 minutes | tested: CI runs it on every pull request |
-| One Linux VM: Azure, AWS, Google Cloud or bare metal | [One Linux VM on any cloud](single-vm.md): k3s, OpenSandbox's charts, Differently's chart | 30 minutes | tested on Azure, last with `v0.1.0-alpha.2` |
+| One Linux VM: Azure, AWS, Google Cloud or bare metal | [One Linux VM on any cloud](single-vm.md): k3s, OpenSandbox's charts, Differently's chart | 30 minutes | tested on Azure, last on 2026-10-29 |
 | A Kubernetes cluster (EKS, GKE, AKS, k3s, RKE2) | [Kubernetes with Helm](kubernetes.md), then the notes for [AWS](aws.md), [Google Cloud](gcp.md), [Azure](azure.md) or [bare metal](bare-metal.md) | about an hour | Helm install tested on k3s, last on 2026-10-29; managed clusters documented |
 | No internet access | [Air-gapped](air-gapped.md) | | documented |
 
@@ -137,14 +137,16 @@ Status values:
 server**: single-node k3s on Azure, with OpenSandbox installed from its own
 charts and its Kubernetes runtime ([one Linux VM](single-vm.md),
 2026-10-28 and 29), and two-node k3s on Azure ([azure-vms.md](azure-vms.md),
-2026-10-29). On the single node the end-to-end suite passed 14/14 (all the
-tests it had then), with stop/start, snapshots, fork, signed port URLs and
+2026-10-29). On the single node the end-to-end suite passed 14/14 (every
+test it then had), with stop/start, snapshots, fork, signed port URLs and
 egress policy. The published `v0.1.0-alpha.1` chart and images installed
 from public artifacts alone. Managed EKS, GKE and AKS clusters, node drains
 and more than one KVM node have not been run.
 
 **No install on a cluster is recorded after 2026-10-29**, which was before
-`v0.1.0-alpha.3`. For the releases since, CI lints the chart and renders it
+`v0.1.0-alpha.3`. The only published release recorded as installed on one is
+`v0.1.0-alpha.1`; the runs of 2026-10-29 used pre-release code. For the
+releases since, CI lints the chart and renders it
 (`helm lint`, and `helm template` with every value set in
 `deploy/helm/differently/ci/`) and runs the end-to-end suite on
 OpenSandbox's Docker runtime; the Kubernetes and Fast Sandbox runtimes last
@@ -163,16 +165,18 @@ API key did not appear in the server log. See the
 [spike](../research/opensandbox-spike.md). The
 [end-to-end suite](../../test/e2e/README.md) runs the real control plane and
 Postgres against a real OpenSandbox server with the Docker runtime. CI runs
-it on every pull request (x86_64): of its 18 tests, 16 pass and 2 are
-skipped, because they need a desktop image or a microVM pool. By hand it
-passed 14/14 on arm64 Colima on 2026-10-29, when it had 14 tests.
+it on every pull request (x86_64). On 2026-11-18 that was 16 tests passed
+and 2 skipped, because they need a desktop image or a microVM pool; the
+[suite's results table](../../test/e2e/README.md#verified-on) has the
+current count. By hand it passed 14/14 on arm64 Colima on 2026-10-29, every
+test it then had.
 
 | Environment | Runtime path | Status | Notes |
 |---|---|---|---|
-| OpenSandbox 1.2.0 with the Docker runtime (Docker Compose on Colima, arm64) | Containers on one Docker host | **tested** (end-to-end suite: 14/14 on Colima, 2026-10-29; in CI on every pull request on x86_64, 16 passed and 2 skipped of 18) | Checks the API contract, not isolation: containers share the host kernel |
+| OpenSandbox 1.2.0 with the Docker runtime (Docker Compose on Colima, arm64) | Containers on one Docker host | **tested** (end-to-end suite: 14/14 on Colima, 2026-10-29; in CI on every pull request on x86_64) | Checks the API contract, not isolation: containers share the host kernel |
 | Single-node k3s on an Azure VM, Differently's chart plus OpenSandbox's charts | OpenSandbox Kubernetes runtime (pods) | **tested** (end-to-end suite 14/14, 2026-10-29; not run since) | [single-vm.md](single-vm.md). Stop/start, snapshots, fork, port URLs and egress need the [Kubernetes runtime setup](../guides/opensandbox-pools.md#kubernetes-runtime-snapshot-registry-signed-ports-and-egress) |
 | Any conformant Kubernetes 1.29+, Differently's chart plus an OpenSandbox server | Whatever OpenSandbox runs | documented | [kubernetes.md](kubernetes.md); a two-node k3s cluster ran on Azure ([azure-vms.md](azure-vms.md)); managed clusters and node drains not yet run ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
-| OpenSandbox Fast Sandbox on KVM nodes | Firecracker microVMs | **ran live** on Azure (nested KVM), 2026-10-29: single-node k3s on Standard_D8s_v6, then two-node k3s with a Standard_D16s_v6 KVM node ([azure-vms.md](azure-vms.md)) | Recorded adapter scenario, the end-to-end suite on the microVM pool (14 of its 18 tests ran, and passed), and Workbot's desktop through OpenWork's runner; node drains, bare metal and isolation probes not run. Needs an XFS reflink state root with room ([pools guide](../guides/opensandbox-pools.md#measured-on-a-workbot-desktop)). [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter), [backlog E18](../backlog.md#e18-fast-sandbox-spike) |
+| OpenSandbox Fast Sandbox on KVM nodes | Firecracker microVMs | **ran live** on Azure (nested KVM), 2026-10-29: single-node k3s on Standard_D8s_v6, then two-node k3s with a Standard_D16s_v6 KVM node ([azure-vms.md](azure-vms.md)) | Recorded adapter scenario, the end-to-end suite on the microVM pool (14 of the 18 tests it then had ran, and passed), and Workbot's desktop through OpenWork's runner; node drains, bare metal and isolation probes not run. Needs an XFS reflink state root with room ([pools guide](../guides/opensandbox-pools.md#measured-on-a-workbot-desktop)). [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter), [backlog E18](../backlog.md#e18-fast-sandbox-spike) |
 | AWS EKS, `.metal` node group (Fast Sandbox) | Bare metal | unverified | Matches Firecracker's tested platforms. The Terraform module is **unvalidated** |
 | AWS EKS, nested-virtualization node group (Fast Sandbox) | `NestedVirtualization` CPU option (M7i/M8i/C7i/C8i/R7i/R8i…) | unverified | EKS managed node group support was reported fixed in 2026. Firecracker calls nested a development setup |
 | AWS with Karpenter (Fast Sandbox) | `EC2NodeClass` nested virtualization (v1.13.0+) | unverified | Not covered by the Terraform module |

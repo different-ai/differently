@@ -121,11 +121,13 @@ All notable changes are recorded here. The format follows
   cluster, while others recorded the Kubernetes and Fast Sandbox runs of
   2026-10-28 and 29. They now say the same thing: all three runtimes have
   run; the Kubernetes and Fast Sandbox runs and the installs on a cluster
-  have not been repeated since 2026-10-29; and isolation inside a microVM
-  has not been probed.
+  have not been repeated since 2026-10-29, and no published release after
+  0.1.0-alpha.1 is recorded as installed on a cluster; and isolation inside
+  a microVM has not been probed.
 - End-to-end counts say what they count. "14/14" was every test the suite
-  had on 2026-10-29. It has 18 now, and CI runs them on the Docker runtime on
-  every pull request: 16 pass and 2 are skipped.
+  had on 2026-10-29. The suite has grown since, and CI runs it on the Docker
+  runtime on every pull request; `test/e2e/README.md` keeps the current
+  count.
 - Corrected values: the default OpenSandbox URL points at namespace
   `opensandbox-system`, not `opensandbox`; the chart's NetworkPolicy allows
   OpenSandbox on port 80, so a standalone server on 8090 needs

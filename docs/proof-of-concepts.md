@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | POC 7 ran, and POC 11 and 12 ran in part, on 2026-10-28 and 29; each has a **Result** paragraph saying which steps. The others are planned. The [OpenSandbox spike](research/opensandbox-spike.md) ran OpenSandbox's Docker runtime live; it is recorded there, not here. |
+| Status | POC 7, 11 and 12 ran in part on 2026-10-28 and 29; each has a **Result** paragraph saying which steps ran and what is still open. The others are planned. The [OpenSandbox spike](research/opensandbox-spike.md) ran OpenSandbox's Docker runtime live; it is recorded there, not here. |
 | Why | Most of the implementation is tested in-process with fakes. When these were written only the `opensandbox` adapter had run against a real backend (Docker runtime). These experiments retire the risks that unit tests cannot. |
 | Runtime change | The move to OpenSandbox removed Differently's Firecracker node agent. POCs about the agent are obsolete and kept as history; POC 11–13 cover OpenSandbox. |
 | Related | [Roadmap](roadmap.md) · [Backlog E2, E5, E18–E21](backlog.md) · [Reliability and performance](reliability-and-performance.md) |
@@ -21,7 +21,7 @@ Kubernetes distribution and CNI.
 | 4 | Memory snapshot restore with network overrides | Restored clones may be broken or not unique | `snapshots.memory` on Firecracker | ⛔ obsolete, see 11 |
 | 5 | Rootfs copy-on-write | Full copies make create slow and disks large | Default storage layout, boot SLO | ⛔ obsolete |
 | 6 | Postgres failover and leader handover | Lost writes, double activation, stuck leadership | HA claims | 📋 |
-| 7 | External provider live-account verification | Adapters written from specs may be wrong | Moving Daytona and Freestyle from 🧪 to ✅ | ✅ ran 2026-10-29 (Daytona's VM class not run) |
+| 7 | External provider live-account verification | Adapters written from specs may be wrong | Moving Daytona and Freestyle from 🧪 to ✅ | 🟡 partial: both adapters ran live on 2026-10-29; Daytona's `linux-vm` class, Freestyle `/resize`, plan limits and recorded fixtures open |
 | 8 | Agent liveness and partition tolerance | A network blip may destroy VMs | Production use of private pools | ⛔ obsolete, see 13 |
 | 9 | VM networking under real CNIs | Isolation rules untested; DNS undefined | Network isolation claims | ⛔ obsolete, see 12 and E19 |
 | 10 | Control-plane throughput on Postgres | Unknown scheduling limits | Capacity guidance | 📋 |
@@ -286,12 +286,13 @@ virtualization on a supported family), and restores memory snapshots so that
 
 **Result (2026-10-29, partial).** Target (b) only: single-node k3s on an
 Azure Standard_D8s_v6 under nested KVM, OpenSandbox 1.2.0. Steps 1 to 3 done
-(a 64 GiB XFS reflink state root). Step 4: `TestLiveOpenSandbox` passes and
-is recorded as `fastsandbox-1.2.0`. On this host the end-to-end suite ran
-only in part; later the same day, on a two-node k3s cluster with a
-`Standard_D16s_v6` KVM node, 14 of its 18 tests ran on the microVM pool and
-passed ([results](../test/e2e/README.md#verified-on)). The 100-cycle loop
-has not run. The guest runs its own kernel (6.18, host 7.0), and
+(a 64 GiB XFS reflink state root). Step 4: `TestLiveOpenSandbox` passes. On
+this host the end-to-end suite ran only in part. Later the same day, on a
+two-node k3s cluster with a `Standard_D16s_v6` KVM node, the live test
+passed again and that run is the `fastsandbox-1.2.0` recording in the
+repository, and 14 of the end-to-end suite's then 18 tests ran on the
+microVM pool and passed ([results](../test/e2e/README.md#verified-on)). The
+100-cycle loop has not run. The guest runs its own kernel (6.18, host 7.0), and
 OpenWork's Workbot desktop kept its processes and unsaved work across pause
 and resume, and across an idle pause woken by a port request. Steps 5 to 9
 and target (a) are not done. Timings and gaps:
@@ -314,7 +315,8 @@ criteria.
 
 ## POC 12. OpenSandbox Kubernetes runtime
 
-**Risk.** Only the Docker runtime has run. With the Kubernetes runtime,
+**Risk.** When this was written only the Docker runtime had run. With the
+Kubernetes runtime,
 sandbox networking, how the control plane reaches `execd` (through the
 server's proxy, the adapter's default, or directly), port endpoints and
 multi-node scheduling are unverified, as is the interaction with the Helm

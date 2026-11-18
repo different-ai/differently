@@ -14,7 +14,8 @@ a live OpenSandbox server: single-node k3s on Azure
 ([one Linux VM](single-vm.md), 2026-10-28 and 29) and two-node k3s on Azure
 ([azure-vms.md](azure-vms.md), 2026-10-29). Not run: this page's steps in
 this order, managed clusters (EKS, GKE, AKS) and node drains. The last
-recorded install on a cluster was on 2026-10-29, before `v0.1.0-alpha.3`.
+recorded install on a cluster was on 2026-10-29, with pre-release code; the
+only published release recorded as installed on one is `v0.1.0-alpha.1`.
 Since then CI has linted and rendered the chart (`helm lint`, and
 `helm template` with each value set in `deploy/helm/differently/ci/`)
 without installing it; the [changelog](../../CHANGELOG.md) says what ran for
@@ -65,10 +66,12 @@ documentation. This chart does not do it for you. Decide:
 - **API key.** Set the server's `api_key`. Without one, OpenSandbox refuses to
   start unless insecure mode is acknowledged; do not run it that way.
 - **Versions.** Pin the server and `execd` images. The adapter was checked
-  against server `release-1.2.0` with two `execd` versions: `release-1.2.0`
-  (set `opensandbox.lineEndings: kept`), which every run since 2026-10-28
-  and CI use, and `v1.1.0` (the default, `lineEndings: stripped`), which the
-  first runs used.
+  against server `release-1.2.0` with two `execd` versions: `release-1.2.0`,
+  which every run since 2026-10-28 and CI use and which needs
+  `opensandbox.lineEndings: kept`, and `v1.1.0`, which the first runs used
+  and which needs `lineEndings: stripped`. The chart leaves `lineEndings`
+  empty, and the adapter then uses `stripped`: set `kept` for
+  `release-1.2.0` or later.
 - **Location.** The chart's default `apiURL` assumes a Service
   `opensandbox-server` in namespace `opensandbox-system` on port 80, which is
   where OpenSandbox's own chart puts it. Note the real URL if yours differs.

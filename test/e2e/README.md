@@ -125,11 +125,12 @@ How to read the counts: each one is out of the tests the suite had at that
 run. It grew from 10 tests on 2026-10-28 to 14 and then 18 by 2026-10-29, so
 "14/14" on the Docker and Kubernetes runtimes was the whole suite that day,
 while "14/14 run" on the two-node Fast Sandbox pool was 14 of 18. Since
-2026-11-10 CI has run all 18 on the Docker runtime on every pull request; on
-`pre-release` on 2026-11-18 the result was still 16 passed and 2 skipped
-(`TestDesktopStreams` needs a desktop image, and
-`TestIdlePauseAndWakeThroughPortURL` a microVM pool). The Kubernetes and
-Fast Sandbox runs have not been repeated since 2026-10-29.
+2026-11-10 CI has run the whole suite on the Docker runtime on every pull
+request; on `pre-release` on 2026-11-18 that was 18 tests, of which 16
+passed and 2 were skipped (`TestDesktopStreams` needs a desktop image, and
+`TestIdlePauseAndWakeThroughPortURL` a microVM pool). Other pages point here
+for the current count: update this paragraph when a test is added. The
+Kubernetes and Fast Sandbox runs have not been repeated since 2026-10-29.
 
 Not covered yet:
 
