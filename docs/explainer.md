@@ -89,9 +89,11 @@ To **use it with a team**, you need three things you run yourself:
   server;
 - Postgres, so state survives a restart.
 
+To see all three working first, [One Docker host](deploy/docker.md) starts
+them from one downloaded file, with sandboxes as containers.
 [One Linux VM on any cloud](deploy/single-vm.md) sets up all three on a
-single machine. The [deployment overview](deploy/README.md) lists the other
-ways and says which have been tested.
+single machine for a team. The [deployment overview](deploy/README.md) lists
+the other ways and says which have been tested.
 
 Everything else can wait until you need it: external providers, policies
 beyond the default, quotas, the admin console and the experimental adapters.

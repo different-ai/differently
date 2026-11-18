@@ -253,7 +253,7 @@ under a control plane you run. See the
 | `api/openapi.yaml` | The HTTP API contract (a test keeps it in sync with the router) |
 | `sdk/typescript`, `sdk/python` | Official SDKs |
 | `console/` | The admin console: static files for any host, or Node with sign-in |
-| `deploy/` | Helm chart (control plane only), Terraform (AWS) |
+| `deploy/` | Helm chart (control plane only), the Compose file for one Docker host, Terraform (AWS) |
 | `docs/` | Guides, deployment, architecture, security, roadmap |
 | `site/` | The website and docs site |
 | `test/e2e`, `test/opensandbox` | The real-stack end-to-end suite and the live OpenSandbox checks |
