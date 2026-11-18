@@ -46,26 +46,6 @@ Rules that always apply:
 - Ask the person only for the things listed under "Ask first" in a task.
 - Say what you did not verify.
 
-<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
-Version note: `differently run`, and the SDKs finding a local server by
-themselves, are newer than `v0.1.0-alpha.5`. If `differently --version`
-prints that version or an older one:
-
-- instead of `differently run -- echo hello`, use
-  `differently sandbox create --wait`, copy the ID it prints, then
-  `differently sandbox exec <id> -- echo hello` and
-  `differently sandbox delete <id>`;
-- give the SDKs the key and the project yourself: set
-  `DIFFERENTLY_API_KEY` to the contents of `~/.differently/dev/token` and
-  pass `projectId: "prj_default"` (Python: `project_id="prj_default"`) to
-  `sandboxes.create`;
-- `differently templates` and `--from-snapshot` do not exist, and
-  `differently capabilities` prints JSON instead of a table. Read
-  `GET /v1/templates`, and start from a snapshot with `fromSnapshot` in the
-  API or an SDK;
-- `differently admin template` does not exist: declare the template under
-  `templates:` in the server's config file and restart the server.
-
 ### Task A: install it and run a first sandbox
 
 Nothing to ask first. Works on macOS and Linux (on Windows, use WSL).

@@ -80,14 +80,6 @@ It never replaces a default, so the organizations you add later change
 nothing for your own commands; the steps below name each organization and
 project explicitly.
 
-<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
-> **Version note.** `differently run`, the saved default project and
-> `key create` without flags are newer than `v0.1.0-alpha.5`, the latest
-> release. With that release's CLI, pass the project to every command
-> (`--project <project-id>`, and `--org` with `--key-project` to
-> `key create`) and use `differently sandbox create --wait` instead of
-> `run`.
-
 ### 2.1 Create the organization with quotas
 
 ```bash

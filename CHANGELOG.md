@@ -6,6 +6,64 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.6] — 2026-11-18
+
+Sixth alpha, published as a GitHub pre-release. Not for production. This one
+is about the first hour with Differently: getting it, running a first
+sandbox, and getting straight answers before committing to it. Installing is
+one command and a first sandbox is one more (`differently run`); the SDKs
+find a local server by themselves; a real installation gives a first sandbox
+with no ID copied by hand; the whole stack starts on a Docker host from one
+downloaded Compose file and published images; one template name covers each
+provider's own image and can be set on a running server; and the website
+gains an explainer, a page of questions people ask, `/agents.txt` and
+`/llms.txt`. The guides were also made to agree on what has been verified.
+
+What ran for this release: the unit and in-process tests, the Postgres
+conformance and acceptance job, the end-to-end suite on OpenSandbox's Docker
+runtime and the container image builds, in CI on each pull request (#115 to
+#123). From #120 on, CI also starts the new Compose file on a runner and
+runs one sandbox through it, with the server image built from the commit
+and with the published `0.1.0-alpha.5` image. The merged tree passed
+`make verify`, `make test-postgres` against a local PostgreSQL and the site
+build before this release was prepared. By hand: the three commands with an
+empty home directory, from a release of the branch served locally, and both
+SDK snippets with nothing configured; `login`, `admin org create` and `run`
+against a server started from a config file without `--dev`, with a `remote`
+plugin as its pool; the template commands against a dev-mode server with
+three pools, one process throughout; and the guides' laptop examples as
+written.
+
+What has not run: `install.sh` against a GitHub release before this one was
+published; the Compose file anywhere but GitHub's Linux runner (not Docker
+Desktop, Colima, rootless Docker, Podman or arm64), and anything in its
+guide after the first sandbox; templates and the no-copied-ID sequence
+against a real sandbox backend or a cluster, and stored templates with two
+server processes on one database; the Helm chart on a cluster; the SDKs'
+local-server fallback on Windows, Deno, Bun or Node below 20.16; and the
+live adapter tests against Daytona and Freestyle accounts and the Kubernetes
+and Fast Sandbox runtimes, which last ran on earlier code (see `Verified`
+under 0.1.0-alpha.2).
+
+Upgrading from 0.1.0-alpha.5: the Postgres store gains migration
+`0006_templates` (one new table), applied by `differently-server migrate` as
+the chart already runs it; like every migration it is forward only. A server
+older than this release does not know templates set through the API, so set
+them once every replica runs this release, and move them into the config
+file before rolling back. In the CLI, `differently capabilities` and
+`differently admin org create` print a table and need `-o json` for the old
+output; `differently key create` with neither `--org` nor `--key-project`
+limits a key that holds only `sandboxes:` scopes to the default project
+(`--org` gives the old result); and a saved project is used only with the
+server it was saved for. In the API, a refusal with `no_eligible_pool` can
+carry a more specific reason and a `template` or `pool` detail under the
+same code; a sandbox whose template is removed before it boots fails instead
+of booting the plain name; `POST /v1/sandboxes` refuses control characters
+in `template`; `DELETE /v1/admin/pools/{name}` answers 409 while the pool is
+the only one a stored template can run on; and items of `GET /v1/templates`
+gain `source`. The audit log gains the actions `template.put`,
+`template.image_delete`, `template.delete` and `sandbox.placed_again`.
+
 ### Added
 
 - **A template can be set on a running server**, with no config edit and no
@@ -1095,7 +1153,8 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.5...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.6...pre-release
+[0.1.0-alpha.6]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.3

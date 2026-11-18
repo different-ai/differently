@@ -7,7 +7,7 @@ It works the same on Azure, AWS, Google Cloud or your own hardware; only the
 command that creates the VM differs.
 
 > **Last verified on 2026-10-29, not with the version installed below.**
-> The commands on this page install `v0.1.0-alpha.5`, which has not been
+> The commands on this page install `v0.1.0-alpha.6`, which has not been
 > installed on this setup. The only published release recorded as installed
 > on it is `v0.1.0-alpha.1`.
 >
@@ -161,7 +161,7 @@ Use the chart and images from the
 [latest release](https://github.com/different-ai/differently/releases):
 
 ```bash
-VERSION=0.1.0-alpha.5
+VERSION=0.1.0-alpha.6
 curl -fsSLO https://github.com/different-ai/differently/releases/download/v$VERSION/differently-$VERSION.tgz
 
 kubectl create namespace differently
@@ -211,7 +211,7 @@ Linux; the script is described in the
 [quickstart](../guides/quickstart.md#1-install)):
 
 ```bash
-curl -fsSL https://different-ai.github.io/differently/install.sh | DIFFERENTLY_VERSION=v0.1.0-alpha.5 sh
+curl -fsSL https://different-ai.github.io/differently/install.sh | DIFFERENTLY_VERSION=v0.1.0-alpha.6 sh
 ```
 
 ```bash
@@ -226,16 +226,6 @@ differently run -- echo hello            # a sandbox in that project: created, u
 saves the project as the CLI's default, so there is no ID to copy into the
 next command. For an application, `differently key create dev` makes a key
 that works only in that project; its token is shown once.
-
-<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
-> **Version note.** `differently run`, the saved default project and
-> `key create` without flags are newer than `v0.1.0-alpha.5`, the release
-> installed above. With that release's CLI, copy the two IDs from what
-> `admin org create` prints:
-> `differently key create dev --org <org-id> --key-project <project-id>`,
-> then `DIFFERENTLY_API_KEY=<the new key> differently sandbox create --profile small --wait`.
-> A CLI built from source (`make build`) has the short sequence and works
-> with that release's server.
 
 The dashboard is at <http://localhost:8080/dashboard/>; sign in with the
 token. [Organization onboarding](../guides/organization-onboarding.md) covers

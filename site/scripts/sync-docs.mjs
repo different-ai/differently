@@ -368,7 +368,7 @@ function cliPage() {
     '',
     `Generated from the help output of [\`cmd/differently\`](${GITHUB}/tree/${BRANCH}/cmd/differently). The [quickstart](${BASE}/docs/guides/quickstart/) installs it; from a checkout, \`make build\` puts it in \`bin/differently\`.`,
     '',
-    'Configuration comes from flags, then `DIFFERENTLY_URL`, `DIFFERENTLY_API_KEY` and `DIFFERENTLY_PROJECT`, then the file written by `differently login`. Against a local `--dev` server the CLI picks up the operator token from `~/.differently/dev/token`.',
+    'Configuration comes from flags, then `DIFFERENTLY_URL`, `DIFFERENTLY_API_KEY` and `DIFFERENTLY_PROJECT`, then the file written by `differently login` (and by `differently admin org create`, which saves the first project as the default for that server). Against a local `--dev` server the CLI picks up the operator token from `~/.differently/dev/token`.',
     '',
   ];
   for (const [args, text] of sections) {

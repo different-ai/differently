@@ -47,7 +47,7 @@ Apache-2.0, fully self-hosted, no telemetry. Built by the
   <br><sub>▶ <a href="https://different-ai.github.io/differently/#video">Watch the 36-second intro</a></sub>
 </p>
 
-> **Pre-release ([`v0.1.0-alpha.5`](https://github.com/different-ai/differently/releases)).**
+> **Pre-release ([`v0.1.0-alpha.6`](https://github.com/different-ai/differently/releases)).**
 > The whole platform is implemented and tested end to end against real
 > OpenSandbox servers (Docker, Kubernetes and Fast Sandbox microVM
 > runtimes). It isn't ready for production workloads yet: see
@@ -89,12 +89,6 @@ differently run -- echo hello                                           # in a s
 keeps state in memory and runs commands **on your machine with no
 isolation**: it is for learning the API, CLI and SDKs, not for code you do
 not trust. The dashboard is at <http://localhost:8080/dashboard/>.
-
-<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
-> `differently run`, and the SDKs finding a local server by themselves, are
-> newer than `v0.1.0-alpha.5`, the latest release. The
-> [quickstart](docs/guides/quickstart.md) says what to type with that
-> release, and how to build from source instead (`make build`, Go 1.26+).
 
 **With a coding agent.** Paste this into Claude Code, Codex, Cursor or any
 agent that can run commands:

@@ -29,7 +29,7 @@ Chart versions: in a checkout, `Chart.yaml` says `version: 0.3.0`, and its
 `appVersion` names the release whose images it installs. Each
 [release](https://github.com/different-ai/differently/releases) publishes
 the same chart packaged under the release's own version,
-`differently-<version>.tgz` (for example `differently-0.1.0-alpha.5.tgz`).
+`differently-<version>.tgz` (for example `differently-0.1.0-alpha.6.tgz`).
 To install exactly what was released, check out the release tag, or download
 that file and pass it to `helm install` in place of `deploy/helm/differently`
 ([single-vm.md](single-vm.md#3-install-differently) does this).
@@ -323,16 +323,6 @@ differently key create first-sandbox   # limited to the default project
 The token is shown only once, so store it in your secret manager. To replace
 it later without downtime, rotate it with a grace period
 ([rotate Differently API keys](../guides/keys-and-providers.md#rotate-differently-api-keys-without-downtime)).
-
-<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
-> **Version note.** `differently run`, the saved default project and
-> `key create` without flags are newer than `v0.1.0-alpha.5`, the latest
-> release. With that release's CLI, use the HTTP calls below, or copy the two
-> IDs that `admin org create` prints into
-> `differently key create first-sandbox --org <org-id> --key-project <project-id>`
-> and run `differently sandbox create --profile small --wait` with the new
-> key. A CLI built from this repository (`make build`) has the short
-> sequence.
 
 <details>
 <summary>The same with the HTTP API instead of the CLI</summary>
