@@ -13,11 +13,14 @@ OpenSandbox server, and is marked as such.
 
 - [ ] Read the [trust model](trust-model.md), especially §6 (known issues) and
       §7 (residual risks). Decide whether they are acceptable for your data.
-- [ ] Remember the evidence level: OpenSandbox has run through Differently
-      only with the Docker runtime; its Kubernetes runtime and Fast Sandbox
-      have not, and the Daytona and Freestyle adapters have not run against
-      live accounts. Run your own validation ([proof-of-concepts.md](../proof-of-concepts.md))
-      before production.
+- [ ] Remember the evidence level: OpenSandbox's Docker runtime runs
+      through Differently in CI on every pull request. Its Kubernetes
+      runtime (k3s on Azure) and Fast Sandbox (Azure, nested KVM), and the
+      Daytona and Freestyle adapters against live accounts, last ran on
+      2026-10-29, before `v0.1.0-alpha.3`. Managed clusters, node drains and
+      isolation probes inside a microVM have not run. Run your own
+      validation ([proof-of-concepts.md](../proof-of-concepts.md)) before
+      production.
 - [ ] Never run `differently-server --dev` or a `devhost` pool outside a
       laptop. `devhost` runs commands on the server host with no isolation.
 

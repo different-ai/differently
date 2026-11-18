@@ -6,13 +6,18 @@ runtime) and Differently's Helm chart, all from public release artifacts.
 It works the same on Azure, AWS, Google Cloud or your own hardware; only the
 command that creates the VM differs.
 
-> **Verified 2026-10-28** on an Azure `Standard_D8s_v6`: k3s v1.36.5,
-> OpenSandbox 1.2.0 and Differently `v0.1.0-alpha.1`. A sandbox ran within
-> about 2 s, and the end-to-end suite passed 12/12 against this setup; with
-> a snapshot registry, the ingress gateway and egress policy added
-> (2026-10-29), it passed 14/14. The commands below install `v0.1.0-alpha.5`,
-> which has not itself been installed on this setup yet. The AWS, Google
-> Cloud and bare-metal commands are the equivalent steps, not yet run there.
+> **Last verified on 2026-10-29, not with the version installed below.**
+> The commands on this page install `v0.1.0-alpha.5`, which has not been
+> installed on this setup. The only published release recorded as installed
+> on it is `v0.1.0-alpha.1`.
+>
+> What ran: on 2026-10-28, on an Azure `Standard_D8s_v6` with k3s v1.36.5,
+> OpenSandbox 1.2.0 and Differently `v0.1.0-alpha.1`, a sandbox ran within
+> about 2 s and the end-to-end suite passed 12/12. On 2026-10-29, with a
+> snapshot registry, the ingress gateway and egress policy added, it passed
+> 14/14 (every test it then had), on pre-release code later released as
+> `v0.1.0-alpha.2`. The AWS, Google Cloud and bare-metal commands are the
+> equivalent steps, not yet run there.
 
 This is a single-node evaluation or team setup, not a highly available one.
 Sandboxes are containers that share the VM's kernel. For production, see
@@ -211,11 +216,26 @@ curl -fsSL https://different-ai.github.io/differently/install.sh | DIFFERENTLY_V
 
 ```bash
 export DIFFERENTLY_URL=http://localhost:8080 DIFFERENTLY_API_KEY="$(cat operator-token)"
-differently doctor                                   # server, auth and pool health
-differently admin org create my-team                 # an organization with a default project
-differently key create dev --org <org-id> --key-project <project-id>
-DIFFERENTLY_API_KEY=<the new key> differently sandbox create --profile small --wait
+differently doctor                       # server, auth and pool health
+differently login                        # saves the URL and the operator token
+differently admin org create my-team     # an organization and its first project
+differently run -- echo hello            # a sandbox in that project: created, used, deleted
 ```
+
+`admin org create` prints the IDs of the organization and its project and
+saves the project as the CLI's default, so there is no ID to copy into the
+next command. For an application, `differently key create dev` makes a key
+that works only in that project; its token is shown once.
+
+<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
+> **Version note.** `differently run`, the saved default project and
+> `key create` without flags are newer than `v0.1.0-alpha.5`, the release
+> installed above. With that release's CLI, copy the two IDs from what
+> `admin org create` prints:
+> `differently key create dev --org <org-id> --key-project <project-id>`,
+> then `DIFFERENTLY_API_KEY=<the new key> differently sandbox create --profile small --wait`.
+> A CLI built from source (`make build`) has the short sequence and works
+> with that release's server.
 
 The dashboard is at <http://localhost:8080/dashboard/>; sign in with the
 token. [Organization onboarding](../guides/organization-onboarding.md) covers

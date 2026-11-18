@@ -255,8 +255,8 @@ api-key
 
 {{/*
 The server configuration file. User keys from .Values.config plus the
-chart-managed keys (listen, dataDir, store.driver), the OpenSandbox pool
-(first) and provider pools (last).
+chart-managed keys (listen, dataDir, metrics, store.driver, publicURL), the
+OpenSandbox pool (first) and provider pools (last).
 */}}
 {{- define "differently.config" -}}
 {{- $cfg := deepCopy (.Values.config | default dict) -}}

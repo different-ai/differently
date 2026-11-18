@@ -40,9 +40,19 @@ commonLabels: {}
 # unknown keys are errors, and values.schema.json mirrors that schema so
 # typos fail at `helm install` time.
 #
-# Chart-managed keys you cannot set here: listen (from server.containerPort),
-# dataDir (/var/lib/differently, an emptyDir), dev (always false), auth (env
-# variable names), store.dsnEnv (DIFFERENTLY_DATABASE_URL).
+# Keys the chart writes itself:
+#   - listen (from server.containerPort), dataDir (/var/lib/differently, an
+#     emptyDir) and metrics (from metrics.port);
+#   - store.driver (memory unless you set it below) and publicURL (the first
+#     ingress host when empty);
+#   - pools: the opensandbox block first, then config.pools, then providers.*.
+#
+# Keys you cannot set here, because the schema rejects them: listen, dataDir,
+# metrics, dev, auth and store.dsnEnv. The templates refuse dev a second time
+# (dev mode enables the devhost adapter, which has no isolation). auth and
+# store.dsnEnv stay unset, so the server reads its default variables,
+# DIFFERENTLY_BOOTSTRAP_TOKEN and DIFFERENTLY_DATABASE_URL, which the chart
+# sets from Secrets.
 #
 # Secrets never belong in this block. Pools reference credentials by
 # environment variable (credentials: {env: NAME}); the chart wires the

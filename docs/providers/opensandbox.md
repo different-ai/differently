@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Verified live** (2026-10-28 and 29): the end-to-end suite passes 14/14 against OpenSandbox 1.2.0 on its Docker runtime (arm64, Colima) and on its Kubernetes runtime (single-node k3s on Azure, with a snapshot registry, signed ports and egress policy) |
+| Status | **Verified live** (2026-10-28 and 29): the end-to-end suite passed 14/14, every test it then had, against OpenSandbox 1.2.0 on its Docker runtime (arm64, Colima) and on its Kubernetes runtime (single-node k3s on Azure, with a snapshot registry, signed ports and egress policy) |
 | Adapter | `opensandbox` (`internal/adapters/opensandbox`) |
 | Trust | declared: `private` when you run the server, `external` when someone else does |
 | Isolation | the runtime's: containers on the Docker and Kubernetes runtimes (shared host kernel), Firecracker microVMs with Fast Sandbox. The pool declares which with `isolation` |
@@ -98,17 +98,20 @@ default `https` with signed ports, else `http`) and `portURLSeconds`
 - Unit tests against a fake OpenSandbox server, and real Docker and
   Kubernetes responses recorded in `testdata/recordings` and replayed in
   every `go test`.
-- The [end-to-end suite](../../test/e2e/README.md), 14/14, on the Docker
-  runtime (Colima, arm64) and the Kubernetes runtime (single-node k3s on an
-  Azure Standard_D8s_v6, both charts installed with Helm), 2026-10-29,
-  including stop/start, snapshots, fork, signed port URLs, stdin and idle
-  auto-stop with wake.
+- The [end-to-end suite](../../test/e2e/README.md), 14/14 (every test it
+  then had), on the Docker runtime (Colima, arm64) and the Kubernetes
+  runtime (single-node k3s on an Azure Standard_D8s_v6, both charts
+  installed with Helm), 2026-10-29, including stop/start, snapshots, fork,
+  signed port URLs, stdin and idle auto-stop with wake. CI has run it on the
+  Docker runtime on every pull request since 2026-11-10; the Kubernetes run
+  has not been repeated.
 - The Fast Sandbox runtime, live on single-node k3s (Azure
-  Standard_D8s_v6, nested KVM), 2026-10-29: the adapter scenario, recorded
-  as `fastsandbox-1.2.0`, and OpenWork's Workbot desktop through
-  Differently: create, viewer streamed over a port URL, pause and resume
-  keeping memory, idle pause and wake by a port request.
-- The end-to-end suite on a Fast Sandbox pool, on two-node k3s with a
-  Standard_D16s_v6 KVM node, 2026-10-29: 14 of 14 run passed
-  ([azure-vms.md](../deploy/azure-vms.md#verify)).
+  Standard_D8s_v6, nested KVM), 2026-10-29: the adapter scenario and
+  OpenWork's Workbot desktop through Differently: create, viewer streamed
+  over a port URL, pause and resume keeping memory, idle pause and wake by a
+  port request.
+- The adapter scenario again and the end-to-end suite on a Fast Sandbox
+  pool, on two-node k3s with a Standard_D16s_v6 KVM node, 2026-10-29: the
+  scenario is the `fastsandbox-1.2.0` recording, and 14 of the suite's then
+  18 tests ran, and passed ([azure-vms.md](../deploy/azure-vms.md#verify)).
 - Not run: node drains, more than one KVM node, managed EKS, GKE and AKS.

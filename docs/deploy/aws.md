@@ -6,7 +6,9 @@
 
 Status: **documented**. The Terraform module is **unvalidated**: it has not
 been through `terraform validate`, `plan` or `apply`. Nested virtualization
-on EKS is **unverified**, and so is OpenSandbox's Fast Sandbox runtime.
+on EKS is **unverified**, and so is OpenSandbox's Fast Sandbox runtime on
+AWS: it has run with Differently only on Azure VMs
+([azure-vms.md](azure-vms.md)).
 
 Differently's control plane runs on any EKS node. Sandboxes run on an
 OpenSandbox server you install in the cluster

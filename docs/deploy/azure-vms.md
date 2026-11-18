@@ -227,7 +227,7 @@ Checked on this layout:
 | Fork | snapshot about 180 s, the fork running about 85 s later with the parent's disk, memory and processes |
 | Adapter live scenario (`fastsandbox-1.2.0`) | passed in 9 min 27 s |
 | Freestyle through Differently, Workbot snapshot | create 4 s, pause 44 s, resume 3 s, process kept |
-| End-to-end suite on the microVM pool | 14 of 14 run passed: limits, exec, files, pause and resume (memory, processes and `/dev/shm` kept), snapshot and fork, memory snapshot, port URL, idle pause and wake by a port request (2.3 s), quotas, delete, drift, audit and metrics, capability errors. Not run: the e2e desktop image (Workbot's desktop streamed instead), unpullable images (templates), Differently's own idle sweep (Fast Sandbox idles natively), provider switching (it drains pools) |
+| End-to-end suite on the microVM pool | 14 of its then 18 tests ran, and passed: limits, exec, files, pause and resume (memory, processes and `/dev/shm` kept), snapshot and fork, memory snapshot, port URL, idle pause and wake by a port request (2.3 s), quotas, delete, drift, audit and metrics, capability errors. Not run: the e2e desktop image (Workbot's desktop streamed instead), unpullable images (templates), Differently's own idle sweep (Fast Sandbox idles natively), provider switching (it drains pools) |
 
 To run the suite against such an install, set `DIFFERENTLY_E2E_POOL` to the
 microVM pool and `DIFFERENTLY_E2E_TEMPLATE` / `DIFFERENTLY_E2E_PYTHON_TEMPLATE`

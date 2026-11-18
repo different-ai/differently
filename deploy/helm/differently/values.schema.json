@@ -261,7 +261,7 @@
 
     "config": {
       "type": "object",
-      "description": "Server configuration file. Mirrors the server's strict schema; listen, dataDir, dev, auth and store.dsnEnv are chart-managed.",
+      "description": "Server configuration file. Mirrors the server's strict schema. The chart writes listen, dataDir, metrics, store.driver, publicURL and pools; listen, dataDir, metrics, dev, auth and store.dsnEnv cannot be set here.",
       "additionalProperties": false,
       "properties": {
         "publicURL": {"type": "string", "pattern": "^$|^https?://"},

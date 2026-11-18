@@ -184,7 +184,7 @@ See
 | Exec output | separate stdout/stderr, streaming, line-based | combined into stdout; a timeout is exit 124 without output | separate, buffered, ≤5 min inline |
 | stdin on exec | no (`unsupported_operation`) | no (`unsupported_operation`) | yes |
 | Pause | yes; state kept (checked on the Docker runtime) | VM class only | memory kept |
-| Snapshots | disk; memory only if the runtime captures it and the pool declares `snapshots.memory` (Fast Sandbox, unverified) | filesystem (memory with VM class) | always memory + disk |
+| Snapshots | disk; memory only if the runtime captures it and the pool declares `snapshots.memory` (Fast Sandbox documents it; restoring a sandbox from one is not verified) | filesystem (memory with VM class) | always memory + disk |
 | Stop | no (`unsupported_operation`); pause or delete instead | provider stop | in-guest `poweroff` as root; `/tmp` is emptied at the next boot |
 | Port URLs | only when OpenSandbox serves the port directly without request headers | signed preview URL (1 h) | public `*.style.dev` hostname |
 
