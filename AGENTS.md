@@ -28,8 +28,9 @@ make verify
 ```
 
 It runs gofmt, go vet, Go tests with `-race`, the same build, vet and tests
-with `-tags experimental_adapters` (`make experimental`), the SDK tests and
-the Helm lint, including the replay of recorded OpenSandbox runtimes. For changes touching
+with `-tags experimental_adapters` (`make experimental`), the SDK tests, the
+Helm lint and the Compose file's static checks (`make compose-lint`),
+including the replay of recorded OpenSandbox runtimes. For changes touching
 `internal/store` or `internal/server`, also run `make test-postgres` (the
 store conformance suite and the server acceptance scenarios on Postgres). For `console/`, run
 `npm run typecheck && npm run build && npm run build:server` there; for
@@ -84,6 +85,14 @@ that covers it, and say in the PR what did not run.
   snapshots across providers, [docs/guides/baselines.md](docs/guides/baselines.md)
   (`templates[].images`, `differently templates`, `differently capabilities`).
   An answer there must say where Differently stops, and match the code.
+- The stack people install on one Docker host: `deploy/compose/compose.yaml`
+  (published images, both config files inside it, secrets from a `.env`
+  the guide generates; the site serves it as `/compose.yaml`),
+  [docs/deploy/docker.md](docs/deploy/docker.md), and
+  `test/compose/check.sh`, which starts it and runs a sandbox
+  (`make compose-check-built`, CI's `docker host stack` jobs). It is
+  separate from `test/e2e/compose.yaml`, which builds from the checkout
+  and uses fixed test credentials.
 - How to change, prove, re-record, optimise and release:
   [docs/maintaining.md](docs/maintaining.md).
 - Docs that must stay truthful: `docs/feature-parity.md`, `docs/roadmap.md`,

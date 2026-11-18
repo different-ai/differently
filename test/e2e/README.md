@@ -12,6 +12,12 @@ The tests drive it through the public API with the Go SDK. Some also call
 OpenSandbox directly to plant drift and to check what the backend really
 did. Nothing is faked: every sandbox is a real OpenSandbox sandbox.
 
+To run this stack rather than test it, use
+[`deploy/compose/compose.yaml`](../../docs/deploy/docker.md): the same
+services from published images, with secrets you generate. This directory's
+`compose.yaml` builds the server from the checkout and uses fixed test
+credentials.
+
 The Docker runtime runs sandboxes as containers that share the host kernel.
 This suite therefore proves orchestration, not microVM isolation. That
 includes the API, quotas, placement, lifecycle, reconciliation, audit and

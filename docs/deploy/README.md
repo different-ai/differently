@@ -5,7 +5,7 @@
 | You have | Start with | Time to a first sandbox | Status |
 |---|---|---|---|
 | A laptop | [Quickstart](../guides/quickstart.md) (`differently-server --dev`, no isolation) | 2 minutes | tested |
-| Any Docker host | The [end-to-end stack](../../test/e2e/README.md): Postgres, Differently and OpenSandbox in Compose | 10 minutes | tested |
+| Any Docker host | [One Docker host](docker.md): one Compose file with Postgres, OpenSandbox and Differently from published images | 5 minutes | tested in CI |
 | One Linux VM: Azure, AWS, Google Cloud or bare metal | [One Linux VM on any cloud](single-vm.md): k3s, OpenSandbox's charts, Differently's chart | 30 minutes | tested on Azure |
 | A Kubernetes cluster (EKS, GKE, AKS, k3s, RKE2) | [Kubernetes with Helm](kubernetes.md), then the notes for [AWS](aws.md), [Google Cloud](gcp.md), [Azure](azure.md) or [bare metal](bare-metal.md) | about an hour | Helm install tested on k3s; managed clusters documented |
 | No internet access | [Air-gapped](air-gapped.md) | | documented |
@@ -91,6 +91,7 @@ are OpenSandbox prerequisites for that runtime.
 | Guide | Use it for |
 |---|---|
 | [prerequisites.md](prerequisites.md) | Control-plane requirements, the OpenSandbox server, KVM hosts for Fast Sandbox, ports |
+| [docker.md](docker.md) | One Docker host: download one Compose file, create its secrets, `docker compose up`, first sandbox |
 | [single-vm.md](single-vm.md) | One Linux VM on Azure, AWS, Google Cloud or bare metal: k3s, OpenSandbox and Differently from release artifacts |
 | [kubernetes.md](kubernetes.md) | Installing on an existing cluster with Helm, step by step to the first sandbox |
 | [aws.md](aws.md) | EKS, with `.metal` or nested-virtualization node groups for Fast Sandbox (Terraform in `deploy/terraform/aws`) |
@@ -107,6 +108,7 @@ Deployment artifacts:
 | Path | Contents |
 |---|---|
 | `deploy/helm/differently/` | Helm chart: control plane, an `opensandbox` pool (on by default), optional embedded PostgreSQL, NetworkPolicy, ServiceMonitor, `helm test` |
+| `deploy/compose/compose.yaml` | The whole stack for one Docker host from published images, with both config files inside it ([docker.md](docker.md)). `test/compose/check.sh` starts it and runs a sandbox |
 | `deploy/terraform/aws/` | EKS cluster with a system node group, plus a KVM node group for Fast Sandbox only when `kvm_node_group_enabled = true` |
 | `test/opensandbox/` | A Docker Compose OpenSandbox server (Docker runtime) for checking the adapter |
 
@@ -148,6 +150,7 @@ Postgres against a real OpenSandbox server with the Docker runtime and passed
 | Environment | Runtime path | Status | Notes |
 |---|---|---|---|
 | OpenSandbox 1.2.0 with the Docker runtime (Docker Compose on Colima, arm64) | Containers on one Docker host | **tested** (end-to-end suite 14/14, 2026-10-29) | Checks the API contract, not isolation: containers share the host kernel |
+| The same stack from published images, [`deploy/compose/compose.yaml`](docker.md) (GitHub-hosted Ubuntu runner, x86_64) | Containers on one Docker host | **tested in CI** on every pull request: started as downloaded, one sandbox created, used and deleted | Sandbox ports are published on the bridge gateway only. Not run on Docker Desktop, rootless Docker or Podman; the full end-to-end suite runs on the row above, not on this file |
 | Single-node k3s on an Azure VM, Differently's chart plus OpenSandbox's charts | OpenSandbox Kubernetes runtime (pods) | **tested** (end-to-end suite 14/14, 2026-10-29) | [single-vm.md](single-vm.md). Stop/start, snapshots, fork, port URLs and egress need the [Kubernetes runtime setup](../guides/opensandbox-pools.md#kubernetes-runtime-snapshot-registry-signed-ports-and-egress) |
 | Any conformant Kubernetes 1.29+, Differently's chart plus an OpenSandbox server | Whatever OpenSandbox runs | documented | [kubernetes.md](kubernetes.md); a two-node k3s cluster ran on Azure ([azure-vms.md](azure-vms.md)); managed clusters and node drains not yet run ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)) |
 | OpenSandbox Fast Sandbox on KVM nodes | Firecracker microVMs | **ran live** on Azure (nested KVM), 2026-10-29: single-node k3s on Standard_D8s_v6, then two-node k3s with a Standard_D16s_v6 KVM node ([azure-vms.md](azure-vms.md)) | Recorded adapter scenario, the end-to-end suite on the microVM pool, and Workbot's desktop through OpenWork's runner; node drains not run. Needs an XFS reflink state root with room ([pools guide](../guides/opensandbox-pools.md#measured-on-a-workbot-desktop)). [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter), [backlog E18](../backlog.md#e18-fast-sandbox-spike) |

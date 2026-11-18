@@ -123,7 +123,7 @@ await sandbox.delete();
 
 | Step up to | How | Time |
 |---|---|---|
-| The real stack on any Docker host | `make e2e-prepare e2e-up` from a checkout: Postgres, Differently and an OpenSandbox server ([test/e2e](test/e2e/README.md)) | about 10 minutes |
+| The real stack on any Docker host | [One file and `docker compose up -d --wait`](docs/deploy/docker.md): Postgres, Differently and an OpenSandbox server from published images | about 5 minutes |
 | A server for your team | [One Linux VM on any cloud](docs/deploy/single-vm.md): k3s, OpenSandbox and Differently | about 30 minutes |
 | Your Kubernetes cluster | The [Helm chart](docs/deploy/kubernetes.md) and images from the [latest release](https://github.com/different-ai/differently/releases) | |
 
@@ -146,7 +146,7 @@ and so do its snapshots. See
 | Where | How | Status |
 |---|---|---|
 | Laptop | `differently-server --dev` | Verified (no isolation; for trying it) |
-| Any Docker host | [`test/e2e`](test/e2e/README.md) Compose stack | Verified: end-to-end suite 14/14 |
+| Any Docker host | [One Compose file](docs/deploy/docker.md), published images | Verified in CI: started as downloaded, one sandbox run. The same services pass the [end-to-end suite](test/e2e/README.md) 14/14 |
 | One Linux VM: Azure, AWS, Google Cloud, bare metal | [k3s + Helm](docs/deploy/single-vm.md) | Verified on Azure; same steps elsewhere, not yet run |
 | Existing Kubernetes: EKS, GKE, AKS, k3s, RKE2 | [Helm chart](docs/deploy/kubernetes.md) | Helm install verified on k3s; managed clusters documented |
 | Cloud notes | [AWS](docs/deploy/aws.md) · [Google Cloud](docs/deploy/gcp.md) · [Azure](docs/deploy/azure.md) · [Bare metal](docs/deploy/bare-metal.md) | Documented |

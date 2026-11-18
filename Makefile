@@ -11,7 +11,7 @@ GO_TAGS ?=
 EXPERIMENTAL_TAG := experimental_adapters
 PG_PORT ?= 55432
 
-.PHONY: build build-linux test test-postgres fmt-check vet experimental sdk-test helm-lint verify dev images clean
+.PHONY: build build-linux test test-postgres fmt-check vet experimental sdk-test helm-lint compose-lint verify dev images clean
 
 build:
 	@mkdir -p bin
@@ -72,7 +72,7 @@ helm-lint:
 		helm template differently deploy/helm/differently -f $$f >/dev/null || exit 1; \
 	done
 
-verify: fmt-check vet test experimental sdk-test helm-lint
+verify: fmt-check vet test experimental sdk-test helm-lint compose-lint
 
 dev: build
 	./bin/differently-server --dev
@@ -106,3 +106,21 @@ e2e:
 
 e2e-down:
 	docker compose -f $(E2E_COMPOSE) down -v
+
+# --- The stack people install: deploy/compose on any Docker host ------------
+# test/compose/check.sh starts deploy/compose/compose.yaml the way
+# docs/deploy/docker.md says and runs one sandbox through it.
+#   make compose-lint          the part that needs no Docker (in `make verify`)
+#   make compose-check         with the published image the file names
+#   make compose-check-built   with the server image built from this checkout
+.PHONY: compose-check compose-check-built
+
+compose-lint:
+	test/compose/check.sh --static
+
+compose-check:
+	test/compose/check.sh
+
+compose-check-built:
+	docker build -q -f build/server.Dockerfile -t differently-server:compose-check . >/dev/null
+	DIFFERENTLY_IMAGE=differently-server DIFFERENTLY_VERSION=compose-check test/compose/check.sh

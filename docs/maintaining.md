@@ -28,6 +28,7 @@ control plane does with it.
 | The adapter contract | `pkg/adapter`, `pkg/adapter/adapterhttp`, `internal/adapters/fake` | `adapterhttp` round-trip tests; [adapter specification](adapters/specification.md) |
 | Stored credentials and keys | `internal/secrets`, `internal/server` | [keys-and-providers.md](guides/keys-and-providers.md) lists what is verified |
 | Install and operations | `deploy/helm/differently` (values, schema, templates, NOTES), `cmd/differently-server` (`preflight`, `migrate`) | `make helm-lint`; the ci value sets; the deploy guides |
+| The stack people install on a Docker host | `deploy/compose/compose.yaml` (both config files are inside it; the site serves it as `/compose.yaml`) and [the guide](deploy/docker.md). The secrets commands are written twice, at the top of the file and in the guide, and must stay identical | `make compose-lint` (in `make verify`) checks the two copies, the image version and that the images and runtime settings match `test/e2e`; `make compose-check-built` and `make compose-check` start it on a Docker host and run a sandbox (CI's `docker host stack` jobs) |
 | The OpenWork integration | This repository's API and [docs/guides/openwork.md](guides/openwork.md); the client lives in OpenWork (`packages/sandbox-differently`) | OpenWork's provider tests against a running Differently |
 | The built-in dashboard | `internal/dashboard/static` | Load it against `differently-server --dev` |
 | The admin console | `console/` ([README](../console/README.md)); `src/lib/providers.ts` follows the dashboard's `kinds` | `npm run typecheck`, `npm run build` and `npm run build:server` (CI's `console` job); its pages against dev mode |
@@ -58,10 +59,11 @@ the one before; repeating a rung for reassurance adds nothing.
 | Recorded runtimes | part of `go test` (`TestReplayRecordings`) | Any OpenSandbox adapter change: real responses from the Docker and Kubernetes runtimes, no server |
 | Live adapter | `OPENSANDBOX_URL=… go test -tags live -run TestLiveOpenSandbox ./internal/adapters/opensandbox/`; for the managed providers `DAYTONA_API_KEY=… go test -tags live -run TestLiveDaytona ./internal/adapters/daytona/` and `FREESTYLE_API_KEY=… go test -tags live -run TestLiveFreestyle ./internal/adapters/freestyle/` (a few small sandboxes, all deleted) | A new OpenSandbox call or version; re-recording; any Daytona or Freestyle adapter change |
 | Real stack, local and in CI | `make e2e-prepare e2e-up e2e`; CI's `end-to-end (docker runtime)` job runs the same on every PR | Behaviour across the API, scheduler, store and a real OpenSandbox server on the Docker runtime |
+| The stack as users install it | `make compose-check-built` (the server image from the checkout) or `make compose-check` (the published image the file names); CI's `docker host stack` jobs run both on every PR | A change to `deploy/compose/compose.yaml`, to the server's config or start-up, or to the CLI commands [the guide](deploy/docker.md) uses |
 | Real stack, a real cluster | the e2e suite pointed at an install ([test/e2e](../test/e2e/README.md#run-against-another-deployment)) | Helm, NetworkPolicy, the Kubernetes and Fast Sandbox runtimes, upgrades |
 
-CI runs the first four on every PR, and the real stack on the Docker
-runtime. The live and cluster rungs, and the e2e suite on the Kubernetes and
+CI runs the first four on every PR, the real stack on the Docker runtime,
+and the stack as users install it. The live and cluster rungs, and the e2e suite on the Kubernetes and
 Fast Sandbox runtimes, need a server and are run by hand; record what ran,
 where and with which versions in
 [test/e2e/README.md](../test/e2e/README.md) and
@@ -214,7 +216,10 @@ What the releases so far have shown:
   binary archives, not the chart.
 - A release prep PR changes the CHANGELOG, the chart's `appVersion`
   (`deploy/helm/differently/Chart.yaml`, the image tag a checkout install
-  pulls) and the version strings in the docs and on the website
+  pulls), the image version in `deploy/compose/compose.yaml` and
+  `docs/deploy/docker.md` (`make compose-lint` fails when they differ; CI's
+  published-image job skips itself, with a notice, until the tag is pushed)
+  and the version strings in the docs and on the website
   (`site/src/pages/index.astro`). Merge it and push
   the tag one after the other, so the website never names a release that
   is not published yet.
