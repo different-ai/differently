@@ -1,0 +1,6 @@
+# Keeps a local build from copying what the image builds itself.
+**/node_modules
+console/dist
+console/.env
+console/*.db
+.git

@@ -80,6 +80,7 @@ dev: build
 images:
 	docker build -f build/server.Dockerfile --build-arg GO_TAGS=$(GO_TAGS) -t ghcr.io/different-ai/differently-server:$(VERSION) .
 	docker build -f build/cli.Dockerfile -t ghcr.io/different-ai/differently-cli:$(VERSION) .
+	docker build -f build/console.Dockerfile -t ghcr.io/different-ai/differently-console:$(VERSION) .
 
 clean:
 	rm -rf bin dist

@@ -8,6 +8,18 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- The Helm chart can run the admin console with sign-in. `console.enabled`
+  with `console.url` and `console.allowedEmails` adds one console pod, a
+  volume for its accounts, a generated session secret kept across upgrades, a
+  Service, an Ingress for the console's host and a NetworkPolicy that lets
+  the pod reach only DNS and the Differently server. The console calls
+  Differently inside the cluster with the bootstrap operator token, or with a
+  key from `console.apiKey.existingSecret`. A new image,
+  `ghcr.io/different-ai/differently-console` (`build/console.Dockerfile`), is
+  built in CI and published with releases. Off by default. The templates are
+  linted and rendered and the console's server was run from the image's
+  layout against a local Differently; the chart with the console has not yet
+  been installed on a cluster.
 - Differently can watch the services around the sandboxes. A *stack*
   (`PUT /v1/admin/stacks/{name}`) names a deployment's services and where
   each answers for its health; with kind `openwork`, the roles `den-api`,

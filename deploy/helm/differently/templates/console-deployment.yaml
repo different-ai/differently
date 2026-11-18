@@ -1,0 +1,249 @@
+{{- if .Values.console.enabled }}
+{{- $c := .Values.console }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "differently.consoleName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "console") | nindent 4 }}
+spec:
+  # Accounts are one SQLite file, so one pod, replaced rather than rolled.
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "console") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "differently.componentLabels" (dict "ctx" . "component" "console") | nindent 8 }}
+        {{- with $c.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/settings: {{ list $c.url $c.allowedEmails $c.apiKey $c.auth .Values.auth | toJson | sha256sum }}
+        {{- with $c.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $c.podSecurityContext | nindent 8 }}
+      containers:
+        - name: console
+          image: {{ include "differently.image" (dict "image" $c.image "ctx" .) }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $c.containerPort }}
+              protocol: TCP
+          env:
+            - {name: CONSOLE_MODE, value: server}
+            - {name: HOST, value: "0.0.0.0"}
+            - {name: PORT, value: {{ $c.containerPort | quote }}}
+            - {name: CONSOLE_DB_PATH, value: /data/console.db}
+            - {name: DIFFERENTLY_URL, value: {{ include "differently.internalServerURL" . | quote }}}
+            - {name: BETTER_AUTH_URL, value: {{ $c.url | trimSuffix "/" | quote }}}
+            - {name: CONSOLE_ALLOWED_EMAILS, value: {{ join "," $c.allowedEmails | quote }}}
+            - name: BETTER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "differently.consoleAuthSecretName" . }}
+                  key: {{ $c.auth.secretKey }}
+            - name: DIFFERENTLY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- if $c.apiKey.existingSecret }}
+                  name: {{ $c.apiKey.existingSecret }}
+                  key: {{ $c.apiKey.existingSecretKey }}
+                  {{- else }}
+                  name: {{ include "differently.tokensSecretName" . }}
+                  key: {{ .Values.auth.bootstrapTokenKey }}
+                  {{- end }}
+            {{- with $c.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with $c.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $c.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml $c.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          {{- if $c.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ $c.persistence.existingClaim | default (include "differently.consoleName" .) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with $c.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if and $c.persistence.enabled (not $c.persistence.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "differently.consoleName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "console") | nindent 4 }}
+  annotations:
+    # The accounts outlive the release, like the tokens they sign in beside.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml $c.persistence.accessModes | nindent 4 }}
+  {{- with $c.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $c.persistence.size }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "differently.consoleName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "console") | nindent 4 }}
+  {{- with $c.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $c.service.type }}
+  selector:
+    {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "console") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $c.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- if $c.ingress.enabled }}
+{{- $tls := $c.ingress.tls }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "differently.consoleName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "console") | nindent 4 }}
+  {{- if or $c.ingress.annotations $tls.certManager.clusterIssuer $tls.certManager.issuer }}
+  annotations:
+    {{- with $tls.certManager.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ . | quote }}
+    {{- end }}
+    {{- with $tls.certManager.issuer }}
+    cert-manager.io/issuer: {{ . | quote }}
+    {{- end }}
+    {{- with $c.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+spec:
+  {{- with $c.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $tls.enabled }}
+  tls:
+    - hosts:
+        - {{ include "differently.consoleHost" . | quote }}
+      secretName: {{ $tls.secretName | default (printf "%s-tls" (include "differently.consoleName" .)) }}
+  {{- end }}
+  rules:
+    - host: {{ include "differently.consoleHost" . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "differently.consoleName" . }}
+                port:
+                  name: http
+{{- end }}
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "differently.consoleName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "differently.componentLabels" (dict "ctx" . "component" "console") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "console") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: {{ $c.containerPort }}
+          protocol: TCP
+      {{- with .Values.networkPolicy.console.ingressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    # DNS
+    - ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    # The Differently server
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "differently.componentSelectorLabels" (dict "ctx" . "component" "server") | nindent 14 }}
+      ports:
+        - port: {{ .Values.server.containerPort }}
+          protocol: TCP
+    {{- with .Values.networkPolicy.console.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}

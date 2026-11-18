@@ -24,6 +24,7 @@ network, is for its documentation to answer; it has not been checked here.
 |---|---|
 | `ghcr.io/different-ai/differently-server:0.1.0-alpha.4` | Control plane, migrations, preflight |
 | `ghcr.io/different-ai/differently-cli:0.1.0-alpha.4` | `helm test` only |
+| `ghcr.io/different-ai/differently-console:<version>` | Only with `console.enabled`; published with each release after 0.1.0-alpha.4 |
 | `docker.io/library/postgres:17` | Only with the evaluation-only `postgresql.embedded` |
 | `docker.io/library/busybox:1.37` | Only for the `kubectl debug` checks in these guides |
 | OpenSandbox's server, `execd` and other component images | Your OpenSandbox installation; see step 3 |

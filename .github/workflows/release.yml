@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [server, cli]
+        image: [server, cli, console]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3

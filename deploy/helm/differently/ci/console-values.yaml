@@ -1,0 +1,23 @@
+# The console with sign-in beside the control plane: its own host with TLS,
+# two people allowed to sign up, and the API reachable only from the ingress
+# controller and the console.
+console:
+  enabled: true
+  url: https://console.example.com
+  allowedEmails: [ops@example.com, oncall@example.com]
+  persistence:
+    size: 2Gi
+  ingress:
+    enabled: true
+    className: nginx
+    tls:
+      enabled: true
+      certManager:
+        clusterIssuer: letsencrypt-prod
+
+networkPolicy:
+  server:
+    ingressFrom:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: ingress-nginx
