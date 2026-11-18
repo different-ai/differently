@@ -11,7 +11,7 @@
 | Adapter | `gcp-sandboxes` (`internal/adapters/gcpsandboxes`) |
 | Trust | declared: every pool must state it. Google manages the sandboxes (`external`), but they run in your own project, so declare `private` if your policy treats that project as private |
 | Isolation | "Secure container sandboxing" (Google does not name the runtime) |
-| API checked | aiplatform v1 discovery document (revision 20261012), the [shell sandbox quickstart](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sandbox/shell-sandbox-quickstart), [manage sandboxes](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sandbox/manage-sandboxes), [templates](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sandbox/manage-templates) and [snapshots](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sandbox/manage-snapshots), read 2026-10-28 |
+| API checked | aiplatform v1 discovery document (revision 20261012, and 20261107 on 2026-11-17 for templates, egress and access), the [shell sandbox quickstart](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sandbox/shell-sandbox-quickstart), [manage sandboxes](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sandbox/manage-sandboxes), [templates](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sandbox/manage-templates) and [snapshots](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/sandbox/manage-snapshots), read 2026-10-28 |
 
 This is the `sandboxEnvironments` resource of Gemini Enterprise Agent
 Platform, formerly Vertex AI Agent Engine code execution. The adapter uses
@@ -34,8 +34,8 @@ resource).
 | snapshots.disk | yes | A snapshot always captures memory and filesystem |
 | snapshots.memory | yes | Reported as `kind: memory` whatever was requested |
 | fork | yes | A new sandbox from a snapshot (same owner) |
-| ports.expose | no | The data plane needs a signed JWT and a routing token on every request, so there is no plain URL to return |
-| network.egress-control | no | Set by the template (`egressControlConfig.internetAccess`, off by default), not per sandbox |
+| ports.expose | no | The data plane proxies a request only when it carries the caller's Google credential (`authorizeAccess`) and a routing token, so there is no plain URL to return. A custom-container template can declare ports, but reaching them needs the same credential |
+| network.egress-control | yes, by template | Google sets egress on the template (`egressControlConfig.internetAccess`, off unless set), not per sandbox. The pool advertises the feature when its template has internet access off, and then refuses a request whose `template` allows it. A pool whose template allows internet access does not advertise it |
 | max size | set by the template | Requested resources are not applied |
 | provider TTL backstop | yes | `ttl`: the TTL plus 5 minutes, or 7 days without one. It cannot be moved later |
 
@@ -50,7 +50,19 @@ Set up once per project and region:
    with `{"displayName": "shell", "defaultContainerEnvironment": {"defaultContainerCategory": "DEFAULT_CONTAINER_CATEGORY_SHELL_SANDBOX"}}`.
    Add `"egressControlConfig": {"internetAccess": true}` if sandboxes may
    reach the internet.
-3. Give a service account `roles/aiplatform.user` and download a JSON key.
+3. Give a service account `roles/aiplatform.user`.
+
+The credential says how the server gets that account's tokens:
+
+| Credential | Where it runs | Notes |
+|---|---|---|
+| A service-account JSON key (`"type": "service_account"`) | anywhere | A long-lived key that you store and rotate |
+| `{"type": "metadata_server"}` | GKE with Workload Identity, Compute Engine | Tokens come from the metadata server: the Google service account bound to the server's Kubernetes service account, or the VM's. Optional `serviceAccount` (default `default`) and `metadataHost` (default `metadata.google.internal`, or `GCE_METADATA_HOST`) |
+| A workload identity federation configuration (`"type": "external_account"`) | EKS, AKS, any cluster with an OIDC issuer | The file `gcloud iam workload-identity-pools create-cred-config` writes, with `credential_source.file` pointing at a projected service-account token. The token is exchanged at Google's STS, then for the service account's token when the file has `service_account_impersonation_url`. URL, AWS and executable sources are not supported |
+
+The last two need no secret, so the credential can be a plain environment
+variable: `credentials: {env: GCP_SANDBOXES_CREDENTIAL}` with the value
+`{"type":"metadata_server"}`.
 
 ```sh
 differently admin secret put gcp-sandboxes-key --from-file ./service-account.json
@@ -76,9 +88,13 @@ pools:
     credentials: {secret: gcp-sandboxes-key}
 ```
 
-With Helm, mount the key file and use `credentials: {file: /etc/differently/gcp-key.json}`.
-Allow the server's egress to `*-aiplatform.googleapis.com` and
-`oauth2.googleapis.com`.
+With Helm, mount the key or configuration file and use
+`credentials: {file: /etc/differently/gcp-key.json}`. Allow the server's
+egress to `*-aiplatform.googleapis.com`, and to what the credential calls:
+`oauth2.googleapis.com` for a key, the metadata server (`169.254.169.254`,
+port 80) for `metadata_server`, or `sts.googleapis.com` and
+`iamcredentials.googleapis.com` for federation. The chart's NetworkPolicy
+allows only port 443 to providers by default.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -96,8 +112,14 @@ Allow the server's egress to `*-aiplatform.googleapis.com` and
   does not yet catch duplicates (backlog E0.21).
 - **List** pages through every sandbox of the engine (100 a page) and keeps
   this installation's prefix. Use an engine dedicated to Differently.
-- **Service-account keys only.** GKE Workload Identity and the metadata
-  server are not read yet.
+- **Not read:** user credentials (`authorized_user`) and federation
+  configurations that take their token from a URL, AWS or an executable.
+- **The TTL cannot be moved.** Sandboxes have no update method; Google's
+  guide says to delete and create again. Azure's auto-delete policy can be
+  moved, so this differs from `azure-sandboxes`.
+- **A fork's egress is not checked.** A create from a snapshot names no
+  template, and Google does not document which egress the restored sandbox
+  gets.
 - Long-running operations (create, pause, resume, snapshot) are polled every
   second, for up to 3 minutes. Delete returns once Google accepts it; the
   sandbox then lists as deprovisioning, which counts as gone.
@@ -127,7 +149,13 @@ decoding the three input chunks and running the command with a local
 - pause and resume, including a resume refused with `FAILED_PRECONDITION`;
 - snapshot, fork from a snapshot, the default TTL, deleting a snapshot;
 - paged List per installation, Delete and a deleted sandbox;
-- a 429, a failed operation and credential parsing.
+- a 429, a failed operation and credential parsing;
+- egress control advertised from the template, a request for a template
+  with internet access refused on such a pool, and an unreadable template;
+- a pool that takes its token from a fake metadata server.
 
-The JWT signing is checked with an RSA key in `internal/adapters/cloudhttp`.
-Nothing has run against a real project.
+The JWT signing is checked with an RSA key in `internal/adapters/cloudhttp`,
+which also tests the metadata server route and workload identity federation
+(the token exchange, impersonation, a JSON token file, a refused token)
+against fakes. Nothing has run against a real project, a GKE cluster or a
+Compute Engine VM.

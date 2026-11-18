@@ -5,8 +5,10 @@
 //
 // AWS runs the sessions in its own account, so pools default to
 // TrustExternal; an operator whose policy treats their own AWS account as
-// private may declare trust: private. Requests are signed with SigV4 using
-// a static access key from the pool's credential (no AWS SDK).
+// private may declare trust: private. Requests are signed with SigV4 (no
+// AWS SDK) using the pool's credential: a static access key, or keys
+// Differently refreshes from IAM Roles for Service Accounts, EKS Pod
+// Identity or the EC2 instance role.
 //
 // Mapping, from the AgentCore data-plane API (botocore model 2024-02-28,
 // read 2026-10-28):
@@ -57,7 +59,9 @@ const backstopGrace = 5 * 60
 
 // Options configures the adapter. Pool config keys: region (or the pool's
 // region), codeInterpreter, apiURL. The credential is JSON:
-// {"accessKeyId", "secretAccessKey", optional "sessionToken"}.
+// {"accessKeyId", "secretAccessKey", optional "sessionToken"}, or
+// {"source": "web-identity" | "pod-identity" | "instance-role"} (see
+// cloudhttp.AWSCredential).
 type Options struct {
 	Region      string
 	APIURL      string

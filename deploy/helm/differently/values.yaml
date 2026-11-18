@@ -463,6 +463,104 @@ server:
     port: 8080
     annotations: {}
 
+# ---------------------------------------------------------------------------
+# Console
+# ---------------------------------------------------------------------------
+# The admin console (console/) with sign-in. People open console.url, sign in
+# with an email on the allowlist, and the console's server calls Differently
+# inside the cluster with a key that never reaches the browser. Off by
+# default; the built-in dashboard at /dashboard/ needs none of this.
+console:
+  enabled: false
+  image:
+    registry: ghcr.io
+    repository: different-ai/differently-console
+    # Defaults to the chart appVersion.
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  # The URL people open, e.g. https://console.example.com. Required: sign-in
+  # cookies and redirects are bound to it. The console's ingress takes its
+  # host from here.
+  url: ""
+  # Emails allowed to create an account. Empty means nobody can sign up, so
+  # set at least your own. Signing up is how the first account is made.
+  allowedEmails: []
+  # The Differently key used for everyone who signs in. By default the
+  # bootstrap operator token, so the console shows every page. Point this at
+  # a Secret holding a project key to limit the console to that project.
+  apiKey:
+    existingSecret: ""
+    existingSecretKey: api-key
+  # Signs sessions. Generated once and kept across upgrades with `lookup`;
+  # GitOps tools that render with `helm template` need existingSecret, or
+  # every sync signs everyone out.
+  auth:
+    existingSecret: ""
+    secretKey: better-auth-secret
+    keepSecretOnUninstall: true
+  # Users and sessions are one SQLite file. Without a volume every restart
+  # forgets the accounts.
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    size: 1Gi
+  # For example GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET for GitHub sign-in
+  # (which also needs egress to github.com: networkPolicy.console.extraEgress).
+  extraEnv: []
+  extraEnvFrom: []
+  containerPort: 4321
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile: {type: RuntimeDefault}
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: {drop: [ALL]}
+  startupProbe:
+    httpGet: {path: /api/sign-in-options, port: http}
+    periodSeconds: 2
+    failureThreshold: 60
+  livenessProbe:
+    httpGet: {path: /api/sign-in-options, port: http}
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet: {path: /api/sign-in-options, port: http}
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  priorityClassName: ""
+  podAnnotations: {}
+  podLabels: {}
+  service:
+    type: ClusterIP
+    port: 4321
+    annotations: {}
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    tls:
+      enabled: false
+      # Defaults to <fullname>-console-tls.
+      secretName: ""
+      certManager:
+        clusterIssuer: ""
+        issuer: ""
+
 ingress:
   enabled: false
   className: ""
@@ -536,6 +634,15 @@ networkPolicy:
         port: 80
       # Additional raw NetworkPolicyEgressRule entries.
       extra: []
+  # The console pod (console.enabled). It may reach only DNS and the
+  # Differently server; it is always allowed in by the server's policy.
+  console:
+    # Peers allowed to reach the console (NetworkPolicyPeer list). Empty
+    # allows any source.
+    ingressFrom: []
+    # Additional raw NetworkPolicyEgressRule entries, e.g. TCP 443 for GitHub
+    # sign-in.
+    extraEgress: []
 
 metrics:
   # Serve Prometheus /metrics on its own port, off the API listener and the

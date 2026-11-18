@@ -22,6 +22,7 @@ type Memory struct {
 	keys         map[string]KeyRecord
 	pools        map[string]api.Pool
 	secrets      map[string]SecretRecord
+	stacks       map[string]api.Stack
 	policies     map[string]api.PlacementPolicy
 	sandboxes    map[string]SandboxRecord
 	snapshots    map[string]SnapshotRecord
@@ -36,6 +37,7 @@ func NewMemory() *Memory {
 		keys:      map[string]KeyRecord{},
 		pools:     map[string]api.Pool{},
 		secrets:   map[string]SecretRecord{},
+		stacks:    map[string]api.Stack{},
 		policies:  map[string]api.PlacementPolicy{},
 		sandboxes: map[string]SandboxRecord{},
 		snapshots: map[string]SnapshotRecord{},
@@ -219,6 +221,44 @@ func (m *Memory) UpdateKey(_ context.Context, id string, fn func(*KeyRecord) err
 	}
 	m.keys[id] = clone(k)
 	return k, nil
+}
+
+func (m *Memory) PutStack(_ context.Context, s api.Stack) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stacks[s.Name] = clone(s)
+	return nil
+}
+
+func (m *Memory) GetStack(_ context.Context, name string) (api.Stack, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.stacks[name]
+	if !ok {
+		return s, NotFound("stack", name)
+	}
+	return clone(s), nil
+}
+
+func (m *Memory) ListStacks(context.Context) ([]api.Stack, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]api.Stack, 0, len(m.stacks))
+	for _, s := range m.stacks {
+		out = append(out, clone(s))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (m *Memory) DeleteStack(_ context.Context, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.stacks[name]; !ok {
+		return NotFound("stack", name)
+	}
+	delete(m.stacks, name)
+	return nil
 }
 
 func (m *Memory) PutSecret(_ context.Context, s SecretRecord) error {

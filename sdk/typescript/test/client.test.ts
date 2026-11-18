@@ -169,6 +169,22 @@ test("keys rotate, provider secrets and switching map to their routes", async ()
   assert.deepEqual(mock.calls("POST /v1/admin/pools/daytona/use")[0]?.json(), { approveExternal: true });
 });
 
+test("stacks register, check and delete through their routes", async () => {
+  const stack = { name: "prod", kind: "openwork", components: [{ name: "den-api", role: "den-api", url: "http://den-api:8788", healthPath: "/health", readyPath: "/ready", health: { status: "healthy", version: "1.4.2", latencyMs: 4, checkedAt: "t", since: "t" } }], createdAt: "t", createdBy: "k", updatedAt: "t", updatedBy: "k", health: { status: "healthy", checkedAt: "t" } };
+  mock.on("PUT /v1/admin/stacks/prod", reply(201, stack));
+  mock.on("GET /v1/admin/stacks", reply(200, { items: [stack] }));
+  mock.on("POST /v1/admin/stacks/prod/check", reply(200, { ...stack, health: { status: "degraded", message: "den-api is degraded", checkedAt: "t" } }));
+  mock.on("DELETE /v1/admin/stacks/prod", (_req, res) => void res.writeHead(204).end());
+
+  const params = { kind: "openwork" as const, components: [{ role: "den-api", url: "http://den-api:8788" }] };
+  assert.equal((await client.admin.stacks.put("prod", params)).components[0]?.health?.version, "1.4.2");
+  assert.deepEqual(mock.calls("PUT /v1/admin/stacks/prod")[0]?.json(), params);
+  assert.equal((await client.admin.stacks.list())[0]?.health?.status, "healthy");
+  assert.equal((await client.admin.stacks.check("prod")).health?.status, "degraded");
+  await client.admin.stacks.delete("prod");
+  assert.equal(mock.calls("DELETE /v1/admin/stacks/prod").length, 1);
+});
+
 test("audit events iterate with afterSeq", async () => {
   const event = (seq: number) => ({ seq, time: "t", actor: "k", action: "sandbox.create", resource: "sbx", outcome: "ok", prevHash: "", hash: "" });
   mock.on("GET /v1/audit-events", reply(200, { items: [event(1), event(2)], nextCursor: "2" }));
@@ -198,6 +214,7 @@ test("admin namespace", async () => {
   mock.on("POST /v1/admin/organizations/org_1/suspend", reply(200, { organization: org, terminated: 2 }));
   mock.on("POST /v1/admin/pools/edge/drain", reply(200, { name: "edge", draining: true }));
   mock.on("DELETE /v1/admin/pools/edge", (_req, res) => void res.writeHead(204).end());
+  mock.on("PATCH /v1/admin/pools/edge", reply(200, { name: "edge", budget: { monthly: 250 } }));
   mock.on("POST /v1/admin/sandboxes/sbx_1/terminate", reply(202, sandboxInfo({ status: "terminating" })));
   mock.on("GET /v1/admin/audit/verify", reply(200, { ok: true, events: 42, headHash: "abc" }));
 
@@ -207,6 +224,19 @@ test("admin namespace", async () => {
   assert.equal(suspended.terminated, 2);
   assert.deepEqual(mock.calls("POST /v1/admin/organizations/org_1/suspend")[0]?.json(), { terminate: true, reason: "billing" });
   assert.equal((await client.admin.pools.drain("edge")).draining, true);
+  const budgeted = await client.admin.pools.update("edge", {
+    costModel: { cpuHour: 0.05, memoryGiBHour: 0.016 },
+    budget: { monthly: 250 },
+    attestations: { "soc2-type2": { evidence: "https://trust.example.com", validUntil: "2027-06-30T00:00:00Z" } },
+    preemption: { mode: "idle", idleSeconds: 300 },
+  });
+  assert.equal(budgeted.budget?.monthly, 250);
+  assert.deepEqual(mock.calls("PATCH /v1/admin/pools/edge")[0]?.json(), {
+    costModel: { cpuHour: 0.05, memoryGiBHour: 0.016 },
+    budget: { monthly: 250 },
+    attestations: { "soc2-type2": { evidence: "https://trust.example.com", validUntil: "2027-06-30T00:00:00Z" } },
+    preemption: { mode: "idle", idleSeconds: 300 },
+  });
   await client.admin.pools.delete("edge");
   assert.equal((await client.admin.terminateSandbox("sbx_1", { reason: "abuse" })).status, "terminating");
   assert.equal((await client.admin.verifyAudit()).ok, true);

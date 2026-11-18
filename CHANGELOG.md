@@ -6,6 +6,185 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added
+
+- The load simulator at `/simulator/` shows how routing is set up and lets
+  the visitor configure more of it.
+  - **Priority.** A Policy tab walks through who picks the provider, the rule
+    (strategy and external gate) and the priority for the next sandbox. That
+    list is the placement policy's own ranking, asked several times a second
+    for one more sandbox, with the policy's reason for each provider it holds
+    back; badges on the provider cards match it, and a fold-out shows the
+    configuration that produces it.
+  - **Quotas.** The tenant's `maxActiveSandboxes` and `maxQueued`, set
+    through the admin API: over the first a sandbox stays queued, over the
+    second a create is refused.
+  - **Audit.** The page can show every audit entry with its sequence number
+    and hash, and asks the control plane to verify the chain. The words
+    policy, quotas and audit in the diagram open these tabs.
+  - **Providers.** Any provider of the comparison can be added while the
+    simulation runs, and each can be removed. Adding one says nothing about
+    whether Differently has an adapter for it: every pool is the fake
+    adapter.
+  - **Lifecycle.** Starts and lengths are random, and a run begins empty. A
+    chosen share of sandboxes is kept after its session: it hibernates when
+    idle (a pause, a snapshot where the pool takes one), is woken by its
+    client's next session, and is deleted by `maxPausedSeconds`. What a
+    snapshot, a wake and a cold start take is set on the page.
+  - **Timeline.** A run lasts one, four or eight simulated hours or has no
+    limit; the bar shows the simulated time, the progress and what has been
+    spent at list price (running time only: storage for hibernated
+    sandboxes, minimums and plans are not counted).
+
+  The sidebar is a scenario pick list and the load. `internal/loadsim` gains
+  `AddProvider`, `SetQuota`, `VerifyAudit`, a keep share in the load and the
+  policy's ranking in each snapshot. The WebAssembly build is about 5 MB
+  compressed.
+
+## [0.1.0-alpha.5] — 2026-11-17
+
+Fifth alpha, published as a GitHub pre-release. Not for production. It starts
+making Differently the place to see a whole deployment, not only its
+sandboxes: it can watch the services around them (an OpenWork installation's
+Den, Gateway, Workbot and runner have their health routes built in), and the
+Helm chart can run the admin console with sign-in. The console also manages
+each pool's prices, budget and attestations, the experimental AWS and Google
+Cloud adapters take their credentials from the platform, and the website
+gains a provider comparison and a load simulator.
+
+What ran for this release: the unit and in-process tests, the Postgres
+conformance and acceptance job, the end-to-end suite on OpenSandbox's Docker
+runtime and the container image builds (now including the console image), in
+CI on each pull request (#98 to #109). Stack health was also run by hand
+against a local server with a stand-in for OpenWork's health routes, and the
+console's server was run from its image's layout against a local server.
+
+What has not run: stack probes against a live OpenWork installation; the
+chart with `console.enabled` on a cluster; the live adapter tests against
+Daytona and Freestyle accounts and the Kubernetes and Fast Sandbox runtimes,
+which last ran on earlier code (see `Verified` under 0.1.0-alpha.2); and the
+AWS and Google Cloud credential sources against those clouds.
+
+Upgrading from 0.1.0-alpha.4: the Postgres store gains migration
+`0005_stacks` (one new table), applied by `differently-server migrate` as the
+chart already runs it; like every migration it is forward only. Nothing else
+has to change. The audit log gains the actions `stack.put`, `stack.delete`
+and `stack.health`, and `/metrics` gains `differently_stack_component_up`.
+The console in the chart is off unless `console.enabled` is set, and this is
+the first release with a `differently-console` image.
+
+### Added
+
+- The Helm chart can run the admin console with sign-in. `console.enabled`
+  with `console.url` and `console.allowedEmails` adds one console pod, a
+  volume for its accounts, a generated session secret kept across upgrades, a
+  Service, an Ingress for the console's host and a NetworkPolicy that lets
+  the pod reach only DNS and the Differently server. The console calls
+  Differently inside the cluster with the bootstrap operator token, or with a
+  key from `console.apiKey.existingSecret`. A new image,
+  `ghcr.io/different-ai/differently-console` (`build/console.Dockerfile`), is
+  built in CI and published with releases. Off by default. The templates are
+  linted and rendered and the console's server was run from the image's
+  layout against a local Differently; the chart with the console has not yet
+  been installed on a cluster.
+- Differently can watch the services around the sandboxes. A *stack*
+  (`PUT /v1/admin/stacks/{name}`) names a deployment's services and where
+  each answers for its health; with kind `openwork`, the roles `den-api`,
+  `den-web`, `gateway`, `den-gateway`, `workbot` and `headless-runner` fill in
+  OpenWork's own health and readiness routes. Every replica probes each
+  component about every 10 seconds and reports `healthy`, `degraded` (up but
+  not ready), `unavailable` or `unknown`, with the version the service
+  states and how long it took to answer. A status that holds for two probes
+  is written to the audit log as `stack.health`, once, by the leader, and
+  `differently_stack_component_up` exports it for alerts. The console has a
+  **Stacks** page that shows each stack beside the sandbox pools, and both
+  SDKs have `admin.stacks`. Probes do not follow redirects and may carry a
+  bearer token from a credential reference. This only reads: Differently does
+  not deploy or configure these services, and their health never affects
+  placement. Tested against stand-in servers; not yet run against a live
+  OpenWork installation. The Postgres store gains migration `0005_stacks`.
+- The experimental AWS and Google Cloud adapters take their credentials from
+  the platform, as `azure-sandboxes` already did with a federated token.
+  `aws-agentcore` accepts `{"source": "web-identity"}` (IAM Roles for
+  Service Accounts), `{"source": "pod-identity"}` (EKS Pod Identity) or
+  `{"source": "instance-role"}` (the EC2 instance profile) and renews the
+  keys itself. `gcp-sandboxes` accepts `{"type": "metadata_server"}` (GKE
+  Workload Identity, Compute Engine) or a workload identity federation
+  configuration that reads a token file. `gcp-sandboxes` also advertises
+  `network.egress-control` when its template has internet access off, and
+  then refuses a request for a template that allows it. Tested against
+  fakes only; nothing ran against AWS or Google Cloud. AWS still has no
+  sandbox API with stop and start, snapshots or ports
+  ([AWS](docs/providers/aws-agentcore.md),
+  [Google Cloud](docs/providers/gcp-sandboxes.md)).
+- The console's Providers page manages what each pool charges and may spend.
+  Every pool shows its prices, this month's estimated spend against its
+  budget and its attestations; Manage sets the prices, a monthly budget, the
+  attestations, the concurrency limit and whether the pool is enabled. The
+  page carries the provider catalog from the website's comparison (list
+  prices read on 16 November 2026, how each provider bills, what it documents
+  and states), so a pool can take its provider's list price in one click and
+  record a certification the provider states, and a provider in the default
+  build can be added from the catalog with a price and a budget. Spend is
+  still the estimate from the pool's prices, not an invoice; for providers
+  that bill on use the list rates give an upper bound; a recorded attestation
+  is the operator's declaration, which Differently does not verify. Checked
+  in a browser against a local server with simulated pools (the fake
+  adapter); no real provider account was involved.
+- Both SDKs can set a pool's `budget`, `attestations` and `preemption` when
+  updating it (`admin.pools.update`), and the Python SDK can set `budget` and
+  `attestations` when creating one. The server already accepted them.
+
+- The website has a provider comparison at `/compare/`: 27 sandbox services
+  and runtimes side by side, with list prices normalised to one sandbox of
+  1 vCPU and 2 GiB for an hour, isolation, state, snapshots, self-hosting,
+  what each states about SOC 2, HIPAA and ISO 27001, and how far Differently
+  supports each. Prices were read on 16 November 2026 from the pages the
+  table links to; nothing was benchmarked and no audit report was read. The
+  data is one file, `site/src/data/providers.ts`, and the page carries Open
+  Graph and Twitter metadata with a share image
+  (`node scripts/compare-og.mjs` in `site/` redraws it). The page opens with
+  the eight places providers differ, each explained in a box with a count
+  taken from the data, and has a feature grid with one mark for each provider
+  and capability: documented, with a condition, not offered or not
+  documented, or not collected. A mark is a reading of the provider's
+  documentation, not a test. Sections arrive with a short animation that is
+  off under `prefers-reduced-motion`.
+- The website has a load simulator at `/simulator/`. It runs the control
+  plane itself in the visitor's browser: the HTTP API, admission, the
+  placement policy, the scheduler and the in-memory store, compiled to
+  WebAssembly, with simulated clients. The page fills the window and is built
+  around the console's live routing diagram: your apps, Differently, and five
+  pools named after providers (OpenSandbox as the private cluster, Daytona,
+  Freestyle, E2B and Northflank) with their logos and list prices from the
+  comparison's data, a dot for every slot and a packet for every placement.
+  While it runs the visitor can turn a provider on or off, change its slots
+  or make its backend fail, change the strategy and the external gate, and
+  switch from placement by policy to a split by percentage, where each create
+  is pinned to a provider with `placement.allowedPools`. Provider and policy
+  changes go through the admin API. Clients run tasks (a sandbox per task,
+  deleted after) or keep one long-lived computer that pauses and resumes.
+  Every pool is the fake adapter with delays and the clock is sped up (it
+  stands still while the program computes), so the page shows routing and
+  scheduling decisions and says nothing about a provider or about
+  performance. The program is `internal/loadsim` (tested natively), built for
+  the browser by `cmd/differently-loadsim`; the site build compiles it
+  (3.8 MB compressed) and the `site` workflow also runs when `internal/**`,
+  `pkg/**` or `go.mod` change. `make vet` vets the browser build. The landing
+  page links to it from the hero and shows the diagram in a section of its
+  own.
+
+### Fixed
+
+- Idle preemption no longer pauses a sandbox as it starts. A create records
+  its request as activity, so a sandbox that had waited in the queue longer
+  than the pool's `idleSeconds` counted as idle the moment it ran, and was
+  the first one paused to make room for the next waiting sandbox, before its
+  caller's first command. Idle time now counts from the last call or from
+  when the sandbox started running, whichever is later. Found with simulated
+  load on a full private pool with no overflow: 26 placements for 19 sessions
+  before, 22 for 22 after.
+
 ## [0.1.0-alpha.4] — 2026-11-17
 
 Fourth alpha, published as a GitHub pre-release. Not for production. It adds
@@ -676,7 +855,8 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.4...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.5...pre-release
+[0.1.0-alpha.5]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.2

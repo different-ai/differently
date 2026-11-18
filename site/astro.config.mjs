@@ -58,11 +58,13 @@ export default defineConfig({
           { label: 'Architecture', link: '/docs/architecture/' },
           { label: 'Placement policy', link: '/docs/scheduling/placement-policy/' },
           { label: 'Capacity', link: '/docs/scheduling/capacity/' },
+          { label: 'Load simulator', link: '/simulator/' },
           { label: 'Storage and lifecycle', link: '/docs/storage-and-lifecycle/' },
           { label: 'Reliability and performance', link: '/docs/reliability-and-performance/' },
         ] },
         { label: 'Security', items: [{ autogenerate: { directory: 'docs/security' } }] },
         { label: 'Compare', items: [
+          { label: 'Sandbox providers compared', link: '/compare/' },
           { label: 'Feature parity', link: '/docs/feature-parity/' },
           { label: 'Competitive landscape', link: '/docs/competitive-landscape/' },
         ] },

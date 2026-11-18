@@ -512,6 +512,36 @@
       }
     },
 
+    "console": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {"$ref": "#/definitions/image"},
+        "url": {"type": "string", "description": "The URL people open the console at, e.g. https://console.example.com. Required when enabled."},
+        "allowedEmails": {"type": "array", "items": {"type": "string", "minLength": 3}, "description": "Emails allowed to create an account. Empty means nobody can sign up."},
+        "apiKey": {"type": "object", "additionalProperties": false, "properties": {"existingSecret": {"type": "string"}, "existingSecretKey": {"type": "string", "minLength": 1}}},
+        "auth": {"type": "object", "additionalProperties": false, "properties": {"existingSecret": {"type": "string"}, "secretKey": {"type": "string", "minLength": 1}, "keepSecretOnUninstall": {"type": "boolean"}}},
+        "persistence": {"type": "object", "additionalProperties": false, "properties": {"enabled": {"type": "boolean"}, "existingClaim": {"type": "string"}, "storageClass": {"type": "string"}, "accessModes": {"type": "array", "items": {"type": "string"}}, "size": {"type": "string", "minLength": 1}}},
+        "extraEnv": {"type": "array", "items": {"type": "object"}},
+        "extraEnvFrom": {"type": "array", "items": {"type": "object"}},
+        "containerPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "resources": {"type": "object"},
+        "podSecurityContext": {"type": "object"},
+        "securityContext": {"type": "object"},
+        "startupProbe": {"type": "object"},
+        "livenessProbe": {"type": "object"},
+        "readinessProbe": {"type": "object"},
+        "nodeSelector": {"type": "object"},
+        "tolerations": {"type": "array", "items": {"type": "object"}},
+        "affinity": {"type": "object"},
+        "priorityClassName": {"type": "string"},
+        "podAnnotations": {"$ref": "#/definitions/stringMap"},
+        "podLabels": {"$ref": "#/definitions/stringMap"},
+        "service": {"type": "object", "additionalProperties": false, "properties": {"type": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}, "annotations": {"$ref": "#/definitions/stringMap"}}},
+        "ingress": {"type": "object", "additionalProperties": false, "properties": {"enabled": {"type": "boolean"}, "className": {"type": "string"}, "annotations": {"$ref": "#/definitions/stringMap"}, "tls": {"type": "object", "additionalProperties": false, "properties": {"enabled": {"type": "boolean"}, "secretName": {"type": "string"}, "certManager": {"type": "object", "additionalProperties": false, "properties": {"clusterIssuer": {"type": "string"}, "issuer": {"type": "string"}}}}}}}
+      }
+    },
     "ingress": {
       "type": "object",
       "additionalProperties": false,
@@ -557,6 +587,14 @@
       "additionalProperties": false,
       "properties": {
         "enabled": {"type": "boolean"},
+        "console": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ingressFrom": {"type": "array", "items": {"type": "object"}},
+            "extraEgress": {"type": "array", "items": {"type": "object"}}
+          }
+        },
         "server": {
           "type": "object",
           "additionalProperties": false,

@@ -23,6 +23,7 @@ func Run(t *testing.T, newStore func(t *testing.T) store.Store) {
 	t.Run("ReleasedSlotsAndReclaim", func(t *testing.T) { releasedSlots(t, newStore(t)) })
 	t.Run("Idempotency", func(t *testing.T) { idempotency(t, newStore(t)) })
 	t.Run("Secrets", func(t *testing.T) { secrets(t, newStore(t)) })
+	t.Run("Stacks", func(t *testing.T) { stacks(t, newStore(t)) })
 	t.Run("FairOrderAcrossOrgs", func(t *testing.T) { fairOrder(t, newStore(t)) })
 	t.Run("AuditChain", func(t *testing.T) { auditChain(t, newStore(t)) })
 	t.Run("ProjectDeleteGuard", func(t *testing.T) { projectGuard(t, newStore(t)) })
@@ -245,6 +246,40 @@ func idempotency(t *testing.T, s store.Store) {
 	third, existed, err := s.AdmitSandbox(ctx, c, store.Admission{})
 	if err != nil || existed || third.ID == first.ID {
 		t.Fatalf("a key whose sandbox ended should admit a new one, got %s existed=%v err=%v", third.ID, existed, err)
+	}
+}
+
+func stacks(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	st := api.Stack{Name: "prod", Kind: api.StackOpenWork, CreatedAt: now, UpdatedAt: now, Components: []api.StackComponent{
+		{Name: "den-api", Role: "den-api", URL: "http://den-api:8788", HealthPath: "/health", ReadyPath: "/ready"},
+	}}
+	if err := s.PutStack(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	st.Components = append(st.Components, api.StackComponent{Name: "workbot", URL: "http://workbot:3020", HealthPath: "/healthz", Optional: true})
+	if err := s.PutStack(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetStack(ctx, "prod")
+	if err != nil || len(got.Components) != 2 || !got.Components[1].Optional || !got.CreatedAt.Equal(now) {
+		t.Fatalf("replaced stack %+v %v", got, err)
+	}
+	if err := s.PutStack(ctx, api.Stack{Name: "dev", Kind: api.StackCustom}); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := s.ListStacks(ctx); err != nil || len(list) != 2 || list[0].Name != "dev" {
+		t.Fatalf("list %v %v", list, err)
+	}
+	if err := s.DeleteStack(ctx, "prod"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetStack(ctx, "prod"); !api.IsCode(err, api.CodeNotFound) {
+		t.Fatalf("deleted stack still there: %v", err)
+	}
+	if err := s.DeleteStack(ctx, "prod"); !api.IsCode(err, api.CodeNotFound) {
+		t.Fatalf("deleting a missing stack: %v", err)
 	}
 }
 

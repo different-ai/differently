@@ -1,0 +1,614 @@
+---
+import '../styles/landing.css';
+import '../styles/compare.css';
+import { PRICES_READ, PRICES_READ_LABEL, billingLabel, evidenceLabel, providers, slotText, supportLabel, unavailable } from '../data/providers';
+import type { Billing, Cap, Evidence, Provider } from '../data/providers';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const repo = 'https://github.com/different-ai/differently';
+const origin = (Astro.site?.toString() ?? 'https://different-ai.github.io/').replace(/\/$/, '');
+const pageUrl = `${origin}${base}/compare/`;
+const image = `${origin}${base}/media/sandbox-providers-compared.png`;
+
+const count = providers.length;
+const title = `${count} sandbox providers compared: price, features and compliance`;
+const description = `List prices, isolation, pause and snapshots, self-hosting and SOC 2 for ${count} sandbox services and runtimes for AI agents, with sources. Updated ${PRICES_READ_LABEL}.`;
+const imageAlt = `${count} sandbox providers compared, by Differently: price, isolation, state, snapshots and compliance.`;
+
+const logo = (p: { logo: string }) => `${base}/providers/${p.logo}`;
+const kindKey = (p: Provider) => (p.kind === 'Hosted service' ? 'hosted' : p.kind === 'Open-source runtime' ? 'open' : 'cloud');
+const dash = (v: string | null) => v ?? 'Not collected';
+const join = (...parts: (string | null | false | undefined)[]) => parts.filter(Boolean).join('. ');
+
+// The price ladder: cheapest first, on one scale.
+const MAX = 0.18;
+const priced = providers.filter((p) => p.slot).sort((a, b) => a.slot![0] - b.slot![0]);
+const pct = (n: number) => `${((Math.min(n, MAX) / MAX) * 100).toFixed(2)}%`;
+const ticks = [0, 0.03, 0.06, 0.09, 0.12, 0.15, 0.18];
+const lows = priced.map((p) => p.slot![0]);
+const highs = priced.map((p) => p.slot![p.slot!.length - 1]);
+const low = Math.min(...lows);
+const high = Math.max(...highs);
+
+// One mark per provider and capability. The grid, the boxes and the cards all read these.
+type Mark = 'yes' | 'part' | 'no' | 'na';
+const ORDER: Mark[] = ['yes', 'part', 'no', 'na'];
+const markText: Record<Mark, string> = { yes: 'Documented', part: 'With a condition', no: 'Not offered or not documented', na: 'Not collected or not applicable' };
+const capMark = (c: Cap): Mark => c ?? 'na';
+const evidenceMark = (e: Evidence): Mark => (e === 'yes' ? 'yes' : e === 'unconfirmed' ? 'part' : e === 'none' ? 'no' : 'na');
+const billedFor: Record<Billing, string> = {
+  wall: 'Bills for the time the sandbox runs',
+  usage: 'Bills the CPU that is used',
+  tier: 'Sells bundled sizes',
+  infra: 'Runs on your own infrastructure',
+};
+
+interface Column { key: string; label: string; mark: (p: Provider) => Mark; why: (p: Provider) => string }
+const columns: Column[] = [
+  { key: 'kernel', label: 'Own kernel', mark: (p) => capMark(p.caps.kernel), why: (p) => p.isolation },
+  { key: 'stop', label: 'Keeps its disk', mark: (p) => capMark(p.caps.stop), why: (p) => dash(p.keepsState) },
+  { key: 'memory', label: 'Keeps its memory', mark: (p) => capMark(p.caps.memory), why: (p) => join(p.keepsState, p.snapshots && `Snapshots: ${p.snapshots}`) || 'Not collected' },
+  { key: 'snapshot', label: 'Snapshots', mark: (p) => capMark(p.caps.snapshot), why: (p) => dash(p.snapshots) },
+  { key: 'fork', label: 'Forks', mark: (p) => capMark(p.caps.fork), why: (p) => dash(p.snapshots) },
+  { key: 'url', label: 'Port URLs', mark: (p) => capMark(p.caps.url), why: (p) => dash(p.ports) },
+  { key: 'own', label: 'Your infrastructure', mark: (p) => capMark(p.caps.own), why: (p) => p.runItYourself },
+  { key: 'usage', label: 'Bills CPU used', mark: (p) => (p.billing === 'usage' ? 'yes' : p.billing === 'infra' ? 'na' : 'no'), why: (p) => billedFor[p.billing] },
+  { key: 'soc2', label: 'SOC 2 Type II', mark: (p) => evidenceMark(p.soc2), why: (p) => join(evidenceLabel[p.soc2], p.complianceNote) },
+];
+const column = (key: string) => columns.find((c) => c.key === key)!;
+
+// A column's marks across every provider, documented first.
+const tally = (key: string) => {
+  const c = column(key);
+  const rows = providers.map((p) => ({ p, m: c.mark(p) })).sort((a, b) => ORDER.indexOf(a.m) - ORDER.indexOf(b.m));
+  const n = (m: Mark) => rows.filter((r) => r.m === m).length;
+  return { rows, yes: n('yes'), part: n('part'), who: rows.filter((r) => r.m === 'yes').map((r) => r.p) };
+};
+const T = Object.fromEntries(columns.map((c) => [c.key, tally(c.key)]));
+const billedBy = (b: Billing) => providers.filter((p) => p.billing === b).length;
+const spread = Math.round(high / low);
+
+// The eight places providers differ. Every number is counted from the data.
+const boxes = [
+  {
+    id: 'kernel', k: 'Isolation', title: 'Whose kernel runs the code', href: '#features',
+    text: "An agent runs code nobody has reviewed. A microVM or VM gives each sandbox a kernel of its own. A container shares the host's, and gVisor puts a user-space kernel in between.",
+    value: T.kernel.yes, stat: 'give every sandbox its own kernel', more: `${T.kernel.part} more as an option`, t: T.kernel,
+  },
+  {
+    id: 'memory', k: 'State', title: 'Stop now, carry on later', href: '#features',
+    text: 'Stop and start brings back the disk. A pause that keeps memory brings back the running processes too, so a dev server or an open REPL is still there when the agent returns.',
+    value: T.memory.yes, stat: 'come back with their memory', more: `${T.stop.yes} with at least their disk`, t: T.memory,
+  },
+  {
+    id: 'fork', k: 'Snapshots and forks', title: 'Branch a machine like a commit', href: '#features',
+    text: 'A snapshot freezes a sandbox. A fork starts new ones from it, which is how an agent tries five fixes side by side from one prepared environment.',
+    value: T.fork.yes, stat: 'can fork from a snapshot', more: `${T.fork.part} more in preview or beta`, t: T.fork,
+  },
+  {
+    id: 'usage', k: 'Billing', title: 'What the meter counts', href: '#cost',
+    text: 'Most providers bill every second a sandbox runs. Some bill only the CPU it uses, and an agent spends most of its time waiting on a model.',
+    value: T.usage.yes, stat: 'bill only the CPU you use', more: `${billedBy('wall')} by time, ${billedBy('tier')} by bundled size`, t: T.usage,
+  },
+  {
+    id: 'url', k: 'Port URLs', title: 'Open what the agent built', href: '#features',
+    text: 'A URL for a port inside the sandbox lets a person, or a browser the agent drives, reach a running app without a tunnel. Check whether that URL is public or needs a token.',
+    value: T.url.yes, stat: 'give a port its own URL', more: `${T.url.part} more with a condition`, t: T.url,
+  },
+  {
+    id: 'own', k: 'Run it yourself', title: 'Whose machines, whose account', href: '#features',
+    text: 'Hosted is the fastest start. Running in your own cluster or cloud account keeps code and data inside a boundary you already control and audit.',
+    value: T.own.yes, stat: 'run in infrastructure you control', more: `${T.own.part} more in part`, t: T.own,
+  },
+  {
+    id: 'soc2', k: 'Compliance', title: 'What you can show an auditor', href: '#compliance',
+    text: 'SOC 2 Type II, a HIPAA BAA and ISO 27001, as each provider states them. We read no reports, so ask for the report and what it covers.',
+    value: T.soc2.yes, stat: 'state a SOC 2 Type II report', more: `${providers.filter((p) => p.hipaa === 'yes').length} state a HIPAA BAA`, t: T.soc2,
+  },
+  {
+    id: 'price', k: 'Price', title: 'One sandbox, one hour', href: '#cost',
+    text: 'The same small sandbox, 1 vCPU and 2 GiB, at list price on one scale. Plan fees, storage and free credits sit on top and are listed beside each figure.',
+    value: spread, suffix: '×', stat: 'roughly, lowest to highest price', more: `$${low.toFixed(3)} to $${high.toFixed(3)} an hour`, t: null,
+  },
+].map((b) => {
+  // The marks of the providers that have it: all of them up to eight, otherwise seven and a count.
+  const who = b.t ? b.t.who : priced;
+  return { ...b, suffix: 'suffix' in b ? b.suffix : '', who, shown: who.length <= 8 ? who.length : 7 };
+});
+
+// Line glyphs, 24 x 24. pathLength lets each stroke draw itself in.
+const glyphs: Record<string, string> = {
+  kernel: '<rect pathLength="1" x="3.5" y="3.5" width="17" height="17" rx="4"/><rect pathLength="1" x="8.5" y="8.5" width="7" height="7" rx="1.5"/>',
+  memory: '<circle pathLength="1" cx="12" cy="12" r="8.5"/><path pathLength="1" d="M10 9v6"/><path pathLength="1" d="M14 9v6"/>',
+  fork: '<circle pathLength="1" cx="6" cy="5" r="2"/><circle pathLength="1" cx="6" cy="19" r="2"/><circle pathLength="1" cx="18" cy="8" r="2"/><path pathLength="1" d="M6 7v10"/><path pathLength="1" d="M18 10c0 3-2.5 4-6 4H6"/>',
+  usage: '<path pathLength="1" d="M4 17a8 8 0 1 1 16 0"/><path pathLength="1" d="M12 17l4-6"/><path pathLength="1" d="M3 20.5h18"/>',
+  url: '<path pathLength="1" d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path pathLength="1" d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  own: '<rect pathLength="1" x="3.5" y="4" width="17" height="6.5" rx="2"/><rect pathLength="1" x="3.5" y="13.5" width="17" height="6.5" rx="2"/><path pathLength="1" d="M7.5 7.25h2"/><path pathLength="1" d="M7.5 16.75h2"/>',
+  soc2: '<path pathLength="1" d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path pathLength="1" d="M9 12l2 2 4-4"/>',
+  price: '<path pathLength="1" d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle pathLength="1" cx="7.5" cy="7.5" r="0.7"/>',
+};
+
+// Facts for the hero, counted from the data so they cannot drift from the tables.
+// Figures on this page are plain text and no script rewrites them, so a copy,
+// a screenshot or a crawler always reads the real number.
+const facts = [
+  { value: `$${low.toFixed(3)} to $${high.toFixed(3)}`, label: 'for one small sandbox for an hour, at list price' },
+  { value: String(T.usage.yes), label: 'bill only the CPU you use; the rest bill for running time or by size' },
+  { value: String(T.soc2.yes), label: 'state a SOC 2 Type II report on their own site' },
+  { value: String(providers.filter((p) => p.caps.own !== 'no').length), label: 'can run, fully or in part, in infrastructure you control' },
+];
+
+// One mark per logo for the strip in the hero (two Azure and two Google Cloud services share one).
+const marks = providers.filter((p, i, all) => all.findIndex((q) => q.logo === p.logo) === i);
+
+// What a card can say about itself in a word or two.
+const tags = (p: Provider) =>
+  [
+    p.caps.kernel === 'yes' && 'Own kernel',
+    p.caps.memory === 'yes' && 'Keeps memory',
+    p.caps.fork === 'yes' && 'Forks',
+    p.caps.url === 'yes' && 'Port URLs',
+    p.caps.own === 'yes' && 'Your infrastructure',
+    p.billing === 'usage' && 'Bills CPU used',
+    p.soc2 === 'yes' && 'SOC 2 Type II',
+  ].filter(Boolean) as string[];
+
+const evidence = (e: Evidence) => ({ cls: e, text: evidenceLabel[e] });
+const sections = [
+  ['cost', 'Cost'],
+  ['features', 'Features'],
+  ['compliance', 'Compliance'],
+  ['with-differently', 'With Differently'],
+  ['each', 'Each provider'],
+];
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Article',
+  headline: title,
+  description,
+  url: pageUrl,
+  image,
+  dateModified: PRICES_READ,
+  author: { '@type': 'Organization', name: 'Differently', url: `${origin}${base}/` },
+  publisher: { '@type': 'Organization', name: 'Differently' },
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · Differently</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={pageUrl} />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="Differently" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:image" content={image} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={imageAlt} />
+    <meta property="article:modified_time" content={PRICES_READ} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={image} />
+    <meta name="twitter:image:alt" content={imageAlt} />
+    <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <script is:inline>
+      try {
+        const t = localStorage.getItem('starlight-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch {}
+      // Content waits to be revealed only when the script that reveals it can run.
+      // If that script has not started after two seconds, show everything.
+      if ('IntersectionObserver' in window) {
+        document.documentElement.classList.add('js');
+        setTimeout(function () {
+          if (!window.__compareReady) document.documentElement.classList.remove('js');
+        }, 2000);
+      }
+    </script>
+  </head>
+  <body>
+    <header class="nav wrap">
+      <a class="brand" href={`${base}/`}>
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="10" y="3" width="19" height="19" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="3" y="10" width="19" height="19" rx="4" fill="currentColor"/></svg>
+        Differently
+      </a>
+      <nav>
+        <a class="wide-only" href={`${base}/`}>Home</a>
+        <a href={`${base}/docs/`}>Docs</a>
+        <a class="wide-only" href={`${base}/docs/providers/`}>Providers</a>
+        <a href={repo}>GitHub</a>
+        <button class="theme" type="button" aria-label="Toggle color theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" /></svg>
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero wrap cmp-hero">
+        <p class="eyebrow">Prices read {PRICES_READ_LABEL}</p>
+        <h1>{count} sandbox providers, <em>compared.</em></h1>
+        <p class="lede">
+          The services and runtimes we track for running an AI agent's code in isolation: what each costs at list price, how it isolates,
+          whether it keeps state, what it can snapshot, what it says about compliance, and whether you can run it yourself. Each figure links to where it was read.
+        </p>
+        <div class="cmp-facts">
+          {facts.map((f) => <div><b>{f.value}</b><span>{f.label}</span></div>)}
+        </div>
+        <div class="marks" role="group" aria-label="Providers compared">
+          <div class="marks-track">
+            {[0, 1].map((copy) =>
+              marks.map((p) => (
+                <a href={`#${p.id}`} title={p.name} aria-hidden={copy ? 'true' : undefined} tabindex={copy ? -1 : undefined}>
+                  <img src={logo(p)} alt={copy ? '' : p.name} width="36" height="36" decoding="async" />
+                </a>
+              )),
+            )}
+          </div>
+        </div>
+        <nav class="cmp-jump" aria-label="On this page">
+          <a href="#what">What differs</a>
+          {sections.map(([id, label]) => <a href={`#${id}`}>{label}</a>)}
+          <a href="#method">How we compared</a>
+        </nav>
+      </section>
+
+      <section class="wrap cmp-section" id="what">
+        <h2 data-reveal>What actually differs</h2>
+        <p data-reveal>
+          From a distance these services look alike: an API that starts an isolated Linux machine. They part ways in eight places.
+          Each box says why one matters and how many of the {count} document it.
+        </p>
+        <div class="boxes">
+          {boxes.map((b, i) => (
+            <a class="box" href={b.href} data-reveal style={`--i:${i % 4}`}>
+              <div class="box-top">
+                <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true" set:html={glyphs[b.id]} /></span>
+                <span class="go" aria-hidden="true">→</span>
+              </div>
+              <span class="k">{b.k}</span>
+              <h3>{b.title}</h3>
+              <p>{b.text}</p>
+              <div class="stat">
+                <b>{b.value}{b.suffix ?? ''}{b.t && <small> of {count}</small>}</b>
+                <span>{b.stat}</span>
+                <span class="more">{b.more}</span>
+              </div>
+              {b.t ? (
+                <div class="ticks" role="img" aria-label={`${b.t.yes} of ${count} documented, ${b.t.part} with a condition`}>
+                  {b.t.rows.map((r, t) => <i class={r.m} style={`--t:${t}`} title={`${r.p.name}: ${markText[r.m].toLowerCase()}`}></i>)}
+                </div>
+              ) : (
+                <div class="ticks spark" role="img" aria-label={`Hourly list price of ${priced.length} providers, lowest first`}>
+                  {priced.map((p, t) => <i style={`--t:${t};height:${Math.max(12, (p.slot![0] / lows[lows.length - 1]) * 100).toFixed(0)}%`} title={`${p.name}: ${slotText(p)} an hour`}></i>)}
+                </div>
+              )}
+              <div class="who">
+                {b.who.slice(0, b.shown).map((p) => <img src={logo(p)} alt="" title={p.name} width="22" height="22" decoding="async" />)}
+                {b.who.length > b.shown && <span>+{b.who.length - b.shown}</span>}
+              </div>
+            </a>
+          ))}
+        </div>
+        <div class="legend key" data-reveal>
+          <span>Each bar is the {count} providers:</span>
+          <span><i class="tick yes"></i>documented</span>
+          <span><i class="tick part"></i>with a condition</span>
+          <span><i class="tick no"></i>not offered or not documented</span>
+          <span><i class="tick na"></i>not collected or not applicable</span>
+        </div>
+      </section>
+
+      <div class="cmp-sentinel" aria-hidden="true"></div>
+      <div class="cmp-filter">
+        <div class="wrap">
+          <div class="cmp-kinds" role="group" aria-label="Show providers by kind">
+            <span>Show</span>
+            <button type="button" data-kind="all" aria-pressed="true">All {count}</button>
+            <button type="button" data-kind="hosted" aria-pressed="false">Hosted services</button>
+            <button type="button" data-kind="cloud" aria-pressed="false">In your cloud account</button>
+            <button type="button" data-kind="open" aria-pressed="false">Open-source runtimes</button>
+          </div>
+          <nav class="cmp-spy" aria-label="Sections">
+            {sections.map(([id, label]) => <a href={`#${id}`}>{label}</a>)}
+          </nav>
+        </div>
+      </div>
+
+      <section class="wrap cmp-section" id="cost">
+        <h2 data-reveal>Cost</h2>
+        <p data-reveal>
+          The list price of one running sandbox with 1 vCPU and 2 GiB of memory, for one hour. Providers that bill only the CPU you use are shown
+          as a span, from a sandbox that is busy a quarter of the time to one that is busy all of it. An agent mostly waits on a model, so the low end is its usual case.
+        </p>
+        <div class="ladder" data-reveal>
+          {priced.map((p, r) => (
+            <div class="lrow" data-kind={kindKey(p)} style={`--r:${r}`}>
+              <div class="pv"><img src={logo(p)} alt="" width="28" height="28" decoding="async" /><b>{p.name}</b></div>
+              <div class="track" role="img" aria-label={`${p.name}: ${slotText(p)} an hour`}>
+                <i style={`left:0;width:${pct(p.slot![0])}`}></i>
+                {p.slot!.length === 2 && <i class="span" style={`left:${pct(p.slot![0])};width:${pct(p.slot![1]! - p.slot![0])}`}></i>}
+              </div>
+              <div class="lval">{slotText(p)}{p.slotNote && <sup title={p.slotNote}>*</sup>}</div>
+            </div>
+          ))}
+          <div class="laxis" aria-hidden="true"><div>{ticks.map((t) => <span style={`left:${(t / MAX) * 100}%`}>${t.toFixed(2)}</span>)}</div></div>
+          <div class="legend">
+            <span><i></i>List price for the hour, or for a quarter-busy sandbox</span>
+            <span><i class="span"></i>Up to a fully busy sandbox, or a span between sources</span>
+            <span>* The table below says what this figure covers</span>
+          </div>
+        </div>
+        <div class="cmp-table" data-reveal>
+          <table>
+            <thead><tr><th>Provider</th><th>Billed for</th><th>CPU</th><th>Memory</th><th>1 vCPU + 2 GiB, one hour</th><th>Fees and minimums</th></tr></thead>
+            <tbody>
+              {providers.map((p) => (
+                <tr data-kind={kindKey(p)}>
+                  <th scope="row"><div class="pv"><img src={logo(p)} alt="" width="28" height="28" decoding="async" /><span><b>{p.name}</b><small>{p.kind}</small></span></div></th>
+                  <td>{billingLabel[p.billing]}</td>
+                  <td class="num rate">{p.billing === 'infra' ? '—' : dash(p.cpu)}</td>
+                  <td class="num rate">{p.billing === 'infra' ? '—' : dash(p.memory)}</td>
+                  <td class="num">{p.slot ? slotText(p) : p.billing === 'infra' ? 'Your own cost' : 'Not comparable'}{p.slotNote && <span class="sub">{p.slotNote}</span>}</td>
+                  <td class="wide">{p.fees}{p.priceSource && <small><a href={p.priceSource} rel="noopener">Source</a></small>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="wrap cmp-section" id="features">
+        <h2 data-reveal>Features</h2>
+        <p data-reveal>
+          First the whole field at a glance: one mark for each provider and capability, and the wording behind a mark when you hover it.
+          Then the same facts in full.
+        </p>
+        <div class="cmp-table matrix" data-reveal>
+          <table>
+            <colgroup><col />{columns.map(() => <col />)}</colgroup>
+            <thead>
+              <tr>
+                <th scope="col">Provider</th>
+                {columns.map((c, i) => <th scope="col"><span>{c.label}</span><small data-tally={i + 1}>{T[c.key].yes} of {count}</small></th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {providers.map((p, r) => (
+                <tr data-kind={kindKey(p)} style={`--r:${r}`}>
+                  <th scope="row"><div class="pv"><img src={logo(p)} alt="" width="24" height="24" decoding="async" /><b>{p.name}</b></div></th>
+                  {columns.map((c) => {
+                    const m = c.mark(p);
+                    return <td><span class={`m ${m}`} title={`${p.name} · ${c.label}: ${c.why(p)}`}><span class="sr-only">{markText[m]}</span></span></td>;
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div class="legend key" data-reveal>
+          <span><span class="m yes"></span>Documented</span>
+          <span><span class="m part"></span>With a condition: a runtime, a class, a preview</span>
+          <span><span class="m no"></span>Not offered, or not documented</span>
+          <span><span class="m na"></span>Not collected, or not applicable</span>
+        </div>
+
+        <h3 class="sub-head" data-reveal>In full</h3>
+        <p class="sub-lede" data-reveal>"Keeps state" means a sandbox can stop and come back with its disk, or pause and come back with its memory.</p>
+        <div class="cmp-table" data-reveal>
+          <table>
+            <thead><tr><th>Provider</th><th>Isolation</th><th>Keeps state</th><th>Snapshots</th><th>Port URLs</th><th>Largest size</th><th>Run it yourself</th></tr></thead>
+            <tbody>
+              {providers.map((p) => (
+                <tr data-kind={kindKey(p)}>
+                  <th scope="row"><div class="pv"><img src={logo(p)} alt="" width="28" height="28" decoding="async" /><span><b>{p.name}</b><small>{p.kind}</small></span></div></th>
+                  <td>{p.isolation}</td>
+                  <td>{dash(p.keepsState)}</td>
+                  <td>{dash(p.snapshots)}</td>
+                  <td>{dash(p.ports)}</td>
+                  <td>{dash(p.maxSize)}</td>
+                  <td>{p.runItYourself}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="wrap cmp-section" id="compliance">
+        <h2 data-reveal>Compliance</h2>
+        <p data-reveal>
+          What each provider says on its own security or trust page. "Unconfirmed" means it is claimed elsewhere, or holds for the provider's wider
+          platform and not clearly for its sandbox product. We read no audit reports, and a report says nothing about where a provider keeps your data.
+        </p>
+        <div class="cmp-table" data-reveal>
+          <table>
+            <thead><tr><th>Provider</th><th>SOC 2 Type II</th><th>HIPAA BAA</th><th>ISO 27001</th><th>What we found</th></tr></thead>
+            <tbody>
+              {providers.map((p) => (
+                <tr data-kind={kindKey(p)}>
+                  <th scope="row"><div class="pv"><img src={logo(p)} alt="" width="28" height="28" decoding="async" /><span><b>{p.name}</b><small>{p.kind}</small></span></div></th>
+                  {[p.soc2, p.hipaa, p.iso].map((e) => <td><span class={`ev ${evidence(e).cls}`}>{evidence(e).text}</span></td>)}
+                  <td class="wide">{p.complianceNote}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="wrap cmp-section" id="with-differently">
+        <h2 data-reveal>With Differently</h2>
+        <p data-reveal>
+          Differently runs no sandboxes. It is an open-source control plane that places each sandbox on one of these providers by policy, behind one API,
+          with quotas, budgets and an audit trail. This is how far each provider is supported today. Only "Verified live" means it has run against the real service.
+        </p>
+        <div class="cmp-table" data-reveal>
+          <table>
+            <thead><tr><th>Provider</th><th>Status</th><th>What that means</th><th>Setup</th></tr></thead>
+            <tbody>
+              {providers.map((p) => (
+                <tr data-kind={kindKey(p)}>
+                  <th scope="row"><div class="pv"><img src={logo(p)} alt="" width="28" height="28" decoding="async" /><span><b>{p.name}</b><small>{p.kind}</small></span></div></th>
+                  <td><span class={`chip ${p.support}`}>{supportLabel[p.support]}</span></td>
+                  <td class="wide">{p.supportNote}</td>
+                  <td>{p.docs ? <a href={`${base}/docs/providers/${p.docs}/`}>Provider page</a> : 'None yet'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="wrap cmp-section" id="each">
+        <h2 data-reveal>Each provider</h2>
+        <p data-reveal>One note on what sets each apart, with its own site and the page the price came from.</p>
+        <div class="cards">
+          {providers.map((p, i) => (
+            <article class="card" data-kind={kindKey(p)} id={p.id} data-reveal style={`--i:${i % 3}`}>
+              <div class="pv"><img src={logo(p)} alt={`${p.name} mark`} width="36" height="36" decoding="async" /><span><b>{p.name}</b><small>{p.kind}</small></span></div>
+              <p>{p.note}</p>
+              {tags(p).length > 0 && <ul class="tags">{tags(p).map((t) => <li>{t}</li>)}</ul>}
+              <dl>
+                <dt>Isolation</dt><dd>{p.isolation}</dd>
+                <dt>Price</dt><dd>{p.slot ? `${slotText(p)} an hour for 1 vCPU + 2 GiB` : p.fees}</dd>
+                <dt>Differently</dt><dd>{supportLabel[p.support]}</dd>
+              </dl>
+              <div class="links">
+                <a href={p.url} rel="noopener">Website</a>
+                {p.priceSource && <a href={p.priceSource} rel="noopener">Price source</a>}
+                {p.docs && <a href={`${base}/docs/providers/${p.docs}/`}>Setup with Differently</a>}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section class="wrap cmp-section" id="method">
+        <h2 data-reveal>How we compared</h2>
+        <ul class="method" data-reveal>
+          <li><strong>Prices are list prices</strong>, read on {PRICES_READ_LABEL} from each provider's pricing page or, where the source link shows it, from a published comparison. Plan fees, storage, egress and free credits are left out of the hourly figure.</li>
+          <li><strong>The hourly figure is our arithmetic</strong>: the CPU rate plus twice the memory rate. Where a provider sells bundled sizes, it is the smallest size that fits, or left out when the sizes do not line up.</li>
+          <li><strong>Features come from each provider's public documentation</strong>, as recorded with the date on our <a href={`${base}/docs/providers/`}>provider pages</a>. "Not collected" means we did not look, not that the provider lacks it.</li>
+          <li><strong>A mark is a reading of that documentation, not a test.</strong> A hollow mark means the provider does not offer the capability or its documentation does not mention it. A half mark means it comes with a condition, which the full table spells out.</li>
+          <li><strong>Compliance is what the provider states.</strong> We read no audit reports. Ask for the report and its scope before you rely on it.</li>
+          <li><strong>We did not benchmark anything.</strong> There are no start times or performance numbers here, because we have not measured them the same way on every provider.</li>
+        </ul>
+        <p class="fine">Not in the tables:</p>
+        <ul class="gone">
+          {unavailable.map((u) => <li><img src={logo(u)} alt="" width="28" height="28" decoding="async" /><span><strong>{u.name}.</strong> {u.why}</span></li>)}
+        </ul>
+        <p class="fine">
+          Something wrong or out of date? The data is one file, <a href={`${repo}/blob/pre-release/site/src/data/providers.ts`}>providers.ts</a>.
+          Open a <a href={`${repo}/issues/new`}>GitHub issue</a> or a pull request with the source and we will correct it.
+        </p>
+        <p class="fine">
+          Names and marks are trademarks of their respective owners and are used here only to identify the services compared. Differently is not affiliated with or endorsed by any of them.
+        </p>
+      </section>
+
+      <section class="wrap cmp-cta" data-reveal>
+        <h2>Use any of them through one API.</h2>
+        <p>Differently is open source and self-hosted. You ask for a sandbox and a policy; it decides which of your pools or approved providers runs it, and records why.</p>
+        <div class="ctas">
+          <a class="btn primary" href={`${base}/docs/guides/quickstart/`}>Quickstart</a>
+          <a class="btn" href={`${base}/docs/providers/`}>Provider catalog</a>
+          <a class="btn" href={repo}>GitHub</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap">
+      <span>Differently · Apache-2.0 · by <a href="https://github.com/different-ai">OpenWork</a></span>
+      <span><a href={`${base}/`}>Home</a> · <a href={`${repo}/releases`}>Releases</a></span>
+    </footer>
+
+    <script>
+      (window as unknown as { __compareReady: boolean }).__compareReady = true;
+      const root = document.documentElement;
+      const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      document.querySelector('.theme')!.addEventListener('click', () => {
+        const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+        const next = dark ? 'light' : 'dark';
+        root.dataset.theme = next;
+        try { localStorage.setItem('starlight-theme', next); } catch {}
+      });
+
+      // Sections, boxes and cards arrive as they scroll into view. This only adds
+      // a class: no script on this page changes a figure's text.
+      const reveal = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            entry.target.classList.add('in');
+            reveal.unobserve(entry.target);
+          }
+        },
+        { rootMargin: '0px 0px -6% 0px', threshold: 0.04 },
+      );
+      document.querySelectorAll<HTMLElement>('[data-reveal]').forEach((el) => reveal.observe(el));
+
+      // The feature grid: counts follow the filter, and a hovered column lights up.
+      const matrix = document.querySelector<HTMLTableElement>('.matrix table');
+      const recount = () => {
+        if (!matrix) return;
+        const rows = [...matrix.tBodies[0].rows].filter((r) => !r.hidden);
+        matrix.querySelectorAll<HTMLElement>('[data-tally]').forEach((el) => {
+          const yes = rows.filter((r) => r.cells[Number(el.dataset.tally)]?.querySelector('.m.yes')).length;
+          el.textContent = `${yes} of ${rows.length}`;
+        });
+      };
+      if (matrix) {
+        const cols = [...matrix.querySelectorAll('col')];
+        const light = (index: number) => cols.forEach((c, i) => c.classList.toggle('hot', i === index && i > 0));
+        matrix.addEventListener('mouseover', (e) => light((e.target as HTMLElement).closest<HTMLTableCellElement>('td, thead th')?.cellIndex ?? -1));
+        matrix.addEventListener('mouseleave', () => light(-1));
+      }
+
+      // One filter for every table, the ladder and the cards.
+      const buttons = [...document.querySelectorAll<HTMLButtonElement>('.cmp-kinds button')];
+      const show = (kind: string) => {
+        document.querySelectorAll<HTMLElement>('main [data-kind]').forEach((el) => {
+          if (el.tagName !== 'BUTTON') el.hidden = kind !== 'all' && el.dataset.kind !== kind;
+        });
+        recount();
+      };
+      buttons.forEach((b) => b.addEventListener('click', () => {
+        buttons.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+        const doc = document as Document & { startViewTransition?: (update: () => void) => unknown };
+        if (!still && doc.startViewTransition) doc.startViewTransition(() => show(b.dataset.kind!));
+        else show(b.dataset.kind!);
+      }));
+
+      // The bar under the hero: a shadow once it sticks, and the section in view marked.
+      const bar = document.querySelector<HTMLElement>('.cmp-filter')!;
+      new IntersectionObserver(([entry]) => bar.classList.toggle('stuck', !entry.isIntersecting && entry.boundingClientRect.top < 0)).observe(document.querySelector('.cmp-sentinel')!);
+      const links = [...document.querySelectorAll<HTMLAnchorElement>('.cmp-spy a')];
+      const inView = new Set<string>();
+      const spy = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => (entry.isIntersecting ? inView.add(entry.target.id) : inView.delete(entry.target.id)));
+          const current = links.find((a) => inView.has(a.hash.slice(1)));
+          links.forEach((a) => (a === current ? a.setAttribute('aria-current', 'true') : a.removeAttribute('aria-current')));
+        },
+        { rootMargin: '-72px 0px -55% 0px' },
+      );
+      links.forEach((a) => {
+        const section = document.getElementById(a.hash.slice(1));
+        if (section) spy.observe(section);
+      });
+    </script>
+  </body>
+</html>

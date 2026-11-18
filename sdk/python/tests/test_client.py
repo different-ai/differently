@@ -165,6 +165,22 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(self.client.admin.pools.use("daytona", approve_external=True)["drained"], ["opensandbox"])
         self.assertEqual(self.mock.calls("POST /v1/admin/pools/daytona/use")[0].json(), {"approveExternal": True})
 
+    def test_stacks_register_check_and_delete(self) -> None:
+        stack = {"name": "prod", "kind": "openwork", "components": [{"name": "den-api", "url": "http://den-api:8788", "health": {"status": "healthy", "version": "1.4.2"}}], "health": {"status": "healthy"}}
+        self.mock.on("PUT /v1/admin/stacks/prod", reply(201, stack))
+        self.mock.on("GET /v1/admin/stacks", reply(200, {"items": [stack]}))
+        self.mock.on("POST /v1/admin/stacks/prod/check", reply(200, {**stack, "health": {"status": "degraded"}}))
+        self.mock.on("DELETE /v1/admin/stacks/prod", no_content)
+
+        components = [{"role": "den-api", "url": "http://den-api:8788"}]
+        created = self.client.admin.stacks.put("prod", components, kind="openwork")
+        self.assertEqual(created["components"][0]["health"]["version"], "1.4.2")
+        self.assertEqual(self.mock.calls("PUT /v1/admin/stacks/prod")[0].json(), {"kind": "openwork", "components": components})
+        self.assertEqual(self.client.admin.stacks.list()[0]["health"]["status"], "healthy")
+        self.assertEqual(self.client.admin.stacks.check("prod")["health"]["status"], "degraded")
+        self.client.admin.stacks.delete("prod")
+        self.assertEqual(len(self.mock.calls("DELETE /v1/admin/stacks/prod")), 1)
+
     def test_audit_events_iterate_with_after_seq(self) -> None:
         def event(seq):
             return {"seq": seq, "time": "t", "actor": "k", "action": "sandbox.create", "resource": "sbx", "outcome": "ok", "prevHash": "", "hash": ""}
@@ -193,6 +209,7 @@ class ClientTests(unittest.TestCase):
         self.mock.on("POST /v1/admin/pools", reply(201, {"name": "edge", "adapter": "a", "trust": "external"}))
         self.mock.on("POST /v1/admin/pools/edge/drain", reply(200, {"name": "edge", "draining": True}))
         self.mock.on("DELETE /v1/admin/pools/edge", no_content)
+        self.mock.on("PATCH /v1/admin/pools/edge", reply(200, {"name": "edge", "budget": {"monthly": 250}}))
         self.mock.on("POST /v1/admin/sandboxes/sbx_1/terminate", reply(202, sandbox_info(status="terminating")))
         self.mock.on("GET /v1/admin/audit/verify", reply(200, {"ok": True, "events": 42}))
 
@@ -209,6 +226,26 @@ class ClientTests(unittest.TestCase):
             {"name": "edge", "adapter": "remote", "trust": "external", "maxConcurrency": 4, "credentials": {"env": "EDGE_TOKEN"}},
         )
         self.assertTrue(self.client.admin.pools.drain("edge")["draining"])
+        budgeted = self.client.admin.pools.update(
+            "edge",
+            cost_model={"cpuHour": 0.05, "memoryGiBHour": 0.016},
+            budget={"monthly": 250},
+            attestations={"soc2-type2": {"evidence": "https://trust.example.com"}},
+            preemption={"mode": "off"},
+        )
+        self.assertEqual(budgeted["budget"]["monthly"], 250)
+        self.assertEqual(
+            self.mock.calls("PATCH /v1/admin/pools/edge")[0].json(),
+            {
+                "costModel": {"cpuHour": 0.05, "memoryGiBHour": 0.016},
+                "budget": {"monthly": 250},
+                "attestations": {"soc2-type2": {"evidence": "https://trust.example.com"}},
+                "preemption": {"mode": "off"},
+            },
+        )
+        # An empty set is sent, not dropped: it clears the pool's attestations.
+        self.client.admin.pools.update("edge", attestations={})
+        self.assertEqual(self.mock.calls("PATCH /v1/admin/pools/edge")[1].json(), {"attestations": {}})
         self.client.admin.pools.delete("edge")
         self.assertEqual(self.client.admin.terminate_sandbox("sbx_1", reason="abuse")["status"], "terminating")
         self.assertTrue(self.client.admin.verify_audit()["ok"])

@@ -32,6 +32,7 @@ fmt-check:
 vet:
 	go vet ./...
 	go vet -tags "e2e live" ./...
+	GOOS=js GOARCH=wasm go vet ./cmd/differently-loadsim ./internal/loadsim
 
 test:
 	go test -race -count=1 ./...
@@ -79,6 +80,7 @@ dev: build
 images:
 	docker build -f build/server.Dockerfile --build-arg GO_TAGS=$(GO_TAGS) -t ghcr.io/different-ai/differently-server:$(VERSION) .
 	docker build -f build/cli.Dockerfile -t ghcr.io/different-ai/differently-cli:$(VERSION) .
+	docker build -f build/console.Dockerfile -t ghcr.io/different-ai/differently-console:$(VERSION) .
 
 clean:
 	rm -rf bin dist

@@ -44,6 +44,7 @@ func (s *Server) adminRoutes(authed func(string, handlerFunc)) {
 	admin("GET /v1/admin/trust-report", s.trustReport)
 	admin("GET /v1/admin/audit/verify", s.verifyAudit)
 	s.registerSecrets(admin)
+	s.registerStacks(admin)
 	admin("POST /v1/admin/reconcile", func(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
 		s.Scheduler.Reconcile(r.Context())
 		s.audit(r, p, "admin.reconcile", "installation", "", "", nil)

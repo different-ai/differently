@@ -263,6 +263,52 @@ class Secret(TypedDict):
     usedBy: List[str]
 
 
+class ComponentHealth(TypedDict, total=False):
+    """The last probe of a stack component by the replica that answered.
+
+    ``degraded`` means the service is up but reports that it is not ready.
+    """
+
+    status: str
+    message: str
+    version: str
+    latencyMs: int
+    checkedAt: str
+    since: str
+
+
+class StackComponent(TypedDict, total=False):
+    """One service of a watched stack. Only ``url`` is required when registering."""
+
+    name: str
+    role: str
+    url: str
+    healthPath: str
+    readyPath: str
+    credentialRef: str
+    optional: bool
+    health: ComponentHealth
+
+
+class StackHealth(TypedDict, total=False):
+    status: str
+    message: str
+    checkedAt: str
+
+
+class Stack(TypedDict, total=False):
+    """An application deployment Differently watches. It probes the components; it never changes them."""
+
+    name: str
+    kind: str
+    components: List[StackComponent]
+    createdAt: str
+    createdBy: str
+    updatedAt: str
+    updatedBy: str
+    health: StackHealth
+
+
 class UsePoolResult(TypedDict, total=False):
     """What sending new sandboxes to a pool changed."""
 

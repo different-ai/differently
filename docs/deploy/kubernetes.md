@@ -335,6 +335,50 @@ helm upgrade dly deploy/helm/differently -n differently --reuse-values --set tes
 helm test dly -n differently --logs
 ```
 
+## The console, with sign-in
+
+The chart can also run the [admin console](../../console/README.md) beside
+the control plane, so people sign in with an email and password instead of
+pasting an API key:
+
+```yaml
+console:
+  enabled: true
+  url: https://console.example.com      # the URL people open
+  allowedEmails: [you@example.com]      # who may create an account
+  ingress:
+    enabled: true
+    className: nginx
+    tls:
+      enabled: true
+      certManager: {clusterIssuer: letsencrypt-prod}
+```
+
+Open `console.url`, choose **Create account** with an email on the list, and
+you are in; nobody else can sign up. The console's server calls Differently
+inside the cluster with the bootstrap operator token, which never reaches the
+browser. To limit the console to one project, put a project key in a Secret
+and name it in `console.apiKey.existingSecret`.
+
+What the chart creates for it:
+
+- one pod (accounts are a single SQLite file, so it is replaced, not rolled)
+  and a 1 GiB volume for that file, kept on `helm uninstall`;
+- a Secret with the session-signing secret, generated once and kept across
+  upgrades. GitOps tools that render with `helm template` need
+  `console.auth.existingSecret`, or every sync signs everyone out;
+- a Service, an Ingress for the host in `console.url`, and a NetworkPolicy
+  that lets the pod reach only DNS and the Differently server. GitHub sign-in
+  (`console.extraEnv`) also needs `networkPolicy.console.extraEgress` for
+  TCP 443.
+
+The image is `ghcr.io/different-ai/differently-console`, published with each
+release from 0.1.0-alpha.5 on (`build/console.Dockerfile` builds it). The
+templates are linted and rendered in CI and the image is built there. The
+console's server was run from the image's layout against a local Differently
+(sign-up, the allowlist and the proxy); the chart with `console.enabled` has
+not yet been installed on a cluster.
+
 ## Configuration reference
 
 All settings are in [`values.yaml`](../../deploy/helm/differently/values.yaml),
@@ -344,6 +388,7 @@ and the comments explain each one. Useful ones:
 |---|---|---|
 | `config.*` | server defaults | Rendered into `/etc/differently/config.yaml`: profiles, classifications, pools, policy, quotas, scheduler, audit |
 | `config.store.driver` | `memory` | `postgres` for anything beyond evaluation |
+| `console.enabled`, `console.url`, `console.allowedEmails` | off | The admin console with sign-in, on its own host ([above](#the-console-with-sign-in)) |
 | `server.replicas` | `1` | Must stay 1 with `memory` |
 | `auth.existingSecret` | chart-managed | Bootstrap token Secret (key `bootstrap-token`) |
 | `secrets.enabled` | `true` | Give the server a secrets key, so provider credentials can be stored in Differently; `false` means none can be stored |

@@ -10,12 +10,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/different-ai/differently/internal/adapters/cloudhttp"
 	"github.com/different-ai/differently/internal/adapters/shellcmd"
@@ -174,6 +176,39 @@ func newAdapter(t *testing.T, url string) *Adapter {
 		t.Fatal(err)
 	}
 	return New(o)
+}
+
+// A pool on EKS Pod Identity signs with the keys the container credentials
+// endpoint hands out, with no access key in the pool's credential.
+func TestAgentCorePodIdentity(t *testing.T) {
+	f := newFake(t)
+	creds := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "pod-token" {
+			w.WriteHeader(403)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"AccessKeyId": "AKIDTEST", "SecretAccessKey": "s3cret", "Token": "session",
+			"Expiration": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
+	}))
+	defer creds.Close()
+	tok := filepath.Join(t.TempDir(), "token")
+	os.WriteFile(tok, []byte("pod-token"), 0o600)
+	cred, _ := json.Marshal(map[string]string{"source": "pod-identity", "containerCredentialsUri": creds.URL, "containerAuthorizationTokenFile": tok})
+	o, err := FromConfig(map[string]string{"apiURL": f.srv.URL}, "us-east-1", string(cred))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(o)
+	if err := a.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(tok, []byte("revoked"), 0o600)
+	if err := New(o).Health(context.Background()); !api.IsCode(err, api.CodeProviderUnavailable) {
+		t.Fatalf("refused pod identity: %v", err)
+	}
+	if _, err := FromConfig(map[string]string{"apiURL": f.srv.URL}, "us-east-1", `{"source":"sso"}`); err == nil {
+		t.Fatal("unknown credential sources are refused")
+	}
 }
 
 func TestAgentCoreAdapter(t *testing.T) {

@@ -17,6 +17,7 @@ export const nav: NavGroup[] = [
     { id: 'policies', label: 'Policies', href: 'policies/', icon: 'shield' },
   ] },
   { label: 'Monitoring', items: [
+    { id: 'stacks', label: 'Stacks', href: 'stacks/', icon: 'pulse' },
     { id: 'routing', label: 'Live routing', href: 'routing/', icon: 'route' },
     { id: 'usage', label: 'Usage', href: 'usage/', icon: 'chart' },
     { id: 'audit-log', label: 'Audit log', href: 'audit-log/', icon: 'list' },

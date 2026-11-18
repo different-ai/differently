@@ -116,6 +116,11 @@ func (s *Server) putSecret(w http.ResponseWriter, r *http.Request, p auth.Princi
 
 func (s *Server) deleteSecret(w http.ResponseWriter, r *http.Request, p auth.Principal) error {
 	name := r.PathValue("name")
+	if user, err := s.stackUsingSecret(r.Context(), name); err != nil {
+		return err
+	} else if user != "" {
+		return api.Errorf(api.CodeConflict, "secret %s is used by stack %s", name, user)
+	}
 	if err := s.Store.DeleteSecret(r.Context(), name); err != nil {
 		return err
 	}

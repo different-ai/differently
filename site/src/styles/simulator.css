@@ -1,0 +1,253 @@
+/* /simulator/: the control plane under simulated load, as a full-window app.
+   The diagram is the admin console's live routing view (itself after the intro
+   video): your apps, Differently, the pools, wires between them and a packet
+   for each placement. Monochrome like the rest of the site; one accent marks
+   work that waits or is refused. */
+:root { --wait: #b45309; --bar-h: 56px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --wait: #f5a524; } }
+:root[data-theme='dark'] { --wait: #f5a524; }
+
+/* The bar: brand, run, speed, clock. */
+.sim-bar { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-height: var(--bar-h); padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.sim-bar .brand { font-size: 1rem; }
+.sim-bar .brand span { color: var(--muted); font-weight: 400; }
+.sim-bar .grow { flex: 1; }
+.sim-bar nav { display: flex; align-items: center; gap: 18px; font-size: 0.875rem; }
+.sim-bar nav a { color: var(--muted); text-decoration: none; }
+.sim-bar nav a:hover { color: var(--ink); }
+.sim-btn { font: inherit; font-size: 0.875rem; font-weight: 500; padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.sim-btn:hover:not(:disabled) { border-color: var(--ink); }
+.sim-btn:disabled { color: var(--muted); cursor: default; }
+.sim-btn.primary, .sim-btn[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.sim-btn.alert[aria-pressed='true'] { background: var(--wait); border-color: var(--wait); color: var(--bg); }
+.sim-btn.tiny { font-size: 0.75rem; padding: 3px 10px; }
+.sim-btn:focus-visible, .sim-seg button:focus-visible, .premove:focus-visible, .switch input:focus-visible + i { outline: 2px solid var(--ink); outline-offset: 2px; }
+.sim-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--bg); }
+.sim-seg button { font: 0.8125rem var(--mono); padding: 6px 11px; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.sim-seg.words { display: flex; }
+.sim-seg.words button { font-family: var(--sans); flex: 1; }
+.sim-seg button[aria-pressed='true'] { background: var(--ink); color: var(--bg); }
+.sim-clock { font: 0.8125rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sim-clock b { color: var(--ink); font-weight: 500; }
+
+/* The app fills the window under the bar. */
+.sim-app { display: grid; grid-template-columns: 236px minmax(0, 1fr) 344px; height: calc(100vh - var(--bar-h)); min-height: 620px; border-bottom: 1px solid var(--line); }
+.sim-side { padding: 14px; border-right: 1px solid var(--line); overflow-y: auto; display: grid; gap: 18px; align-content: start; }
+.sim-side fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 11px; min-width: 0; }
+.sim-side legend, .sim-side summary { padding: 0; font-size: 0.8125rem; font-weight: 600; margin-bottom: 9px; }
+.sim-side legend small, .sim-side summary small { font-weight: 400; color: var(--muted); margin-left: 6px; }
+.sim-side details summary { cursor: pointer; margin-bottom: 0; }
+.sim-side details[open] summary { margin-bottom: 11px; }
+.sim-side details > div { display: grid; gap: 11px; }
+.sim-field { display: grid; gap: 4px; font-size: 0.8125rem; }
+.sim-field > span { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
+.sim-field output { font-family: var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.sim-field input[type='range'] { width: 100%; margin: 0; accent-color: var(--ink); }
+.sim-field select, .pctl input[type='number'] { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); width: 100%; }
+.sim-field:has(:disabled) > span { opacity: 0.55; }
+.sim-note { margin: 0; font-size: 0.75rem; line-height: 1.45; color: var(--muted); }
+/* The stage: the diagram, then the numbers. */
+/* landing.css pads every section; this one is a pane of the app. */
+main section.sim-stage { padding: 0; border-top: 0; }
+.sim-stage { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; min-width: 0; background: var(--surface); }
+.sim-scroll { overflow: auto; padding: 20px; display: grid; }
+.flow { position: relative; display: grid; grid-template-columns: minmax(128px, 0.7fr) minmax(156px, 0.8fr) minmax(296px, 1.9fr); gap: clamp(28px, 3.4vw, 72px); align-items: center; align-self: center; width: min(100%, 1100px); margin-inline: auto; }
+.flow-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.flow-wires .wire { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; }
+.flow-wires .wire.ext { stroke-dasharray: 5 8; }
+.flow-wires .wire.shut { stroke: var(--line); }
+.flow-col { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.fnode { border: 2px solid var(--ink); border-radius: 14px; background: var(--bg); padding: 14px 16px; min-width: 0; }
+.fnode.ours { background: var(--ink); color: var(--bg); }
+.fnode .ft { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: -0.015em; }
+.fnode .ft svg { width: 18px; height: 18px; }
+.fnode .fs { font-size: 0.8125rem; color: var(--muted); }
+.fnode.ours .fs, .fnode.ours .fmeta { color: color-mix(in srgb, var(--bg) 64%, transparent); }
+.fmeta { margin-top: 8px; font: 0.75rem/1.5 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.fwait { align-self: flex-start; padding: 4px 11px; border: 1.5px solid var(--wait); border-radius: 999px; color: var(--wait); font: 0.75rem var(--mono); background: var(--bg); }
+.fwait[hidden] { display: none; }
+.people-bar { display: flex; height: 8px; margin-top: 10px; border-radius: 3px; overflow: hidden; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.people-bar i { display: block; }
+.people-bar .working { background: var(--ink); }
+.people-bar .waiting { background: var(--wait); }
+.fgate { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 4px 2px 0; font-size: 0.75rem; color: var(--muted); }
+.fgate b { font: 500 0.75rem var(--mono); color: var(--ink); }
+
+/* One provider. */
+.pcard { border: 2px solid var(--ink); border-radius: 14px; background: var(--bg); padding: 11px 13px; min-width: 0; display: grid; gap: 8px; }
+.pcard.external { border-style: dashed; }
+.pcard.off, .pcard.closed { border-color: var(--line); }
+.pcard.off .pdots, .pcard.off .pmeta { opacity: 0.45; }
+.pcard.down { border-color: var(--wait); }
+.phead { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.phead img { width: 30px; height: 30px; flex: none; border-radius: 7px; background: #ffffff; border: 1px solid var(--line); object-fit: contain; }
+.phead div { min-width: 0; flex: 1; line-height: 1.25; }
+.phead b { display: block; font-weight: 600; font-size: 0.9375rem; letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phead small { display: block; color: var(--muted); font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.switch { position: relative; flex: none; width: 34px; height: 20px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.switch i { position: absolute; inset: 0; border-radius: 999px; background: color-mix(in srgb, var(--muted) 40%, var(--bg)); transition: background 0.15s; pointer-events: none; }
+.switch i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--bg); transition: transform 0.15s; }
+.switch input:checked + i { background: var(--ink); }
+.switch input:checked + i::after { transform: translateX(14px); }
+.pdots { display: flex; flex-wrap: wrap; gap: 4px; min-height: 14px; }
+.pmeta { font: 0.75rem/1.5 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.pmeta b { font-weight: 500; color: var(--ink); }
+.pmeta .hot { color: var(--wait); }
+.pctl { display: flex; align-items: center; gap: 10px; font-size: 0.75rem; color: var(--muted); }
+.pctl label { display: flex; align-items: center; gap: 6px; }
+.pctl .pshare { flex: 1; min-width: 0; }
+.pctl .pshare input { flex: 1; min-width: 40px; margin: 0; accent-color: var(--ink); }
+.pctl .pshare output { font-family: var(--mono); color: var(--ink); min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+.pctl .pshare[hidden] { display: none; }
+.pctl .pslots { margin-right: auto; }
+.pctl .pshare:not([hidden]) + .pslots { margin-right: 0; }
+.pctl input[type='number'] { width: 56px; padding: 3px 6px; font: 0.75rem var(--mono); }
+.pcard.hit, .fnode.hit { animation: flow-hit 0.6s ease-out; }
+.pcard.refuse, .fnode.refuse { animation: flow-refuse 0.6s ease-out; }
+@keyframes flow-hit { 0% { transform: scale(1.03); } 100% { transform: scale(1); } }
+@keyframes flow-refuse { 0% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--wait) 45%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+.prank { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); color: var(--bg); font: 600 0.6875rem/20px var(--mono); text-align: center; }
+.prank[hidden] { display: none; }
+.premove { flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font: 1rem/1 var(--sans); cursor: pointer; }
+.premove:hover { color: var(--ink); background: var(--surface); }
+.padd { display: flex; align-items: center; gap: 10px; padding: 9px 13px; border: 1.5px dashed color-mix(in srgb, var(--muted) 55%, transparent); border-radius: 14px; background: var(--bg); font-size: 0.8125rem; font-weight: 500; }
+.padd span { white-space: nowrap; }
+.padd select { flex: 1; min-width: 0; font: inherit; font-weight: 400; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+.fgate[hidden] { display: none; }
+
+/* One sandbox, as a dot. */
+.sb { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--ink); background: var(--bg); }
+.sb[data-s='free'] { border: 1px dashed color-mix(in srgb, var(--muted) 50%, transparent); }
+.sb[data-s='busy'] { background: var(--ink); }
+.sb[data-s='idle'] { background: var(--surface); }
+.sb[data-s='starting'] { border-style: dashed; animation: sim-pulse 1s ease-in-out infinite; }
+.sb[data-s='pausing'] { background: repeating-linear-gradient(135deg, var(--muted) 0 1.5px, var(--bg) 1.5px 4px); }
+.sb[data-s='paused'] { border-color: color-mix(in srgb, var(--muted) 45%, transparent); }
+.sb[data-s='waiting'] { border-color: var(--wait); }
+@keyframes sim-pulse { 50% { opacity: 0.45; } }
+.packet { position: absolute; left: 0; top: 0; z-index: 2; width: 12px; height: 12px; border-radius: 4px; background: var(--ink); will-change: transform; pointer-events: none; }
+.packet.ext { background: var(--bg); border: 2.5px solid var(--ink); }
+.packet.bad { background: var(--wait); }
+@media (prefers-reduced-motion: reduce) { .sb[data-s='starting'], .pcard.hit, .fnode.hit, .pcard.refuse, .fnode.refuse { animation: none; } }
+
+.sim-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 24px; font-size: 0.75rem; color: var(--muted); border-top: 1px solid var(--line); background: var(--bg); }
+.sim-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sim-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); border-top: 1px solid var(--line); background: var(--bg); }
+.sim-stats div { padding: 11px 16px; border-right: 1px solid var(--line); }
+.sim-stats b { display: block; font-size: 1.25rem; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.3; white-space: nowrap; }
+.sim-stats b small { font-size: 0.8125rem; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.sim-stats div > span { color: var(--muted); font-size: 0.75rem; }
+
+/* Before the first run. */
+.sim-cover { position: absolute; inset: 0; z-index: 5; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 24px; text-align: center; background: color-mix(in srgb, var(--surface) 80%, transparent); backdrop-filter: blur(3px); }
+.sim-cover[hidden] { display: none; }
+.sim-cover h1 { font-size: clamp(1.75rem, 3.4vw, 2.75rem); max-width: 620px; }
+.sim-cover p { margin: 0; color: var(--muted); font-size: 0.9375rem; max-width: 520px; }
+.sim-cover .sim-btn { font-size: 0.9375rem; padding: 11px 22px; margin-top: 6px; }
+.sim-cover small { color: var(--muted); font-size: 0.8125rem; max-width: 420px; }
+.sim-cover .err { color: var(--wait); }
+
+/* Routing: who picks, the rule, and the order that follows from it. */
+.sim-right { border-left: 1px solid var(--line); display: grid; grid-template-rows: auto auto minmax(120px, 1fr); min-width: 0; min-height: 0; overflow-y: auto; }
+.sim-routing { padding: 14px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 12px; min-width: 0; }
+.sim-routing h2, .sim-log h2 { font-size: 0.875rem; letter-spacing: -0.01em; }
+.sim-routing h2 small { font-weight: 400; color: var(--muted); font-size: 0.75rem; letter-spacing: 0; margin-left: 8px; }
+.rstep { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; }
+.rstep > div { display: grid; gap: 7px; min-width: 0; }
+.rstep b { font-size: 0.8125rem; font-weight: 600; }
+.rnum { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--ink); font: 600 0.6875rem/17px var(--mono); text-align: center; }
+.rstep .sim-field { grid-template-columns: 112px minmax(0, 1fr); align-items: center; gap: 8px; }
+.rstep .sim-field select { padding: 4px 8px; font-family: var(--mono); font-size: 0.75rem; }
+.prio { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.prio li { display: grid; grid-template-columns: 30px 20px minmax(0, auto) minmax(0, 1fr); align-items: center; gap: 7px; font-size: 0.8125rem; }
+.prio li b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prio img { width: 20px; height: 20px; border-radius: 5px; background: #ffffff; border: 1px solid var(--line); object-fit: contain; }
+.prio .plead { font: 600 0.6875rem/20px var(--mono); text-align: center; border-radius: 999px; background: var(--ink); color: var(--bg); font-variant-numeric: tabular-nums; }
+.prio .pwhy { color: var(--muted); font-size: 0.75rem; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prio li.out .plead { background: none; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }
+.prio li.out b { color: var(--muted); }
+.rconf summary { cursor: pointer; font-size: 0.8125rem; font-weight: 500; }
+.rconf pre { margin: 8px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font: 0.6875rem/1.55 var(--mono); overflow-x: auto; max-height: 220px; }
+
+/* History and the log. */
+.sim-trends { padding: 12px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.sim-trend { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: end; font-size: 0.8125rem; color: var(--muted); }
+.sim-trend b { font: 500 0.8125rem var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.sim-trend svg { grid-column: 1 / -1; width: 100%; height: 24px; display: block; overflow: visible; }
+.sim-trend polyline { fill: none; stroke: var(--ink); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.sim-trend.wait polyline { stroke: var(--wait); }
+.sim-log { padding: 16px 16px 0; min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.sim-log h2 { margin-bottom: 10px; }
+.sim-log h2 small { font-weight: 400; color: var(--muted); font-size: 0.75rem; letter-spacing: 0; margin-left: 8px; }
+.sim-log ol { list-style: none; margin: 0; padding: 0 0 16px; overflow-y: auto; font: 0.6875rem/1.55 var(--mono); color: var(--muted); }
+.sim-log li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; padding: 2px 0; }
+.sim-log li.hot span:last-child { color: var(--wait); }
+.sim-log li.strong span:last-child { color: var(--ink); }
+.sim-log ol:empty::after { content: 'What the scheduler decides shows up here, from its audit log.'; font-family: var(--sans); font-size: 0.8125rem; }
+
+.sim-section { padding: 64px 0; }
+.sim-section > p { color: var(--muted); max-width: 720px; margin: 14px 0 0; }
+.sim-real { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 28px; }
+.sim-real div { border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+.sim-real h3 { margin-bottom: 10px; }
+.sim-real ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.9375rem; }
+.sim-real li + li { margin-top: 6px; }
+
+/* Below a wide desktop the diagram takes the full width, so its three
+   columns always fit; the controls move under it, side by side. */
+@media (max-width: 1180px) {
+  .sim-app { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .sim-stage { order: 1; min-height: 0; }
+  .sim-side { order: 2; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .sim-right { order: 3; border-left: 0; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1.4fr); grid-template-rows: none; overflow: visible; }
+  .sim-routing { border-bottom: 0; border-right: 1px solid var(--line); }
+  .sim-trends { border-bottom: 0; border-right: 1px solid var(--line); align-content: start; }
+  .sim-log ol { max-height: 260px; }
+}
+@media (max-width: 860px) {
+  .sim-bar nav a { display: none; }
+  .sim-clock { white-space: normal; }
+  .pctl { flex-wrap: wrap; }
+  .sim-right { grid-template-columns: minmax(0, 1fr); }
+  .sim-routing, .sim-trends { border-right: 0; border-bottom: 1px solid var(--line); }
+  .sim-scroll { padding: 16px; }
+  .flow { grid-template-columns: 1fr; gap: 14px; align-self: start; }
+  .flow-wires { display: none; }
+}
+
+/* The timeline: how long to simulate, how far it is, and what it has cost. */
+.sim-bar { position: sticky; }
+.sim-run { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; color: var(--muted); }
+.sim-run select { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--ink); }
+.sim-progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; }
+.sim-progress i { display: block; height: 100%; width: 0; background: var(--ink); }
+#cost b { color: var(--ink); }
+
+/* The box in the middle: its three words open their settings. */
+.fopen button { font: inherit; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.fopen button:hover, .fopen button.on { color: var(--bg); text-decoration-style: solid; }
+.fopen button:focus-visible { outline: 2px solid var(--bg); outline-offset: 2px; border-radius: 3px; }
+.sim-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); }
+.sim-tabs button { font: inherit; font-size: 0.8125rem; font-weight: 500; padding: 10px 8px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); cursor: pointer; }
+.sim-tabs button[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--ink); }
+.sim-tabs button:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.sim-routing[hidden] { display: none; }
+.sim-right { grid-template-rows: auto auto auto minmax(120px, 1fr); }
+.sim-check { display: flex; gap: 8px; align-items: flex-start; font-size: 0.8125rem; color: var(--muted); }
+.sim-check input { margin: 3px 0 0; accent-color: var(--ink); }
+.sim-check b { display: block; color: var(--ink); font-weight: 500; }
+.sim-usage { margin: 0; font: 0.75rem/1.5 var(--mono); color: var(--muted); }
+.sim-usage b { color: var(--ink); font-weight: 500; }
+.sim-usage .hot { color: var(--wait); }
+.sim-note code { font-size: 0.6875rem; }
+.sim-log li i { display: none; font-style: normal; color: var(--muted); }
+.sim-log ol.chain li i { display: block; }
+@media (max-width: 1180px) {
+  .sim-right { grid-template-rows: auto auto; }
+  .sim-tabs { grid-column: 1 / -1; }
+}
+@media (max-width: 860px) {
+  .sim-right { grid-template-rows: none; }
+}

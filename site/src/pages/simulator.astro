@@ -1,0 +1,1114 @@
+---
+import '../styles/landing.css';
+import '../styles/simulator.css';
+import { providers } from '../data/providers';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const repo = 'https://github.com/different-ai/differently';
+const origin = (Astro.site?.toString() ?? 'https://different-ai.github.io/').replace(/\/$/, '');
+const pageUrl = `${origin}${base}/simulator/`;
+
+const title = 'Load simulator: watch Differently route sandboxes across providers';
+const description =
+  "Differently's control plane, compiled to WebAssembly, running in your browser against stand-in providers. Add providers, turn them on and off, set the priority or split work by percentage, and watch every placement.";
+
+// Every provider of the comparison can be a pool here. Names, logos and list
+// prices come from the comparison's data; an open-source runtime starts as a
+// private pool on your own nodes, everything else as an external provider.
+const catalog = providers.map((p) => {
+  const trust = p.kind === 'Open-source runtime' ? 'private' : 'external';
+  return {
+    id: p.id,
+    name: p.name,
+    logo: `${base}/providers/${p.logo}`,
+    trust,
+    cost: trust === 'private' || !p.slot ? 0 : p.slot[0],
+    priced: trust === 'private' || !!p.slot,
+    experimental: p.support === 'experimental',
+  };
+});
+// The pools the page starts with, and this page's choices for them.
+const initial = [
+  { id: 'opensandbox', slots: 8, checkpoint: true, on: true, share: 50 },
+  { id: 'daytona', slots: 12, checkpoint: false, on: true, share: 30 },
+  { id: 'freestyle', slots: 12, checkpoint: true, on: true, share: 20 },
+  { id: 'e2b', slots: 12, checkpoint: false, on: false, share: 0 },
+  { id: 'northflank', slots: 12, checkpoint: false, on: false, share: 0 },
+];
+
+interface Scenario { id: string; name: string; text: string; set: Record<string, unknown> }
+const scenarios: Scenario[] = [
+  {
+    id: 'overflow',
+    name: 'Your cluster first, then overflow',
+    text: 'Work fills your eight slots, then goes to the cheapest provider with room. Half the sandboxes are kept and hibernate when idle.',
+    set: { keep: 50, users: 40, rate: 6, minutes: 6, mode: 'policy', strategy: 'private-first', external: 'overflow', on: ['opensandbox', 'daytona', 'freestyle'] },
+  },
+  {
+    id: 'split',
+    name: 'Split 50 / 30 / 20',
+    text: 'The application pins each sandbox to a provider by percentage. Move the sliders while it runs.',
+    set: { keep: 0, users: 40, rate: 6, minutes: 6, mode: 'split', strategy: 'private-first', external: 'allowed', on: ['opensandbox', 'daytona', 'freestyle'], shares: { opensandbox: 50, daytona: 30, freestyle: 20 } },
+  },
+  {
+    id: 'cost',
+    name: 'Cheapest provider first',
+    text: 'Five providers, strategy cost. Work goes where an hour costs least until that pool is full.',
+    set: { keep: 0, users: 60, rate: 6, minutes: 6, mode: 'policy', strategy: 'cost', external: 'allowed', on: ['opensandbox', 'daytona', 'freestyle', 'e2b', 'northflank'] },
+  },
+  {
+    id: 'private',
+    name: 'Nothing leaves your cluster',
+    text: 'Policy external: never. Work that finds no slot queues; nothing is sent to a provider.',
+    set: { keep: 50, users: 24, rate: 4, minutes: 6, mode: 'policy', strategy: 'private-first', external: 'never', on: ['opensandbox', 'daytona', 'freestyle'] },
+  },
+  {
+    id: 'computers',
+    name: 'Long-lived computers',
+    text: 'Every sandbox is kept. It hibernates when idle, gives its slot back, and wakes through the queue.',
+    set: { keep: 100, users: 24, rate: 1.5, minutes: 12, mode: 'policy', strategy: 'private-first', external: 'overflow', on: ['opensandbox', 'daytona'] },
+  },
+];
+
+const legend = [
+  ['busy', 'In use'],
+  ['idle', 'Running, unused'],
+  ['starting', 'Starting'],
+  ['pausing', 'Pausing'],
+  ['paused', 'Hibernated on the host'],
+  ['free', 'Free slot'],
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={pageUrl} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={pageUrl} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script is:inline>
+      try {
+        const t = localStorage.getItem('starlight-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <header class="sim-bar">
+      <a class="brand" href={`${base}/`}>
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="10" y="3" width="19" height="19" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="3" y="10" width="19" height="19" rx="4" fill="currentColor"/></svg>
+        Differently <span>/ Simulator</span>
+      </a>
+      <button class="sim-btn primary" id="run" type="button">Start</button>
+      <div class="sim-seg" role="group" aria-label="Simulation speed">
+        {[[1, 'Real time'], [10, 'Ten simulated minutes a minute'], [60, 'A simulated hour a minute'], [240, 'Four simulated hours a minute']].map(([s, tip]) => <button type="button" data-speed={s} title={tip} aria-pressed={s === 60 ? 'true' : 'false'}>{s}×</button>)}
+      </div>
+      <label class="sim-run">for
+        <select id="length" aria-label="How long to simulate">
+          <option value="1">1 hour</option>
+          <option value="4">4 hours</option>
+          <option value="8">8 hours</option>
+          <option value="0">no limit</option>
+        </select>
+      </label>
+      <button class="sim-btn" id="restart" type="button" disabled>Restart</button>
+      <span class="sim-clock" id="clock">Not started</span>
+      <span class="sim-clock" id="cost"></span>
+      <span class="grow"></span>
+      <nav>
+        <a href="#real">What is real</a>
+        <button class="theme" type="button" aria-label="Toggle color theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" /></svg>
+        </button>
+      </nav>
+      <div class="sim-progress" aria-hidden="true"><i id="progress"></i></div>
+    </header>
+
+    <main>
+      <div class="sim-app" id="app" data-base={base} data-catalog={JSON.stringify(catalog)} data-initial={JSON.stringify(initial)}>
+        <form class="sim-side" id="side" onsubmit="return false">
+          <fieldset>
+            <legend>Scenario</legend>
+            <label class="sim-field">
+              <select id="scenario" aria-label="Scenario">
+                {scenarios.map((s) => <option value={s.id} data-set={JSON.stringify(s.set)} data-text={s.text}>{s.name}</option>)}
+                <option value="custom" hidden>Your own settings</option>
+              </select>
+            </label>
+            <p class="sim-note" id="scenario-text"></p>
+          </fieldset>
+
+          <fieldset>
+            <legend>Load <small>applies as you move it</small></legend>
+            <label class="sim-field"><span>Clients <output for="users"></output></span><input id="users" type="range" min="1" max="150" step="1" value="40" data-kind="load" /></label>
+            <label class="sim-field"><span>Starts per client, per hour <output for="rate"></output></span><input id="rate" type="range" min="0.5" max="12" step="0.5" value="6" data-kind="load" /></label>
+            <label class="sim-field"><span>Median length <output for="minutes"></output></span><input id="minutes" type="range" min="1" max="60" step="1" value="6" data-kind="load" data-unit=" min" /></label>
+            <label class="sim-field"><span>Kept after a session <output for="keep"></output></span><input id="keep" type="range" min="0" max="100" step="10" value="50" data-kind="load" data-unit="%" /></label>
+            <p class="sim-note">A kept sandbox goes idle, hibernates, and is woken by its client's next session. The others are deleted when their session ends. Lengths and starts are random.</p>
+            <div><button class="sim-btn" id="spike" type="button" disabled>Everyone starts now</button></div>
+          </fieldset>
+
+          <details open>
+            <summary>Hibernation <small>starts over</small></summary>
+            <div>
+              <label class="sim-field"><span>Hibernate after idle for <output for="idle"></output></span><input id="idle" type="range" min="1" max="15" step="1" value="5" data-unit=" min" /></label>
+              <label class="sim-field"><span>A snapshot takes <output for="pause"></output></span><input id="pause" type="range" min="5" max="300" step="1" value="182" data-unit=" s" /></label>
+              <label class="sim-field"><span>Waking takes <output for="wake"></output></span><input id="wake" type="range" min="1" max="60" step="1" value="5" data-unit=" s" /></label>
+              <label class="sim-field"><span>A cold start takes <output for="cold"></output></span><input id="cold" type="range" min="1" max="60" step="1" value="3" data-unit=" s" /></label>
+              <label class="sim-field"><span>Delete if hibernated <output for="expire"></output></span><input id="expire" type="range" min="0" max="120" step="5" value="30" data-unit=" min" /></label>
+              <label class="sim-field"><span>Hibernated on a private pool, it</span>
+                <select id="paused">
+                  <option value="release">gives its slot back (snapshot)</option>
+                  <option value="keep">keeps its slot (stays on the host)</option>
+                </select>
+              </label>
+              <label class="sim-field"><span>When work waits for a slot there</span>
+                <select id="preemption">
+                  <option value="idle">hibernate an unused one (idle)</option>
+                  <option value="lru">hibernate the least recently used (lru)</option>
+                  <option value="off">wait (off)</option>
+                </select>
+              </label>
+            </div>
+          </details>
+        </form>
+
+        <section class="sim-stage" aria-label="Providers">
+          <div class="sim-cover" id="cover">
+            <h1>Put load on it. <em>Watch it route.</em></h1>
+            <p>
+              Differently's control plane, compiled to WebAssembly, runs in this tab and places simulated work across providers.
+              Add providers, set their priority or split work by percentage, and change it all while it runs.
+            </p>
+            <button class="sim-btn primary" id="begin" type="button">Start the simulation</button>
+            <small id="cover-note">Loads about 5 MB. The providers are stand-ins and the clock is sped up; every decision is made by the code a deployment runs.</small>
+          </div>
+
+          <div class="sim-scroll">
+            <div class="flow" id="flow">
+              <svg class="flow-wires" id="wires" aria-hidden="true"></svg>
+              <div class="flow-col">
+                <div class="fnode" id="n-app">
+                  <div class="ft">your apps</div>
+                  <div class="fs" id="app-sub">agents running tasks</div>
+                  <div class="people-bar" role="img" aria-label="What the clients are doing"><i class="working" id="bar-working"></i><i class="waiting" id="bar-waiting"></i></div>
+                  <div class="fmeta" id="app-meta">not started</div>
+                </div>
+              </div>
+              <div class="flow-col">
+                <div class="fnode ours" id="n-core">
+                  <div class="ft"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="10" y="3" width="19" height="19" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="3" y="10" width="19" height="19" rx="4" fill="currentColor"/></svg>differently</div>
+                  <div class="fs fopen"><button type="button" data-tab="policy">policy</button> · <button type="button" data-tab="quotas">quotas</button> · <button type="button" data-tab="audit">audit</button></div>
+                  <div class="fmeta" id="core-meta"></div>
+                </div>
+                <span class="fwait" id="wait-chip" hidden></span>
+              </div>
+              <div class="flow-col" id="pools">
+                <div class="fgate" id="gate"></div>
+                <label class="padd">
+                  <span>Add a provider</span>
+                  <select id="add" aria-label="Add a provider"></select>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="sim-legend" aria-label="Legend">
+            {legend.map(([s, label]) => <span><i class="sb" data-s={s}></i>{label}</span>)}
+          </div>
+          <div class="sim-stats" id="stats">
+            <div><b id="s-sessions">0</b><span>sessions served</span></div>
+            <div><b><span id="s-p50">0 s</span> <small>/ <span id="s-p95">0 s</span></small></b><span>wait, median / p95</span></div>
+            <div><b id="s-outside">–</b><span>of sessions on providers</span></div>
+            <div><b id="s-spend">$0.00</b><span>bought, at list price</span></div>
+            <div><b id="s-refused">0</b><span>creates refused</span></div>
+            <div><b><span id="s-hib">0</span> <small>/ <span id="s-wake">0</span></small></b><span>hibernated / woken</span></div>
+            <div><b><span id="s-preempt">0</span> <small>/ <span id="s-interrupt">0</span></small></b><span>preempted / interrupted</span></div>
+          </div>
+        </section>
+
+        <aside class="sim-right">
+          <div class="sim-tabs" role="tablist" aria-label="What Differently applies">
+            <button type="button" role="tab" data-tab="policy" aria-selected="true">Policy</button>
+            <button type="button" role="tab" data-tab="quotas" aria-selected="false">Quotas</button>
+            <button type="button" role="tab" data-tab="audit" aria-selected="false">Audit</button>
+          </div>
+          <form class="sim-routing" id="routing" data-pane="policy" onsubmit="return false">
+            <h2>Routing <small>applies at once</small></h2>
+            <div class="rstep">
+              <span class="rnum">1</span>
+              <div>
+                <b>Who picks the provider</b>
+                <div class="sim-seg words" role="group" aria-label="Who picks the provider" id="mode">
+                  <button type="button" data-mode="policy" aria-pressed="true">Policy</button>
+                  <button type="button" data-mode="split">Your app, by share</button>
+                </div>
+              </div>
+            </div>
+            <div class="rstep">
+              <span class="rnum">2</span>
+              <div>
+                <b>The rule</b>
+                <label class="sim-field"><span>Strategy</span>
+                  <select id="strategy">
+                    <option value="private-first">private-first</option>
+                    <option value="cost">cost</option>
+                    <option value="spread">spread</option>
+                  </select>
+                </label>
+                <label class="sim-field"><span>External providers</span>
+                  <select id="external">
+                    <option value="overflow">overflow</option>
+                    <option value="allowed">allowed</option>
+                    <option value="never">never</option>
+                  </select>
+                </label>
+                <p class="sim-note" id="rule"></p>
+              </div>
+            </div>
+            <div class="rstep">
+              <span class="rnum">3</span>
+              <div>
+                <b id="prio-title">Priority for the next sandbox</b>
+                <ol class="prio" id="prio"></ol>
+                <p class="sim-note" id="prio-note"></p>
+              </div>
+            </div>
+            <details class="rconf">
+              <summary>The configuration behind this</summary>
+              <pre id="conf"></pre>
+            </details>
+          </form>
+
+          <form class="sim-routing" id="quotas" data-pane="quotas" hidden onsubmit="return false">
+            <h2>Quotas <small>apply at once</small></h2>
+            <p class="sim-note">Every client here belongs to one tenant. Its quota is checked before placement: policy decides where a sandbox may go, the quota decides whether it may start at all.</p>
+            <label class="sim-field"><span>Sandboxes at once <output for="q-active"></output></span><input id="q-active" type="range" min="0" max="150" step="1" value="0" /></label>
+            <p class="sim-note"><code>maxActiveSandboxes</code>. A sandbox over the limit stays queued, whatever room the providers have, until another ends.</p>
+            <label class="sim-field"><span>Waiting in the queue <output for="q-queued"></output></span><input id="q-queued" type="range" min="0" max="100" step="1" value="0" /></label>
+            <p class="sim-note"><code>maxQueued</code>. A create that would lengthen the queue past it is refused with <code>quota_exceeded</code>.</p>
+            <p class="sim-usage" id="q-usage"></p>
+            <details class="rconf">
+              <summary>The configuration behind this</summary>
+              <pre id="q-conf"></pre>
+            </details>
+          </form>
+
+          <form class="sim-routing" id="audit" data-pane="audit" hidden onsubmit="return false">
+            <h2>Audit <small>the log below</small></h2>
+            <p class="sim-note">Every request and every decision is appended to one log. Each entry carries the hash of the one before it, so an entry cannot be changed or removed without breaking the chain.</p>
+            <label class="sim-check"><input id="a-all" type="checkbox" /><span><b>Show every entry</b>Each create, command, delete and operator change, not only scheduling decisions.</span></label>
+            <label class="sim-check"><input id="a-chain" type="checkbox" /><span><b>Show the chain</b>Each entry's sequence number and the start of its hash.</span></label>
+            <div><button class="sim-btn" id="a-verify" type="button" disabled>Verify the chain</button></div>
+            <p class="sim-usage" id="a-result"></p>
+          </form>
+
+          <div class="sim-trends">
+            <div class="sim-trend"><span>Sandboxes running</span><b id="t-run">0</b><svg id="g-run" viewBox="0 0 300 24" preserveAspectRatio="none" aria-hidden="true"><polyline /></svg></div>
+            <div class="sim-trend wait"><span>Clients waiting</span><b id="t-wait">0</b><svg id="g-wait" viewBox="0 0 300 24" preserveAspectRatio="none" aria-hidden="true"><polyline /></svg></div>
+            <div class="sim-trend"><span>Running on providers</span><b id="t-ext">0</b><svg id="g-ext" viewBox="0 0 300 24" preserveAspectRatio="none" aria-hidden="true"><polyline /></svg></div>
+          </div>
+          <div class="sim-log">
+            <h2>Decisions <small>from the audit log</small></h2>
+            <ol id="log"></ol>
+          </div>
+        </aside>
+      </div>
+
+      <section class="wrap sim-section" id="real">
+        <h2>What is real here, and what is not.</h2>
+        <p>
+          The numbers on this page describe how work is routed and scheduled. They say nothing about how fast a provider starts a sandbox or how many requests a server takes:
+          for those, see <a href={`${base}/docs/reliability-and-performance/`}>reliability and performance</a>.
+        </p>
+        <div class="sim-real">
+          <div>
+            <h3>The code a deployment runs</h3>
+            <ul>
+              <li>The HTTP API. Each client creates, calls and deletes its sandbox through the server's handler, with a project key. Turning a provider off, changing its slots and changing the policy go through the admin API.</li>
+              <li>Admission, the <a href={`${base}/docs/scheduling/placement-policy/`}>placement policy</a> and the scheduler: strategies, the external gate, <a href={`${base}/docs/scheduling/capacity/`}>slots, the resume queue and preemption</a>, <a href={`${base}/docs/guides/hybrid-overflow/`}>overflow</a>, idle timeouts and the reconciler.</li>
+              <li>The priority list. It is the placement policy's own answer for one more sandbox, asked several times a second, with the policy's reasons for every provider it holds back.</li>
+              <li>The audit log. The list of decisions is read from it, reasons included, and "Verify the chain" calls the control plane's own check of its hashes.</li>
+              <li>The quota. It is the tenant's <code>maxActiveSandboxes</code> and <code>maxQueued</code>, set through the admin API and enforced by admission.</li>
+              <li>Hibernation. An idle sandbox is paused by the scheduler's idle sweep, woken by its client's next call through the resume queue, and deleted by the <code>maxPausedSeconds</code> limit.</li>
+              <li>The split. A percentage is not a policy feature: the application pins each create to a provider with <code>placement.allowedPools</code>, as the console's launcher does, and policy still applies to it.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Stand-ins</h3>
+            <ul>
+              <li>The providers. Every pool is the in-memory fake adapter from the test suite, named after a provider and given its list price from the <a href={`${base}/compare/`}>comparison</a>. Nothing here measures or imitates a provider, and adding one here says nothing about whether Differently has an adapter for it: each takes 3 s to create and 2 s to resume, and the slot counts are this page's.</li>
+              <li>A checkpoint takes the time you set. The default, 182 s, is a <a href={`${base}/docs/research/fast-sandbox-pause-time/`}>measured checkpoint</a> of a 4 GiB desktop on OpenSandbox's Fast Sandbox runtime.</li>
+              <li>The store is the in-memory one. A deployment with more than one replica uses Postgres.</li>
+              <li>Time. The clock the program reads runs up to 240 times faster and stands still while it computes, so its own work takes no simulated time.</li>
+              <li>The clients. They start at random, work for a random length, send a keepalive every 20 s while working, and stop. Real usage has mornings and lunch breaks.</li>
+              <li>What a snapshot, a wake and a cold start take is what you set, the same for every provider. Money counts running time at list price only: storage for hibernated sandboxes, minimums and plans are not counted.</li>
+            </ul>
+          </div>
+        </div>
+        <p>
+          The source is <a href={`${repo}/tree/pre-release/internal/loadsim`}><code>internal/loadsim</code></a>, built for the browser by
+          <a href={`${repo}/tree/pre-release/cmd/differently-loadsim`}><code>cmd/differently-loadsim</code></a>.
+          The diagram is the admin console's <a href={`${base}/docs/guides/console/`}>live routing</a> view, which shows the same thing for a real installation.
+        </p>
+      </section>
+    </main>
+
+    <footer class="wrap">
+      <span>Differently · Apache-2.0 · by <a href="https://github.com/different-ai">OpenWork</a></span>
+      <span><a href={`${base}/`}>Home</a> · <a href={`${base}/docs/scheduling/capacity/`}>Capacity</a> · <a href={`${repo}/releases`}>Releases</a></span>
+    </footer>
+
+    <script>
+      interface Box { id: string; user: number; status: string; pool?: string; busy: boolean; waiting: boolean; slotReleased?: boolean }
+      interface Pool { name: string; trust: string; slots: number; enabled: boolean; healthy: boolean; offline: boolean; held: number; busy: number; checkpointed: number; waiting: number; placed: number; sessions: number; hours: number; costPerHour: number }
+      interface Rank { pool: string; rank: number; eligible: boolean; hasCapacity: boolean; reasons?: string[] }
+      interface Event { t: number; action: string; pool?: string; user: number; text: string; seq?: number; hash?: string }
+      interface Stats { sessions: number; waitP50: number; waitP95: number; privateSessions: number; spend: number; placed: number; refused: number; overQuota: number; hibernations: number; wakes: number; expired: number; preemptions: number; interruptions: number }
+      interface Snapshot { seconds: number; pools: Pool[]; boxes: Box[]; working: number; waiting: number; idle: number; queued: number; stats: Stats; active: number; quota: { maxActive: number; maxQueued: number }; auditEvents: number; ranking: Rank[]; events: Event[] }
+      interface Entry { id: string; name: string; logo: string; trust: string; cost: number; priced: boolean; experimental: boolean }
+      interface Choice { id: string; slots: number; checkpoint: boolean; on: boolean; share: number }
+      interface XY { x: number; y: number }
+      interface Curve { a: XY; c1: XY; c2: XY; b: XY }
+
+      const root = document.documentElement;
+      const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+      const app = $('app');
+      const base = app.dataset.base ?? '';
+      const catalog = new Map((JSON.parse(app.dataset.catalog!) as Entry[]).map((e) => [e.id, e]));
+      const initial = JSON.parse(app.dataset.initial!) as Choice[];
+      const still = matchMedia('(prefers-reduced-motion: reduce)');
+      const narrow = matchMedia('(max-width: 860px)');
+      const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+      document.querySelector('.theme')!.addEventListener('click', () => {
+        const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+        const next = dark ? 'light' : 'dark';
+        root.dataset.theme = next;
+        try { localStorage.setItem('starlight-theme', next); } catch {}
+      });
+
+      // The bar wraps on a narrow window; the app fills what is left under it.
+      const bar = document.querySelector<HTMLElement>('.sim-bar')!;
+      new ResizeObserver(() => root.style.setProperty('--bar-h', `${bar.offsetHeight}px`)).observe(bar);
+
+      // ---- providers: the cards of the diagram ----
+
+      const pools = $('pools');
+      const gate = $('gate');
+      const adder = $<HTMLSelectElement>('add');
+      let active: string[] = []; // the providers that have a card, in order
+      let registered = new Set<string>(); // the pools the running world knows
+      const card = (id: string) => pools.querySelector<HTMLElement>(`.pcard[data-pool="${id}"]`);
+      const part = <T extends HTMLElement>(id: string, sel: string) => card(id)!.querySelector<T>(sel)!;
+      const enabled = (id: string) => part<HTMLInputElement>(id, '[data-enable]').checked;
+      const shareOf = (id: string) => Number(part<HTMLInputElement>(id, '[data-share]').value);
+      const slotsOf = (id: string) => Math.min(64, Math.max(1, Math.round(Number(part<HTMLInputElement>(id, '[data-slots]').value) || 1)));
+      const subOf = (e: Entry) =>
+        e.trust === 'private' ? 'private · your nodes' : `external · ${e.priced ? `$${e.cost.toFixed(3)}/h list` : 'price not collected'}${e.experimental ? ' · experimental adapter' : ''}`;
+
+      function addCard(c: Choice) {
+        const e = catalog.get(c.id)!;
+        const el = document.createElement('div');
+        el.className = `pcard ${e.trust === 'private' ? '' : 'external'}`;
+        el.dataset.pool = e.id;
+        el.innerHTML = `
+          <div class="phead">
+            <span class="prank" hidden></span>
+            <img src="${esc(e.logo)}" alt="" width="30" height="30" />
+            <div><b>${esc(e.name)}</b><small>${esc(subOf(e))}</small></div>
+            <label class="switch" title="Use ${esc(e.name)}"><input type="checkbox" data-enable ${c.on ? 'checked' : ''} aria-label="Use ${esc(e.name)}" /><i></i></label>
+            <button class="premove" type="button" data-remove aria-label="Remove ${esc(e.name)}" title="Remove ${esc(e.name)}">×</button>
+          </div>
+          <div class="pdots"></div>
+          <div class="pmeta">not started</div>
+          <div class="pctl">
+            <label class="pshare" hidden>Share <input type="range" min="0" max="100" step="5" value="${c.share}" data-share aria-label="${esc(e.name)}: share of new sandboxes" /><output></output></label>
+            <label class="pslots">Slots <input type="number" min="1" max="64" value="${c.slots}" data-slots aria-label="${esc(e.name)}: slots" /></label>
+            <button class="sim-btn tiny alert" type="button" data-offline aria-pressed="false" title="Make ${esc(e.name)}'s backend fail">Fail it</button>
+          </div>`;
+        el.dataset.checkpoint = String(c.checkpoint);
+        // Private pools above the gate, providers below it.
+        if (e.trust === 'private') gate.before(el);
+        else adder.closest('.padd')!.before(el);
+        active.push(e.id);
+      }
+
+      function fillAdder() {
+        const rest = [...catalog.values()].filter((e) => !active.includes(e.id)).sort((a, b) => a.name.localeCompare(b.name));
+        adder.innerHTML = `<option value="">${rest.length ? 'Choose…' : 'Every provider is on the diagram'}</option>` +
+          rest.map((e) => `<option value="${esc(e.id)}">${esc(e.name)} (${e.trust === 'private' ? 'your nodes' : e.priced ? `$${e.cost.toFixed(3)}/h` : 'no list price'})</option>`).join('');
+        adder.disabled = rest.length === 0;
+      }
+
+      // ---- controls ----
+
+      const input = (id: string) => $<HTMLInputElement>(id);
+      const select = (id: string) => $<HTMLSelectElement>(id);
+      const num = (id: string) => Number(input(id).value);
+      let mode: 'policy' | 'split' = 'policy';
+
+      const gateMeaning: Record<string, string> = {
+        never: 'nothing leaves your own pools',
+        overflow: 'only when no private pool has room',
+        allowed: 'ranked alongside private pools',
+      };
+      const strategyMeaning: Record<string, string> = {
+        'private-first': 'Private pools first, then the cheapest hour, then the emptiest pool.',
+        cost: 'The cheapest hour first, wherever it is; a private pool wins a tie.',
+        spread: 'The emptiest pool first; a private pool wins a tie.',
+      };
+      const externalMeaning: Record<string, string> = {
+        never: 'Providers are never used.',
+        overflow: 'Providers are held back until no private pool has room.',
+        allowed: 'Providers are ranked together with private pools.',
+      };
+
+      function label() {
+        document.querySelectorAll<HTMLInputElement>('#side input[type=range], #quotas input[type=range]').forEach((r) => {
+          const out = document.querySelector<HTMLOutputElement>(`output[for="${r.id}"]`);
+          if (out) out.textContent = (r.id.startsWith('q-') || r.id === 'expire') && r.value === '0' ? (r.id === 'expire' ? 'never' : 'no limit') : r.value + (r.dataset.unit ?? '');
+        });
+        select('preemption').disabled = select('paused').value === 'keep'; // only a pool that checkpoints frees a slot by pausing
+        const split = mode === 'split';
+        select('strategy').disabled = split; // a pinned create has one candidate
+        document.querySelectorAll('#mode button').forEach((b) => b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.mode === mode)));
+        const total = active.reduce((n, id) => n + (enabled(id) ? shareOf(id) : 0), 0);
+        for (const id of active) {
+          part(id, '.pshare').hidden = !split;
+          part(id, '.pshare output').textContent = enabled(id) && total > 0 ? `${Math.round((shareOf(id) / total) * 100)}%` : '0%';
+        }
+        const ext = select('external').value;
+        gate.innerHTML = `<b>external: ${ext}</b><span>${gateMeaning[ext]}</span>`;
+        gate.hidden = !active.some((id) => catalog.get(id)!.trust !== 'private');
+        $('app-sub').textContent = num('keep') === 0 ? 'agents running tasks' : num('keep') === 100 ? 'people with a computer each' : 'tasks, and sandboxes kept between sessions';
+        const picked = select('scenario').selectedOptions[0];
+        $('scenario-text').textContent = picked?.dataset.text ?? 'Changed by hand from a scenario.';
+        $('rule').textContent = split
+          ? `Each new sandbox names one provider, drawn by the shares on the cards. The policy still has the last word. ${externalMeaning[ext]}`
+          : `${strategyMeaning[select('strategy').value]} ${externalMeaning[ext]}`;
+        $('prio-title').textContent = split ? 'Share of new sandboxes' : 'Priority for the next sandbox';
+        configuration();
+        quotaConfiguration();
+        if (!last) priority(null);
+      }
+
+      /** The settings as a deployment would write them. */
+      function configuration() {
+        const ext = select('external').value;
+        const on = active.filter(enabled);
+        const outside = on.filter((id) => catalog.get(id)!.trust !== 'private');
+        const lines: string[] = [];
+        if (mode === 'split') {
+          const total = on.reduce((n, id) => n + shareOf(id), 0) || 1;
+          const first = on.find((id) => shareOf(id) > 0) ?? on[0] ?? 'a-pool';
+          lines.push('# Your application names the provider, per sandbox:', 'POST /v1/sandboxes', `{"profile": "small", "placement": {"allowedPools": ["${first}"]}}`, '');
+          lines.push('# and draws that name by share:');
+          for (const id of on) lines.push(`#   ${id.padEnd(16)} ${Math.round((shareOf(id) / total) * 100)}%`);
+          lines.push('', '# The policy still applies to each of them.');
+        }
+        lines.push('# differently.yaml', 'policy:');
+        if (mode !== 'split') lines.push(`  strategy: ${select('strategy').value}`);
+        lines.push(`  external: ${ext}`);
+        if (ext !== 'never' && outside.length) lines.push(`  externalPools: [${outside.join(', ')}]`);
+        lines.push('pools:');
+        for (const id of on) {
+          const e = catalog.get(id)!;
+          lines.push(`  - name: ${id}`, `    trust: ${e.trust}`, `    maxConcurrency: ${slotsOf(id)}`);
+          if (e.cost > 0) lines.push(`    costModel: { sandboxHour: ${e.cost} }`);
+        }
+        if (!on.length) lines.push('  []');
+        $('conf').textContent = lines.join('\n');
+      }
+
+      /** The quota as an operator would set it. */
+      function quotaConfiguration() {
+        const q = quota();
+        const fields = [q.maxActive ? `"maxActiveSandboxes": ${q.maxActive}` : '', q.maxQueued ? `"maxQueued": ${q.maxQueued}` : ''].filter(Boolean);
+        $('q-conf').textContent = ['# The tenant is an organization; an operator sets its quota:', 'PATCH /v1/admin/organizations/{id}', `{"quota": {${fields.join(', ')}}}`, '', fields.length ? '# A project can have a tighter one of its own.' : '# No limits: only the providers\' slots hold work back.'].join('\n');
+      }
+
+      const load = () => ({ users: num('users'), sessionsPerHour: num('rate'), sessionMinutes: num('minutes'), keep: num('keep') / 100 });
+      const quota = () => ({ maxActive: num('q-active'), maxQueued: num('q-queued') });
+      const routing = () => ({
+        mode,
+        strategy: select('strategy').value,
+        external: select('external').value,
+        // A provider that was removed stays in the world, switched off.
+        providers: Object.fromEntries([...new Set([...registered, ...active])].map((id) => [id, active.includes(id) ? { enabled: enabled(id), slots: slotsOf(id), share: shareOf(id) } : { enabled: false, slots: 1, share: 0 }])),
+      });
+      const providerOf = (id: string, checkpoint: boolean) => {
+        const e = catalog.get(id)!;
+        return { name: id, trust: e.trust, slots: slotsOf(id), checkpoint: e.trust === 'private' ? checkpoint : card(id)!.dataset.checkpoint === 'true', costPerHour: e.cost };
+      };
+      const installation = () => {
+        const checkpoint = select('paused').value === 'release';
+        return {
+          providers: active.map((id) => providerOf(id, checkpoint)),
+          preemption: checkpoint ? select('preemption').value : 'off',
+          createSeconds: num('cold'),
+          pauseSeconds: num('pause'),
+          resumeSeconds: num('wake'),
+          idleTimeoutSeconds: num('idle') * 60,
+          maxPausedSeconds: num('expire') * 60,
+          seed: Math.floor(Math.random() * 1e9),
+        };
+      };
+
+      // ---- the run ----
+
+      let worker: Worker | null = null;
+      let speed = 60;
+      let paused = false;
+      let started = false;
+      let finished = false; // the run reached the length that was asked for
+      let last: Snapshot | null = null;
+      const slotOf = new Map<string, Map<string, number>>(); // pool -> sandbox -> dot
+      const drawn = new Map<string, string>();
+      const history: { run: number; wait: number; ext: number }[] = [];
+      const pace: [number, number][] = []; // wall ms, simulated s
+      const cover = $('cover');
+      const scale = () => (paused || document.hidden ? 0 : speed);
+
+      function reset() {
+        slotOf.clear();
+        drawn.clear();
+        history.length = 0;
+        pace.length = 0;
+        last = null;
+        $('log').replaceChildren();
+        document.querySelectorAll('.packet').forEach((p) => p.remove());
+        document.querySelectorAll<HTMLButtonElement>('[data-offline]').forEach((b) => {
+          b.setAttribute('aria-pressed', 'false');
+          b.textContent = 'Fail it';
+        });
+      }
+
+      function start() {
+        worker?.terminate();
+        reset();
+        paused = false;
+        finished = false;
+        started = true;
+        registered = new Set(active);
+        cover.hidden = false;
+        $('begin').hidden = true;
+        cover.querySelector('h1')!.hidden = true;
+        cover.querySelector('p')!.hidden = true;
+        $('cover-note').className = '';
+        $('cover-note').textContent = 'Starting the control plane…';
+        const w = new Worker(`${base}/sim/worker.js`);
+        worker = w;
+        w.onmessage = ({ data }) => {
+          if (w !== worker) return;
+          if (data.type === 'snapshot') {
+            cover.hidden = true;
+            render(data.snapshot as Snapshot);
+          } else if (data.type === 'verify') verified(data.value as { ok: boolean; events: number; problem?: string; headHash?: string });
+          else if (data.type === 'error') fail(String(data.message));
+        };
+        w.onerror = (e) => fail(e.message || 'the simulator could not be loaded');
+        // Nothing runs yet: the providers fill as the clients start, at random.
+        w.postMessage({ type: 'start', config: { ...installation(), load: load(), routing: routing(), quota: quota() }, scale: scale() });
+        if (input('a-all').checked) w.postMessage({ type: 'command', command: { op: 'audit', all: true } });
+        $('a-result').textContent = '';
+        buttons();
+      }
+
+      function fail(message: string) {
+        worker?.terminate();
+        worker = null;
+        started = false;
+        cover.hidden = false;
+        $('begin').hidden = false;
+        $('begin').textContent = 'Try again';
+        $('cover-note').className = 'err';
+        $('cover-note').textContent = `The simulator stopped: ${message}`;
+        buttons();
+      }
+
+      function buttons() {
+        $('run').textContent = !started ? 'Start' : finished ? 'Continue' : paused ? 'Resume' : 'Pause';
+        ['restart', 'spike', 'a-verify'].forEach((id) => (($(id) as HTMLButtonElement).disabled = !started));
+        document.querySelectorAll<HTMLButtonElement>('.sim-bar .sim-seg button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === speed)));
+      }
+
+      const command = (c: object) => worker?.postMessage({ type: 'command', command: c });
+      const applyScale = () => worker?.postMessage({ type: 'scale', scale: scale() });
+      const custom = () => { select('scenario').value = 'custom'; };
+
+      $('begin').addEventListener('click', start);
+      $('restart').addEventListener('click', start);
+      $('run').addEventListener('click', () => {
+        if (!started) return start();
+        if (finished) {
+          // Past the length that was asked for: go on without one.
+          finished = false;
+          select('length').value = '0';
+        }
+        paused = !paused;
+        pace.length = 0;
+        applyScale();
+        buttons();
+      });
+      document.querySelectorAll<HTMLButtonElement>('.sim-bar .sim-seg button').forEach((b) =>
+        b.addEventListener('click', () => {
+          speed = Number(b.dataset.speed);
+          pace.length = 0;
+          applyScale();
+          buttons();
+        }),
+      );
+      document.addEventListener('visibilitychange', () => {
+        pace.length = 0;
+        applyScale();
+      });
+      $('spike').addEventListener('click', () => command({ op: 'spike', share: 1 }));
+
+      // Load and routing apply live; pauses and preemption start over.
+      let again = 0;
+      let route = 0;
+      const sendRouting = () => {
+        label();
+        clearTimeout(route);
+        route = window.setTimeout(() => {
+          command({ op: 'routing', routing: routing() });
+          if (last) render({ ...last, events: [] });
+        }, 120);
+      };
+
+      function scenario() {
+        const option = select('scenario').selectedOptions[0];
+        if (!option?.dataset.set) return;
+        const set = JSON.parse(option.dataset.set) as { keep: number; users: number; rate: number; minutes: number; mode: typeof mode; strategy: string; external: string; on: string[]; shares?: Record<string, number> };
+        input('keep').value = String(set.keep);
+        input('users').value = String(set.users);
+        input('rate').value = String(set.rate);
+        input('minutes').value = String(set.minutes);
+        select('strategy').value = set.strategy;
+        select('external').value = set.external;
+        mode = set.mode;
+        // A scenario starts from the page's own five providers.
+        pools.querySelectorAll('.pcard').forEach((el) => el.remove());
+        active = [];
+        for (const c of initial) addCard({ ...c, on: set.on.includes(c.id), share: set.shares?.[c.id] ?? (set.on.includes(c.id) ? c.share || 20 : 0) });
+        fillAdder();
+        label();
+        drawWires();
+      }
+      select('scenario').addEventListener('change', () => {
+        scenario();
+        start();
+      });
+      $('side').addEventListener('input', (e) => {
+        const el = e.target as HTMLElement;
+        if (el.id === 'scenario') return;
+        custom();
+        label();
+        if (el.dataset.kind === 'load') return command({ op: 'load', load: load() });
+        if (!started) return;
+        clearTimeout(again);
+        again = window.setTimeout(start, 500);
+      });
+      $('routing').addEventListener('input', () => {
+        custom();
+        sendRouting();
+      });
+      document.querySelectorAll<HTMLButtonElement>('#mode button').forEach((b) =>
+        b.addEventListener('click', () => {
+          mode = b.dataset.mode as typeof mode;
+          custom();
+          sendRouting();
+        }),
+      );
+      pools.addEventListener('input', (e) => {
+        if ((e.target as HTMLElement).id === 'add') return;
+        custom();
+        sendRouting();
+      });
+      pools.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const el = target.closest<HTMLElement>('.pcard');
+        if (!el) return;
+        const id = el.dataset.pool!;
+        if (target.closest('[data-remove]')) {
+          // The pool stays in the running world, switched off; its sandboxes run on.
+          el.remove();
+          active = active.filter((x) => x !== id);
+          drawn.delete(id);
+          custom();
+          fillAdder();
+          sendRouting();
+          drawWires();
+          return;
+        }
+        const b = target.closest<HTMLButtonElement>('[data-offline]');
+        if (!b || !started) return;
+        const down = b.getAttribute('aria-pressed') !== 'true';
+        b.setAttribute('aria-pressed', String(down));
+        b.textContent = down ? 'Restore' : 'Fail it';
+        command({ op: 'outage', pool: id, outage: down });
+      });
+      adder.addEventListener('change', () => {
+        const id = adder.value;
+        if (!id) return;
+        addCard({ id, slots: 12, checkpoint: false, on: true, share: 20 });
+        custom();
+        fillAdder();
+        label();
+        drawWires();
+        if (!started) return;
+        if (registered.has(id)) return sendRouting();
+        registered.add(id);
+        command({ op: 'add', provider: providerOf(id, select('paused').value === 'release'), routing: routing() });
+        if (last) render({ ...last, events: [] });
+      });
+
+      // ---- policy, quotas, audit: what the box in the middle applies ----
+
+      function openTab(name: string, reveal = false) {
+        document.querySelectorAll<HTMLElement>('.sim-tabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+        document.querySelectorAll<HTMLElement>('[data-pane]').forEach((pane) => (pane.hidden = pane.dataset.pane !== name));
+        document.querySelectorAll<HTMLElement>('.fopen [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
+        if (reveal) document.querySelector('.sim-right')!.scrollIntoView({ block: 'nearest', behavior: still.matches ? 'auto' : 'smooth' });
+      }
+      document.querySelectorAll<HTMLElement>('.sim-tabs [data-tab]').forEach((b) => b.addEventListener('click', () => openTab(b.dataset.tab!)));
+      document.querySelectorAll<HTMLElement>('.fopen [data-tab]').forEach((b) => b.addEventListener('click', () => openTab(b.dataset.tab!, true)));
+      $('quotas').addEventListener('input', () => {
+        custom();
+        label();
+        command({ op: 'quota', quota: quota() });
+        if (last) render({ ...last, quota: quota(), events: [] });
+      });
+      input('a-all').addEventListener('change', () => command({ op: 'audit', all: input('a-all').checked }));
+      input('a-chain').addEventListener('change', () => $('log').classList.toggle('chain', input('a-chain').checked));
+      $('a-verify').addEventListener('click', () => {
+        $('a-result').textContent = 'Checking…';
+        command({ op: 'verify' });
+      });
+      function verified(v: { ok: boolean; events: number; problem?: string; headHash?: string }) {
+        $('a-result').innerHTML = v.ok
+          ? `<b>The chain holds.</b> ${v.events.toLocaleString('en')} entries, each sealed over the one before. Head ${esc((v.headHash ?? '').slice(0, 16))}…`
+          : `<b class="hot">The chain is broken.</b> ${esc(v.problem ?? '')}`;
+      }
+
+      // ---- wires and packets, as in the console's live routing view ----
+
+      const stage = $('flow');
+      const curves: { app?: Curve; pools: Record<string, Curve> } = { pools: {} };
+      const hcurve = (a: XY, b: XY): Curve => ({ a, c1: { x: (a.x + b.x) / 2, y: a.y }, c2: { x: (a.x + b.x) / 2, y: b.y }, b });
+      const pathOf = (c: Curve) => `M ${c.a.x} ${c.a.y} C ${c.c1.x} ${c.c1.y}, ${c.c2.x} ${c.c2.y}, ${c.b.x} ${c.b.y}`;
+      const along = (c: Curve, t: number): XY => {
+        const m = 1 - t;
+        return {
+          x: m * m * m * c.a.x + 3 * m * m * t * c.c1.x + 3 * m * t * t * c.c2.x + t * t * t * c.b.x,
+          y: m * m * m * c.a.y + 3 * m * m * t * c.c1.y + 3 * m * t * t * c.c2.y + t * t * t * c.b.y,
+        };
+      };
+      const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+      const anchor = (node: Element, side: 'left' | 'right'): XY => {
+        const s = stage.getBoundingClientRect();
+        const r = node.getBoundingClientRect();
+        return { x: (side === 'left' ? r.left : r.right) - s.left, y: r.top + r.height / 2 - s.top };
+      };
+
+      function drawWires() {
+        const wires = $('wires');
+        curves.app = undefined;
+        curves.pools = {};
+        if (narrow.matches) { wires.innerHTML = ''; return; }
+        const core = $('n-core');
+        curves.app = hcurve(anchor($('n-app'), 'right'), anchor(core, 'left'));
+        const paths = [`<path class="wire" d="${pathOf(curves.app)}"/>`];
+        pools.querySelectorAll<HTMLElement>('.pcard').forEach((node) => {
+          const cv = hcurve(anchor(core, 'right'), anchor(node, 'left'));
+          curves.pools[node.dataset.pool!] = cv;
+          const shut = node.classList.contains('off') || node.classList.contains('closed') || node.classList.contains('down');
+          paths.push(`<path class="wire ${node.classList.contains('external') ? 'ext' : ''} ${shut ? 'shut' : ''}" d="${pathOf(cv)}"/>`);
+        });
+        wires.innerHTML = paths.join('');
+      }
+      new ResizeObserver(drawWires).observe(stage);
+
+      let flying = 0;
+      function send(legs: Curve[], cls: string, done?: () => void) {
+        if (flying > 36) { done?.(); return; }
+        flying++;
+        const packet = document.createElement('div');
+        packet.className = `packet ${cls}`;
+        stage.append(packet);
+        const per = 420;
+        const t0 = performance.now();
+        const total = per * legs.length;
+        const finish = () => { clearTimeout(stale); if (packet.isConnected) { packet.remove(); flying--; done?.(); } };
+        // A background tab may stop delivering frames; never leave a packet behind.
+        const stale = setTimeout(finish, total + 3000);
+        const step = (now: number) => {
+          const at = Math.max(0, now - t0); // a frame's timestamp can precede the call that asked for it
+          if (at >= total || !packet.isConnected) return finish();
+          const leg = legs[Math.min(legs.length - 1, Math.floor(at / per))];
+          const p = along(leg, ease((at % per) / per));
+          packet.style.transform = `translate(${p.x - 6}px, ${p.y - 6}px)`;
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }
+      function pulse(target: Element | null, cls: string) {
+        if (!target) return;
+        target.classList.remove(cls);
+        void (target as HTMLElement).offsetWidth; // restart the animation
+        target.classList.add(cls);
+        setTimeout(() => target.classList.remove(cls), 700);
+      }
+      /** One routing event as motion: a request reaches Differently, then goes to a provider or is turned away. */
+      function animate(e: Event) {
+        if (!curves.app || still.matches || document.hidden) return;
+        const to = e.pool ? curves.pools[e.pool] : undefined;
+        const node = e.pool ? card(e.pool) : null;
+        if (e.action === 'sandbox.placed' && to) send([curves.app, to], node?.classList.contains('external') ? 'ext' : '', () => pulse(node, 'hit'));
+        else if (e.action === 'sandbox.rejected' || e.action === 'sandbox.refused') send([curves.app], 'bad', () => pulse($('n-core'), 'refuse'));
+        else if ((e.action === 'sandbox.provision_retry' || e.action === 'sandbox.failed') && to) send([to], 'bad', () => pulse(node, 'refuse'));
+      }
+
+      // ---- drawing ----
+
+      const clock = (s: number) => {
+        const t = Math.floor(s);
+        const two = (n: number) => String(n).padStart(2, '0');
+        return `${two(Math.floor(t / 3600))}:${two(Math.floor(t / 60) % 60)}:${two(t % 60)}`;
+      };
+      const span = (s: number) => (s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${(s / 60).toFixed(1)} min` : `${(s / 3600).toFixed(1)} h`);
+      const money = (n: number) => (n >= 100 ? `$${Math.round(n)}` : `$${n.toFixed(2)}`);
+      const lookOf = (b: Box) => {
+        if (b.status === 'pausing') return 'pausing';
+        if (b.status === 'provisioning' || b.waiting) return 'starting';
+        if (b.status === 'paused' || b.status === 'stopped') return 'paused';
+        return b.busy ? 'busy' : 'idle';
+      };
+      const MAX_DOTS = 48;
+      const paceWords: Record<number, string> = { 1: 'real time', 10: 'ten minutes a minute', 60: 'an hour a minute', 240: 'four hours a minute' };
+
+      function line(id: string, values: number[], top: number) {
+        const n = values.length;
+        const pts = values.map((v, i) => `${(n > 1 ? (i / (n - 1)) * 300 : 300).toFixed(1)},${(22 - (Math.min(v, top) / top) * 20).toFixed(1)}`);
+        $(id).querySelector('polyline')!.setAttribute('points', n > 1 ? pts.join(' ') : '');
+      }
+
+      /** The order the next sandbox would try the providers in: the policy's own ranking, or the shares. */
+      function priority(s: Snapshot | null) {
+        const ext = select('external').value;
+        const row = (lead: string, id: string, note: string, cls = '') => {
+          const e = catalog.get(id)!;
+          return `<li class="${cls}"><span class="plead">${esc(lead)}</span><img src="${esc(e.logo)}" alt="" width="20" height="20" /><b>${esc(e.name)}</b><span class="pwhy">${esc(note)}</span></li>`;
+        };
+        let rows: string[] = [];
+        const ranks = new Map<string, number>();
+        let note = '';
+        if (mode === 'split') {
+          const total = active.reduce((n, id) => n + (enabled(id) ? shareOf(id) : 0), 0);
+          const byShare = [...active].sort((a, b) => (enabled(b) ? shareOf(b) : 0) - (enabled(a) ? shareOf(a) : 0));
+          rows = byShare.map((id) => {
+            const pool = s?.pools.find((p) => p.name === id);
+            const share = enabled(id) && total > 0 ? Math.round((shareOf(id) / total) * 100) : 0;
+            const outside = catalog.get(id)!.trust !== 'private';
+            const why = !enabled(id) ? 'off' : share === 0 ? 'no share' : outside && ext === 'never' ? 'refused: external is never' : pool && pool.held >= pool.slots ? 'full: its sandboxes wait for a slot' : pool?.offline ? 'backend failing' : 'takes its share';
+            return row(`${share}%`, id, why, share === 0 || (outside && ext === 'never') ? 'out' : '');
+          });
+          note = 'Set on the cards. A provider that is full makes its sandboxes wait; they are not sent elsewhere.';
+        } else if (!s || !s.ranking.length) {
+          note = started ? 'Waiting for the first sandbox.' : 'Filled in by the placement policy once the simulation runs.';
+        } else {
+          // Ranked first; then the ones policy allows but that have no room; then the rest.
+          const shown = s.ranking.filter((r) => active.includes(r.pool)).sort((a, b) => Number(b.rank > 0) - Number(a.rank > 0) || (a.rank - b.rank) || Number(b.eligible) - Number(a.eligible));
+          rows = shown.map((r) => {
+            if (r.rank > 0) {
+              ranks.set(r.pool, r.rank);
+              return row(String(r.rank), r.pool, r.rank === 1 ? 'takes the next sandbox' : 'next in line');
+            }
+            return row('–', r.pool, r.reasons?.[0] ?? (r.eligible ? 'no room now' : 'not allowed'), 'out');
+          });
+          note = ranks.size ? "The placement policy's ranking right now, with its own reason for each provider it holds back." : 'No provider can take a sandbox now: the next one queues.';
+        }
+        const html = rows.join('');
+        if (drawn.get('#prio') !== html) {
+          drawn.set('#prio', html);
+          $('prio').innerHTML = html;
+        }
+        $('prio-note').textContent = note;
+        for (const id of active) {
+          const badge = part(id, '.prank');
+          const rank = ranks.get(id);
+          badge.hidden = !rank;
+          if (rank) badge.textContent = String(rank);
+        }
+      }
+
+      function render(s: Snapshot) {
+        last = s;
+        const ext = select('external').value;
+        const holders = new Map<string, Box[]>();
+        for (const b of s.boxes) {
+          if (!b.pool || b.status === 'queued' || (b.status === 'paused' && b.slotReleased)) continue;
+          if (!holders.has(b.pool)) holders.set(b.pool, []);
+          holders.get(b.pool)!.push(b);
+        }
+        const placed = s.pools.reduce((n, p) => n + p.placed, 0);
+        let wiring = '';
+        for (const p of s.pools) {
+          const el = card(p.name);
+          if (!el) continue; // removed from the diagram
+          const closed = p.trust !== 'private' && ext === 'never';
+          el.classList.toggle('off', !p.enabled);
+          el.classList.toggle('down', p.offline);
+          el.classList.toggle('closed', closed);
+          wiring += `${p.name}:${p.enabled}${p.offline}${closed};`;
+
+          // A sandbox keeps its dot while it holds a slot.
+          const mine = holders.get(p.name) ?? [];
+          if (!slotOf.has(p.name)) slotOf.set(p.name, new Map());
+          const at = slotOf.get(p.name)!;
+          const here = new Set(mine.map((b) => b.id));
+          for (const id of at.keys()) if (!here.has(id)) at.delete(id);
+          const taken = new Set(at.values());
+          for (const b of mine) {
+            if (at.has(b.id)) continue;
+            let i = 0;
+            while (taken.has(i)) i++;
+            taken.add(i);
+            at.set(b.id, i);
+          }
+          const cells = Math.min(MAX_DOTS, Math.max(p.slots, ...[...taken].map((i) => i + 1), 0));
+          const states = new Array<string>(cells).fill('free');
+          let beyond = 0;
+          for (const b of mine) {
+            const i = at.get(b.id)!;
+            if (i < cells) states[i] = lookOf(b);
+            else beyond++;
+          }
+          const sig = states.join() + beyond;
+          if (drawn.get(p.name) !== sig) {
+            drawn.set(p.name, sig);
+            el.querySelector('.pdots')!.innerHTML = states.map((st) => `<i class="sb" data-s="${st}"></i>`).join('') + (beyond ? `<span class="pmeta">+${beyond}</span>` : '');
+          }
+
+          const bits = [`<b>${p.held} / ${p.slots}</b> slots`];
+          if (p.waiting) bits.push(`<span class="hot">${p.waiting} waiting</span>`);
+          if (p.checkpointed) bits.push(`${p.checkpointed} hibernated`);
+          if (p.offline) bits.push('<span class="hot">backend failing</span>');
+          else if (!p.enabled) bits.push('off');
+          else if (closed) bits.push('gate closed');
+          const tail = [`${placed ? Math.round((p.placed / placed) * 100) : 0}% of placements`];
+          if (p.costPerHour > 0) tail.push(`${money(p.hours * p.costPerHour)} bought`);
+          else tail.push(`${p.hours.toFixed(1)} h${p.trust === 'private' ? ' on your nodes' : ''}`);
+          const meta = `${bits.join(' · ')}<br>${tail.join(' · ')}`;
+          const m = el.querySelector(':scope > .pmeta') as HTMLElement;
+          if (m.innerHTML !== meta) m.innerHTML = meta;
+        }
+        if (wiring !== drawn.get('#wires')) {
+          drawn.set('#wires', wiring);
+          drawWires();
+        }
+        priority(s);
+
+        const people = s.working + s.waiting + s.idle || 1;
+        $('bar-working').style.width = `${(s.working / people) * 100}%`;
+        $('bar-waiting').style.width = `${(s.waiting / people) * 100}%`;
+        $('app-meta').innerHTML = `${s.working} working · ${s.waiting} waiting<br>${s.idle} idle`;
+        const strategy = mode === 'split' ? 'pinned by share' : select('strategy').value;
+        const limit = s.quota.maxActive ? `quota: ${s.active} of ${s.quota.maxActive}` : 'quota: no limit';
+        $('core-meta').innerHTML = `${strategy}<br>external: ${ext}<br>${limit}`;
+        $('q-usage').innerHTML = `<b>${s.active}</b> past the queue${s.quota.maxActive ? ` of ${s.quota.maxActive}` : ''} · <b>${s.queued + s.pools.reduce((n, p) => n + p.waiting, 0)}</b> waiting${s.quota.maxQueued ? ` of ${s.quota.maxQueued}` : ''} · <b>${s.stats.overQuota}</b> refused for quota`;
+        const chip = $('wait-chip');
+        chip.hidden = s.queued === 0;
+        chip.textContent = `waiting · stays queued ×${s.queued}`;
+
+        const st = s.stats;
+        $('s-sessions').textContent = st.sessions.toLocaleString('en');
+        $('s-p50').textContent = span(st.waitP50);
+        $('s-p95').textContent = span(st.waitP95);
+        $('s-outside').textContent = st.sessions ? `${Math.round((1 - st.privateSessions) * 100)}%` : '–';
+        $('s-spend').textContent = money(st.spend);
+        $('s-refused').textContent = String(st.refused);
+        $('s-hib').textContent = String(st.hibernations);
+        $('s-wake').textContent = String(st.wakes);
+        $('s-preempt').textContent = String(st.preemptions);
+        $('s-interrupt').textContent = String(st.interruptions);
+
+        // The pace actually kept, over the last two seconds.
+        const wall = performance.now();
+        pace.push([wall, s.seconds]);
+        while (pace.length > 2 && wall - pace[0][0] > 2000) pace.shift();
+        const kept = pace.length > 1 && wall > pace[0][0] ? ((s.seconds - pace[0][1]) * 1000) / (wall - pace[0][0]) : speed;
+        const slow = !paused && kept < speed * 0.8 && pace.length > 4;
+        const length = Number(select('length').value) * 3600;
+        if (length && s.seconds >= length && !finished && !paused) {
+          // The length that was asked for has been simulated: stop there.
+          finished = true;
+          paused = true;
+          applyScale();
+          buttons();
+        }
+        const state = finished ? ' · done' : paused ? ' · paused' : slow ? ` · ${Math.round(kept)}×, this tab's limit` : '';
+        $('clock').innerHTML = `<b>${clock(s.seconds)}</b>${length ? ` of ${clock(length)}` : ' simulated'}${state}`;
+        $('clock').title = `Simulated time. At ${speed}×: ${paceWords[speed]}.`;
+        $('progress').style.width = length ? `${Math.min(100, (s.seconds / length) * 100)}%` : '0%';
+        // What is running costs this much an hour, at list price; hibernated sandboxes are not counted.
+        const price = new Map(s.pools.map((p) => [p.name, p.costPerHour]));
+        const rate = s.boxes.reduce((n, b) => n + (b.pool && (b.status === 'running' || b.status === 'provisioning' || b.status === 'pausing') ? price.get(b.pool) ?? 0 : 0), 0);
+        $('cost').innerHTML = `<b>${money(st.spend)}</b> spent · ${money(rate)}/h now`;
+
+        const running = s.pools.reduce((n, p) => n + p.held, 0);
+        const outside = s.pools.reduce((n, p) => n + (p.trust === 'private' ? 0 : p.held), 0);
+        if (!paused) {
+          history.push({ run: running, wait: s.waiting, ext: outside });
+          if (history.length > 240) history.shift();
+        }
+        $('t-run').textContent = String(running);
+        $('t-wait').textContent = String(s.waiting);
+        $('t-ext').textContent = String(outside);
+        line('g-run', history.map((h) => h.run), Math.max(8, ...history.map((h) => h.run)));
+        line('g-wait', history.map((h) => h.wait), Math.max(4, ...history.map((h) => h.wait)));
+        line('g-ext', history.map((h) => h.ext), Math.max(8, ...history.map((h) => h.run)));
+
+        if (s.events.length) {
+          const log = $('log');
+          const hot = /resume_queued|preempted|provision_retry|failed|rejected|refused|interrupted|replaced|expired/;
+          const moving = s.events.filter((e) => /placed|rejected|refused|provision_retry|failed/.test(e.action)).slice(-10);
+          moving.forEach((e, i) => setTimeout(() => animate(e), i * 70));
+          for (const e of s.events) {
+            const li = document.createElement('li');
+            if (hot.test(e.action)) li.className = 'hot';
+            else if (e.action === 'sandbox.placed' || /^(pool|policy)\./.test(e.action)) li.className = 'strong';
+            const when = document.createElement('span');
+            when.textContent = clock(Math.max(0, e.t));
+            const what = document.createElement('span');
+            what.textContent = e.text;
+            if (e.seq) {
+              const seal = document.createElement('i');
+              seal.textContent = `#${e.seq} ${e.hash ?? ''}`;
+              what.append(seal);
+            }
+            li.append(when, what);
+            log.prepend(li);
+          }
+          while (log.children.length > 150) log.lastElementChild!.remove();
+        }
+      }
+
+      scenario();
+    </script>
+  </body>
+</html>

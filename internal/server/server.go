@@ -29,6 +29,7 @@ import (
 	"github.com/different-ai/differently/internal/pools"
 	"github.com/different-ai/differently/internal/scheduler"
 	"github.com/different-ai/differently/internal/secrets"
+	"github.com/different-ai/differently/internal/stacks"
 	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/internal/version"
 	"github.com/different-ai/differently/pkg/adapter"
@@ -47,6 +48,9 @@ type Server struct {
 	// Secrets seals provider credentials stored through the API; nil means
 	// none can be stored (env: and file: references still work).
 	Secrets *secrets.Box
+	// Stacks probes the application stacks this installation watches. Its
+	// loop (Stacks.Run) is started by the caller.
+	Stacks *stacks.Manager
 	// ActivityBeat is how often a call still running in a sandbox counts as
 	// activity.
 	ActivityBeat time.Duration
@@ -60,8 +64,11 @@ func New(cfg config.Config, st store.Store, pm *pools.Manager, sch *scheduler.Sc
 	return &Server{
 		Config: cfg, Store: st, Pools: pm, Scheduler: sch, Audit: rec, Log: log, Installation: installation,
 		ActivityBeat: 15 * time.Second,
-		limiter:      newLimiter(cfg.RateLimit.RequestsPerSecond, cfg.RateLimit.Burst),
-		now:          func() time.Time { return time.Now().UTC() },
+		Stacks: stacks.New(stacks.Deps{Store: st, Audit: rec, Log: log, Resolve: func(ref string) (string, error) {
+			return config.ParseCredentialRef(ref).Resolve()
+		}}),
+		limiter: newLimiter(cfg.RateLimit.RequestsPerSecond, cfg.RateLimit.Burst),
+		now:     func() time.Time { return time.Now().UTC() },
 	}
 }
 

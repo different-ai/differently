@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, List, Mapping, Optional
+from typing import Any, List, Mapping, Optional, Sequence
 
 from ._http import HttpClient, path_segment
 from ._sandbox import compact
 from .types import (
+    Attestation,
     AuditVerifyResult,
+    Budget,
     CostModel,
     CreateOrganizationResult,
     CredentialRef,
@@ -14,6 +16,8 @@ from .types import (
     Project,
     Quota,
     Secret,
+    Stack,
+    StackComponent,
     UsePoolResult,
     SandboxInfo,
     SuspendOrganizationResult,
@@ -86,8 +90,15 @@ class AdminPools:
         cost_model: Optional[CostModel] = None,
         config: Optional[Mapping[str, str]] = None,
         credentials: Optional[CredentialRef] = None,
+        attestations: Optional[Mapping[str, Attestation]] = None,
+        budget: Optional[Budget] = None,
     ) -> Pool:
-        """Registers a pool at runtime. ``credentials`` names a server env var, file or stored ``secret``, never a value."""
+        """Registers a pool at runtime. ``credentials`` names a server env var, file or stored ``secret``, never a value.
+
+        ``attestations`` are what you record about whoever runs the pool, by name
+        (``soc2-type2``, ``hipaa-baa``); Differently filters placement on them and
+        does not verify them. ``budget`` (``{"monthly": 250}``) needs a ``cost_model``.
+        """
         body = compact(
             name=name,
             adapter=adapter,
@@ -99,6 +110,8 @@ class AdminPools:
             costModel=cost_model,
             config=dict(config) if config is not None else None,
             credentials=credentials,
+            attestations=dict(attestations) if attestations is not None else None,
+            budget=budget,
         )
         return self._http.json("POST", "/v1/admin/pools", json=body)
 
@@ -111,9 +124,28 @@ class AdminPools:
         cost_model: Optional[CostModel] = None,
         region: Optional[str] = None,
         credential_ref: Optional[str] = None,
+        preemption: Optional[Mapping[str, Any]] = None,
+        attestations: Optional[Mapping[str, Attestation]] = None,
+        budget: Optional[Budget] = None,
     ) -> Pool:
-        """``credential_ref`` (API-registered pools only) is ``env:NAME``, ``file:/path`` or ``secret:name``."""
-        body = compact(enabled=enabled, maxConcurrency=max_concurrency, costModel=cost_model, region=region, credentialRef=credential_ref)
+        """``credential_ref`` (API-registered pools only) is ``env:NAME``, ``file:/path`` or ``secret:name``.
+
+        ``attestations`` and ``budget`` are for API-registered pools too.
+        ``attestations`` replaces the whole set the pool holds, so send the ones to
+        keep as well (``{}`` clears it). ``budget={"monthly": 0}`` removes the
+        budget; a budget needs a cost model. ``preemption={"mode": "off"}`` turns
+        preemption off.
+        """
+        body = compact(
+            enabled=enabled,
+            maxConcurrency=max_concurrency,
+            costModel=cost_model,
+            region=region,
+            credentialRef=credential_ref,
+            preemption=dict(preemption) if preemption is not None else None,
+            attestations=dict(attestations) if attestations is not None else None,
+            budget=budget,
+        )
         return self._http.json("PATCH", f"/v1/admin/pools/{path_segment(name)}", json=body)
 
     def drain(self, name: str) -> Pool:
@@ -151,6 +183,35 @@ class AdminSecrets:
         self._http.json("DELETE", f"/v1/admin/secrets/{path_segment(name)}")
 
 
+class AdminStacks:
+    """Application stacks this installation watches: their services and each one's health."""
+
+    def __init__(self, http: HttpClient) -> None:
+        self._http = http
+
+    def list(self) -> List[Stack]:
+        return self._http.json("GET", "/v1/admin/stacks").get("items") or []
+
+    def get(self, name: str) -> Stack:
+        return self._http.json("GET", f"/v1/admin/stacks/{path_segment(name)}")
+
+    def put(self, name: str, components: Sequence[StackComponent], *, kind: Optional[str] = None) -> Stack:
+        """Registers or replaces a stack. With ``kind="openwork"`` a component's ``role`` fills in its health routes.
+
+        The result carries a first probe of every component.
+        """
+        body = compact(kind=kind, components=[dict(c) for c in components])
+        return self._http.json("PUT", f"/v1/admin/stacks/{path_segment(name)}", json=body)
+
+    def check(self, name: str) -> Stack:
+        """Probes the stack now instead of waiting for the next round."""
+        return self._http.json("POST", f"/v1/admin/stacks/{path_segment(name)}/check")
+
+    def delete(self, name: str) -> None:
+        """Stops watching the stack. Its services are not touched."""
+        self._http.json("DELETE", f"/v1/admin/stacks/{path_segment(name)}")
+
+
 class Admin:
     """Operator-only endpoints. Every call needs a key with the ``admin`` scope."""
 
@@ -160,6 +221,7 @@ class Admin:
         self.projects = AdminProjects(http)
         self.pools = AdminPools(http)
         self.secrets = AdminSecrets(http)
+        self.stacks = AdminStacks(http)
 
     def trust_report(self) -> TrustReport:
         """Where workloads can go, where they went, and what Differently cannot prove."""

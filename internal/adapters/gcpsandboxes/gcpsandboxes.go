@@ -8,7 +8,8 @@
 // Google runs the sandboxes in the operator's project, so pools default to
 // TrustExternal; an operator whose policy treats their own Google Cloud
 // project as private may declare trust: private. Requests carry an OAuth
-// 2.0 token from a service-account key (JWT bearer grant, no Google SDK).
+// 2.0 token from a service-account key (JWT bearer grant), the metadata
+// server or workload identity federation, with no Google SDK.
 //
 // Mapping, from the aiplatform v1 discovery document (revision 20261012)
 // and the sandbox guides (read 2026-10-28):
@@ -16,16 +17,25 @@
 //   - sandboxes have no labels or client-chosen IDs, so Create looks for the
 //     display name "dly:<installation>:<sandbox>" before creating, sets
 //     owner to the installation, and waits on the long-running operation;
+//
 //   - List pages through the engine's sandboxes and keeps that prefix;
+//
 //   - Exec posts {command, cwd, timeout} to the shell container's /exec
 //     route through :execute; env and stdin are folded into the command line
 //     (shellcmd), and files move as base64 through commands;
+//
 //   - Stop and Start are :pause and :resume (the filesystem is kept);
+//
 //   - snapshots capture memory and filesystem and restore by creating from
 //     them.
 //
-// Not available: exposed ports (the data plane needs a signed JWT and a
-// routing token per request), streaming, moving the TTL after creation.
+//   - egress is set on the template: the pool advertises egress control
+//     when its template has internet access off, and then refuses a request
+//     for a template that allows it.
+//
+// Not available: exposed ports (the data plane proxies only requests that
+// carry the caller's Google credential), streaming, moving the TTL after
+// creation (there is no update method).
 //
 // Tested against a fake server built from the published API, not yet
 // against a live project.
@@ -41,6 +51,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/different-ai/differently/internal/adapters/cloudhttp"
@@ -66,7 +77,9 @@ const (
 
 // Options configures the adapter. Pool config keys: project, location (or
 // the pool's region), reasoningEngine, template (all required), apiURL.
-// The credential is a service-account JSON key.
+// The credential is a service-account JSON key, {"type": "metadata_server"}
+// (Compute Engine and GKE Workload Identity) or a workload identity
+// federation configuration (see cloudhttp.GoogleTokens).
 type Options struct {
 	Project      string
 	Location     string
@@ -75,7 +88,6 @@ type Options struct {
 	APIURL       string
 	ReadyTimeout time.Duration
 	PollEvery    time.Duration
-	Account      cloudhttp.GoogleServiceAccount
 	tokens       cloudhttp.TokenSource
 	// HTTP overrides the client used for tokens (tests).
 	HTTP *http.Client
@@ -93,12 +105,11 @@ func FromConfig(cfg map[string]string, region, credential string) (Options, erro
 	if o.APIURL == "" {
 		o.APIURL = "https://" + o.Location + "-aiplatform.googleapis.com"
 	}
-	sa, key, err := cloudhttp.ParseGoogle(credential)
+	tokens, err := cloudhttp.GoogleTokens(credential, Scope, &http.Client{Timeout: time.Minute})
 	if err != nil {
 		return o, fmt.Errorf("gcp-sandboxes: %w", err)
 	}
-	o.Account = sa
-	o.tokens = cloudhttp.Google(sa, key, Scope, &http.Client{Timeout: time.Minute})
+	o.tokens = tokens
 	return o, nil
 }
 
@@ -106,6 +117,9 @@ func FromConfig(cfg map[string]string, region, credential string) (Options, erro
 type Adapter struct {
 	opts Options
 	c    *cloudhttp.Client
+
+	mu     sync.Mutex
+	egress map[string]bool // template name -> internet access is off
 }
 
 // New returns an Agent Platform sandbox adapter.
@@ -123,7 +137,7 @@ func New(o Options) *Adapter {
 		}
 		return ""
 	}
-	return &Adapter{opts: o, c: c}
+	return &Adapter{opts: o, c: c, egress: map[string]bool{}}
 }
 
 // Endpoint is reported in the trust report.
@@ -134,11 +148,43 @@ func (a *Adapter) Info() adapter.Info {
 		Description: "Google Cloud Agent Platform shell sandboxes in " + a.parent()}
 }
 
-func (a *Adapter) Capabilities(context.Context) (adapter.Capabilities, error) {
-	return adapter.Capabilities{Features: []string{
+// Capabilities advertises egress control only when the pool's template has
+// internet access off: Google sets egress on the template, not per sandbox.
+// If the template cannot be read, the feature is left out.
+func (a *Adapter) Capabilities(ctx context.Context) (adapter.Capabilities, error) {
+	features := []string{
 		adapter.FeatureExec, adapter.FeatureFiles, adapter.FeatureStopStart, adapter.FeaturePersistDisk,
 		adapter.FeatureSnapshotMem, adapter.FeatureSnapshotDisk, adapter.FeatureFork,
-	}, Regions: []string{a.opts.Location}}, nil
+	}
+	if off, err := a.internetOff(ctx, a.templateName(a.opts.Template)); err == nil && off {
+		features = append(features, adapter.FeatureEgressControl)
+	}
+	return adapter.Capabilities{Features: features, Regions: []string{a.opts.Location}}, nil
+}
+
+// internetOff reports whether a template denies internet access
+// (egressControlConfig.internetAccess, off unless set). Templates cannot be
+// changed after creation, so an answer is kept.
+func (a *Adapter) internetOff(ctx context.Context, template string) (bool, error) {
+	a.mu.Lock()
+	off, known := a.egress[template]
+	a.mu.Unlock()
+	if known {
+		return off, nil
+	}
+	var t struct {
+		Egress struct {
+			InternetAccess bool `json:"internetAccess"`
+		} `json:"egressControlConfig"`
+	}
+	if err := a.c.JSON(ctx, http.MethodGet, "/"+template, nil, &t); err != nil {
+		return false, err
+	}
+	off = !t.Egress.InternetAccess
+	a.mu.Lock()
+	a.egress[template] = off
+	a.mu.Unlock()
+	return off, nil
 }
 
 func (a *Adapter) Capacity(context.Context) (adapter.Capacity, error) { return adapter.Capacity{}, nil }
@@ -317,8 +363,22 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 			body["sandboxEnvironmentSnapshot"] = a.snapshotName(req.FromSnapshot)
 		} else {
 			tmpl := a.opts.Template
-			if req.Template != "" {
+			if req.Template != "" && a.templateName(req.Template) != a.templateName(a.opts.Template) {
+				// A pool whose template denies internet access advertises
+				// egress control, so a request may not swap in a template
+				// that allows it.
 				tmpl = req.Template
+				if poolOff, err := a.internetOff(ctx, a.templateName(a.opts.Template)); err != nil {
+					return adapter.Instance{}, err
+				} else if poolOff {
+					off, err := a.internetOff(ctx, a.templateName(tmpl))
+					if err != nil {
+						return adapter.Instance{}, err
+					}
+					if !off {
+						return adapter.Instance{}, api.Errorf(api.CodeInvalidRequest, "gcp-sandboxes: template %s allows internet access, but this pool's template does not; use a pool whose template allows it", tmpl)
+					}
+				}
 			}
 			body["spec"] = map[string]any{"shellEnvironment": map[string]any{}}
 			body["sandboxEnvironmentTemplate"] = a.templateName(tmpl)
