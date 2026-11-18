@@ -60,7 +60,8 @@ it and config.policy.externalPools lists "{{ $o.pool.name }}".
 Containers share the host kernel. Set opensandbox.isolation=microvm only for
 an OpenSandbox server running Fast Sandbox.
 {{- else }}
-Fast Sandbox has not been verified with Differently yet, so treat microVM
+Fast Sandbox has run with Differently only on Azure under nested KVM, and no
+isolation probes have been run inside its sandboxes, so treat microVM
 isolation as declared, not proven.
 {{- end }}
 Differently reports the declared isolation; it does not enforce isolation or

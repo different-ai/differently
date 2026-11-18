@@ -21,10 +21,14 @@ external provider, or whatever a `remote` plugin fronts. Differently decides
 happened. The trust report states each pool's declared isolation; Differently
 does not check it.
 
-Verification level of the backends: OpenSandbox with the Docker runtime has
-run live through the adapter and through `differently-server`. The Kubernetes
-runtime and Fast Sandbox have not, so microVM isolation through Differently
-is unverified ([backlog E18](../backlog.md#e18-fast-sandbox-spike)). Daytona
+Verification level of the backends: OpenSandbox has run live through the
+adapter and through `differently-server` with its Docker runtime, its
+Kubernetes runtime (k3s on Azure) and Fast Sandbox (Azure, nested KVM, one
+KVM node). Those runs checked that the features work. None probed isolation
+from inside a sandbox, so microVM isolation through Differently is still
+unverified ([backlog E18.4](../backlog.md#e18-fast-sandbox-spike),
+[POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter),
+steps 5 to 9). Daytona
 (container class) and Freestyle ran live through their adapters and
 `differently-server` on 2026-10-29; Daytona's VM class has not.
 
@@ -243,7 +247,7 @@ turns them into steps.
 | Gap | Effect | Tracking |
 |---|---|---|
 | Isolation and egress belong to the runtime | Differently cannot prove or enforce what a pool declares; the trust report shows declarations | By design: the runtime's job |
-| microVM isolation through Differently is unverified | Only the Docker runtime has run through Differently; its containers share the host kernel | [backlog E18](../backlog.md#e18-fast-sandbox-spike), [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter) |
+| microVM isolation through Differently is unverified | Fast Sandbox has run through Differently (Azure, nested KVM), but no isolation probes have been run inside its sandboxes; containers on the Docker and Kubernetes runtimes share the host kernel | [backlog E18](../backlog.md#e18-fast-sandbox-spike), [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter) |
 | OpenSandbox's network policy is not wired up | No per-sandbox egress control through Differently on OpenSandbox pools | [backlog E19](../backlog.md#e19-opensandbox-network-policy-and-egress) |
 | One server-wide OpenSandbox API key | Anyone holding it controls every sandbox on that server, outside Differently's tenancy and audit | OpenSandbox's model; keep the key in the control plane only |
 | Sandbox env values in plaintext | Database readers and the backend see them; fork copies them | [backlog E13](../backlog.md#e13-sandbox-secrets-by-reference), informed by [E20](../backlog.md#e20-credential-vault-evaluation) |
