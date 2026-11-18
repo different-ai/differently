@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -30,6 +30,29 @@ type settings struct {
 	URL     string `json:"url,omitempty"`
 	APIKey  string `json:"apiKey,omitempty"`
 	Project string `json:"project,omitempty"`
+	// ProjectURL is the server Project was saved for when there was no login
+	// to tie it to. It is not the URL: saving a project must not change which
+	// server the CLI talks to.
+	ProjectURL string `json:"projectUrl,omitempty"`
+}
+
+// defaultURL is where the CLI looks when nothing names a server.
+const defaultURL = "http://localhost:8080"
+
+// projectServer is the server the saved project belongs to: the one it was
+// saved for, else the one login saved, else the default.
+func (s settings) projectServer() string {
+	for _, u := range []string{s.ProjectURL, s.URL} {
+		if u != "" {
+			return u
+		}
+	}
+	return defaultURL
+}
+
+// sameServer compares two API URLs, ignoring a trailing slash.
+func sameServer(a, b string) bool {
+	return strings.TrimRight(a, "/") == strings.TrimRight(b, "/")
 }
 
 var (
@@ -41,13 +64,29 @@ func configPath() string {
 	return filepath.Join(dir, "differently", "config.json")
 }
 
-// saved reads the config file alone, with nothing from flags, the
-// environment or a local dev server: what login and org create wrote.
-func saved() settings {
-	var s settings
-	if b, err := os.ReadFile(configPath()); err == nil {
-		_ = json.Unmarshal(b, &s)
+// readSaved reads the config file alone, with nothing from flags, the
+// environment or a local dev server: what login and org create wrote. A
+// missing file is an empty config. A file that cannot be read or parsed is
+// an error, so that nobody replaces it with less than it held.
+func readSaved() (settings, error) {
+	b, err := os.ReadFile(configPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return settings{}, nil
 	}
+	if err != nil {
+		return settings{}, err
+	}
+	var s settings
+	if err := json.Unmarshal(b, &s); err != nil {
+		return settings{}, fmt.Errorf("%s is not valid JSON: %w", configPath(), err)
+	}
+	return s, nil
+}
+
+// saved is readSaved for callers that only read: a file they cannot use
+// counts as empty.
+func saved() settings {
+	s, _ := readSaved()
 	return s
 }
 
@@ -60,42 +99,61 @@ func save(s settings) error {
 	return os.WriteFile(configPath(), b, 0o600)
 }
 
-// rememberProject makes id the default project when there is none: no
-// --project, no DIFFERENTLY_PROJECT, nothing saved and no local dev server's
-// project. It never replaces a default, and it leaves alone a file saved for
-// another server, where the ID would mean nothing. When it does not save, why
-// says so.
+// rememberProject makes id the default project for the server in use when
+// there is none: no --project, no DIFFERENTLY_PROJECT, nothing saved and no
+// local dev server's project. The server's URL is saved with it, because the
+// ID means nothing anywhere else; a key from the environment is not.
+//
+// It never replaces a saved project, including one saved for another server,
+// and it never writes over a config file it could not read. When it does not
+// save, why or err says so.
 func rememberProject(id string) (ok bool, why string, err error) {
 	cur := load()
 	if cur.Project != "" {
 		return false, "the default stays " + cur.Project, nil
 	}
-	f := saved()
-	if f.URL != "" && strings.TrimRight(f.URL, "/") != strings.TrimRight(cur.URL, "/") {
-		return false, "the saved login is for " + f.URL, nil
+	f, err := readSaved()
+	if err != nil {
+		return false, "", err
+	}
+	switch {
+	case f.Project != "":
+		// load did not use it, so it belongs to another server.
+		return false, "the saved config is for " + f.projectServer(), nil
+	case f.URL != "" && !sameServer(f.URL, cur.URL):
+		return false, "the saved config is for " + f.URL, nil
 	}
 	f.Project = id
+	if f.URL == "" {
+		f.ProjectURL = cur.URL
+	}
 	return true, "", save(f)
 }
 
+// load works out the settings for this command: flags, then the environment,
+// then the config file, then a local dev server.
 func load() settings {
-	s := saved()
-	for _, o := range []struct {
-		dst       *string
-		env, flag string
-	}{
-		{&s.URL, "DIFFERENTLY_URL", flagURL}, {&s.APIKey, "DIFFERENTLY_API_KEY", flagKey}, {&s.Project, "DIFFERENTLY_PROJECT", flagProject},
-	} {
-		if v := os.Getenv(o.env); v != "" {
-			*o.dst = v
+	f := saved()
+	s := settings{URL: f.URL, APIKey: f.APIKey}
+	override := func(dst *string, env, flag string) {
+		if v := os.Getenv(env); v != "" {
+			*dst = v
 		}
-		if o.flag != "" {
-			*o.dst = o.flag
+		if flag != "" {
+			*dst = flag
 		}
 	}
+	override(&s.URL, "DIFFERENTLY_URL", flagURL)
+	override(&s.APIKey, "DIFFERENTLY_API_KEY", flagKey)
 	if s.URL == "" {
-		s.URL = "http://localhost:8080"
+		s.URL = defaultURL
 	}
+	// A saved project is an ID on one server. Sent to another it is at best
+	// unknown, and on a local dev server it would hide prj_default.
+	if sameServer(f.projectServer(), s.URL) {
+		s.Project = f.Project
+	}
+	override(&s.Project, "DIFFERENTLY_PROJECT", flagProject)
 	// Local dev servers write an operator token; use it for this machine only.
 	if s.APIKey == "" && isLoopbackURL(s.URL) {
 		home, _ := os.UserHomeDir()
@@ -197,7 +255,7 @@ func newRoot() *cobra.Command {
 	root := &cobra.Command{Use: "differently", Short: "Differently: your infrastructure, your rules, one API", SilenceUsage: true, SilenceErrors: true, Version: version.Version}
 	root.PersistentFlags().StringVar(&flagURL, "url", "", "API URL (env DIFFERENTLY_URL)")
 	root.PersistentFlags().StringVar(&flagKey, "api-key", "", "API key (env DIFFERENTLY_API_KEY)")
-	root.PersistentFlags().StringVar(&flagProject, "project", "", "project ID for org/operator keys (env DIFFERENTLY_PROJECT; default: the one login or admin org create saved)")
+	root.PersistentFlags().StringVar(&flagProject, "project", "", "project ID for org/operator keys (env DIFFERENTLY_PROJECT; default: the one login or admin org create saved for this server)")
 	root.PersistentFlags().StringVarP(&flagOutput, "output", "o", "table", "output format: table or json")
 	root.AddCommand(runCmd(), loginCmd(), sandboxCmd(), projectCmd(), keyCmd(), usageCmd(), adminCmd(), doctorCmd(),
 		&cobra.Command{Use: "whoami", Short: "Show the current key", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/me", nil) }},
@@ -679,17 +737,23 @@ func keyCmd() *cobra.Command {
 		Use: "create NAME", Args: cobra.ExactArgs(1), Short: "Create a scoped key (the token is shown once)",
 		Long: `Create makes a key and shows its token once.
 
-With neither --org nor --key-project the key is limited to the default
-project (--project, DIFFERENTLY_PROJECT, or the one login or admin org create
-saved). --key-project names another project; its organization is looked up.
---org alone makes a key for every project of that organization. A key with
-the admin or org:admin scope is never limited to the default project.`,
+A key that holds only sandboxes: scopes, which is what --scope defaults to,
+is limited to the default project when neither --org nor --key-project is
+given. The default project is --project, DIFFERENTLY_PROJECT, or the one
+login or admin org create saved for this server.
+
+A key with any other scope (projects:write, keys:write, org:admin, admin,
+...) is not limited that way, since it is usually meant for more than one
+project: limit it with --key-project. --key-project names a project and its
+organization is looked up. --org alone makes a key for every project of that
+organization.`,
 		Example: `  differently key create dev
   differently key create ci --key-project prj_... --ttl-hours 720
+  differently key create provisioner --org org_... --scope projects:write
   differently key create team-admins --org org_... --scope org:admin`,
 		RunE: func(cmd *cobra.Command, a []string) error {
 			cl := cli()
-			req, err := keyRequest(ctx(), cl, api.CreateAPIKeyRequest{Name: a[0], OrgID: org, ProjectID: project, Scopes: scopes, TTLHours: ttl}, load().Project)
+			req, byDefault, err := keyRequest(ctx(), cl, api.CreateAPIKeyRequest{Name: a[0], OrgID: org, ProjectID: project, Scopes: scopes, TTLHours: ttl}, load().Project)
 			if err != nil {
 				return err
 			}
@@ -702,13 +766,17 @@ the admin or org:admin scope is never limited to the default project.`,
 				enc.SetIndent("", "  ")
 				return enc.Encode(out)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "key %s created for %s; store this token now, it is not shown again:\n%s\n", out.ID, keyReach(out.APIKey), out.Token)
+			where := keyReach(out.APIKey)
+			if byDefault {
+				where += ", the default project"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "key %s created for %s; store this token now, it is not shown again:\n%s\n", out.ID, where, out.Token)
 			return nil
 		},
 	}
 	create.Flags().StringSliceVar(&scopes, "scope", []string{"sandboxes:read", "sandboxes:write", "sandboxes:exec"}, "scopes")
 	create.Flags().StringVar(&org, "org", "", "organization; alone, the key works in every project of it")
-	create.Flags().StringVar(&project, "key-project", "", "limit the key to this project (default: the default project, unless --org is given)")
+	create.Flags().StringVar(&project, "key-project", "", "limit the key to this project (default for sandboxes: scopes: the default project, unless --org is given)")
 	create.Flags().IntVar(&ttl, "ttl-hours", 0, "expire after N hours")
 	var grace time.Duration
 	rotate := &cobra.Command{Use: "rotate ID", Args: cobra.ExactArgs(1), Short: "Replace a key with a new one (same name, scopes and project); the token is shown once", RunE: func(_ *cobra.Command, a []string) error {
@@ -756,17 +824,20 @@ the admin or org:admin scope is never limited to the default project.`,
 	return cmd
 }
 
-// keyRequest fills in what a key create left out. With neither an
-// organization nor a project, a tenant key is limited to the default project.
-// A project without an organization takes the project's own, which an
-// operator key must name. Keys with the admin or org:admin scope are left
-// alone: they are meant to reach more than one project.
+// keyRequest fills in what a key create left out, and reports whether it
+// limited the key to the default project.
 //
-// A default project the key cannot see is an error, not a reason to fall
-// back to a wider key.
-func keyRequest(c context.Context, cl *client.Client, req api.CreateAPIKeyRequest, defaultProject string) (api.CreateAPIKeyRequest, error) {
-	wide := slices.Contains(req.Scopes, "admin") || slices.Contains(req.Scopes, "org:admin")
-	byDefault := req.OrgID == "" && req.ProjectID == "" && !wide && defaultProject != ""
+// With neither an organization nor a project, a key that holds only
+// sandboxes: scopes is limited to the default project. A key with any other
+// scope is sent as it is: projects:write, keys:write or org:admin are for an
+// organization, where the server refuses a project-limited key to create or
+// delete projects, and admin is for the whole installation.
+//
+// A project without an organization takes the project's own, which an
+// operator key must name. A default project the key cannot see is an error,
+// not a reason to fall back to a wider key.
+func keyRequest(c context.Context, cl *client.Client, req api.CreateAPIKeyRequest, defaultProject string) (api.CreateAPIKeyRequest, bool, error) {
+	byDefault := req.OrgID == "" && req.ProjectID == "" && defaultProject != "" && sandboxScopesOnly(req.Scopes)
 	if byDefault {
 		req.ProjectID = defaultProject
 	}
@@ -774,14 +845,25 @@ func keyRequest(c context.Context, cl *client.Client, req api.CreateAPIKeyReques
 		var p api.Project
 		err := cl.Do(c, "GET", "/v1/projects/"+url.PathEscape(req.ProjectID), nil, &p)
 		if byDefault && api.IsCode(err, api.CodeNotFound) {
-			return req, api.Errorf(api.CodeNotFound, "this key cannot use the default project %s; name a project with --key-project or an organization with --org", req.ProjectID)
+			return req, false, api.Errorf(api.CodeNotFound, "this key cannot use the default project %s; name a project with --key-project or an organization with --org", req.ProjectID)
 		}
 		if err != nil {
-			return req, err
+			return req, false, err
 		}
 		req.OrgID = p.OrgID
 	}
-	return req, nil
+	return req, byDefault, nil
+}
+
+// sandboxScopesOnly reports whether every scope is about using sandboxes,
+// which a key limited to one project can do in full.
+func sandboxScopesOnly(scopes []string) bool {
+	for _, s := range scopes {
+		if !strings.HasPrefix(s, "sandboxes:") {
+			return false
+		}
+	}
+	return len(scopes) > 0
 }
 
 // keyReach says where a key works, so nobody has to guess what a default did.
@@ -1004,8 +1086,9 @@ func adminCmd() *cobra.Command {
 project in it, and prints both IDs.
 
 When this CLI has no default project yet, the new one is saved as the
-default, so 'differently run' and 'differently key create' work right after
-with no ID to copy. A default that already exists is never replaced.`,
+default for this server, so 'differently run' and 'differently key create'
+work right after with no ID to copy. A default that already exists is never
+replaced, and the saved project is not used with any other server.`,
 		RunE: func(cmd *cobra.Command, a []string) error {
 			return orgCreate(ctx(), cli(), a[0], defaultProject, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},

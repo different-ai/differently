@@ -280,8 +280,11 @@ func devToken(t *testing.T) {
 }
 
 // runCLI runs one command line the way main does, with its output captured.
+// The flags are package-level variables, so they are cleared when the test
+// ends: a "-o json" left behind would change what other tests print.
 func runCLI(t *testing.T, stdin string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
+	t.Cleanup(func() { flagURL, flagKey, flagProject, flagOutput = "", "", "", "" })
 	root := newRoot()
 	var out, errOut strings.Builder
 	root.SetOut(&out)
@@ -290,6 +293,22 @@ func runCLI(t *testing.T, stdin string, args ...string) (stdout, stderr string, 
 	root.SetArgs(args)
 	err = root.Execute()
 	return out.String(), errOut.String(), err
+}
+
+// privateConfig fails the test unless the config file and its directory are
+// the owner's alone: the file can hold a key.
+func privateConfig(t *testing.T) {
+	t.Helper()
+	for path, want := range map[string]os.FileMode{configPath(): 0o600, filepath.Dir(configPath()): 0o700} {
+		fi, err := os.Stat(path)
+		if err != nil {
+			t.Errorf("%s: %v", path, err)
+			continue
+		}
+		if got := fi.Mode().Perm(); got != want {
+			t.Errorf("%s has mode %o, want %o", path, got, want)
+		}
+	}
 }
 
 // The path from a bootstrap operator token to a first sandbox: three commands
@@ -309,9 +328,7 @@ func TestFirstSandboxNeedsNoCopiedID(t *testing.T) {
 	if got := saved(); got != (settings{URL: url, APIKey: "dly_bootop1_secret"}) {
 		t.Fatalf("after login the config holds %+v", got)
 	}
-	if fi, err := os.Stat(configPath()); err != nil || fi.Mode().Perm() != 0o600 {
-		t.Errorf("the config holds a key and must be owner-only: %v, %v", fi.Mode().Perm(), err)
-	}
+	privateConfig(t)
 
 	out, errOut, err := runCLI(t, "", "admin", "org", "create", "my-team")
 	if err != nil {
@@ -351,6 +368,7 @@ func TestOrgCreateRemembersOnlyAMissingDefault(t *testing.T) {
 		args   []string
 		want   func(url string) settings
 		stderr string
+		check  func(t *testing.T)
 	}{
 		{
 			name:   "one is saved already",
@@ -382,7 +400,38 @@ func TestOrgCreateRemembersOnlyAMissingDefault(t *testing.T) {
 				t.Setenv("DIFFERENTLY_API_KEY", key)
 			},
 			want:   func(string) settings { return settings{URL: "https://other.example.com", APIKey: "dly_other_secret"} },
-			stderr: "the saved login is for https://other.example.com",
+			stderr: "the saved config is for https://other.example.com",
+		},
+		{
+			name: "the saved login is for another server and has a project",
+			setup: func(t *testing.T, url string) {
+				must(t, save(settings{URL: "https://other.example.com", APIKey: "dly_other_secret", Project: "prj_other"}))
+				t.Setenv("DIFFERENTLY_URL", url)
+				t.Setenv("DIFFERENTLY_API_KEY", key)
+			},
+			want: func(string) settings {
+				return settings{URL: "https://other.example.com", APIKey: "dly_other_secret", Project: "prj_other"}
+			},
+			stderr: "the saved config is for https://other.example.com",
+		},
+		{
+			name: "a project was saved for another server with no login",
+			setup: func(t *testing.T, url string) {
+				must(t, save(settings{Project: "prj_other", ProjectURL: "https://other.example.com"}))
+				t.Setenv("DIFFERENTLY_URL", url)
+				t.Setenv("DIFFERENTLY_API_KEY", key)
+			},
+			want:   func(string) settings { return settings{Project: "prj_other", ProjectURL: "https://other.example.com"} },
+			stderr: "the saved config is for https://other.example.com",
+		},
+		{
+			name: "the saved login names this server with a trailing slash",
+			setup: func(t *testing.T, url string) {
+				must(t, save(settings{URL: url + "/", APIKey: key}))
+				t.Setenv("DIFFERENTLY_URL", url)
+			},
+			want:   func(url string) settings { return settings{URL: url + "/", APIKey: key, Project: "prj_1"} },
+			stderr: "prj_1 is now the default project",
 		},
 		{
 			name: "a local dev server has its own default",
@@ -399,9 +448,12 @@ func TestOrgCreateRemembersOnlyAMissingDefault(t *testing.T) {
 				t.Setenv("DIFFERENTLY_URL", url)
 				t.Setenv("DIFFERENTLY_API_KEY", key)
 			},
-			// The project is remembered; the key from the environment is not written.
-			want:   func(string) settings { return settings{Project: "prj_1"} },
+			// The project is remembered with the server it belongs to. The key
+			// from the environment is not written, and neither is the URL as
+			// the CLI's default server.
+			want:   func(url string) settings { return settings{Project: "prj_1", ProjectURL: url} },
 			stderr: "prj_1 is now the default project",
+			check:  privateConfig,
 		},
 		{
 			name:   "no project was asked for",
@@ -426,7 +478,120 @@ func TestOrgCreateRemembersOnlyAMissingDefault(t *testing.T) {
 			if !strings.Contains(errOut, tc.stderr) {
 				t.Errorf("stderr %q does not say %q", errOut, tc.stderr)
 			}
+			if tc.check != nil {
+				tc.check(t)
+			}
 		})
+	}
+}
+
+// A project saved without a login belongs to the server it was made on. It
+// must not follow the CLI to a local dev server, whose own token and
+// prj_default worked before anything was saved.
+func TestSavedProjectDoesNotHideTheDevServers(t *testing.T) {
+	isolate(t)
+	devToken(t)
+	prod := &fakeAPI{me: whoami{KeyID: "op", Operator: true}}
+	prodURL := prod.start(t)
+	t.Setenv("DIFFERENTLY_URL", prodURL)
+	t.Setenv("DIFFERENTLY_API_KEY", "dly_prod_secret")
+	if _, _, err := runCLI(t, "", "admin", "org", "create", "my-team"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := saved(), (settings{Project: "prj_1", ProjectURL: prodURL}); got != want {
+		t.Fatalf("config holds %+v, want %+v", got, want)
+	}
+	if got := load(); got.Project != "prj_1" {
+		t.Errorf("on the server it was saved for, the project is %q", got.Project)
+	}
+
+	// Nothing names a server any more: the CLI is back on this machine, with
+	// the dev server's token and project.
+	t.Setenv("DIFFERENTLY_URL", "")
+	t.Setenv("DIFFERENTLY_API_KEY", "")
+	if got, want := load(), (settings{URL: defaultURL, APIKey: "dly_dev_token", Project: "prj_default"}); got != want {
+		t.Errorf("with no server named the settings are %+v, want %+v", got, want)
+	}
+
+	// The same through a run, against a dev server on another local port.
+	dev := &fakeAPI{status: api.StatusRunning}
+	t.Setenv("DIFFERENTLY_URL", dev.start(t))
+	out, _, err := runCLI(t, "", "run", "--", "echo", "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "hello\n" || dev.created.ProjectID != "prj_default" {
+		t.Errorf("run printed %q in project %q; want hello in prj_default", out, dev.created.ProjectID)
+	}
+}
+
+// A project saved by a login is used with that server only. On a second
+// server it is not sent, and an organization made there does not replace it.
+func TestSavedProjectStaysWithItsServer(t *testing.T) {
+	isolate(t)
+	first := &fakeAPI{status: api.StatusRunning, me: whoami{KeyID: "op", Operator: true}}
+	firstURL := first.start(t)
+	if _, _, err := runCLI(t, "", "login", "--url", firstURL, "--api-key", "dly_first_secret"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCLI(t, "", "admin", "org", "create", "my-team"); err != nil {
+		t.Fatal(err)
+	}
+	login := settings{URL: firstURL, APIKey: "dly_first_secret", Project: "prj_1"}
+	if got := saved(); got != login {
+		t.Fatalf("config holds %+v, want %+v", got, login)
+	}
+
+	second := &fakeAPI{status: api.StatusRunning, me: whoami{KeyID: "op2", Operator: true}}
+	secondURL := second.start(t)
+	if _, _, err := runCLI(t, "", "--url", secondURL, "--api-key", "dly_second_secret", "run", "--", "echo", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if second.created.ProjectID != "" {
+		t.Errorf("the first server's project %q was sent to the second server", second.created.ProjectID)
+	}
+	_, errOut, err := runCLI(t, "", "--url", secondURL, "--api-key", "dly_second_secret", "admin", "org", "create", "other-team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := saved(); got != login || !strings.Contains(errOut, "the saved config is for "+firstURL) {
+		t.Errorf("config holds %+v, stderr %q: want the login untouched and the reason said", got, errOut)
+	}
+
+	// The first server still gets its project, with or without a trailing slash.
+	if _, _, err := runCLI(t, "", "--url", firstURL+"/", "run", "--", "echo", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if first.created.ProjectID != "prj_1" {
+		t.Errorf("the first server got project %q, want prj_1", first.created.ProjectID)
+	}
+}
+
+// A config file that cannot be parsed is left exactly as it is: writing the
+// project over it would lose the URL and key it may hold.
+func TestOrgCreateLeavesAnUnreadableConfigAlone(t *testing.T) {
+	isolate(t)
+	f := &fakeAPI{me: whoami{KeyID: "op", Operator: true}}
+	t.Setenv("DIFFERENTLY_URL", f.start(t))
+	t.Setenv("DIFFERENTLY_API_KEY", "dly_op_secret")
+	broken := []byte(`{"url": "https://differently.example.com", "apiKey": "dly_saved_secret",`)
+	must(t, os.MkdirAll(filepath.Dir(configPath()), 0o700))
+	must(t, os.WriteFile(configPath(), broken, 0o600))
+
+	out, errOut, err := runCLI(t, "", "admin", "org", "create", "my-team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "prj_1") {
+		t.Errorf("the organization was made but the summary is missing:\n%s", out)
+	}
+	if got, _ := os.ReadFile(configPath()); string(got) != string(broken) {
+		t.Errorf("the config file was rewritten:\n%s", got)
+	}
+	for _, want := range []string{"could not save prj_1 as the default project", "not valid JSON", "--project prj_1"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr %q does not say %q", errOut, want)
+		}
 	}
 }
 
@@ -535,8 +700,9 @@ func TestLoginDoesNotSaveTheDevProject(t *testing.T) {
 	}
 }
 
-// Key create limits a tenant key to the default project and looks up the
-// organization. Flags win, and operator and org:admin keys are not narrowed.
+// Key create limits a key that only uses sandboxes to the default project
+// and looks up the organization. Flags win, and a key with any other scope
+// is not narrowed.
 func TestKeyCreateUsesTheDefaultProject(t *testing.T) {
 	projects := []api.Project{{ID: "prj_1", OrgID: "org_1"}, {ID: "prj_2", OrgID: "org_2"}}
 	for _, tc := range []struct {
@@ -548,13 +714,19 @@ func TestKeyCreateUsesTheDefaultProject(t *testing.T) {
 		noLookup         bool
 		code             string
 	}{
-		{name: "no flags", saved: "prj_1", wantOrg: "org_1", wantPrj: "prj_1", says: "for project prj_1"},
+		{name: "no flags", saved: "prj_1", wantOrg: "org_1", wantPrj: "prj_1", says: "for project prj_1, the default project;"},
+		{name: "a narrower set of sandbox scopes", saved: "prj_1", args: []string{"--scope", "sandboxes:read"}, wantOrg: "org_1", wantPrj: "prj_1", says: "the default project"},
 		{name: "--project for this command", saved: "prj_1", args: []string{"--project", "prj_2"}, wantOrg: "org_2", wantPrj: "prj_2"},
 		{name: "--org alone is the whole organization", saved: "prj_1", args: []string{"--org", "org_9"}, wantOrg: "org_9", says: "every project of organization org_9", noLookup: true},
-		{name: "--key-project wins over the default", saved: "prj_1", args: []string{"--key-project", "prj_2"}, wantOrg: "org_2", wantPrj: "prj_2"},
+		{name: "--key-project wins over the default", saved: "prj_1", args: []string{"--key-project", "prj_2"}, wantOrg: "org_2", wantPrj: "prj_2", says: "for project prj_2;"},
 		{name: "both flags are sent as given", saved: "prj_1", args: []string{"--org", "org_x", "--key-project", "prj_y"}, wantOrg: "org_x", wantPrj: "prj_y", noLookup: true},
 		{name: "an operator key is not narrowed", saved: "prj_1", args: []string{"--scope", "admin"}, says: "every organization (operator)", noLookup: true},
 		{name: "an org:admin key is not narrowed", saved: "prj_1", args: []string{"--scope", "org:admin"}, noLookup: true},
+		// A project-limited key cannot create or delete projects, so a key
+		// asked to do that stays as wide as the server makes it.
+		{name: "a projects:write key is not narrowed", saved: "prj_1", args: []string{"--scope", "projects:write"}, noLookup: true},
+		{name: "one scope beyond sandboxes is enough", saved: "prj_1", args: []string{"--scope", "sandboxes:read,keys:write"}, noLookup: true},
+		{name: "a projects:write key takes --key-project", saved: "prj_1", args: []string{"--scope", "projects:write", "--key-project", "prj_2"}, wantOrg: "org_2", wantPrj: "prj_2", says: "for project prj_2;"},
 		{name: "no default project", noLookup: true},
 		{name: "a default project the key cannot see", saved: "prj_gone", code: api.CodeNotFound},
 	} {

@@ -74,9 +74,10 @@ differently run -- echo hello            # a sandbox in that project: created, u
 `login` takes the URL and key from the environment or from `--url` and
 `--api-key`, and asks for the key when there is none. `admin org create`
 prints both IDs and, when the CLI has no default project yet, saves the new
-project as the default. It never replaces a default, so the organizations
-you add later change nothing for your own commands; the steps below name
-each organization and project explicitly.
+project as the default for that server (it is never used with another one).
+It never replaces a default, so the organizations you add later change
+nothing for your own commands; the steps below name each organization and
+project explicitly.
 
 <!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
 > **Version note.** `differently run`, the saved default project and
@@ -137,10 +138,14 @@ differently key create ci-runner --key-project prj_... \
 ```
 
 `--key-project` limits the key to that project. Without it and without
-`--org`, the key is limited to the CLI's default project: the one
+`--org`, a key that holds only `sandboxes:` scopes, as this one and the
+default do, is limited to the CLI's default project: the one
 `differently login` saved (the organization's only project, if it has just
-one) or the one named with `--project` or `DIFFERENTLY_PROJECT`. `--org`
-alone makes a key for every project of the organization, as in 2.2.
+one) or the one named with `--project` or `DIFFERENTLY_PROJECT`. A key with
+any other scope, such as `projects:write` or `keys:write`, is made for the
+whole organization unless `--key-project` limits it, because a
+project-limited key cannot create or delete projects. `--org` alone makes a
+key for every project of the organization, as in 2.2.
 
 | Scope | Allows |
 |---|---|
