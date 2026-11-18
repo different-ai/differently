@@ -113,6 +113,28 @@ All notable changes are recorded here. The format follows
   informational. It routes: a template with `images` is placed only on the
   pools it maps.
 
+### Fixed (documentation)
+
+- The guides no longer contradict each other about what has been verified.
+  Several pages still said that only OpenSandbox's Docker runtime had run
+  with Differently, or that the Helm chart had never been installed on a
+  cluster, while others recorded the Kubernetes and Fast Sandbox runs of
+  2026-10-28 and 29. They now say the same thing: all three runtimes have
+  run; the Kubernetes and Fast Sandbox runs and the installs on a cluster
+  have not been repeated since 2026-10-29; and isolation inside a microVM
+  has not been probed.
+- End-to-end counts say what they count. "14/14" was every test the suite
+  had on 2026-10-29. It has 18 now, and CI runs them on the Docker runtime on
+  every pull request: 16 pass and 2 are skipped.
+- Corrected values: the default OpenSandbox URL points at namespace
+  `opensandbox-system`, not `opensandbox`; the chart's NetworkPolicy allows
+  OpenSandbox on port 80, so a standalone server on 8090 needs
+  `networkPolicy.server.egress.opensandbox.port` set; the adapter was checked
+  with `execd` `release-1.2.0` and `v1.1.0`; and a checkout's chart is
+  version 0.3.0 while a release packages it as `differently-<version>.tgz`.
+  The comment in `values.yaml` lists the config keys the chart really writes
+  and refuses.
+
 ## [0.1.0-alpha.5] — 2026-11-17
 
 Fifth alpha, published as a GitHub pre-release. Not for production. It starts

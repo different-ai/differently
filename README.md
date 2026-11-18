@@ -146,7 +146,7 @@ and so do its snapshots. See
 | Where | How | Status |
 |---|---|---|
 | Laptop | `differently-server --dev` | Verified (no isolation; for trying it) |
-| Any Docker host | [`test/e2e`](test/e2e/README.md) Compose stack | Verified: end-to-end suite 14/14 |
+| Any Docker host | [`test/e2e`](test/e2e/README.md) Compose stack | Verified: CI runs the end-to-end suite on it on every pull request |
 | One Linux VM: Azure, AWS, Google Cloud, bare metal | [k3s + Helm](docs/deploy/single-vm.md) | Verified on Azure; same steps elsewhere, not yet run |
 | Existing Kubernetes: EKS, GKE, AKS, k3s, RKE2 | [Helm chart](docs/deploy/kubernetes.md) | Helm install verified on k3s; managed clusters documented |
 | Cloud notes | [AWS](docs/deploy/aws.md) · [Google Cloud](docs/deploy/gcp.md) · [Azure](docs/deploy/azure.md) · [Bare metal](docs/deploy/bare-metal.md) | Documented |
@@ -159,8 +159,11 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 ## Status
 
 **Verified** (2026-10-28 and 29):
-- the end-to-end suite passes 14/14 on OpenSandbox's Docker runtime and on its
-  Kubernetes runtime (k3s on Azure, both installed with Helm);
+- the end-to-end suite on OpenSandbox's Docker runtime, 14/14, and on its
+  Kubernetes runtime (k3s on Azure, both installed with Helm), 14/14: every
+  test it had then. It has 18 now, and CI runs them on the Docker runtime on
+  every pull request: 16 pass and 2 are skipped, for want of a desktop image
+  and a microVM pool;
 - on the Kubernetes runtime: stop/start keeping the disk, snapshots and fork
   through a snapshot registry, signed port URLs (including WebSockets) and
   egress policy;
@@ -178,11 +181,15 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
   through Differently as a sandbox gateway, behind a flag, desktops on Fast
   Sandbox microVMs included, driven by OpenWork's runner;
 - Fast Sandbox microVMs on Azure (two-node k3s with one KVM node): the
-  adapter scenario (recorded), the end-to-end suite on the microVM pool, and
-  Workbot's desktop streamed over a port URL, paused and resumed with its
-  memory, idled and woken by a request (pause takes minutes).
+  adapter scenario (recorded), the end-to-end suite on the microVM pool (14
+  of its 18 tests ran, and passed), and Workbot's desktop streamed over a
+  port URL, paused and resumed with its memory, idled and woken by a request
+  (pause takes minutes).
 
 **Not verified yet:**
+- any release after `v0.1.0-alpha.2` on a cluster: the Kubernetes and Fast
+  Sandbox runs above have not been repeated since 2026-10-29, and the
+  [changelog](CHANGELOG.md) says what ran for each release;
 - node drains, and more than one KVM node;
 - managed EKS, GKE and AKS;
 - the other 12 provider adapters against live accounts: each is tested

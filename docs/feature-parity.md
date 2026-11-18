@@ -173,11 +173,14 @@ only against fake servers, are in the
 | Provider-side TTL backstop | `timeout` (≥ 60 s) | `ttlMinutes` | `ttlSeconds` | `ttlSeconds` is passed; plugin's choice | n/a |
 
 "e2e" for `opensandbox` means the [end-to-end suite](../test/e2e/README.md)
-(14/14) and the [live adapter check](../test/opensandbox/README.md) pass
-against a real OpenSandbox 1.2.0 server on its Docker runtime and on its
-Kubernetes runtime (single-node k3s). Its Fast Sandbox runtime ran live on
-one node (the recorded adapter scenario and Workbot's desktop), not yet
-through the end-to-end suite. "Live" for `daytona` and `freestyle` means
+and the [live adapter check](../test/opensandbox/README.md) pass against a
+real OpenSandbox 1.2.0 server on its Docker runtime and on its Kubernetes
+runtime (single-node k3s): 14/14 on both on 2026-10-29, every test the suite
+had then. CI now runs its 18 tests on the Docker runtime on every pull
+request (16 pass, 2 are skipped for want of a desktop image and a microVM
+pool); the Kubernetes run has not been repeated. Its Fast Sandbox runtime
+ran live on Azure (the recorded adapter scenario, Workbot's desktop, and 14
+of the suite's 18 tests on a two-node cluster, all passing). "Live" for `daytona` and `freestyle` means
 each adapter's live test and a Differently server against a real account
 (2026-10-29), not the end-to-end suite; Daytona's VM class has not run. Each
 backend's page in the [provider catalog](providers/README.md) has its status

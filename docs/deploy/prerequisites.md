@@ -21,14 +21,17 @@ following its documentation. Differently's chart does not install it.
 
 | Requirement | Notes |
 |---|---|
-| An OpenSandbox lifecycle server reachable from the control plane | The chart's default `opensandbox.apiURL` is `http://opensandbox-server.opensandbox-system.svc/v1`, a server in namespace `opensandbox`. Any URL ending in `/v1` works |
+| An OpenSandbox lifecycle server reachable from the control plane | The chart's default `opensandbox.apiURL` is `http://opensandbox-server.opensandbox-system.svc/v1`: the Service `opensandbox-server` in namespace `opensandbox-system` on port 80, where OpenSandbox's own chart puts it. Any URL ending in `/v1` works |
 | A server API key | OpenSandbox's server-wide `api_key` (sent as the `OPEN-SANDBOX-API-KEY` header). Differently reads it from a Secret into an environment variable and refers to it by name; it never reaches tenants or sandboxes |
 | A runtime | Docker or Kubernetes (containers that share the host kernel), or Fast Sandbox (Firecracker microVMs, which need KVM hosts, below) |
-| Pinned versions | Pin the server and `execd` image versions. The adapter was checked against server `release-1.2.0` with `execd` `v1.1.0`; the published spec runs ahead of the images, so rerun the live test after any upgrade ([day-2.md](day-2.md#upgrade)) |
+| Pinned versions | Pin the server and `execd` image versions. The adapter was checked against server `release-1.2.0` with `execd` `release-1.2.0` (set `opensandbox.lineEndings: kept`; every run since 2026-10-28 and CI use it) and with `execd` `v1.1.0` (the first runs). The published spec runs ahead of the images, so rerun the live test after any upgrade ([day-2.md](day-2.md#upgrade)) |
 
-What has been run: the Docker runtime only, on one host
-([spike](../research/opensandbox-spike.md)). The Kubernetes runtime and Fast
-Sandbox are **unverified** with Differently.
+What has been run with Differently: all three runtimes. The Docker runtime
+runs in CI on every pull request. The Kubernetes runtime ran on k3s on Azure
+and Fast Sandbox on Azure under nested KVM, both last on 2026-10-29. Managed
+clusters, node drains, bare-metal KVM hosts and more than one KVM node have
+not been run. The [support matrix](README.md#support-matrix) lists each run
+and what it covered.
 
 One OpenSandbox server is one trust domain, so register it as one pool and
 declare its `trust` honestly: `private` if you operate the server and its
@@ -37,9 +40,10 @@ hosts, `external` if someone else does.
 ## KVM hosts (Fast Sandbox only)
 
 Skip this section for the Docker and Kubernetes runtimes. OpenSandbox's Fast
-Sandbox runs Firecracker microVMs through its own per-node agent, and its
-documented host requirements (as read for the spike; **not yet tried** with
-Differently) are:
+Sandbox runs Firecracker microVMs through its own per-node agent. Its
+documented host requirements are below. Differently has run on Fast Sandbox
+on Azure VMs with nested virtualization ([azure-vms.md](azure-vms.md)), not
+on bare metal or on another cloud:
 
 | Requirement | Check |
 |---|---|
@@ -57,8 +61,9 @@ Firecracker itself supports 5.10, 6.1 and 6.18 host kernels, and its tested
 platforms are AWS `.metal` instances: Intel m5n, m6i, m7i and m8i; AMD m6a and
 m7a; Graviton m6g, m7g, m8g and m9g. Firecracker documents nested
 virtualization only as a development setup. AWS, GCP and Azure all offer
-nested virtualization on some machine families, but none of those paths has
-been tried (see the support matrix in [README.md](README.md)).
+nested virtualization on some machine families. Only Azure's has been run,
+on `Dsv6` VMs with k3s, not on AKS (see the support matrix in
+[README.md](README.md#support-matrix)).
 
 ### Checking a Kubernetes node
 

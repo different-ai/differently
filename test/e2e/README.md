@@ -37,7 +37,7 @@ job in `.github/workflows/ci.yml`), with the stack below on a GitHub-hosted
 Linux runner. To run it yourself:
 
 ```bash
-make e2e-prepare   # build differently-server:e2e, pull execd and the sandbox image
+make e2e-prepare   # build differently-server:e2e; pull execd and the sandbox images (debian:bookworm-slim, python:3.12-slim)
 make e2e-up        # Postgres, OpenSandbox (:18091), server (:18090), metrics (:19091)
 make e2e           # go test -tags e2e ./test/e2e/
 make e2e-down      # remove the stack and its volumes
@@ -120,6 +120,16 @@ them precisely instead.
 | 2026-10-29 | same Azure VM; pool `opensandbox-microvm` (`runtime: fastsandbox`), template `tpl-1cbcfa94` (1 vCPU, 1 GiB, guest kernel 6.18.36+) | server, Fast Sandbox and `execd` release-1.2.0 | **Partial run**, stopped when the VM was deallocated. Sandboxes running in about 1.3 s; files and pause/resume passed (pause about 52 s for 1 GiB); sandbox env and a template other than the pool's are refused precisely (the tests now expect that). Fork failed with a bare 422 from OpenSandbox on restore, not yet diagnosed. Port URL, idle wake, memory kept and the desktop stream did not run |
 | 2026-10-29 | Azure, two-node k3s (`Standard_D8s_v6` + `Standard_D16s_v6` KVM node), Postgres Flexible Server, two server replicas | server 1.2.0, Fast Sandbox with a 6.18.36 guest kernel with nftables; pool `runtime: fastsandbox` with OpenWork's Workbot desktop template | 14/14 run passed (desktop, unpullable-image, idle-sweep and switching tests not run); pause about 3–4 min for the 4 GiB desktop, idle wake by a port request 2.3 s |
 | 2026-11-10 | GitHub-hosted runner, Ubuntu 26.04, x86_64 (CI job `end-to-end (docker runtime)`) | server 1.2.0, `execd` release-1.2.0, Docker runtime | 16 passed, 2 skipped (no desktop image; no microVM pool), in about 2 minutes; the first run on the code of `v0.1.0-alpha.3` and the first on x86_64 with the Docker runtime |
+
+How to read the counts: each one is out of the tests the suite had at that
+run. It grew from 10 tests on 2026-10-28 to 14 and then 18 by 2026-10-29, so
+"14/14" on the Docker and Kubernetes runtimes was the whole suite that day,
+while "14/14 run" on the two-node Fast Sandbox pool was 14 of 18. Since
+2026-11-10 CI has run all 18 on the Docker runtime on every pull request; on
+`pre-release` on 2026-11-18 the result was still 16 passed and 2 skipped
+(`TestDesktopStreams` needs a desktop image, and
+`TestIdlePauseAndWakeThroughPortURL` a microVM pool). The Kubernetes and
+Fast Sandbox runs have not been repeated since 2026-10-29.
 
 Not covered yet:
 

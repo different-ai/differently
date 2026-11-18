@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | 2026-10-28, after the move to OpenSandbox removed the Firecracker node agent. Every test named below exists on this branch. CI runs the Go tests on the memory store, and its `postgres conformance and acceptance` job runs the Postgres conformance suite (`internal/store/postgres` `TestConformance`) and every scenario test in `internal/server` again on Postgres 17. |
-| Evidence level | The server tests run in-process with fake backends. The `opensandbox` adapter is also checked against a real OpenSandbox server (release 1.2.0, Docker runtime, arm64 on Colima) by `TestLiveOpenSandbox`. The [end-to-end suite](../test/e2e/README.md) runs the real control plane (Postgres and `differently-server`) against a real OpenSandbox server with the Docker runtime and passed 10/10 on arm64 Colima on 2026-10-28. Earlier end-to-end results on real Firecracker microVMs tested the removed agent and no longer apply. OpenSandbox's Kubernetes and Fast Sandbox runtimes, cloud KVM, and live Daytona or Freestyle accounts are not validated. |
+| Evidence level | The server tests run in-process with fake backends. The `opensandbox` adapter is also checked against a real OpenSandbox server (release 1.2.0) by `TestLiveOpenSandbox`, on its Docker runtime (arm64 on Colima), its Kubernetes runtime (k3s on Azure) and Fast Sandbox (Azure, nested KVM); each run is recorded and replayed in every `go test`. The [end-to-end suite](../test/e2e/README.md) runs the real control plane (Postgres and `differently-server`) against a real OpenSandbox server: CI runs it on the Docker runtime on every pull request (16 of its 18 tests pass, 2 are skipped), and it passed on the Kubernetes runtime (14/14, the whole suite then) and ran on a Fast Sandbox pool (14 of 18, all passing) on 2026-10-29, not since. Daytona and Freestyle ran against live accounts on 2026-10-29. Earlier end-to-end results on real Firecracker microVMs tested the removed agent and no longer apply. Managed clusters, node drains, bare-metal KVM and isolation probes inside a microVM are not validated. |
 
 Scenario definitions follow the product brief. Stateful sandbox behaviour and
 operator controls, which several scenarios rely on, are covered under J and K
@@ -60,10 +60,12 @@ per-command env, stderr, exit codes, argument lists, cwd, binary files,
 listing, pause and resume, snapshot, delete against a real OpenSandbox
 server); `TestTokenRoundTrip`; `TestParseAppliesSafeDefaults`.
 
-**Needs real-infrastructure validation.** The end-to-end suite on
-OpenSandbox's Kubernetes and Fast Sandbox runtimes; a Helm install on a cluster with
-OpenSandbox installed from its own chart; the quickstart guide followed end
-to end by someone new to the project.
+**Real-infrastructure validation.** Done on 2026-10-29 and not repeated
+since: the end-to-end suite on OpenSandbox's Kubernetes and Fast Sandbox
+runtimes, and a Helm install on a cluster (k3s on Azure) with OpenSandbox
+installed from its own chart ([results](../test/e2e/README.md#verified-on)).
+Still needed: a managed cluster, and the quickstart guide followed end to
+end by someone new to the project.
 
 ## B. Fully private deployment
 
@@ -245,11 +247,12 @@ reaches the plugin, is never returned, and rotates without a restart.
 - The adapter client does not check the protocol version (E0.25).
 - No InfrastructureAdapter provisions or autoscales the backend.
 
-**Needs real-infrastructure validation.** Registering OpenSandbox servers
-with the Kubernetes and Fast Sandbox runtimes
-([POC 11](proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter),
-[POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime)); a remote
-plugin in front of an existing VM pool.
+**Real-infrastructure validation.** OpenSandbox servers with the Kubernetes
+and Fast Sandbox runtimes were registered and run on Azure on 2026-10-29;
+what is still open is in
+[POC 11](proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter) and
+[POC 12](proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime). Still
+needed: a remote plugin in front of an existing VM pool.
 
 ## H. Scoped keys and tenant isolation
 

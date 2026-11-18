@@ -8,13 +8,30 @@ Cloud-specific notes are in [aws.md](aws.md), [gcp.md](gcp.md) and
 [azure.md](azure.md), and self-managed distributions are in
 [bare-metal.md](bare-metal.md).
 
-Status: **documented**. These steps have not been run on a real cluster or
-against a live OpenSandbox server. The chart (version 0.3.0) passes `helm lint`
-and `helm template` locally for the value sets in `deploy/helm/differently/ci/`.
+Status: **the chart has run on k3s; this page's steps as written are
+documented.** Differently's chart has been installed on real clusters against
+a live OpenSandbox server: single-node k3s on Azure
+([one Linux VM](single-vm.md), 2026-10-28 and 29) and two-node k3s on Azure
+([azure-vms.md](azure-vms.md), 2026-10-29). Not run: this page's steps in
+this order, managed clusters (EKS, GKE, AKS) and node drains. The last
+recorded install on a cluster was on 2026-10-29, before `v0.1.0-alpha.3`.
+Since then CI has linted and rendered the chart (`helm lint`, and
+`helm template` with each value set in `deploy/helm/differently/ci/`)
+without installing it; the [changelog](../../CHANGELOG.md) says what ran for
+each release.
 
-The examples use namespace `differently`, release `dly` and the chart from
-this repository (`deploy/helm/differently`). The resources are named
-`dly-differently-*`.
+The examples use namespace `differently`, release `dly` and the chart from a
+checkout of this repository (`deploy/helm/differently`). The resources are
+named `dly-differently-*`.
+
+Chart versions: in a checkout, `Chart.yaml` says `version: 0.3.0`, and its
+`appVersion` names the release whose images it installs. Each
+[release](https://github.com/different-ai/differently/releases) publishes
+the same chart packaged under the release's own version,
+`differently-<version>.tgz` (for example `differently-0.1.0-alpha.5.tgz`).
+To install exactly what was released, check out the release tag, or download
+that file and pass it to `helm install` in place of `deploy/helm/differently`
+([single-vm.md](single-vm.md#3-install-differently) does this).
 
 ## 1. Check prerequisites
 
@@ -29,12 +46,14 @@ Install OpenSandbox with its own Helm chart or manifests, following its
 documentation. This chart does not do it for you. Decide:
 
 - **Runtime.** Docker or Kubernetes for containers (they share the host
-  kernel), or Fast Sandbox for Firecracker microVMs on KVM nodes. The Docker
-  runtime and the Kubernetes runtime (single-node k3s, from OpenSandbox's own
-  charts) have run with Differently, and Fast Sandbox has run on one
-  nested-KVM node without the end-to-end suite
-  ([POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime),
-  [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter)).
+  kernel), or Fast Sandbox for Firecracker microVMs on KVM nodes. All three
+  have run with Differently: the Docker runtime (in CI on every pull
+  request), the Kubernetes runtime (k3s on Azure, from OpenSandbox's own
+  charts) and Fast Sandbox (Azure under nested KVM, one KVM node). The
+  [support matrix](README.md#support-matrix) says what each run covered; what
+  is still open is in
+  [POC 12](../proof-of-concepts.md#poc-12-opensandbox-kubernetes-runtime) and
+  [POC 11](../proof-of-concepts.md#poc-11-fast-sandbox-through-the-adapter).
 - **OpenSandbox's charts.** Install `base` (the CRDs) first and let it create
   its namespaces (`opensandbox-system`, `opensandbox-dataplane`); creating
   them yourself makes `base` refuse to install. The charts default to images
@@ -46,8 +65,10 @@ documentation. This chart does not do it for you. Decide:
 - **API key.** Set the server's `api_key`. Without one, OpenSandbox refuses to
   start unless insecure mode is acknowledged; do not run it that way.
 - **Versions.** Pin the server and `execd` images. The adapter was checked
-  against server `release-1.2.0` with `execd` `release-1.2.0` (set
-  `opensandbox.lineEndings: kept`) and `v1.1.0`.
+  against server `release-1.2.0` with two `execd` versions: `release-1.2.0`
+  (set `opensandbox.lineEndings: kept`), which every run since 2026-10-28
+  and CI use, and `v1.1.0` (the default, `lineEndings: stripped`), which the
+  first runs used.
 - **Location.** The chart's default `apiURL` assumes a Service
   `opensandbox-server` in namespace `opensandbox-system` on port 80, which is
   where OpenSandbox's own chart puts it. Note the real URL if yours differs.

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-10-28, after the move to OpenSandbox removed Differently's Firecracker node agent. Differently stores records; sandbox filesystems, memory and snapshots live in the backend. OpenSandbox behaviour below is checked live with its Docker runtime unless marked otherwise; its Kubernetes and Fast Sandbox runtimes are unverified. |
+| Status | Describes the code as of 2026-10-28, after the move to OpenSandbox removed Differently's Firecracker node agent. Differently stores records; sandbox filesystems, memory and snapshots live in the backend. OpenSandbox behaviour below is checked live with its Docker runtime unless marked otherwise. Its Kubernetes and Fast Sandbox runtimes are not described here; the [OpenSandbox pools guide](guides/opensandbox-pools.md) records what their live runs showed. |
 | Code | `internal/adapters/opensandbox/opensandbox.go`, `internal/server/sandboxes.go` (`lifecycle`, `snapshot`, `forkSandbox`), `internal/scheduler/scheduler.go` (`provision`, `expire`, `reconcilePool`) |
 | Related | [OpenSandbox pools](guides/opensandbox-pools.md) · [Adapter specification §9](adapters/specification.md#9-built-in-adapters) · [Placement policy](scheduling/placement-policy.md) · [OpenSandbox spike](research/opensandbox-spike.md) |
 

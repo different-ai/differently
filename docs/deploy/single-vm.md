@@ -6,13 +6,17 @@ runtime) and Differently's Helm chart, all from public release artifacts.
 It works the same on Azure, AWS, Google Cloud or your own hardware; only the
 command that creates the VM differs.
 
-> **Verified 2026-10-28** on an Azure `Standard_D8s_v6`: k3s v1.36.5,
-> OpenSandbox 1.2.0 and Differently `v0.1.0-alpha.1`. A sandbox ran within
-> about 2 s, and the end-to-end suite passed 12/12 against this setup; with
-> a snapshot registry, the ingress gateway and egress policy added
-> (2026-10-29), it passed 14/14. The commands below install `v0.1.0-alpha.5`,
-> which has not itself been installed on this setup yet. The AWS, Google
-> Cloud and bare-metal commands are the equivalent steps, not yet run there.
+> **Verified with `v0.1.0-alpha.1` and `v0.1.0-alpha.2`, not with the
+> version installed below.** The commands on this page install
+> `v0.1.0-alpha.5`, which has not been installed on this setup.
+>
+> What ran: on 2026-10-28, on an Azure `Standard_D8s_v6` with k3s v1.36.5,
+> OpenSandbox 1.2.0 and Differently `v0.1.0-alpha.1`, a sandbox ran within
+> about 2 s and the end-to-end suite passed 12/12. On 2026-10-29, with a
+> snapshot registry, the ingress gateway and egress policy added, it passed
+> 14/14 (all the tests it had then; verified for `v0.1.0-alpha.2`). The AWS,
+> Google Cloud and bare-metal commands are the equivalent steps, not yet run
+> there.
 
 This is a single-node evaluation or team setup, not a highly available one.
 Sandboxes are containers that share the VM's kernel. For production, see

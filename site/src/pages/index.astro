@@ -135,7 +135,7 @@ const ways = [
 
 // Project status. verified: ran against real infrastructure. notVerified: not run yet.
 const verified = [
-  ['End-to-end suite', "14 of 14 tests pass on OpenSandbox's Docker runtime (arm64), its Kubernetes runtime (single-node k3s on Azure, installed with Helm) and a Fast Sandbox microVM pool (two-node k3s)."],
+  ['End-to-end suite', "CI runs it on OpenSandbox's Docker runtime on every pull request: 16 of its 18 tests pass and 2 are skipped, for want of a desktop image and a microVM pool. On the Kubernetes runtime (single-node k3s on Azure, installed with Helm) it passed 14 of 14, every test it had on 2026-10-29, and on a Fast Sandbox microVM pool (two-node k3s) 14 of 18 ran and passed."],
   ['Kubernetes runtime', 'Stop/start with the disk kept, snapshots and fork through a snapshot registry, signed port URLs including WebSockets, and egress policy.'],
   ['Idle auto-stop', 'Idle sandboxes stop (Kubernetes) or pause (Docker) and wake on the next call.'],
   ['Release artifacts', 'The published chart and images install from public registries; the first sandbox runs in about 2 s.'],
@@ -144,9 +144,10 @@ const verified = [
   ['Failure isolation', 'An image that cannot be pulled fails that sandbox only; the shared pool stays healthy.'],
   ['agent-sandbox', 'The experimental adapter runs against a Kubernetes cluster (kind, runc).'],
   ['Daytona and Freestyle', 'The adapters run against live accounts: exec, files, port URLs, stop/start and snapshots on both, and egress policy, pause/resume, memory snapshots and fork on Freestyle.'],
-  ['Fast Sandbox', "Firecracker microVMs on Azure: the end-to-end suite passes on the microVM pool, and Workbot's desktop streams over a port URL, pauses and resumes with its memory (a pause takes minutes), idles and wakes on a request."],
+  ['Fast Sandbox', "Firecracker microVMs on Azure: 14 of the end-to-end suite's 18 tests ran on the microVM pool and passed, and Workbot's desktop streams over a port URL, pauses and resumes with its memory (a pause takes minutes), idles and wakes on a request."],
 ];
 const notVerified = [
+  'A release after v0.1.0-alpha.2 on a cluster: the Kubernetes and Fast Sandbox runs have not been repeated since 2026-10-29',
   'Node drains, and more than one KVM node',
   'Managed EKS, GKE and AKS clusters',
   'The other 12 provider adapters against live accounts; each is tested against a fake of its published API, is experimental and is left out of the published build',

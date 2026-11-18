@@ -41,9 +41,12 @@ the `opensandbox` adapter.
 
 **Priority** P0, first. **Depends on** nothing. **Why**
 OpenSandbox became the runtime before its adoption criteria
-were met. Only the Docker runtime has run through Differently
-([spike](research/opensandbox-spike.md)); containers share the host kernel.
-Until this epic is done, microVM isolation through Differently is unverified.
+were met. When this epic was written only the Docker runtime had run
+through Differently ([spike](research/opensandbox-spike.md)); containers
+share the host kernel. Fast Sandbox has since run on Azure under nested KVM
+(E18.1 and E18.2, 2026-10-29; [roadmap](roadmap.md)). Until the rest of this
+epic is done, E18.4's probes above all, microVM isolation through
+Differently is unverified.
 
 - **E18.1 Host preparation.** Meet Fast Sandbox's documented host
   requirements: Linux ≥ 5.10, `/dev/kvm`, `/dev/net/tun`, cgroup v2, an XFS
