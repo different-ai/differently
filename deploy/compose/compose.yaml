@@ -108,7 +108,7 @@ volumes:
 
 configs:
   # The control plane's config: one private OpenSandbox pool. Edit it here and
-  # run `docker compose up -d` again. Reference:
+  # run `docker compose up -d --force-recreate`. Reference:
   # https://different-ai.github.io/differently/docs/guides/opensandbox-pools/
   differently:
     content: |

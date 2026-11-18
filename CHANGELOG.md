@@ -97,8 +97,8 @@ All notable changes are recorded here. The format follows
     uses and deletes one sandbox (`test/compose/check.sh`, the
     `docker host stack` jobs): with the server image built from the pull
     request, and with the published image the file names. Not run on Docker
-    Desktop, rootless Docker or Podman. `test/e2e` is unchanged and still
-    builds from the checkout.
+    Desktop, rootless Docker, Podman or arm64. `test/e2e` is unchanged and
+    still builds from the checkout.
 
 - The load simulator at `/simulator/` shows how routing is set up and lets
   the visitor configure more of it.

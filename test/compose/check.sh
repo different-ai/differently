@@ -73,6 +73,7 @@ unset DIFFERENTLY_BOOTSTRAP_TOKEN DIFFERENTLY_SECRETS_KEY POSTGRES_PASSWORD OPEN
 
 work=$(mktemp -d)
 started=
+id=
 cleanup() {
 	status=$?
 	trap - EXIT INT TERM
@@ -81,6 +82,8 @@ cleanup() {
 			docker compose ps -a || true
 			docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Ports}}' || true
 			docker compose logs --no-color --tail 200 || true
+			# A sandbox is a container beside the stack: do not leave it behind.
+			[ -z "$id" ] || cli sandbox delete "$id" >/dev/null 2>&1 || true
 		fi
 		docker compose down -v --remove-orphans >/dev/null 2>&1 || true
 	fi
@@ -94,7 +97,8 @@ cp "$file" compose.yaml # the one file a user downloads
 cli() { docker compose exec -T server differently "$@"; }
 # first_id PREFIX reads the first "id" with that prefix from indented JSON.
 first_id() { sed -n "s/.*\"id\": *\"\\($1_[^\"]*\\)\".*/\\1/p" | head -n 1; }
-execd_bindings() { docker ps --format '{{.Ports}}' | tr ',' '\n' | sed 's/^ *//' | grep -e '->44772/tcp' || true; }
+# Every published port of the containers that publish a sandbox control port (44772).
+sandbox_bindings() { docker ps --format '{{.Ports}}' | grep -e '->44772/tcp' | tr ',' '\n' | sed 's/^ *//' | grep -e '->' || true; }
 
 step "without .env it refuses to start and says what to do"
 if out=$(docker compose config -q 2>&1); then
@@ -162,7 +166,7 @@ out=$(cli sandbox exec "$id" -- echo hello)
 [ "$out" = hello ] || fail "echo hello printed: $out"
 echo "$out"
 
-bindings=$(execd_bindings)
+bindings=$(sandbox_bindings)
 [ -n "$bindings" ] || fail "no running container publishes a sandbox control port (44772)"
 printf '%s\n' "$bindings"
 if printf '%s\n' "$bindings" | grep -v "^$publish:" >/dev/null; then
@@ -171,9 +175,9 @@ fi
 
 cli sandbox delete "$id"
 tries=0
-while [ -n "$(execd_bindings)" ]; do
+while [ -n "$(sandbox_bindings)" ]; do
 	tries=$((tries + 1))
-	[ "$tries" -lt 30 ] || fail "the sandbox's container is still there after delete: $(execd_bindings)"
+	[ "$tries" -lt 30 ] || fail "the sandbox's container is still there after delete: $(sandbox_bindings)"
 	sleep 2
 done
 echo "deleted, and its container is gone"

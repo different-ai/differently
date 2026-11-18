@@ -14,8 +14,11 @@ which has no isolation, and before a server for a team
 > `docker host stack` jobs in `.github/workflows/ci.yml`) on a GitHub-hosted
 > Ubuntu runner, follows the steps below and creates, uses and deletes one
 > sandbox: once with the server image built from the pull request and once
-> with the published image this file names. It has not been run on Docker
-> Desktop, on rootless Docker or on Podman.
+> with the published image this file names. First run 2026-11-18, x86_64,
+> Docker Engine 29.4.2 and Compose 5.1.3: the start took 17 s including the
+> pulls, and creating the first sandbox, running `echo hello` in it and
+> deleting it took 9 s. It has not been run on Docker Desktop, on rootless
+> Docker, on Podman or on arm64.
 
 Know what you are getting:
 
@@ -30,7 +33,7 @@ Know what you are getting:
 
 You need Docker Engine 25 or newer with Docker Compose 2.23.1 or newer
 (`docker compose version`), on Linux or in a Linux VM such as Colima, and
-about 2 GiB of disk for images.
+about 1.1 GB of disk for the five images it pulls.
 
 ## 1. Download the file
 
@@ -90,7 +93,7 @@ docker compose exec server differently doctor
 ```
 
 ```text
-[ok  ] server http://localhost:8080 reachable (version 0.1.0-alpha.5, installation ins_...)
+[ok  ] server http://localhost:8080 reachable (version v0.1.0-alpha.5, installation inst_...)
 [ok  ] authenticated as key... (scopes [admin])
 [ok  ] pool opensandbox (private): healthy
 ```
@@ -157,7 +160,7 @@ docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'
 
 ## Settings
 
-Add these to `.env`, then run `docker compose up -d` again:
+Add these to `.env`, then run `docker compose up -d --force-recreate`:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -169,9 +172,10 @@ Add these to `.env`, then run `docker compose up -d` again:
 
 The control plane's config (the pool, the profiles `small` and `medium`, a
 one-hour default lifetime, `external: never`) is the `differently` entry
-under `configs:` in the file. Edit it there and run `docker compose up -d`
-again. [OpenSandbox pools](../guides/opensandbox-pools.md) lists the pool
-options.
+under `configs:` in the file. Edit it there and run
+`docker compose up -d --force-recreate`, which recreates all three
+containers. [OpenSandbox pools](../guides/opensandbox-pools.md) lists the
+pool options.
 
 ## Keep it running
 
