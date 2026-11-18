@@ -16,7 +16,9 @@
 // Routing can change while the world runs, through the admin API: pools are
 // enabled and disabled, their slots and the placement policy change. A split
 // by percentage is the calling application's doing, not a policy feature:
-// each create is pinned to a pool with placement.allowedPools.
+// each create is pinned to a pool with placement.allowedPools. The tenant's
+// quota changes the same way, pools can be added, and each snapshot carries
+// the placement policy's own ranking for one more sandbox.
 //
 // The world keeps real time. The simulator page speeds it up by scaling the
 // clock the WebAssembly runtime reads; nothing here knows about that.
@@ -44,6 +46,7 @@ import (
 	"github.com/different-ai/differently/internal/adapters/fake"
 	"github.com/different-ai/differently/internal/auditlog"
 	"github.com/different-ai/differently/internal/config"
+	"github.com/different-ai/differently/internal/policy"
 	"github.com/different-ai/differently/internal/pools"
 	"github.com/different-ai/differently/internal/scheduler"
 	"github.com/different-ai/differently/internal/secrets"
@@ -84,8 +87,12 @@ type Config struct {
 	ResumeSeconds float64 `json:"resumeSeconds"`
 	// IdleTimeoutSeconds pauses a computer nobody has used for this long (at
 	// least 60).
-	IdleTimeoutSeconds int    `json:"idleTimeoutSeconds"`
-	Seed               uint64 `json:"seed"`
+	IdleTimeoutSeconds int `json:"idleTimeoutSeconds"`
+	// MaxPausedSeconds deletes a sandbox that stayed hibernated this long
+	// (the maxPausedSeconds lifecycle limit; 0 keeps it, otherwise at least
+	// 60). Its user's next session starts a new one.
+	MaxPausedSeconds int    `json:"maxPausedSeconds"`
+	Seed             uint64 `json:"seed"`
 
 	// The users' clockwork. Zero values take the defaults; tests shorten them.
 	ThinkStep time.Duration `json:"-"` // how often an idle user decides whether to start (5 s)
@@ -101,10 +108,13 @@ type Load struct {
 	SessionsPerHour float64 `json:"sessionsPerHour"`
 	// SessionMinutes is the median session length (log-normal, sigma 0.9).
 	SessionMinutes float64 `json:"sessionMinutes"`
-	// Ephemeral makes every session a task: a new sandbox, deleted when the
-	// session ends. Otherwise each user owns one long-lived computer that
-	// pauses when idle and resumes at the next session.
-	Ephemeral bool `json:"ephemeral"`
+	// Keep is the chance, from 0 to 1, that a sandbox outlives its session.
+	// A sandbox that is not kept is deleted when the session ends, like a
+	// task's. One that is kept goes idle, hibernates after the idle timeout
+	// (a pause: a checkpoint where the pool takes one) and is woken by its
+	// user's next session, which then waits for the resume. At 0 every
+	// session is a task; at 1 every user has one long-lived computer.
+	Keep float64 `json:"keep"`
 }
 
 // Routing modes.
@@ -130,6 +140,24 @@ type Routing struct {
 	Strategy  string                     `json:"strategy"`
 	External  string                     `json:"external"`
 	Providers map[string]ProviderRouting `json:"providers"`
+}
+
+// Quota is the tenant's quota, the part the page sets: zero is no limit.
+type Quota struct {
+	// MaxActive is quota.maxActiveSandboxes: a sandbox over it stays queued
+	// until another ends.
+	MaxActive int `json:"maxActive"`
+	// MaxQueued is quota.maxQueued: a create over it is refused.
+	MaxQueued int `json:"maxQueued"`
+}
+
+// AuditCheck is the answer of GET /v1/admin/audit/verify.
+type AuditCheck struct {
+	OK       bool   `json:"ok"`
+	Events   int    `json:"events"`
+	BrokenAt int64  `json:"brokenAt,omitempty"`
+	Problem  string `json:"problem,omitempty"`
+	HeadHash string `json:"headHash,omitempty"`
 }
 
 // Box is one sandbox as the page draws it.
@@ -179,6 +207,10 @@ type Event struct {
 	Pool    string  `json:"pool,omitempty"`
 	User    int     `json:"user"` // -1 when unknown
 	Text    string  `json:"text"`
+	// Seq and Hash place an audit event in the log's hash chain; zero and
+	// empty for what a client saw.
+	Seq  int64  `json:"seq,omitempty"`
+	Hash string `json:"hash,omitempty"`
 }
 
 // Stats are totals since the world started.
@@ -196,10 +228,27 @@ type Stats struct {
 	Spend         float64 `json:"spend"`
 	Placed        int     `json:"placed"`
 	Refused       int     `json:"refused"`       // creates the control plane turned away
+	OverQuota     int     `json:"overQuota"`     // of those, for the tenant's quota
 	Queued        int     `json:"queuedResumes"` // resumes that waited for a slot, or for a pause to finish
+	Hibernations  int     `json:"hibernations"`  // idle sandboxes paused
+	Wakes         int     `json:"wakes"`         // hibernated sandboxes woken by a call
+	Expired       int     `json:"expired"`       // sandboxes deleted for staying hibernated too long
 	Preemptions   int     `json:"preemptions"`
 	Interruptions int     `json:"interruptions"` // sessions that lost their sandbox midway
 	Retries       int     `json:"retries"`       // provisioning attempts that failed and were retried
+}
+
+// Rank is where the placement policy puts one pool for the next sandbox that
+// names no pool, and what it says about it.
+type Rank struct {
+	Pool string `json:"pool"`
+	// Rank is the pool's place among those that can take the sandbox now,
+	// from 1; zero when it cannot.
+	Rank        int  `json:"rank"`
+	Eligible    bool `json:"eligible"`    // policy allows it
+	HasCapacity bool `json:"hasCapacity"` // it has room
+	// Reasons are the policy's own words for holding or excluding the pool.
+	Reasons []string `json:"reasons,omitempty"`
 }
 
 // Snapshot is everything the page shows.
@@ -213,6 +262,16 @@ type Snapshot struct {
 	Idle    int   `json:"idle"`
 	Queued  int   `json:"queued"` // creates no pool has taken yet
 	Stats   Stats `json:"stats"`
+	// Active is how many sandboxes are past the queue, and Quota the limits
+	// in force.
+	Active int   `json:"active"`
+	Quota  Quota `json:"quota"`
+	// AuditEvents is how many events the audit log holds.
+	AuditEvents int64 `json:"auditEvents"`
+	// Ranking is policy.Decide's answer for one more sandbox, asked now: the
+	// same evaluation the scheduler runs for each queued create. Empty until
+	// the first sandbox exists.
+	Ranking []Rank `json:"ranking"`
 	// Events since the previous snapshot.
 	Events []Event `json:"events"`
 }
@@ -295,6 +354,7 @@ type World struct {
 	sched    *scheduler.Scheduler
 	handler  http.Handler
 	token    string
+	orgID    string
 	backends map[string]*backend
 	byName   map[string]Provider
 	started  time.Time
@@ -304,23 +364,28 @@ type World struct {
 	applying sync.Mutex
 	applied  Routing
 
-	mu       sync.Mutex
-	rng      *rand.Rand
-	load     Load
-	routing  Routing
-	users    []*user
-	byBox    map[string]int // sandbox ID -> user
-	waits    []float64
-	sessions int
-	onPriv   int
-	served   map[string]int     // sessions, by pool
-	placed   map[string]int     // creates placed, by pool
-	hours    map[string]float64 // sandbox-hours holding a slot, by pool
-	events   []Event
-	stats    Stats
-	auditSeq int64
-	lastTick time.Time
-	ctx      context.Context
+	mu          sync.Mutex
+	rng         *rand.Rand
+	load        Load
+	routing     Routing
+	users       []*user
+	byBox       map[string]int // sandbox ID -> user
+	waits       []float64
+	sessions    int
+	onPriv      int
+	served      map[string]int     // sessions, by pool
+	placed      map[string]int     // creates placed, by pool
+	hours       map[string]float64 // sandbox-hours holding a slot, by pool
+	events      []Event
+	stats       Stats
+	auditSeq    int64
+	lastTick    time.Time
+	proto       *store.SandboxRecord // an admitted sandbox, as the pattern for ranking one more
+	quota       Quota
+	snaps       int
+	lastRanking []Rank
+	auditAll    bool // show every audit event, not only the ones about scheduling
+	ctx         context.Context
 }
 
 // DefaultProviders is a private cluster of eight slots and an external pool
@@ -340,6 +405,9 @@ func (c *Config) defaults() {
 		c.Preemption = api.PreemptOff
 	}
 	c.IdleTimeoutSeconds = max(c.IdleTimeoutSeconds, 60)
+	if c.MaxPausedSeconds > 0 {
+		c.MaxPausedSeconds = max(c.MaxPausedSeconds, 60)
+	}
 	if c.ThinkStep <= 0 {
 		c.ThinkStep = 5 * time.Second
 	}
@@ -381,35 +449,9 @@ func New(cfg Config) (*World, error) {
 		routing: Routing{Mode: RoutePolicy, Strategy: api.StrategyPrivateFirst, External: api.ExternalNever, Providers: map[string]ProviderRouting{}},
 	}
 	for _, p := range cfg.Providers {
-		if _, dup := w.byName[p.Name]; dup || p.Name == "" {
-			return nil, fmt.Errorf("provider %q: names must be set and differ", p.Name)
-		}
-		if p.Trust != api.TrustPrivate {
-			p.Trust = api.TrustExternal
-		}
-		features := slices.Clone(fake.DefaultFeatures)
-		pause := time.Second
-		if p.Checkpoint {
-			features = append(features, adapter.FeaturePauseCheckpoint)
-			pause = seconds(cfg.PauseSeconds)
-		}
-		b := &backend{
-			Adapter: fake.New(fake.Options{Trust: p.Trust, Features: features, Region: "sim"}),
-			create:  seconds(cfg.CreateSeconds), pause: pause, resume: seconds(cfg.ResumeSeconds),
-		}
-		pool := api.Pool{
-			Name: p.Name, Adapter: "fake", Trust: p.Trust, Enabled: true, Region: "sim", MaxConcurrency: p.Slots,
-			Source: "config", CostModel: api.CostModel{SandboxHour: p.CostPerHour},
-		}
-		if p.Checkpoint && p.Trust == api.TrustPrivate && cfg.Preemption != api.PreemptOff {
-			pool.Preemption = &api.Preemption{Mode: cfg.Preemption, IdleSeconds: 60, MinRunSeconds: 600}
-		}
-		if err := st.UpsertPool(ctx, pool); err != nil {
+		if err := w.addPool(ctx, p); err != nil {
 			return nil, err
 		}
-		pm.Set(pool, b)
-		w.backends[p.Name], w.byName[p.Name] = b, p
-		w.routing.Providers[p.Name] = ProviderRouting{Enabled: true, Slots: p.Slots, Share: 1}
 	}
 	w.applied = cloneRouting(w.routing)
 
@@ -443,9 +485,67 @@ func New(cfg Config) (*World, error) {
 	}, &key); code != 201 {
 		return nil, fmt.Errorf("create key: status %d", code)
 	}
-	w.token = key.Token
+	w.token, w.orgID = key.Token, created.Organization.ID
 	w.skipAudit(ctx)
 	return w, nil
+}
+
+// addPool registers one pool and its fake backend, enabled.
+func (w *World) addPool(ctx context.Context, p Provider) error {
+	if p.Trust != api.TrustPrivate {
+		p.Trust = api.TrustExternal
+	}
+	features := slices.Clone(fake.DefaultFeatures)
+	pause := time.Second
+	if p.Checkpoint {
+		features = append(features, adapter.FeaturePauseCheckpoint)
+		pause = seconds(w.cfg.PauseSeconds)
+	}
+	b := &backend{
+		Adapter: fake.New(fake.Options{Trust: p.Trust, Features: features, Region: "sim"}),
+		create:  seconds(w.cfg.CreateSeconds), pause: pause, resume: seconds(w.cfg.ResumeSeconds),
+	}
+	pool := api.Pool{
+		Name: p.Name, Adapter: "fake", Trust: p.Trust, Enabled: true, Region: "sim", MaxConcurrency: p.Slots,
+		Source: "config", CostModel: api.CostModel{SandboxHour: p.CostPerHour},
+	}
+	if p.Checkpoint && p.Trust == api.TrustPrivate && w.cfg.Preemption != api.PreemptOff {
+		pool.Preemption = &api.Preemption{Mode: w.cfg.Preemption, IdleSeconds: 60, MinRunSeconds: 600}
+	}
+	w.mu.Lock()
+	_, dup := w.byName[p.Name]
+	w.mu.Unlock()
+	if dup || p.Name == "" {
+		return fmt.Errorf("provider %q: names must be set and differ", p.Name)
+	}
+	if err := w.store.UpsertPool(ctx, pool); err != nil {
+		return err
+	}
+	w.pools.Set(pool, b)
+	w.mu.Lock()
+	w.backends[p.Name], w.byName[p.Name] = b, p
+	w.routing.Providers[p.Name] = ProviderRouting{Enabled: true, Slots: p.Slots, Share: 1}
+	w.mu.Unlock()
+	return nil
+}
+
+// AddProvider registers one more pool while the world runs, as an operator
+// adding a provider would, then applies r, which should name it. The global
+// policy is written again so that an external pool joins its externalPools.
+func (w *World) AddProvider(p Provider, r Routing) error {
+	ctx := context.Background()
+	if err := w.addPool(ctx, p); err != nil {
+		return err
+	}
+	w.applying.Lock()
+	w.mu.Lock()
+	w.cfg.Providers = append(w.cfg.Providers, p)
+	w.mu.Unlock()
+	w.applied.Providers[p.Name] = ProviderRouting{Enabled: true, Slots: p.Slots, Share: 1}
+	w.applied.External = "" // not what the policy holds any more: write it again
+	w.applying.Unlock()
+	w.pools.Refresh(ctx)
+	return w.SetRouting(r)
 }
 
 // skipAudit moves the page's reading of the audit log past what is there now.
@@ -532,7 +632,13 @@ func (w *World) SetRouting(r Routing) error {
 	}
 	next := cloneRouting(r)
 	var external []string
+	w.mu.Lock()
+	known := make(map[string]Provider, len(w.byName))
 	for name, p := range w.byName {
+		known[name] = p
+	}
+	w.mu.Unlock()
+	for name, p := range known {
 		if p.Trust == api.TrustExternal {
 			external = append(external, name)
 		}
@@ -571,6 +677,43 @@ func (w *World) SetRouting(r Routing) error {
 	return nil
 }
 
+// SetQuota changes the tenant's quota, as an operator would:
+// PATCH /v1/admin/organizations/{id}.
+func (w *World) SetQuota(q Quota) error {
+	q.MaxActive, q.MaxQueued = max(q.MaxActive, 0), max(q.MaxQueued, 0)
+	body := map[string]any{"quota": api.Quota{MaxActiveSandboxes: q.MaxActive, MaxQueued: q.MaxQueued}}
+	if code := w.call(context.Background(), "PATCH", "/v1/admin/organizations/"+w.orgID, operatorToken, body, nil); code != http.StatusOK {
+		return fmt.Errorf("update quota: status %d", code)
+	}
+	w.mu.Lock()
+	w.quota = q
+	unstarted := w.ctx == nil
+	w.mu.Unlock()
+	if unstarted {
+		w.skipAudit(context.Background())
+	}
+	w.sched.Wake()
+	return nil
+}
+
+// SetAuditAll makes snapshots carry every audit event (each exec, delete and
+// operator change), not only the ones about scheduling.
+func (w *World) SetAuditAll(all bool) {
+	w.mu.Lock()
+	w.auditAll = all
+	w.mu.Unlock()
+}
+
+// VerifyAudit asks the control plane to check its audit log's hash chain:
+// GET /v1/admin/audit/verify.
+func (w *World) VerifyAudit() AuditCheck {
+	var res AuditCheck
+	if code := w.call(context.Background(), "GET", "/v1/admin/audit/verify", operatorToken, nil, &res); code != http.StatusOK {
+		res.Problem = fmt.Sprintf("verify: status %d", code)
+	}
+	return res
+}
+
 // Spike makes this share of the active users who are idle start a session now.
 func (w *World) Spike(share float64) {
 	w.mu.Lock()
@@ -588,7 +731,9 @@ func (w *World) Spike(share float64) {
 // SetOutage takes a pool's backend offline or brings it back: it refuses
 // creates and fails its health check. Sandboxes already on it keep running.
 func (w *World) SetOutage(pool string, down bool) {
+	w.mu.Lock()
 	b, ok := w.backends[pool]
+	w.mu.Unlock()
 	if !ok {
 		return
 	}
@@ -650,7 +795,7 @@ func (w *World) session(ctx context.Context, u *user, length time.Duration) {
 			w.onPriv++
 		}
 	}
-	ephemeral := w.load.Ephemeral
+	keep := w.rng.Float64() < w.load.Keep
 	w.mu.Unlock()
 
 	end := time.Now().Add(length)
@@ -672,8 +817,8 @@ func (w *World) session(ctx context.Context, u *user, length time.Duration) {
 			return
 		}
 	}
-	if ephemeral {
-		// A task's sandbox ends with the task.
+	if !keep {
+		// Not kept: the sandbox ends with the session.
 		w.call(ctx, "DELETE", "/v1/sandboxes/"+u.sandbox, w.token, nil, nil)
 		w.mu.Lock()
 		u.sandbox = ""
@@ -717,18 +862,26 @@ func (w *World) reach(ctx context.Context, u *user, since time.Time) bool {
 			pin := w.pick()
 			w.mu.Unlock()
 			req := api.CreateSandboxRequest{
-				Profile: "small", IdleTimeoutSeconds: w.cfg.IdleTimeoutSeconds,
+				Profile: "small", IdleTimeoutSeconds: w.cfg.IdleTimeoutSeconds, MaxPausedSeconds: w.cfg.MaxPausedSeconds,
 				Labels: map[string]string{"user": fmt.Sprint(u.n)},
 			}
 			if pin != "" {
 				req.Placement = &api.Placement{AllowedPools: []string{pin}}
 			}
-			var sb api.Sandbox
+			var sb struct {
+				api.Sandbox
+				Error *api.Error `json:"error"`
+			}
 			code := w.call(ctx, "POST", "/v1/sandboxes", w.token, req, &sb)
 			if code != http.StatusAccepted || sb.ID == "" {
-				// Turned away: the audit log says why (sandbox.rejected).
+				// Turned away. A refusal by policy is in the audit log
+				// (sandbox.rejected); one by quota is only in the answer.
 				w.mu.Lock()
 				w.stats.Refused++
+				if sb.Error != nil && sb.Error.Code == api.CodeQuotaExceeded {
+					w.stats.OverQuota++
+					w.note(u, "sandbox.refused", "refused: "+sb.Error.Message)
+				}
 				w.mu.Unlock()
 				return false
 			}
@@ -783,11 +936,24 @@ func (w *World) Snapshot() Snapshot {
 	after := w.auditSeq
 	w.mu.Unlock()
 	audit, _ := w.store.ListAudit(ctx, store.AuditFilter{AfterSeq: after})
+	// The ranking costs a full policy evaluation; every third snapshot is
+	// often enough for a list a person reads.
+	w.mu.Lock()
+	w.snaps++
+	stale := w.snaps%3 == 1 || w.lastRanking == nil
+	ranking := w.lastRanking
+	w.mu.Unlock()
+	if stale {
+		ranking = w.ranking(ctx, recs)
+		w.mu.Lock()
+		w.lastRanking = ranking
+		w.mu.Unlock()
+	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	now := time.Now()
-	snap := Snapshot{Seconds: w.since(), Boxes: []Box{}, Events: []Event{}}
+	snap := Snapshot{Seconds: w.since(), Boxes: []Box{}, Events: []Event{}, Ranking: ranking, Quota: w.quota}
 	views := map[string]*PoolView{}
 	for _, v := range w.pools.Views(nil) {
 		p := w.byName[v.Pool.Name]
@@ -818,6 +984,9 @@ func (w *World) Snapshot() Snapshot {
 		}
 		snap.Boxes = append(snap.Boxes, b)
 		v := views[r.Pool]
+		if r.Status != api.StatusQueued {
+			snap.Active++
+		}
 		switch {
 		case r.Status == api.StatusQueued:
 			if pinned := views[b.Want]; pinned != nil {
@@ -868,6 +1037,9 @@ func (w *World) Snapshot() Snapshot {
 	for _, ev := range audit {
 		w.auditSeq = max(w.auditSeq, ev.Seq)
 		text, ok := describe(ev)
+		if !ok && w.auditAll {
+			text, ok = ev.Action+" "+ev.Resource+" by "+ev.Actor, true
+		}
 		pool := ev.Details["pool"]
 		switch ev.Action {
 		case "sandbox.placed":
@@ -877,6 +1049,12 @@ func (w *World) Snapshot() Snapshot {
 			if waited := ev.Details["waitedSeconds"]; waited != "" && waited != "0" {
 				w.stats.Queued++
 			}
+		case "sandbox.idled":
+			w.stats.Hibernations++
+		case "sandbox.woke":
+			w.stats.Wakes++
+		case "sandbox.expired":
+			w.stats.Expired++
 		case "sandbox.preempted":
 			w.stats.Preemptions++
 		case "sandbox.provision_retry":
@@ -889,8 +1067,9 @@ func (w *World) Snapshot() Snapshot {
 		if !known {
 			n = -1
 		}
-		w.events = append(w.events, Event{Seconds: ev.Time.Sub(w.started).Seconds(), Action: ev.Action, Sandbox: ev.Resource, Pool: pool, User: n, Text: text})
+		w.events = append(w.events, Event{Seconds: ev.Time.Sub(w.started).Seconds(), Action: ev.Action, Sandbox: ev.Resource, Pool: pool, User: n, Text: text, Seq: ev.Seq, Hash: ev.Hash[:min(len(ev.Hash), 10)]})
 	}
+	snap.AuditEvents = w.auditSeq
 	sort.SliceStable(w.events, func(i, j int) bool { return w.events[i].Seconds < w.events[j].Seconds })
 	snap.Events, w.events = append(snap.Events, w.events...), nil
 
@@ -918,6 +1097,52 @@ func (w *World) Snapshot() Snapshot {
 	return snap
 }
 
+// ranking asks the placement policy where one more sandbox would go: a
+// sandbox like the ones the clients create, naming no pool. It is the
+// scheduler's own evaluation (PlacementInput, then policy.Decide), read and
+// not acted on.
+func (w *World) ranking(ctx context.Context, recs []store.SandboxRecord) []Rank {
+	out := []Rank{}
+	w.mu.Lock()
+	if w.proto == nil && len(recs) > 0 {
+		p := recs[0]
+		w.proto = &p
+	}
+	proto := w.proto
+	w.mu.Unlock()
+	if proto == nil {
+		return out
+	}
+	rec := store.SandboxRecord{Sandbox: api.Sandbox{
+		OrgID: proto.OrgID, ProjectID: proto.ProjectID, Profile: proto.Profile, Template: proto.Template,
+		Resources: proto.Resources, Capabilities: proto.Capabilities, Classification: proto.Classification,
+		Status: api.StatusQueued, CreatedAt: time.Now().UTC(),
+	}}
+	active, err := w.store.PoolActive(ctx)
+	if err != nil {
+		return out
+	}
+	in, err := w.sched.PlacementInput(ctx, rec, active)
+	if err != nil {
+		return out
+	}
+	res := policy.Decide(in)
+	if res.Decision == nil {
+		return out
+	}
+	for _, c := range res.Decision.Candidates {
+		out = append(out, Rank{Pool: c.Pool, Rank: c.Rank, Eligible: c.Eligible, HasCapacity: c.HasCapacity, Reasons: c.Reasons})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if (a.Rank > 0) != (b.Rank > 0) {
+			return a.Rank > 0
+		}
+		return a.Rank < b.Rank
+	})
+	return out
+}
+
 // describe turns an audit event into a line for the page; false for events
 // that are not about scheduling (every exec is audited too).
 func describe(ev api.AuditEvent) (string, bool) {
@@ -931,9 +1156,11 @@ func describe(ev api.AuditEvent) (string, bool) {
 	case "sandbox.running":
 		return "running on " + d["pool"], true
 	case "sandbox.idled":
-		return "idle past its timeout: " + d["action"] + " on " + d["pool"], true
+		return "idle past its timeout: hibernated (" + d["action"] + ") on " + d["pool"], true
 	case "sandbox.woke":
-		return "woken by its user's call", true
+		return "woken from hibernation by its user's call", true
+	case "sandbox.expired":
+		return "deleted: hibernated longer than its limit", true
 	case "sandbox.resume_queued":
 		return "resume queued: " + d["pool"] + " has no free slot", true
 	case "sandbox.resumed":
@@ -953,6 +1180,8 @@ func describe(ev api.AuditEvent) (string, bool) {
 		return "operator changed pool " + ev.Resource, true
 	case "policy.update":
 		return "operator changed the placement policy", true
+	case "org.update":
+		return "operator changed the tenant's quota", true
 	}
 	return "", false
 }

@@ -6,6 +6,41 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added
+
+- The load simulator at `/simulator/` shows how routing is set up and lets
+  the visitor configure more of it.
+  - **Priority.** A Policy tab walks through who picks the provider, the rule
+    (strategy and external gate) and the priority for the next sandbox. That
+    list is the placement policy's own ranking, asked several times a second
+    for one more sandbox, with the policy's reason for each provider it holds
+    back; badges on the provider cards match it, and a fold-out shows the
+    configuration that produces it.
+  - **Quotas.** The tenant's `maxActiveSandboxes` and `maxQueued`, set
+    through the admin API: over the first a sandbox stays queued, over the
+    second a create is refused.
+  - **Audit.** The page can show every audit entry with its sequence number
+    and hash, and asks the control plane to verify the chain. The words
+    policy, quotas and audit in the diagram open these tabs.
+  - **Providers.** Any provider of the comparison can be added while the
+    simulation runs, and each can be removed. Adding one says nothing about
+    whether Differently has an adapter for it: every pool is the fake
+    adapter.
+  - **Lifecycle.** Starts and lengths are random, and a run begins empty. A
+    chosen share of sandboxes is kept after its session: it hibernates when
+    idle (a pause, a snapshot where the pool takes one), is woken by its
+    client's next session, and is deleted by `maxPausedSeconds`. What a
+    snapshot, a wake and a cold start take is set on the page.
+  - **Timeline.** A run lasts one, four or eight simulated hours or has no
+    limit; the bar shows the simulated time, the progress and what has been
+    spent at list price (running time only: storage for hibernated
+    sandboxes, minimums and plans are not counted).
+
+  The sidebar is a scenario pick list and the load. `internal/loadsim` gains
+  `AddProvider`, `SetQuota`, `VerifyAudit`, a keep share in the load and the
+  policy's ranking in each snapshot. The WebAssembly build is about 5 MB
+  compressed.
+
 ## [0.1.0-alpha.5] — 2026-11-17
 
 Fifth alpha, published as a GitHub pre-release. Not for production. It starts

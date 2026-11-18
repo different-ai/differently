@@ -10,7 +10,7 @@
 // and "routing" objects) before the program starts and defines
 // differentlySimEmit(kind, json). The program answers with
 // differentlySimSend(json), which takes
-// {"op": "load" | "routing" | "spike" | "outage" | "snapshot", ...}. Commands
+// {"op": "load" | "routing" | "add" | "quota" | "audit" | "verify" | "spike" | "outage" | "snapshot", ...}. Commands
 // only queue: a JavaScript callback must never block on Go's timers.
 package main
 
@@ -23,12 +23,15 @@ import (
 )
 
 type command struct {
-	Op      string          `json:"op"`
-	Load    loadsim.Load    `json:"load"`
-	Routing loadsim.Routing `json:"routing"`
-	Share   float64         `json:"share"`
-	Pool    string          `json:"pool"`
-	Outage  bool            `json:"outage"`
+	Op       string           `json:"op"`
+	Load     loadsim.Load     `json:"load"`
+	Routing  loadsim.Routing  `json:"routing"`
+	Share    float64          `json:"share"`
+	Pool     string           `json:"pool"`
+	Provider loadsim.Provider `json:"provider"`
+	Outage   bool             `json:"outage"`
+	Quota    loadsim.Quota    `json:"quota"`
+	All      bool             `json:"all"`
 }
 
 func main() {
@@ -41,6 +44,7 @@ func main() {
 		loadsim.Config
 		Load    loadsim.Load    `json:"load"`
 		Routing loadsim.Routing `json:"routing"`
+		Quota   loadsim.Quota   `json:"quota"`
 	}
 	if err := json.Unmarshal([]byte(global.Get("differentlySimConfig").String()), &start); err != nil {
 		emit("error", err.Error())
@@ -52,6 +56,10 @@ func main() {
 		return
 	}
 	if err := world.SetRouting(start.Routing); err != nil {
+		emit("error", err.Error())
+		return
+	}
+	if err := world.SetQuota(start.Quota); err != nil {
 		emit("error", err.Error())
 		return
 	}
@@ -80,6 +88,18 @@ func main() {
 			if err := world.SetRouting(c.Routing); err != nil {
 				emit("error", err.Error())
 			}
+		case "add":
+			if err := world.AddProvider(c.Provider, c.Routing); err != nil {
+				emit("error", err.Error())
+			}
+		case "quota":
+			if err := world.SetQuota(c.Quota); err != nil {
+				emit("error", err.Error())
+			}
+		case "audit":
+			world.SetAuditAll(c.All)
+		case "verify":
+			emit("verify", world.VerifyAudit())
 		case "outage":
 			world.SetOutage(c.Pool, c.Outage)
 		case "snapshot":

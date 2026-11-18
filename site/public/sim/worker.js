@@ -13,7 +13,7 @@
 // work: on a slow machine the simulation runs slower than asked, not wrong.
 //
 // Page -> worker: {type: 'start', config, scale} | {type: 'scale', scale} | {type: 'command', command}
-// Worker -> page: {type: 'ready'} | {type: 'snapshot', snapshot} | {type: 'error', message}
+// Worker -> page: {type: 'ready'} | {type: 'snapshot', snapshot} | {type: 'error', message} | {type: 'verify', value}
 
 const realNow = performance.now.bind(performance);
 const RealDate = Date;
@@ -105,6 +105,8 @@ self.differentlySimEmit = (kind, json) => {
     postMessage({ type: 'snapshot', snapshot: value });
   } else if (kind === 'error') {
     postMessage({ type: 'error', message: value });
+  } else {
+    postMessage({ type: kind, value });
   }
 };
 
