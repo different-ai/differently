@@ -281,12 +281,15 @@ A global policy set through `PUT /v1/policies/global` replaces
 [hybrid-overflow.md](../guides/hybrid-overflow.md) and
 [keys-and-providers.md](../guides/keys-and-providers.md).
 
-## 6. Create an organization, a project and a project key
+## 6. Log in and create an organization
 
 The bootstrap token is an operator key (`admin` scope). Use it to set up
 tenancy, then use narrower keys day to day. To create a named operator key
 and retire the bootstrap key, see
 [the bootstrap operator token](../guides/keys-and-providers.md#the-bootstrap-operator-token).
+
+These two steps use the CLI (`differently`); the
+[quickstart](../guides/quickstart.md#1-install) installs it with one command.
 
 ```sh
 export DIFFERENTLY_API_KEY=$(kubectl -n differently get secret dly-differently-tokens \
@@ -294,6 +297,47 @@ export DIFFERENTLY_API_KEY=$(kubectl -n differently get secret dly-differently-t
 kubectl -n differently port-forward svc/dly-differently-server 8080:8080 &
 export DIFFERENTLY_URL=http://127.0.0.1:8080                  # or https://differently.example.com
 
+differently login                      # saves the URL and the operator token
+differently admin org create acme      # an organization and its first project
+```
+
+`admin org create` prints the IDs of the organization and its project and
+saves the project as the CLI's default, so there is no ID to copy into the
+next step. You can also open `$DIFFERENTLY_URL/dashboard/` and sign in with
+the token.
+
+## 7. Create the first sandbox
+
+```sh
+differently run -- echo ok             # one sandbox: created, used, deleted
+```
+
+It prints the pool the sandbox ran on, then `ok`. For an application, create
+a key that works only in that project instead of handing out the operator
+token:
+
+```sh
+differently key create first-sandbox   # limited to the default project
+```
+
+The token is shown only once, so store it in your secret manager. To replace
+it later without downtime, rotate it with a grace period
+([rotate Differently API keys](../guides/keys-and-providers.md#rotate-differently-api-keys-without-downtime)).
+
+<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
+> **Version note.** `differently run`, the saved default project and
+> `key create` without flags are newer than `v0.1.0-alpha.5`, the latest
+> release. With that release's CLI, use the HTTP calls below, or copy the two
+> IDs that `admin org create` prints into
+> `differently key create first-sandbox --org <org-id> --key-project <project-id>`
+> and run `differently sandbox create --profile small --wait` with the new
+> key. A CLI built from this repository (`make build`) has the short
+> sequence.
+
+<details>
+<summary>The same with the HTTP API instead of the CLI</summary>
+
+```sh
 ORG=$(curl -fsS -X POST "$DIFFERENTLY_URL/v1/admin/organizations" \
   -H "Authorization: Bearer $DIFFERENTLY_API_KEY" -H 'Content-Type: application/json' \
   -d '{"name":"acme","defaultProject":"default"}')
@@ -304,29 +348,7 @@ PROJECT_KEY=$(curl -fsS -X POST "$DIFFERENTLY_URL/v1/api-keys" \
   -H "Authorization: Bearer $DIFFERENTLY_API_KEY" -H 'Content-Type: application/json' \
   -d "{\"name\":\"first-sandbox\",\"orgId\":\"$ORG_ID\",\"projectId\":\"$PROJECT_ID\",
        \"scopes\":[\"sandboxes:read\",\"sandboxes:write\",\"sandboxes:exec\"]}" | jq -r .token)
-echo "$PROJECT_ID"
-```
 
-The token is shown only once, so store `PROJECT_KEY` in your secret manager.
-To replace it later without downtime, rotate it with a grace period
-([rotate Differently API keys](../guides/keys-and-providers.md#rotate-differently-api-keys-without-downtime)).
-You can also open `$DIFFERENTLY_URL/dashboard/` and sign in with a key.
-
-## 7. Create the first sandbox
-
-With the CLI (`differently`, configured by `DIFFERENTLY_URL` and
-`DIFFERENTLY_API_KEY`; the [quickstart](../guides/quickstart.md#1-install)
-installs it with one command):
-
-```sh
-export DIFFERENTLY_API_KEY=$PROJECT_KEY
-differently sandbox create --profile small --wait        # prints the sbx_... ID
-differently sandbox exec <sbx_id> -- echo ok
-```
-
-Or with the HTTP API directly:
-
-```sh
 SBX=$(curl -fsS -X POST "$DIFFERENTLY_URL/v1/sandboxes" \
   -H "Authorization: Bearer $PROJECT_KEY" -H 'Content-Type: application/json' \
   -d '{"profile":"small"}' | jq -r .id)
@@ -338,6 +360,8 @@ curl -fsS -X POST "$DIFFERENTLY_URL/v1/sandboxes/$SBX/exec" \
 curl -fsS "$DIFFERENTLY_URL/v1/sandboxes/$SBX/placement" -H "Authorization: Bearer $PROJECT_KEY" | jq .
 curl -fsS -X DELETE "$DIFFERENTLY_URL/v1/sandboxes/$SBX" -H "Authorization: Bearer $PROJECT_KEY"
 ```
+
+</details>
 
 If the sandbox stays `queued` or fails, the placement explanation and
 `statusReason` say why. Usual causes:
@@ -352,12 +376,15 @@ If the sandbox stays `queued` or fails, the placement explanation and
 
 ## 8. Run the smoke test
 
-The test Pod creates a sandbox, runs `echo ok` and deletes it. With the
-bootstrap key it needs the project ID from step 6. Alternatively, put a
-project-scoped key in a Secret and set `test.existingSecret`.
+The test Pod creates a sandbox, runs `echo ok` and deletes it. It runs in
+the cluster and cannot see the CLI's saved default, so with the bootstrap key
+it needs the project ID that step 6 printed (`differently project list`
+shows it again). Alternatively, put a project-scoped key in a Secret and set
+`test.existingSecret`.
 
 ```sh
-helm upgrade dly deploy/helm/differently -n differently --reuse-values --set test.projectId=$PROJECT_ID
+helm upgrade dly deploy/helm/differently -n differently --reuse-values \
+  --set test.projectId=prj_...          # the project ID from step 6
 helm test dly -n differently --logs
 ```
 

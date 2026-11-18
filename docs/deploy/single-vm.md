@@ -216,11 +216,26 @@ curl -fsSL https://different-ai.github.io/differently/install.sh | DIFFERENTLY_V
 
 ```bash
 export DIFFERENTLY_URL=http://localhost:8080 DIFFERENTLY_API_KEY="$(cat operator-token)"
-differently doctor                                   # server, auth and pool health
-differently admin org create my-team                 # an organization with a default project
-differently key create dev --org <org-id> --key-project <project-id>
-DIFFERENTLY_API_KEY=<the new key> differently sandbox create --profile small --wait
+differently doctor                       # server, auth and pool health
+differently login                        # saves the URL and the operator token
+differently admin org create my-team     # an organization and its first project
+differently run -- echo hello            # a sandbox in that project: created, used, deleted
 ```
+
+`admin org create` prints the IDs of the organization and its project and
+saves the project as the CLI's default, so there is no ID to copy into the
+next command. For an application, `differently key create dev` makes a key
+that works only in that project; its token is shown once.
+
+<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
+> **Version note.** `differently run`, the saved default project and
+> `key create` without flags are newer than `v0.1.0-alpha.5`, the release
+> installed above. With that release's CLI, copy the two IDs from what
+> `admin org create` prints:
+> `differently key create dev --org <org-id> --key-project <project-id>`,
+> then `DIFFERENTLY_API_KEY=<the new key> differently sandbox create --profile small --wait`.
+> A CLI built from source (`make build`) has the short sequence and works
+> with that release's server.
 
 The dashboard is at <http://localhost:8080/dashboard/>; sign in with the
 token. [Organization onboarding](../guides/organization-onboarding.md) covers
