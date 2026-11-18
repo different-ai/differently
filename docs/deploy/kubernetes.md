@@ -373,8 +373,7 @@ What the chart creates for it:
   TCP 443.
 
 The image is `ghcr.io/different-ai/differently-console`, published with each
-release after 0.1.0-alpha.4; until then build it with
-`docker build -f build/console.Dockerfile .` and set `console.image`. The
+release from 0.1.0-alpha.5 on (`build/console.Dockerfile` builds it). The
 templates are linted and rendered in CI and the image is built there. The
 console's server was run from the image's layout against a local Differently
 (sign-up, the allowlist and the proxy); the chart with `console.enabled` has

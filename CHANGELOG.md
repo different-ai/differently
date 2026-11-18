@@ -6,6 +6,38 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.5] — 2026-11-17
+
+Fifth alpha, published as a GitHub pre-release. Not for production. It starts
+making Differently the place to see a whole deployment, not only its
+sandboxes: it can watch the services around them (an OpenWork installation's
+Den, Gateway, Workbot and runner have their health routes built in), and the
+Helm chart can run the admin console with sign-in. The console also manages
+each pool's prices, budget and attestations, the experimental AWS and Google
+Cloud adapters take their credentials from the platform, and the website
+gains a provider comparison and a load simulator.
+
+What ran for this release: the unit and in-process tests, the Postgres
+conformance and acceptance job, the end-to-end suite on OpenSandbox's Docker
+runtime and the container image builds (now including the console image), in
+CI on each pull request (#98 to #109). Stack health was also run by hand
+against a local server with a stand-in for OpenWork's health routes, and the
+console's server was run from its image's layout against a local server.
+
+What has not run: stack probes against a live OpenWork installation; the
+chart with `console.enabled` on a cluster; the live adapter tests against
+Daytona and Freestyle accounts and the Kubernetes and Fast Sandbox runtimes,
+which last ran on earlier code (see `Verified` under 0.1.0-alpha.2); and the
+AWS and Google Cloud credential sources against those clouds.
+
+Upgrading from 0.1.0-alpha.4: the Postgres store gains migration
+`0005_stacks` (one new table), applied by `differently-server migrate` as the
+chart already runs it; like every migration it is forward only. Nothing else
+has to change. The audit log gains the actions `stack.put`, `stack.delete`
+and `stack.health`, and `/metrics` gains `differently_stack_component_up`.
+The console in the chart is off unless `console.enabled` is set, and this is
+the first release with a `differently-console` image.
+
 ### Added
 
 - The Helm chart can run the admin console with sign-in. `console.enabled`
@@ -788,7 +820,8 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.4...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.5...pre-release
+[0.1.0-alpha.5]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.2
