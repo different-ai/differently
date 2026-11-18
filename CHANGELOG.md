@@ -33,6 +33,44 @@ All notable changes are recorded here. The format follows
   - Dev mode prints its address, the token's path and the next command to
     type, and the CLI says how to start a server when nothing answers on
     this machine.
+- On a real installation a first sandbox takes three commands after reading
+  the bootstrap operator token, and no ID is copied from one into the next:
+  `differently login`, `differently admin org create NAME`,
+  `differently run -- echo hello`. Only the CLI changed: organization and
+  operator keys must still name a project on every create, and the server
+  creates no tenant by itself.
+  - **`differently admin org create NAME`** prints the IDs of the
+    organization and its first project in a short table instead of raw JSON
+    (`-o json` prints the response as before). When the CLI has no default
+    project (none saved, no `--project`, no `DIFFERENTLY_PROJECT`, no local
+    dev server), it saves the new one as the default and says so. It never
+    replaces a default, and it does not write into a config saved for
+    another server.
+  - **`differently login`** with a key that is not limited to one project
+    saves the only project the key can see. With none it says which command
+    makes one; with several it lists them and saves none
+    (`differently login --project ID` saves a chosen one). A project saved
+    before is kept only while the key can still see it, and the dev
+    server's `prj_default` is no longer saved when logging in to another
+    server on the same machine.
+  - **`differently key create NAME`** without `--org` and `--key-project`
+    limits the key to the default project and looks up its organization, so
+    `differently key create dev` works after the commands above.
+    `--key-project` alone looks up the organization too. `--org` alone still
+    makes a key for the whole organization, and keys with the `admin` or
+    `org:admin` scope are never narrowed. The output says where the new key
+    works. **Changed:** a key made by an organization key that has a default
+    project is now limited to that project; pass `--org` for an
+    organization-wide one.
+  - A create refused because no project was named now says how to get a
+    default project.
+  - The Helm chart's notes, the [Kubernetes](docs/deploy/kubernetes.md) and
+    [single-VM](docs/deploy/single-vm.md) guides and
+    [organization onboarding](docs/guides/organization-onboarding.md) show
+    this sequence instead of `curl` with `jq` or ID placeholders.
+
+  Run by hand against a server started from a config file without `--dev`
+  (memory store, one `remote` pool); not run on a cluster.
 - Entry points for people and for agents.
   - [Differently explained](docs/explainer.md): what it is in plain words,
     and what a newcomer can ignore until later.

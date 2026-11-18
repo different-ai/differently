@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -59,16 +62,28 @@ func TestDevTokenOnlyForLoopback(t *testing.T) {
 	}
 }
 
-// fakeAPI answers the calls one run makes and records them in order.
+// fakeAPI answers the calls one run makes and records them in order. With
+// me and projects set it also answers what login, org create and key create
+// ask.
 type fakeAPI struct {
 	mu       sync.Mutex
 	calls    []string
 	created  api.CreateSandboxRequest
 	status   api.SandboxStatus // what the wait call reports
 	exitCode int
+
+	me       whoami                  // GET /v1/me
+	projects []api.Project           // what the key can see
+	keyReq   api.CreateAPIKeyRequest // the last POST /v1/api-keys
 }
 
 func (f *fakeAPI) serve(t *testing.T) *client.Client {
+	t.Helper()
+	return client.New(f.start(t), "dly_test_key")
+}
+
+// start serves the fake and returns its URL.
+func (f *fakeAPI) start(t *testing.T) string {
 	t.Helper()
 	mux := http.NewServeMux()
 	record := func(r *http.Request) {
@@ -96,9 +111,65 @@ func (f *fakeAPI) serve(t *testing.T) *client.Client {
 		record(r)
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("GET /v1/me", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		_ = json.NewEncoder(w).Encode(f.me)
+	})
+	mux.HandleFunc("GET /v1/projects", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(api.List[api.Project]{Items: append([]api.Project{}, f.projects...)})
+	})
+	mux.HandleFunc("GET /v1/projects/{id}", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		for _, p := range f.projects {
+			if p.ID == r.PathValue("id") {
+				_ = json.NewEncoder(w).Encode(p)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(api.ErrorEnvelope{Error: api.Errorf(api.CodeNotFound, "project %s not found", r.PathValue("id"))})
+	})
+	// Like the server, an organization comes with a project unless the
+	// request leaves its name empty.
+	mux.HandleFunc("POST /v1/admin/organizations", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		var req struct{ Name, DefaultProject string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		out := map[string]any{"organization": api.Organization{ID: "org_1", Name: req.Name}}
+		if req.DefaultProject != "" {
+			proj := api.Project{ID: "prj_1", OrgID: "org_1", Name: req.DefaultProject}
+			f.mu.Lock()
+			f.projects = append(f.projects, proj)
+			f.mu.Unlock()
+			out["project"] = proj
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(out)
+	})
+	mux.HandleFunc("POST /v1/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		_ = json.NewDecoder(r.Body).Decode(&f.keyReq)
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(api.CreateAPIKeyResponse{
+			APIKey: api.APIKey{ID: "newkey1", Name: f.keyReq.Name, OrgID: f.keyReq.OrgID, ProjectID: f.keyReq.ProjectID, Scopes: f.keyReq.Scopes},
+			Token:  "dly_newkey1_secret",
+		})
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return client.New(srv.URL, "dly_test_key")
+	return srv.URL
+}
+
+// called reports whether the fake saw a call, such as "POST /v1/api-keys".
+func (f *fakeAPI) called(call string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Contains(f.calls, call)
 }
 
 func (f *fakeAPI) deleted() bool {
@@ -180,5 +251,375 @@ func TestStartHint(t *testing.T) {
 	}
 	if h := startHint(errors.New("unknown flag"), "http://localhost:8080"); h != "" {
 		t.Errorf("unrelated error: hint %q", h)
+	}
+}
+
+// isolate gives the CLI an empty home and clears the variables that override
+// the config file, so a test reads and writes no real configuration.
+func isolate(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	for _, k := range []string{"DIFFERENTLY_URL", "DIFFERENTLY_API_KEY", "DIFFERENTLY_PROJECT"} {
+		t.Setenv(k, "")
+	}
+}
+
+// devToken writes the token a local dev server leaves in the home directory.
+func devToken(t *testing.T) {
+	t.Helper()
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".differently", "dev")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "token"), []byte("dly_dev_token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// runCLI runs one command line the way main does, with its output captured.
+func runCLI(t *testing.T, stdin string, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	root := newRoot()
+	var out, errOut strings.Builder
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	root.SetIn(strings.NewReader(stdin))
+	root.SetArgs(args)
+	err = root.Execute()
+	return out.String(), errOut.String(), err
+}
+
+// The path from a bootstrap operator token to a first sandbox: three commands
+// and no ID copied from one into the next.
+func TestFirstSandboxNeedsNoCopiedID(t *testing.T) {
+	isolate(t)
+	f := &fakeAPI{status: api.StatusRunning, me: whoami{KeyID: "bootop1", Operator: true}}
+	url := f.start(t)
+
+	out, _, err := runCLI(t, "", "login", "--url", url, "--api-key", "dly_bootop1_secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "differently admin org create NAME") {
+		t.Errorf("login on an empty installation does not say how to make a project:\n%s", out)
+	}
+	if got := saved(); got != (settings{URL: url, APIKey: "dly_bootop1_secret"}) {
+		t.Fatalf("after login the config holds %+v", got)
+	}
+	if fi, err := os.Stat(configPath()); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("the config holds a key and must be owner-only: %v, %v", fi.Mode().Perm(), err)
+	}
+
+	out, errOut, err := runCLI(t, "", "admin", "org", "create", "my-team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"org_1", "prj_1", "my-team"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the summary leaves out %s:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "{") {
+		t.Errorf("table mode printed JSON:\n%s", out)
+	}
+	if !strings.Contains(errOut, "prj_1 is now the default project") || strings.Count(strings.TrimSpace(errOut), "\n") != 0 {
+		t.Errorf("want one line saying the project was saved, got:\n%s", errOut)
+	}
+	if got := saved(); got != (settings{URL: url, APIKey: "dly_bootop1_secret", Project: "prj_1"}) {
+		t.Fatalf("after org create the config holds %+v", got)
+	}
+
+	out, _, err = runCLI(t, "", "run", "--", "echo", "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "hello\n" || f.created.ProjectID != "prj_1" {
+		t.Errorf("run printed %q in project %q; want hello in prj_1", out, f.created.ProjectID)
+	}
+}
+
+// Org create saves a default project only when there is none, and only in a
+// config that belongs to the server it talked to.
+func TestOrgCreateRemembersOnlyAMissingDefault(t *testing.T) {
+	const key = "dly_op_secret"
+	for _, tc := range []struct {
+		name   string
+		setup  func(t *testing.T, url string) // after isolate
+		args   []string
+		want   func(url string) settings
+		stderr string
+	}{
+		{
+			name:   "one is saved already",
+			setup:  func(t *testing.T, url string) { must(t, save(settings{URL: url, APIKey: key, Project: "prj_old"})) },
+			want:   func(url string) settings { return settings{URL: url, APIKey: key, Project: "prj_old"} },
+			stderr: "the default stays prj_old); use it with --project prj_1",
+		},
+		{
+			name: "one is named in the environment",
+			setup: func(t *testing.T, url string) {
+				must(t, save(settings{URL: url, APIKey: key}))
+				t.Setenv("DIFFERENTLY_PROJECT", "prj_env")
+			},
+			want:   func(url string) settings { return settings{URL: url, APIKey: key} },
+			stderr: "the default stays prj_env",
+		},
+		{
+			name:   "one is named with --project",
+			setup:  func(t *testing.T, url string) { must(t, save(settings{URL: url, APIKey: key})) },
+			args:   []string{"--project", "prj_flag"},
+			want:   func(url string) settings { return settings{URL: url, APIKey: key} },
+			stderr: "the default stays prj_flag",
+		},
+		{
+			name: "the saved login is for another server",
+			setup: func(t *testing.T, url string) {
+				must(t, save(settings{URL: "https://other.example.com", APIKey: "dly_other_secret"}))
+				t.Setenv("DIFFERENTLY_URL", url)
+				t.Setenv("DIFFERENTLY_API_KEY", key)
+			},
+			want:   func(string) settings { return settings{URL: "https://other.example.com", APIKey: "dly_other_secret"} },
+			stderr: "the saved login is for https://other.example.com",
+		},
+		{
+			name: "a local dev server has its own default",
+			setup: func(t *testing.T, url string) {
+				devToken(t)
+				t.Setenv("DIFFERENTLY_URL", url) // loopback, and no key: the dev token and prj_default apply
+			},
+			want:   func(string) settings { return settings{} },
+			stderr: "the default stays prj_default",
+		},
+		{
+			name: "no login, only the environment",
+			setup: func(t *testing.T, url string) {
+				t.Setenv("DIFFERENTLY_URL", url)
+				t.Setenv("DIFFERENTLY_API_KEY", key)
+			},
+			// The project is remembered; the key from the environment is not written.
+			want:   func(string) settings { return settings{Project: "prj_1"} },
+			stderr: "prj_1 is now the default project",
+		},
+		{
+			name:   "no project was asked for",
+			setup:  func(t *testing.T, url string) { must(t, save(settings{URL: url, APIKey: key})) },
+			args:   []string{"--default-project", ""},
+			want:   func(url string) settings { return settings{URL: url, APIKey: key} },
+			stderr: "differently project create NAME --org org_1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolate(t)
+			f := &fakeAPI{me: whoami{KeyID: "op", Operator: true}}
+			url := f.start(t)
+			tc.setup(t, url)
+			_, errOut, err := runCLI(t, "", append([]string{"admin", "org", "create", "my-team"}, tc.args...)...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := saved(), tc.want(url); got != want {
+				t.Errorf("config holds %+v, want %+v", got, want)
+			}
+			if !strings.Contains(errOut, tc.stderr) {
+				t.Errorf("stderr %q does not say %q", errOut, tc.stderr)
+			}
+		})
+	}
+}
+
+// With -o json the response is printed as the API sent it and nothing else
+// reaches stdout; the project is remembered all the same.
+func TestOrgCreateJSON(t *testing.T) {
+	isolate(t)
+	f := &fakeAPI{me: whoami{KeyID: "op", Operator: true}}
+	url := f.start(t)
+	must(t, save(settings{URL: url, APIKey: "dly_op_secret"}))
+	out, _, err := runCLI(t, "", "admin", "org", "create", "my-team", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Organization api.Organization `json:"organization"`
+		Project      api.Project      `json:"project"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("stdout is not one JSON value: %v\n%s", err, out)
+	}
+	if got.Organization.ID != "org_1" || got.Project.ID != "prj_1" || got.Project.OrgID != "org_1" {
+		t.Errorf("response %+v", got)
+	}
+	if saved().Project != "prj_1" {
+		t.Errorf("config holds %+v", saved())
+	}
+}
+
+// Login saves the project a key is limited to, the one the caller names, or
+// the only one the key can see. It never guesses between several.
+func TestLoginSavesTheProject(t *testing.T) {
+	a := api.Project{ID: "prj_a", OrgID: "org_1", Name: "default"}
+	b := api.Project{ID: "prj_b", OrgID: "org_2", Name: "ci"}
+	for _, tc := range []struct {
+		name     string
+		me       whoami
+		projects []api.Project
+		before   string // the project saved before this login
+		args     []string
+		want     string   // the project saved after
+		says     []string // in the output
+		code     string   // the error, if login must fail
+	}{
+		{name: "a key limited to one project", me: whoami{KeyID: "k", ProjectID: "prj_k"}, projects: []api.Project{a, b}, want: "prj_k", says: []string{"default project: prj_k"}},
+		{name: "the only project", me: whoami{KeyID: "op", Operator: true}, projects: []api.Project{a}, want: "prj_a", says: []string{"default project: prj_a"}},
+		{name: "no project, operator key", me: whoami{KeyID: "op", Operator: true}, says: []string{"differently admin org create NAME"}},
+		{name: "no project, organization key", me: whoami{KeyID: "org"}, says: []string{"differently project create NAME"}},
+		{name: "several projects", me: whoami{KeyID: "op", Operator: true}, projects: []api.Project{a, b},
+			says: []string{"prj_a", "prj_b", "org_2", "--project ID", "DIFFERENTLY_PROJECT=ID"}},
+		{name: "several projects and one named", me: whoami{KeyID: "op", Operator: true}, projects: []api.Project{a, b}, args: []string{"--project", "prj_b"}, want: "prj_b"},
+		{name: "a named project the key cannot see", me: whoami{KeyID: "op", Operator: true}, projects: []api.Project{a}, args: []string{"--project", "prj_typo"}, code: api.CodeNotFound},
+		{name: "the saved project is still visible", me: whoami{KeyID: "op", Operator: true}, projects: []api.Project{a, b}, before: "prj_b", want: "prj_b"},
+		{name: "the saved project is from another server", me: whoami{KeyID: "op", Operator: true}, projects: []api.Project{a}, before: "prj_gone", want: "prj_a"},
+		{name: "the saved project is gone and several remain", me: whoami{KeyID: "op", Operator: true}, projects: []api.Project{a, b}, before: "prj_gone", says: []string{"prj_a", "prj_b"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolate(t)
+			f := &fakeAPI{me: tc.me, projects: tc.projects}
+			url := f.start(t)
+			if tc.before != "" {
+				must(t, save(settings{URL: url, APIKey: "dly_old_secret", Project: tc.before}))
+			}
+			out, _, err := runCLI(t, "", append([]string{"login", "--url", url, "--api-key", "dly_new_secret"}, tc.args...)...)
+			if tc.code != "" {
+				if !api.IsCode(err, tc.code) {
+					t.Fatalf("err %v, want %s", err, tc.code)
+				}
+				if got := saved(); got.APIKey == "dly_new_secret" {
+					t.Errorf("a failed login was saved: %+v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := saved(), (settings{URL: url, APIKey: "dly_new_secret", Project: tc.want}); got != want {
+				t.Errorf("config holds %+v, want %+v", got, want)
+			}
+			for _, s := range tc.says {
+				if !strings.Contains(out, s) {
+					t.Errorf("output does not say %q:\n%s", s, out)
+				}
+			}
+		})
+	}
+}
+
+// A local dev server's token and prj_default are what the CLI falls back to
+// with no key. Logging in to another server on this machine with a typed key
+// must not save that project.
+func TestLoginDoesNotSaveTheDevProject(t *testing.T) {
+	isolate(t)
+	devToken(t)
+	f := &fakeAPI{me: whoami{KeyID: "op", Operator: true}}
+	url := f.start(t) // loopback, like a port-forward to a real installation
+	out, _, err := runCLI(t, "dly_typed_secret\n", "login", "--url", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := saved(), (settings{URL: url, APIKey: "dly_typed_secret"}); got != want {
+		t.Errorf("config holds %+v, want %+v", got, want)
+	}
+	if !strings.Contains(out, "API key: ") {
+		t.Errorf("login did not ask for the key:\n%s", out)
+	}
+}
+
+// Key create limits a tenant key to the default project and looks up the
+// organization. Flags win, and operator and org:admin keys are not narrowed.
+func TestKeyCreateUsesTheDefaultProject(t *testing.T) {
+	projects := []api.Project{{ID: "prj_1", OrgID: "org_1"}, {ID: "prj_2", OrgID: "org_2"}}
+	for _, tc := range []struct {
+		name             string
+		saved            string // the default project
+		args             []string
+		wantOrg, wantPrj string
+		says             string
+		noLookup         bool
+		code             string
+	}{
+		{name: "no flags", saved: "prj_1", wantOrg: "org_1", wantPrj: "prj_1", says: "for project prj_1"},
+		{name: "--project for this command", saved: "prj_1", args: []string{"--project", "prj_2"}, wantOrg: "org_2", wantPrj: "prj_2"},
+		{name: "--org alone is the whole organization", saved: "prj_1", args: []string{"--org", "org_9"}, wantOrg: "org_9", says: "every project of organization org_9", noLookup: true},
+		{name: "--key-project wins over the default", saved: "prj_1", args: []string{"--key-project", "prj_2"}, wantOrg: "org_2", wantPrj: "prj_2"},
+		{name: "both flags are sent as given", saved: "prj_1", args: []string{"--org", "org_x", "--key-project", "prj_y"}, wantOrg: "org_x", wantPrj: "prj_y", noLookup: true},
+		{name: "an operator key is not narrowed", saved: "prj_1", args: []string{"--scope", "admin"}, says: "every organization (operator)", noLookup: true},
+		{name: "an org:admin key is not narrowed", saved: "prj_1", args: []string{"--scope", "org:admin"}, noLookup: true},
+		{name: "no default project", noLookup: true},
+		{name: "a default project the key cannot see", saved: "prj_gone", code: api.CodeNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolate(t)
+			f := &fakeAPI{me: whoami{KeyID: "op", Operator: true}, projects: projects}
+			url := f.start(t)
+			must(t, save(settings{URL: url, APIKey: "dly_op_secret", Project: tc.saved}))
+			out, _, err := runCLI(t, "", append([]string{"key", "create", "dev"}, tc.args...)...)
+			if tc.code != "" {
+				if !api.IsCode(err, tc.code) || f.called("POST /v1/api-keys") {
+					t.Fatalf("err %v, calls %v: want %s and no key created", err, f.calls, tc.code)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f.keyReq.OrgID != tc.wantOrg || f.keyReq.ProjectID != tc.wantPrj || f.keyReq.Name != "dev" {
+				t.Errorf("request %+v, want organization %q and project %q", f.keyReq, tc.wantOrg, tc.wantPrj)
+			}
+			if tc.noLookup && len(f.calls) != 1 {
+				t.Errorf("calls %v: want the create alone", f.calls)
+			}
+			if strings.Count(out, "dly_newkey1_secret") != 1 || !strings.Contains(out, tc.says) {
+				t.Errorf("want the token once and %q, got:\n%s", tc.says, out)
+			}
+		})
+	}
+}
+
+func TestKeyCreateJSON(t *testing.T) {
+	isolate(t)
+	f := &fakeAPI{projects: []api.Project{{ID: "prj_1", OrgID: "org_1"}}}
+	must(t, save(settings{URL: f.start(t), APIKey: "dly_op_secret", Project: "prj_1"}))
+	out, _, err := runCLI(t, "", "key", "create", "dev", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got api.CreateAPIKeyResponse
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Token != "dly_newkey1_secret" || got.ProjectID != "prj_1" {
+		t.Errorf("stdout %q: %v", out, err)
+	}
+}
+
+// The hint appears only for the error a key without a project gets.
+func TestProjectHint(t *testing.T) {
+	missing := api.Errorf(api.CodeInvalidRequest, "projectId is required for organization and operator keys")
+	if h := projectHint(fmt.Errorf("create: %w", missing)); !strings.Contains(h, "differently admin org create NAME") {
+		t.Errorf("hint %q", h)
+	}
+	for _, err := range []error{
+		api.Errorf(api.CodeInvalidRequest, "name is required"),
+		api.Errorf(api.CodeNotFound, "project prj_x not found"),
+		errors.New("projectId is required"),
+	} {
+		if h := projectHint(err); h != "" {
+			t.Errorf("%v: hint %q", err, h)
+		}
+	}
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

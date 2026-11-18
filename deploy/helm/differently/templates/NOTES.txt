@@ -131,11 +131,20 @@ No external provider is registered and config.policy.external is
 "{{ .Values.config.policy.external | default "never" }}": sandboxes stay on private pools.
 {{- end }}
 
-4. Smoke test (creates a sandbox, runs `echo ok`, deletes it):
+4. Run a first sandbox with the CLI (docs/guides/quickstart.md installs it):
+
+     differently login                      # saves the URL and the token from steps 1 and 2
+     differently admin org create my-team   # an organization and its first project
+     differently run -- echo hello
+
+   `admin org create` prints the project's ID and saves it as the CLI's
+   default, so there is no ID to copy between these commands.
+
+5. Smoke test (creates a sandbox, runs `echo ok`, deletes it):
 {{- if and (not .Values.test.existingSecret) (not .Values.test.projectId) }}
 
-   The bootstrap key is an operator key and must name a project. Create an
-   organization and project first (docs/deploy/kubernetes.md), then:
+   The bootstrap key is an operator key and must name a project. Give the
+   test the project ID that `admin org create` printed in step 4:
 
      helm upgrade {{ .Release.Name }} <chart> -n {{ $ns }} --reuse-values --set test.projectId=prj_...
 {{- end }}

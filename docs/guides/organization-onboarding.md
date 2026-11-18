@@ -58,14 +58,43 @@ Repeat for each organization; every step happens in *their* environment.
 ## 2. Onboarding a team inside an installation
 
 The examples use the CLI with an operator key
-(`export DIFFERENTLY_URL=… DIFFERENTLY_API_KEY=dly_…`). Every step is a plain
-API call too — see [api/openapi.yaml](../../api/openapi.yaml).
+(`export DIFFERENTLY_URL=… DIFFERENTLY_API_KEY=dly_…`, which the `curl`
+examples read too). Every step is a plain API call — see
+[api/openapi.yaml](../../api/openapi.yaml).
+
+On a new installation, three commands give the first organization, its first
+project and a sandbox in it, with no ID to copy:
+
+```bash
+differently login                        # saves the URL and the operator token
+differently admin org create my-team     # an organization and its first project
+differently run -- echo hello            # a sandbox in that project: created, used, deleted
+```
+
+`login` takes the URL and key from the environment or from `--url` and
+`--api-key`, and asks for the key when there is none. `admin org create`
+prints both IDs and, when the CLI has no default project yet, saves the new
+project as the default. It never replaces a default, so the organizations
+you add later change nothing for your own commands; the steps below name
+each organization and project explicitly.
+
+<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
+> **Version note.** `differently run`, the saved default project and
+> `key create` without flags are newer than `v0.1.0-alpha.5`, the latest
+> release. With that release's CLI, pass the project to every command
+> (`--project <project-id>`, and `--org` with `--key-project` to
+> `key create`) and use `differently sandbox create --wait` instead of
+> `run`.
 
 ### 2.1 Create the organization with quotas
 
 ```bash
-differently admin org create "Payments Platform" --default-project ci -o json
+differently admin org create "Payments Platform" --default-project ci
+ORG=org_...          # the organization ID it printed
 ```
+
+In a script, `-o json` prints the same response as JSON
+(`.organization.id`, `.project.id`).
 
 ```bash
 curl -sX PATCH "$DIFFERENTLY_URL/v1/admin/organizations/$ORG" \
@@ -102,10 +131,16 @@ API, or pool configuration and credentials.
 ### 2.3 Projects and least-privilege keys (as the org admin)
 
 ```bash
-differently project create nightly-builds
-differently key create ci-runner --key-project $PROJECT \
+differently project create nightly-builds        # prints the new project, with its ID
+differently key create ci-runner --key-project prj_... \
   --scope sandboxes:read --scope sandboxes:write --scope sandboxes:exec --ttl-hours 720
 ```
+
+`--key-project` limits the key to that project. Without it and without
+`--org`, the key is limited to the CLI's default project: the one
+`differently login` saved (the organization's only project, if it has just
+one) or the one named with `--project` or `DIFFERENTLY_PROJECT`. `--org`
+alone makes a key for every project of the organization, as in 2.2.
 
 | Scope | Allows |
 |---|---|
@@ -156,6 +191,7 @@ const sb = await differently.sandboxes.create({ profile: "medium", classificatio
 ### 2.6 Verify the setup
 
 ```bash
+CI_KEY=dly_...                                    # the ci-runner token from 2.3
 differently --api-key $CI_KEY doctor              # connectivity and scopes
 differently --api-key $CI_KEY usage quota         # limits and current usage
 differently --api-key $CI_KEY sandbox create --wait --profile small

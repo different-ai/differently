@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -26,8 +27,8 @@ import (
 )
 
 type settings struct {
-	URL     string `json:"url"`
-	APIKey  string `json:"apiKey"`
+	URL     string `json:"url,omitempty"`
+	APIKey  string `json:"apiKey,omitempty"`
 	Project string `json:"project,omitempty"`
 }
 
@@ -40,11 +41,45 @@ func configPath() string {
 	return filepath.Join(dir, "differently", "config.json")
 }
 
-func load() settings {
+// saved reads the config file alone, with nothing from flags, the
+// environment or a local dev server: what login and org create wrote.
+func saved() settings {
 	var s settings
 	if b, err := os.ReadFile(configPath()); err == nil {
 		_ = json.Unmarshal(b, &s)
 	}
+	return s
+}
+
+// save writes the config file, readable by its owner only: it holds a key.
+func save(s settings) error {
+	if err := os.MkdirAll(filepath.Dir(configPath()), 0o700); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(s, "", "  ")
+	return os.WriteFile(configPath(), b, 0o600)
+}
+
+// rememberProject makes id the default project when there is none: no
+// --project, no DIFFERENTLY_PROJECT, nothing saved and no local dev server's
+// project. It never replaces a default, and it leaves alone a file saved for
+// another server, where the ID would mean nothing. When it does not save, why
+// says so.
+func rememberProject(id string) (ok bool, why string, err error) {
+	cur := load()
+	if cur.Project != "" {
+		return false, "the default stays " + cur.Project, nil
+	}
+	f := saved()
+	if f.URL != "" && strings.TrimRight(f.URL, "/") != strings.TrimRight(cur.URL, "/") {
+		return false, "the saved login is for " + f.URL, nil
+	}
+	f.Project = id
+	return true, "", save(f)
+}
+
+func load() settings {
+	s := saved()
 	for _, o := range []struct {
 		dst       *string
 		env, flag string
@@ -107,8 +142,10 @@ func printJSON(v any) error {
 	return enc.Encode(v)
 }
 
-func table(header string, rows [][]string) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+func table(header string, rows [][]string) { tableTo(os.Stdout, header, rows) }
+
+func tableTo(out io.Writer, header string, rows [][]string) {
+	w := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(w, header)
 	for _, r := range rows {
 		fmt.Fprintln(w, strings.Join(r, "\t"))
@@ -155,23 +192,42 @@ func raw(method, path string, body any) error {
 	return printJSON(out)
 }
 
-func main() {
+// newRoot builds the command tree. Building it also resets the global flags.
+func newRoot() *cobra.Command {
 	root := &cobra.Command{Use: "differently", Short: "Differently: your infrastructure, your rules, one API", SilenceUsage: true, SilenceErrors: true, Version: version.Version}
 	root.PersistentFlags().StringVar(&flagURL, "url", "", "API URL (env DIFFERENTLY_URL)")
 	root.PersistentFlags().StringVar(&flagKey, "api-key", "", "API key (env DIFFERENTLY_API_KEY)")
-	root.PersistentFlags().StringVar(&flagProject, "project", "", "project ID for org/operator keys (env DIFFERENTLY_PROJECT)")
+	root.PersistentFlags().StringVar(&flagProject, "project", "", "project ID for org/operator keys (env DIFFERENTLY_PROJECT; default: the one login or admin org create saved)")
 	root.PersistentFlags().StringVarP(&flagOutput, "output", "o", "table", "output format: table or json")
 	root.AddCommand(runCmd(), loginCmd(), sandboxCmd(), projectCmd(), keyCmd(), usageCmd(), adminCmd(), doctorCmd(),
 		&cobra.Command{Use: "whoami", Short: "Show the current key", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/me", nil) }},
 		&cobra.Command{Use: "capabilities", Short: "List pools and their capabilities", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/capabilities", nil) }},
 	)
-	if err := root.Execute(); err != nil {
+	return root
+}
+
+func main() {
+	if err := newRoot().Execute(); err != nil {
 		reportError(os.Stderr, err)
-		if hint := startHint(err, load().URL); hint != "" {
-			fmt.Fprintln(os.Stderr, hint)
+		for _, hint := range []string{startHint(err, load().URL), projectHint(err)} {
+			if hint != "" {
+				fmt.Fprintln(os.Stderr, hint)
+			}
 		}
 		os.Exit(1)
 	}
+}
+
+// projectHint says how to get a default project when a key that is not
+// limited to one named none, which is what a first sandbox on a new
+// installation looks like.
+func projectHint(err error) string {
+	var e *api.Error
+	if !errors.As(err, &e) || e.Code != api.CodeInvalidRequest || !strings.Contains(e.Message, "projectId is required") {
+		return ""
+	}
+	return "no default project. On a new installation, make one with: differently admin org create NAME\n" +
+		"otherwise pick one from 'differently project list' with --project ID, or save it with: differently login --project ID"
 }
 
 // startHint says how to get a server when nothing answers on this machine,
@@ -201,32 +257,110 @@ func reportError(w io.Writer, err error) {
 func loginCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "login", Short: "Save the API URL, key and default project",
+		Long: `Login checks the key against the server and saves the URL, the key and a
+default project, so later commands need no flags.
+
+The URL and key come from --url and --api-key or DIFFERENTLY_URL and
+DIFFERENTLY_API_KEY; without a key, login asks for one.
+
+A key limited to one project uses that project. For an organization or
+operator key, login saves the project given with --project or
+DIFFERENTLY_PROJECT, else keeps the one saved before if the key still sees
+it, else takes the only project the key can see. With no project it says how
+to create one; with several it lists them and saves none.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s := load()
 			if flagKey == "" && os.Getenv("DIFFERENTLY_API_KEY") == "" {
-				fmt.Print("API key: ")
-				if _, err := fmt.Scanln(&s.APIKey); err != nil {
+				fmt.Fprint(cmd.OutOrStdout(), "API key: ")
+				if _, err := fmt.Fscanln(cmd.InOrStdin(), &s.APIKey); err != nil {
 					return err
 				}
 			}
-			var me map[string]any
-			if err := client.New(s.URL, s.APIKey).Do(ctx(), "GET", "/v1/me", nil, &me); err != nil {
-				return err
+			named := flagProject
+			if named == "" {
+				named = os.Getenv("DIFFERENTLY_PROJECT")
 			}
-			if p, _ := me["projectId"].(string); p != "" {
-				s.Project = p
-			}
-			if err := os.MkdirAll(filepath.Dir(configPath()), 0o700); err != nil {
-				return err
-			}
-			b, _ := json.MarshalIndent(s, "", "  ")
-			if err := os.WriteFile(configPath(), b, 0o600); err != nil {
-				return err
-			}
-			fmt.Printf("logged in to %s as key %v (saved to %s)\n", s.URL, me["keyId"], configPath())
-			return nil
+			return login(ctx(), s, named, saved().Project, cmd.OutOrStdout())
 		},
 	}
+}
+
+// whoami is what GET /v1/me says about a key.
+type whoami struct {
+	KeyID     string `json:"keyId"`
+	ProjectID string `json:"projectId"`
+	Operator  bool   `json:"operator"`
+}
+
+// login checks the key, works out its default project and saves the URL, the
+// key and that project. named is a project the caller asked for; remembered is
+// the one saved before, which may belong to another key or server.
+func login(c context.Context, s settings, named, remembered string, out io.Writer) error {
+	cl := client.New(s.URL, s.APIKey)
+	var me whoami
+	if err := cl.Do(c, "GET", "/v1/me", nil, &me); err != nil {
+		return err
+	}
+	project, visible, err := loginProject(c, cl, me, named, remembered)
+	if err != nil {
+		return err
+	}
+	s.Project = project
+	if err := save(s); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "logged in to %s as key %s (saved to %s)\n", s.URL, me.KeyID, configPath())
+	switch {
+	case project != "":
+		fmt.Fprintf(out, "default project: %s\n", project)
+	case len(visible) == 0 && me.Operator:
+		fmt.Fprintln(out, "no project exists yet. Make an organization and its first project with: differently admin org create NAME")
+	case len(visible) == 0:
+		fmt.Fprintln(out, "no project exists yet. Make one with 'differently project create NAME', then run 'differently login' again")
+	default:
+		fmt.Fprintf(out, "this key can use %d projects, so none was saved as the default:\n", len(visible))
+		var rows [][]string
+		for _, p := range visible {
+			rows = append(rows, []string{p.ID, p.OrgID, p.Name})
+		}
+		tableTo(out, "ID\tORGANIZATION\tNAME", rows)
+		fmt.Fprintln(out, "name one per command with --project ID or DIFFERENTLY_PROJECT=ID, or save it with: differently login --project ID")
+	}
+	return nil
+}
+
+// loginProject picks the default project for a key. A key limited to one
+// project has no choice. Any other key keeps the project the caller named,
+// or the remembered one while the key can still see it, and otherwise takes
+// the only project it can see. With none or several to choose from it
+// returns no project and the ones it saw: guessing would send work to a
+// project nobody chose.
+func loginProject(c context.Context, cl *client.Client, me whoami, named, remembered string) (string, []api.Project, error) {
+	if me.ProjectID != "" {
+		return me.ProjectID, nil, nil
+	}
+	visible := func(id string) error {
+		return cl.Do(c, "GET", "/v1/projects/"+url.PathEscape(id), nil, &api.Project{})
+	}
+	if named != "" {
+		return named, nil, visible(named)
+	}
+	if remembered != "" {
+		switch err := visible(remembered); {
+		case err == nil:
+			return remembered, nil, nil
+		case !api.IsCode(err, api.CodeNotFound):
+			return "", nil, err
+		}
+	}
+	var list api.List[api.Project]
+	if err := cl.Do(c, "GET", "/v1/projects", nil, &list); err != nil {
+		return "", nil, err
+	}
+	if len(list.Items) == 1 {
+		return list.Items[0].ID, nil, nil
+	}
+	return "", list.Items, nil
 }
 
 func sandboxCmd() *cobra.Command {
@@ -459,9 +593,9 @@ With --keep the sandbox stays, and its ID is printed for later commands.`,
 			}
 			return nil
 		},
-		RunE: func(_ *cobra.Command, a []string) error {
+		RunE: func(cmd *cobra.Command, a []string) error {
 			req := api.CreateSandboxRequest{ProjectID: load().Project, Profile: profile, Template: template}
-			code, err := runOnce(ctx(), cli(), req, execRequest(a, cwd, envs), keep, os.Stdout, os.Stderr)
+			code, err := runOnce(ctx(), cli(), req, execRequest(a, cwd, envs), keep, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
@@ -539,20 +673,40 @@ func keyCmd() *cobra.Command {
 	var scopes []string
 	var org, project string
 	var ttl int
-	create := &cobra.Command{Use: "create NAME", Args: cobra.ExactArgs(1), Short: "Create a scoped key (the token is shown once)", RunE: func(_ *cobra.Command, a []string) error {
-		out, err := cli().CreateAPIKey(ctx(), api.CreateAPIKeyRequest{Name: a[0], OrgID: org, ProjectID: project, Scopes: scopes, TTLHours: ttl})
-		if err != nil {
-			return err
-		}
-		if flagOutput == "json" {
-			return printJSON(out)
-		}
-		fmt.Printf("key %s created; store this token now, it is not shown again:\n%s\n", out.ID, out.Token)
-		return nil
-	}}
+	create := &cobra.Command{
+		Use: "create NAME", Args: cobra.ExactArgs(1), Short: "Create a scoped key (the token is shown once)",
+		Long: `Create makes a key and shows its token once.
+
+With neither --org nor --key-project the key is limited to the default
+project (--project, DIFFERENTLY_PROJECT, or the one login or admin org create
+saved). --key-project names another project; its organization is looked up.
+--org alone makes a key for every project of that organization. A key with
+the admin or org:admin scope is never limited to the default project.`,
+		Example: `  differently key create dev
+  differently key create ci --key-project prj_... --ttl-hours 720
+  differently key create team-admins --org org_... --scope org:admin`,
+		RunE: func(cmd *cobra.Command, a []string) error {
+			cl := cli()
+			req, err := keyRequest(ctx(), cl, api.CreateAPIKeyRequest{Name: a[0], OrgID: org, ProjectID: project, Scopes: scopes, TTLHours: ttl}, load().Project)
+			if err != nil {
+				return err
+			}
+			out, err := cl.CreateAPIKey(ctx(), req)
+			if err != nil {
+				return err
+			}
+			if flagOutput == "json" {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(out)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "key %s created for %s; store this token now, it is not shown again:\n%s\n", out.ID, keyReach(out.APIKey), out.Token)
+			return nil
+		},
+	}
 	create.Flags().StringSliceVar(&scopes, "scope", []string{"sandboxes:read", "sandboxes:write", "sandboxes:exec"}, "scopes")
-	create.Flags().StringVar(&org, "org", "", "organization (operator keys)")
-	create.Flags().StringVar(&project, "key-project", "", "limit the key to one project")
+	create.Flags().StringVar(&org, "org", "", "organization; alone, the key works in every project of it")
+	create.Flags().StringVar(&project, "key-project", "", "limit the key to this project (default: the default project, unless --org is given)")
 	create.Flags().IntVar(&ttl, "ttl-hours", 0, "expire after N hours")
 	var grace time.Duration
 	rotate := &cobra.Command{Use: "rotate ID", Args: cobra.ExactArgs(1), Short: "Replace a key with a new one (same name, scopes and project); the token is shown once", RunE: func(_ *cobra.Command, a []string) error {
@@ -598,6 +752,45 @@ func keyCmd() *cobra.Command {
 		&cobra.Command{Use: "revoke ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error { return raw("DELETE", "/v1/api-keys/"+a[0], nil) }},
 	)
 	return cmd
+}
+
+// keyRequest fills in what a key create left out. With neither an
+// organization nor a project, a tenant key is limited to the default project.
+// A project without an organization takes the project's own, which an
+// operator key must name. Keys with the admin or org:admin scope are left
+// alone: they are meant to reach more than one project.
+//
+// A default project the key cannot see is an error, not a reason to fall
+// back to a wider key.
+func keyRequest(c context.Context, cl *client.Client, req api.CreateAPIKeyRequest, defaultProject string) (api.CreateAPIKeyRequest, error) {
+	wide := slices.Contains(req.Scopes, "admin") || slices.Contains(req.Scopes, "org:admin")
+	byDefault := req.OrgID == "" && req.ProjectID == "" && !wide && defaultProject != ""
+	if byDefault {
+		req.ProjectID = defaultProject
+	}
+	if req.ProjectID != "" && req.OrgID == "" {
+		var p api.Project
+		err := cl.Do(c, "GET", "/v1/projects/"+url.PathEscape(req.ProjectID), nil, &p)
+		if byDefault && api.IsCode(err, api.CodeNotFound) {
+			return req, api.Errorf(api.CodeNotFound, "this key cannot use the default project %s; name a project with --key-project or an organization with --org", req.ProjectID)
+		}
+		if err != nil {
+			return req, err
+		}
+		req.OrgID = p.OrgID
+	}
+	return req, nil
+}
+
+// keyReach says where a key works, so nobody has to guess what a default did.
+func keyReach(k api.APIKey) string {
+	switch {
+	case k.ProjectID != "":
+		return "project " + k.ProjectID
+	case k.OrgID != "":
+		return "every project of organization " + k.OrgID
+	}
+	return "every organization (operator)"
 }
 
 func orDash(s string) string {
@@ -803,9 +996,18 @@ func adminCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "admin", Short: "Operator commands (admin key)"}
 	org := &cobra.Command{Use: "org", Short: "Organizations"}
 	var defaultProject string
-	createOrg := &cobra.Command{Use: "create NAME", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error {
-		return raw("POST", "/v1/admin/organizations", map[string]string{"name": a[0], "defaultProject": defaultProject})
-	}}
+	createOrg := &cobra.Command{
+		Use: "create NAME", Args: cobra.ExactArgs(1), Short: "Create an organization and its first project",
+		Long: `Create makes an organization and, unless --default-project is empty, a first
+project in it, and prints both IDs.
+
+When this CLI has no default project yet, the new one is saved as the
+default, so 'differently run' and 'differently key create' work right after
+with no ID to copy. A default that already exists is never replaced.`,
+		RunE: func(cmd *cobra.Command, a []string) error {
+			return orgCreate(ctx(), cli(), a[0], defaultProject, cmd.OutOrStdout(), cmd.ErrOrStderr())
+		},
+	}
 	createOrg.Flags().StringVar(&defaultProject, "default-project", "default", "also create a project with this name (empty to skip)")
 	var reason string
 	var terminate bool
@@ -853,6 +1055,54 @@ func adminCmd() *cobra.Command {
 		}},
 	)
 	return cmd
+}
+
+// orgCreate makes an organization with its first project, prints what it
+// made and remembers the project as the default when there is none. The
+// summary (or the JSON response) goes to stdout and the note about the
+// default to stderr, so -o json stays parseable.
+func orgCreate(c context.Context, cl *client.Client, name, firstProject string, stdout, stderr io.Writer) error {
+	var body json.RawMessage
+	if err := cl.Do(c, "POST", "/v1/admin/organizations", map[string]string{"name": name, "defaultProject": firstProject}, &body); err != nil {
+		return err
+	}
+	var made struct {
+		Organization api.Organization `json:"organization"`
+		Project      *api.Project     `json:"project"`
+	}
+	if err := json.Unmarshal(body, &made); err != nil {
+		return err
+	}
+	if flagOutput == "json" {
+		var v any
+		_ = json.Unmarshal(body, &v)
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(v); err != nil {
+			return err
+		}
+	} else {
+		rows := [][]string{{"organization", made.Organization.ID, made.Organization.Name}}
+		if made.Project != nil {
+			rows = append(rows, []string{"project", made.Project.ID, made.Project.Name})
+		}
+		tableTo(stdout, "KIND\tID\tNAME", rows)
+	}
+	if made.Project == nil {
+		fmt.Fprintf(stderr, "no project was made; add one with: differently project create NAME --org %s\n", made.Organization.ID)
+		return nil
+	}
+	id := made.Project.ID
+	ok, why, err := rememberProject(id)
+	switch {
+	case err != nil:
+		fmt.Fprintf(stderr, "could not save %s as the default project (%v); use it with --project %s\n", id, err, id)
+	case ok:
+		fmt.Fprintf(stderr, "%s is now the default project (saved to %s); try: differently run -- echo hello\n", id, configPath())
+	default:
+		fmt.Fprintf(stderr, "%s was not saved as the default project (%s); use it with --project %s\n", id, why, id)
+	}
+	return nil
 }
 
 func doctorCmd() *cobra.Command {
