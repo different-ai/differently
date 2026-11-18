@@ -109,8 +109,8 @@ Not to try it: [three commands](guides/quickstart.md) on a laptop. For a
 team, the tested path is one Linux VM, where the
 [guide](deploy/single-vm.md) installs a single-node Kubernetes (k3s) for
 you, or the Helm chart on a cluster you already have. A Docker host can run
-the whole stack without Kubernetes, from a checkout
-([test/e2e](../test/e2e/README.md)).
+the whole stack without Kubernetes, from one downloaded file and published
+images ([One Docker host](deploy/docker.md)).
 
 ### Does it slow things down?
 
