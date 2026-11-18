@@ -58,6 +58,7 @@ h3 { font-size: 1.0625rem; letter-spacing: -0.015em; }
 .install { margin-top: 32px; display: inline-flex; gap: 10px; align-items: center; padding: 10px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); max-width: 100%; overflow-x: auto; font-size: 0.875rem; }
 .install span { color: var(--muted); font-family: var(--mono); }
 .install code { white-space: nowrap; }
+.install-note { margin: 12px 0 0; color: var(--muted); font-size: 0.875rem; max-width: 640px; }
 .pillars { list-style: none; padding: 0; margin: 72px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 32px; }
 .pillars li { color: var(--muted); font-size: 0.9375rem; }
 .pillars b { color: var(--ink); display: block; font-weight: 600; }
@@ -114,6 +115,8 @@ section:not(.hero) { padding: 96px 0; border-top: 1px solid var(--line); }
 footer { border-top: 1px solid var(--line); padding: 32px 0 48px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 0.8125rem; }
 footer a { color: var(--muted); }
 
+/* The hero's own button does this job where the bar has no room for it. */
+@media (max-width: 900px) { .nav nav a.desk-only { display: none; } }
 @media (max-width: 560px) {
   .nav nav { gap: 14px; }
   .nav nav a[href*='api'], .nav nav a[href='#stack'], .nav nav a.wide-only { display: none; }
@@ -169,6 +172,8 @@ footer a { color: var(--muted); }
 
 .warn { margin: 16px 0 0; padding: 14px 18px; border: 1px dashed var(--muted); border-radius: 12px; color: var(--muted); font-size: 0.875rem; }
 .warn strong { color: var(--ink); font-weight: 600; }
+.agent-head { margin: 56px 0 24px; }
+.agent-head h3 { font-size: 1.25rem; font-weight: 600; }
 .next { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 40px; }
 .next a { display: flex; flex-direction: column; gap: 4px; padding: 20px 24px; border: 1px solid var(--line); border-radius: 14px; text-decoration: none; }
 .next a:hover { border-color: var(--ink); }

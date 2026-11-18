@@ -294,20 +294,24 @@ export class Sandbox {
 
 export class Sandboxes {
   readonly #http: HttpClient;
+  readonly #projectId: string | undefined;
 
-  constructor(http: HttpClient) {
+  constructor(http: HttpClient, projectId?: string) {
     this.#http = http;
+    this.#projectId = projectId;
   }
 
   /**
    * Creates a sandbox and, unless `wait: false`, waits until it is running.
+   * Without `projectId` it goes to the client's default project, if one is set.
    * Creation is retried safely under a per-call idempotency key.
    */
   async create(params: CreateSandboxParams = {}, options: CreateOptions = {}): Promise<Sandbox> {
+    const projectId = params.projectId || this.#projectId;
     const info = await this.#http.json<SandboxInfo>({
       method: "POST",
       path: "/v1/sandboxes",
-      json: params,
+      json: projectId ? { ...params, projectId } : params,
       headers: { "Idempotency-Key": options.idempotencyKey ?? globalThis.crypto.randomUUID() },
       retry: true,
       signal: options.signal,

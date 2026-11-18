@@ -177,6 +177,7 @@ func serve(cfgPath string, dev bool, listen, dataDir string) error {
 	if cfg.Dev {
 		log.Warn("DEV MODE: the devhost pool runs commands directly on this machine with no isolation",
 			"operatorTokenFile", filepath.Join(cfg.DataDir, "token"), "dashboard", dashboardURL(cfg.Listen))
+		fmt.Fprint(os.Stderr, devWelcome(cfg.Listen, cfg.DataDir))
 	}
 	select {
 	case err := <-errc:
@@ -264,12 +265,44 @@ func preflight(cfgPath string) error {
 // dashboardURL is where a local operator opens the console for a listen
 // address such as ":8080" or "127.0.0.1:18180".
 func dashboardURL(listen string) string {
+	return localURL(listen) + "/dashboard/"
+}
+
+// localURL is the API's address as seen from this machine.
+func localURL(listen string) string {
 	host, port, err := net.SplitHostPort(listen)
 	if err != nil {
-		return "http://" + listen + "/dashboard/"
+		return "http://" + listen
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "localhost"
 	}
-	return "http://" + net.JoinHostPort(host, port) + "/dashboard/"
+	return "http://" + net.JoinHostPort(host, port)
+}
+
+// devWelcome tells a first-time user what just started and the next command
+// to type. The CLI and the SDKs find a dev server at the default address and
+// data directory by themselves; anywhere else they need to be told, so the
+// command shown always works as printed.
+func devWelcome(listen, dataDir string) string {
+	api, token := localURL(listen), filepath.Join(dataDir, "token")
+	try := "differently run -- echo hello"
+	if home, err := os.UserHomeDir(); err != nil || dataDir != filepath.Join(home, ".differently", "dev") {
+		try = fmt.Sprintf("DIFFERENTLY_API_KEY=$(cat %s) DIFFERENTLY_PROJECT=prj_default %s", token, try)
+	}
+	if api != "http://localhost:8080" {
+		try = "DIFFERENTLY_URL=" + api + " " + try
+	}
+	return fmt.Sprintf(`
+Differently is running in dev mode.
+
+  API        %s
+  Dashboard  %s/dashboard/
+  Token      %s
+  Try        %s
+
+Dev mode keeps everything in memory and runs commands on this machine as
+you, with no isolation. Do not run code you do not trust.
+
+`, api, api, token, try)
 }

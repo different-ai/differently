@@ -1,4 +1,5 @@
 import os
+import tempfile
 import time
 import unittest
 from datetime import datetime, timezone
@@ -37,9 +38,11 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(self.mock.requests[0].headers["user-agent"].startswith("differently-python/"))
 
     def test_missing_api_key_fails_fast(self) -> None:
-        with patch.patch.dict(os.environ, {"DIFFERENTLY_API_KEY": ""}):
-            with self.assertRaises(DifferentlyError) as ctx:
-                Differently()
+        # An empty home directory: the real one may hold a local dev server's token.
+        with tempfile.TemporaryDirectory(prefix="differently-sdk-") as home:
+            with patch.patch.dict(os.environ, {"DIFFERENTLY_API_KEY": "", "HOME": home, "USERPROFILE": home}):
+                with self.assertRaises(DifferentlyError) as ctx:
+                    Differently()
         self.assertEqual(ctx.exception.code, "unauthenticated")
 
     def test_api_key_is_not_in_repr(self) -> None:

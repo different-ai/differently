@@ -8,6 +8,43 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- A first sandbox takes three commands and no toolchain, account, cluster or
+  database: install, `differently-server --dev`, `differently run -- echo hello`.
+  - **`install.sh`**, served at
+    `https://different-ai.github.io/differently/install.sh`. It downloads the
+    release archive for the machine (macOS or Linux, amd64 or arm64), checks
+    it against the release's `checksums.txt`, and puts `differently` and
+    `differently-server` in `~/.local/bin` without `sudo`.
+    `DIFFERENTLY_VERSION`, `DIFFERENTLY_INSTALL_DIR` and
+    `DIFFERENTLY_DOWNLOAD_URL` (for a mirror) change what it installs, where
+    to, and where from. `test/install` runs it against a release served
+    locally; it has not been run against the GitHub release itself.
+  - **`differently run -- COMMAND`** creates a sandbox, waits for it, runs
+    the command with its output streamed, deletes the sandbox and exits with
+    the command's code. `--keep` leaves the sandbox. It is deleted on a
+    failure or an interrupt too.
+  - **The SDKs find a local dev server by themselves**, as the CLI already
+    did. With no key set and a URL on this machine, the TypeScript and Python
+    clients read `~/.differently/dev/token` and use `prj_default`, so
+    `new Differently()` and `sandboxes.create()` need no arguments. The token
+    is never read for another host. Both gain a default project
+    (`projectId` / `project_id`, or `DIFFERENTLY_PROJECT`) for organization
+    and operator keys.
+  - Dev mode prints its address, the token's path and the next command to
+    type, and the CLI says how to start a server when nothing answers on
+    this machine.
+- Entry points for people and for agents.
+  - [Differently explained](docs/explainer.md): what it is in plain words,
+    and what a newcomer can ignore until later.
+  - [Use Differently with a coding agent](docs/guides/agents.md): a prompt to
+    paste, and tasks written for the agent with a check after each step. The
+    website serves it as `/agents.txt`.
+  - The website serves `/llms.txt`, an index of the documentation, and every
+    docs page as Markdown at its address plus `index.md`. A link in them to a
+    page the site does not have fails the build.
+  - The README, the quickstart and the landing page open with the same three
+    commands; the landing page no longer opens with `helm install`.
+
 - The load simulator at `/simulator/` shows how routing is set up and lets
   the visitor configure more of it.
   - **Priority.** A Policy tab walks through who picks the provider, the rule

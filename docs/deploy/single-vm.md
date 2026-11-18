@@ -200,8 +200,14 @@ kubectl -n differently get secret differently-tokens \
 kubectl -n differently port-forward svc/differently-server 8080:8080 &
 ```
 
-From your laptop, tunnel to it (`ssh -L 8080:localhost:8080 <vm>`) and use
-the CLI from the same release (`differently_v0.1.0-alpha.5_<os>_<arch>.tar.gz`):
+From your laptop, tunnel to it (`ssh -L 8080:localhost:8080 <vm>`), copy
+`operator-token` over, and install the CLI from the same release (macOS or
+Linux; the script is described in the
+[quickstart](../guides/quickstart.md#1-install)):
+
+```bash
+curl -fsSL https://different-ai.github.io/differently/install.sh | DIFFERENTLY_VERSION=v0.1.0-alpha.5 sh
+```
 
 ```bash
 export DIFFERENTLY_URL=http://localhost:8080 DIFFERENTLY_API_KEY="$(cat operator-token)"

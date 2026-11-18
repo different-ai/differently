@@ -61,6 +61,10 @@ export interface Placement {
 }
 
 export interface CreateSandboxParams {
+  /**
+   * Organization and operator keys must name a project, here or as the
+   * client's default (`projectId` option or DIFFERENTLY_PROJECT).
+   */
   projectId?: string;
   template?: string;
   profile?: string;
