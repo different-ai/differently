@@ -336,7 +336,21 @@ paths:
       description: The value is sealed with AES-256-GCM under the server's secrets key and never returned. Pools whose credential is secret:<name> use the new value without a restart. Needs a secrets key on the server (secrets.keyEnv or secrets.keyFile).
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PutSecretRequest" } } } }
       responses: { "201": { description: Stored, content: { application/json: { schema: { $ref: "#/components/schemas/Secret" } } } }, "200": { description: Replaced, content: { application/json: { schema: { $ref: "#/components/schemas/Secret" } } } }, "409": { $ref: "#/components/responses/Error" } }
-    delete: { tags: [Admin], summary: Delete a credential no pool uses, responses: { "204": { description: Deleted }, "409": { $ref: "#/components/responses/Error" } } }
+    delete: { tags: [Admin], summary: Delete a credential no pool or stack uses, responses: { "204": { description: Deleted }, "409": { $ref: "#/components/responses/Error" } } }
+  /v1/admin/stacks:
+    get: { tags: [Admin], summary: List the application stacks this installation watches, responses: { "200": { description: Stacks with the last health of each component, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Stack" } } } } } } } } }
+  /v1/admin/stacks/{name}:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,62}$" } }]
+    get: { tags: [Admin], summary: Get a watched stack and its health, responses: { "200": { description: Stack, content: { application/json: { schema: { $ref: "#/components/schemas/Stack" } } } }, "404": { $ref: "#/components/responses/Error" } } }
+    put:
+      tags: [Admin]
+      summary: Register or replace a stack to watch
+      description: A stack is a deployment's services and where each answers for its health, such as an OpenWork installation's Den, gateway, Workbot and runner. Differently probes each component's health route, then its readiness route, about every 10 seconds; it never deploys or changes them. With kind `openwork`, a component whose role is den-api, den-web, gateway, den-gateway, workbot or headless-runner gets that service's routes when healthPath is empty. The answer carries a first probe.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PutStackRequest" } } } }
+      responses: { "201": { description: Registered, content: { application/json: { schema: { $ref: "#/components/schemas/Stack" } } } }, "200": { description: Replaced, content: { application/json: { schema: { $ref: "#/components/schemas/Stack" } } } }, "400": { $ref: "#/components/responses/Error" } }
+    delete: { tags: [Admin], summary: Stop watching a stack, responses: { "204": { description: Removed }, "404": { $ref: "#/components/responses/Error" } } }
+  /v1/admin/stacks/{name}/check:
+    post: { tags: [Admin], summary: Probe a stack now, parameters: [{ name: name, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Stack with fresh health, content: { application/json: { schema: { $ref: "#/components/schemas/Stack" } } } }, "404": { $ref: "#/components/responses/Error" } } }
   /v1/admin/trust-report:
     get: { tags: [Admin], summary: Where work may go, where it went, and what cannot be proven, responses: { "200": { description: Trust report } } }
   /v1/admin/audit/verify:
@@ -621,6 +635,48 @@ components:
       type: object
       required: [value]
       properties: { value: { type: string, maxLength: 16384, writeOnly: true } }
+    Stack:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [openwork, custom] }
+        components: { type: array, items: { $ref: "#/components/schemas/StackComponent" } }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+        updatedBy: { type: string }
+        health:
+          type: object
+          description: The worst state among the components that are not optional
+          properties: { status: { type: string, enum: [healthy, degraded, unavailable, unknown] }, message: { type: string }, checkedAt: { type: string, format: date-time } }
+    StackComponent:
+      type: object
+      required: [url]
+      properties:
+        name: { type: string, description: Defaults to the role }
+        role: { type: string, description: "Which service this is. In an openwork stack: den-api, den-web, gateway, den-gateway, workbot or headless-runner" }
+        url: { type: string, format: uri, description: The service's base URL as the Differently server reaches it }
+        healthPath: { type: string, description: Answers 2xx while the service is up. Default /health }
+        readyPath: { type: string, description: Answers 2xx while the service can take work. Empty skips the check }
+        credentialRef: { type: string, description: "A bearer token sent with the probes: env:NAME, file:/path or secret:name" }
+        optional: { type: boolean, description: Keeps this component's failures out of the stack's health }
+        health:
+          type: object
+          readOnly: true
+          description: The last probe by the replica that answered
+          properties:
+            status: { type: string, enum: [healthy, degraded, unavailable, unknown], description: degraded means up but not ready }
+            message: { type: string }
+            version: { type: string, description: The version or build the health route reported }
+            latencyMs: { type: integer }
+            checkedAt: { type: string, format: date-time }
+            since: { type: string, format: date-time, description: When this replica first saw the current status }
+    PutStackRequest:
+      type: object
+      required: [components]
+      properties:
+        kind: { type: string, enum: [openwork, custom], default: custom }
+        components: { type: array, minItems: 1, maxItems: 32, items: { $ref: "#/components/schemas/StackComponent" } }
     PlacementPolicy:
       type: object
       properties:

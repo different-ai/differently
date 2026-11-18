@@ -1,0 +1,101 @@
+---
+import Console from '../layouts/Console.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Icon from '../components/Icon.astro';
+const roles = [
+  ['den-api', 'Den API', 'http://den-api:8788'],
+  ['den-web', 'Den web', 'http://den-web:3005'],
+  ['gateway', 'Gateway (model routing)', 'http://gateway:8791'],
+  ['den-gateway', 'Den gateway (OpenWork Web)', ''],
+  ['workbot', 'Workbot', 'http://workbot:3020'],
+  ['headless-runner', 'Headless runner', 'http://headless-runner:8795'],
+];
+---
+<Console title="Stacks" active="stacks">
+  <PageHeader title="Stacks" description="The services of a deployment, such as OpenWork, and whether each one is up and ready. Differently only probes them.">
+    <button class="btn primary" type="button" data-open="put"><Icon name="plus" size={15} />Watch a stack</button>
+  </PageHeader>
+  <div id="stacks"></div>
+  <section class="section">
+    <h2 class="section-title">Sandbox pools</h2>
+    <div id="pools"></div>
+  </section>
+
+  <dialog class="modal" id="put">
+    <form>
+      <div class="modal-head"><h2>Watch a stack</h2><button class="btn ghost icon-btn" type="button" data-close aria-label="Close"><Icon name="x" /></button></div>
+      <label class="field"><span>Name</span><input type="text" name="name" required pattern="[a-z0-9][a-z0-9._-]{0,62}" placeholder="e.g. production" /><small>Saving an existing name replaces its components.</small></label>
+      <div class="field"><span>OpenWork services</span><small>The base URL of each service as the Differently server reaches it. Leave out what you do not run.</small></div>
+      {roles.map(([role, label, hint]) => (
+        <label class="field"><span>{label}</span><input type="url" name={`role:${role}`} placeholder={hint} /></label>
+      ))}
+      <label class="field"><span>Other services</span><textarea name="other" rows="3" placeholder="name https://host:port /health-path"></textarea><small>One per line: a name, a base URL and, if it is not /health, the health path.</small></label>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Close</button><button class="btn primary" data-save>Save</button></div>
+    </form>
+  </dialog>
+</Console>
+<script>
+  import { client } from '../lib/connection';
+  import { badge, confirmAction, dialog, el, empty, field, isSet, relTime, report, rowMenu, section, table, toast } from '../lib/ui';
+  import type { Pool, Stack, StackComponent, StackComponentParams } from '@differently/sdk';
+
+  const c = client();
+
+  function stackView(s: Stack): Node {
+    const menu = rowMenu([
+      { label: 'Check now', run: async () => { await c.admin.stacks.check(s.name); await load(); } },
+      { label: 'Stop watching', danger: true, run: async () => { if (await confirmAction(`Stop watching ${s.name}?`, 'Its services are not touched; Differently only stops probing them.', 'Stop watching')) { await c.admin.stacks.delete(s.name); toast('Removed'); await load(); } } },
+    ]);
+    const versions = new Set(s.components.map((x) => x.health?.version).filter(Boolean));
+    return el('section', { class: 'section' },
+      el('div', { class: 'toolbar' },
+        el('div', { class: 'status-cell' }, el('h2', { class: 'section-title', style: 'margin:0' }, s.name), el('span', { class: 'chip' }, s.kind), badge(s.health?.status ?? 'unknown'),
+          s.health?.message ? el('span', { class: 'muted', style: 'font-size:13.5px;white-space:normal' }, s.health.message) : ''),
+        menu),
+      table<StackComponent>([
+        { label: 'Service', cell: (x) => el('span', {}, el('span', { style: 'font-weight:500' }, x.name), x.optional ? el('span', { class: 'chip', style: 'margin-left:8px' }, 'optional') : '') },
+        { label: 'Status', cell: (x) => el('span', { title: x.health?.message ?? '' }, badge(x.health?.status ?? 'unknown')) },
+        { label: 'Detail', cell: (x) => el('span', { class: 'muted' }, x.health?.message || (isSet(x.health?.since) ? `since ${relTime(x.health?.since)}` : '—')) },
+        { label: 'Version', cell: (x) => el('span', { class: 'mono muted' }, x.health?.version || '—') },
+        { label: 'Answered in', cell: (x) => el('span', { class: 'muted' }, isSet(x.health?.checkedAt) ? `${x.health?.latencyMs} ms` : '—') },
+        { label: 'Address', cell: (x) => el('span', { class: 'mono muted' }, x.url + (x.healthPath ?? '')) },
+      ], s.components, empty('This stack has no components.')),
+      versions.size > 1 ? el('p', { class: 'table-note' }, `Services report ${versions.size} different versions.`) : '');
+  }
+
+  async function load() {
+    await section('#stacks', async () => {
+      const list = await c.admin.stacks.list();
+      return list.length ? list.map(stackView) : empty('No stack is watched yet. Add your OpenWork services to see their health here.', ['pulse', 'server']);
+    });
+    await section('#pools', async () => table<Pool>([
+      { label: 'Pool', cell: (p) => el('span', { style: 'font-weight:500' }, p.name) },
+      { label: 'Adapter', cell: (p) => p.adapter },
+      { label: 'Health', cell: (p) => badge(!p.enabled ? 'disabled' : p.draining ? 'draining' : p.health?.status ?? 'unknown') },
+      { label: 'Detail', cell: (p) => el('span', { class: 'muted' }, p.health?.message || '—') },
+      { label: 'Sandboxes', cell: (p) => String(p.active ?? 0) },
+    ], await c.admin.pools.list(), empty('No pools are registered yet.', ['server'])));
+  }
+
+  dialog('put', async (form) => {
+    const data = new FormData(form);
+    const components: StackComponentParams[] = [];
+    for (const [key, value] of data) {
+      if (key.startsWith('role:') && String(value).trim()) components.push({ role: key.slice(5), url: String(value).trim() });
+    }
+    const openwork = components.length > 0;
+    for (const line of field(form, 'other').split('\n').map((l) => l.trim()).filter(Boolean)) {
+      const [name, url, healthPath] = line.split(/\s+/);
+      if (!name || !url) { toast(`"${line}" needs a name and a URL`, 'bad'); return false; }
+      components.push({ name, url, ...(healthPath ? { healthPath } : {}) });
+    }
+    if (!components.length) { toast('Add at least one service', 'bad'); return false; }
+    await c.admin.stacks.put(field(form, 'name'), { kind: openwork ? 'openwork' : 'custom', components });
+    toast('Watching');
+    await load();
+  });
+
+  void load();
+  // Health changes on its own; keep the page current while it is visible.
+  setInterval(() => { if (!document.hidden && !document.querySelector('dialog[open]')) load().catch(report); }, 10_000);
+</script>

@@ -8,6 +8,22 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- Differently can watch the services around the sandboxes. A *stack*
+  (`PUT /v1/admin/stacks/{name}`) names a deployment's services and where
+  each answers for its health; with kind `openwork`, the roles `den-api`,
+  `den-web`, `gateway`, `den-gateway`, `workbot` and `headless-runner` fill in
+  OpenWork's own health and readiness routes. Every replica probes each
+  component about every 10 seconds and reports `healthy`, `degraded` (up but
+  not ready), `unavailable` or `unknown`, with the version the service
+  states and how long it took to answer. A status that holds for two probes
+  is written to the audit log as `stack.health`, once, by the leader, and
+  `differently_stack_component_up` exports it for alerts. The console has a
+  **Stacks** page that shows each stack beside the sandbox pools, and both
+  SDKs have `admin.stacks`. Probes do not follow redirects and may carry a
+  bearer token from a credential reference. This only reads: Differently does
+  not deploy or configure these services, and their health never affects
+  placement. Tested against stand-in servers; not yet run against a live
+  OpenWork installation. The Postgres store gains migration `0005_stacks`.
 - The experimental AWS and Google Cloud adapters take their credentials from
   the platform, as `azure-sandboxes` already did with a federated token.
   `aws-agentcore` accepts `{"source": "web-identity"}` (IAM Roles for

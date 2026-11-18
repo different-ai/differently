@@ -54,6 +54,10 @@ var (
 	Overcommitted = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "differently_pool_overcommitted", Help: "Slots held beyond the pool's maxConcurrency.",
 	}, []string{"pool"})
+	// StackComponentUp is 1 while a watched stack's component is healthy.
+	StackComponentUp = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "differently_stack_component_up", Help: "1 while a component of a watched stack is healthy, 0 otherwise.",
+	}, []string{"stack", "component"})
 	// ResumesQueued counts resumes that had to wait for a slot.
 	ResumesQueued = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "differently_resumes_queued_total", Help: "Resumes that waited for a free slot.",
@@ -85,5 +89,5 @@ var (
 func init() {
 	Registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	Registry.MustRegister(Transitions, Placements, ProvisionSeconds, QueueSeconds, Requests, RequestSeconds, Reconciled, AuditFailures,
-		PoolSlots, Overcommitted, ResumesQueued, ResumeWaitSeconds, PauseSeconds, Preemptions, LifecycleActions)
+		PoolSlots, Overcommitted, ResumesQueued, ResumeWaitSeconds, PauseSeconds, Preemptions, LifecycleActions, StackComponentUp)
 }

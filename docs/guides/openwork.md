@@ -178,6 +178,58 @@ should use it; every other organization keeps the runner's own provider.
   differently admin policy org:<org-id> workbot.json
   ```
 
+## Watch OpenWork's services from Differently
+
+Differently can also show whether the OpenWork services around it are up:
+Den, the Gateway, Workbot and the runner, beside the pools their sandboxes
+run on. Register them as a *stack*, with each service's base URL as the
+Differently server reaches it:
+
+```bash
+curl -X PUT "$DIFFERENTLY_URL/v1/admin/stacks/production" \
+  -H "Authorization: Bearer $DIFFERENTLY_OPERATOR_KEY" -H 'Content-Type: application/json' -d '{
+  "kind": "openwork",
+  "components": [
+    {"role": "den-api", "url": "http://den-api.openwork:8788"},
+    {"role": "den-web", "url": "http://den-web.openwork:3005"},
+    {"role": "gateway", "url": "http://gateway.openwork:8791"},
+    {"role": "workbot", "url": "http://workbot.openwork:3020"},
+    {"role": "headless-runner", "url": "http://headless-runner.openwork:8795", "optional": true}
+  ]}'
+```
+
+In an `openwork` stack the role fills in the routes to probe:
+
+| Role | Health | Readiness |
+|---|---|---|
+| `den-api` | `/health` | `/ready` |
+| `den-web` | `/api/health` | `/api/ready` |
+| `gateway` | `/health` | `/ready` |
+| `den-gateway` | `/__gw/health` | `/__gw/ready` |
+| `workbot` | `/healthz` | none |
+| `headless-runner` | `/health` | none |
+
+Any other service is a component with its own `healthPath` (default
+`/health`) and, if it has one, `readyPath`. A route that needs a token takes a
+`credentialRef` (`env:`, `file:` or `secret:`), sent as a bearer token.
+
+Every replica probes each component about every 10 seconds: the health route,
+then the readiness route. A component is `healthy`, `degraded` (up, but not
+ready), `unavailable` or `unknown` (not probed yet), with the version its
+health route reports. The stack's health is the worst of its components that
+are not `optional`. `GET /v1/admin/stacks` returns it all,
+`POST /v1/admin/stacks/{name}/check` probes at once, and the console's
+**Stacks** page shows it beside the pools. A status that holds for two probes
+is written to the audit log as `stack.health`, and
+`differently_stack_component_up{stack,component}` is 1 on `/metrics` while a
+component is healthy, for alerts.
+
+Differently only reads these routes. It does not deploy, restart or configure
+OpenWork, and a stack's health never changes where sandboxes are placed. The
+routes above were read from OpenWork's source on 17 November 2026; the probes
+are covered by tests against stand-in servers and have not yet been run
+against a live OpenWork installation.
+
 ## Limits to know
 
 - **Idle deletion** is built from TTL extensions: a computer expires
