@@ -18,7 +18,10 @@ which has no isolation, and before a server for a team
 > Docker Engine 29.4.2 and Compose 5.1.3: the start took 17 s including the
 > pulls, and creating the first sandbox, running `echo hello` in it and
 > deleting it took 9 s. It has not been run on Docker Desktop, on rootless
-> Docker, on Podman or on arm64.
+> Docker, on Podman or on arm64. CI stops after the first sandbox and a
+> recreation of the containers: the sections from
+> [Use it from your machine](#use-it-from-your-machine) on describe how
+> Compose and the server behave and have not been run on this stack.
 
 Know what you are getting:
 
@@ -150,7 +153,7 @@ it, as in [One Linux VM](single-vm.md#5-optional-https-for-your-team).
 
 OpenSandbox's own default publishes sandbox ports on every interface; this
 file narrows that. If your Docker's default bridge has another address,
-sandboxes fail to start with a Docker error naming the address. Find the
+Docker cannot publish on `172.17.0.1` and sandboxes fail to start. Find the
 right one and add it to `.env`:
 
 ```bash
@@ -188,7 +191,7 @@ pool options.
 - **Back up.** `docker compose exec postgres pg_dump -U postgres postgres > differently.sql`,
   and keep a copy of `.env`.
 - **Remove.** Delete your sandboxes first: they are containers beside the
-  stack, not part of it, and nothing expires them once OpenSandbox is gone.
+  stack, not part of it, so `docker compose down` leaves them running.
   Then `docker compose down` keeps the database, and
   `docker compose down -v` deletes it.
 
