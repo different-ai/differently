@@ -4,13 +4,6 @@ Short, honest answers to the questions that come up when someone first hears
 "one API in front of many sandbox providers". Each answer says what
 Differently does about the concern and where it stops.
 
-<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
-> Three commands named below, `differently admin template set`,
-> `differently templates` and the side-by-side table from `differently
-> capabilities`, are newer than `v0.1.0-alpha.5`, the latest release. What
-> they do and show is possible with that release too; the
-> [baselines guide](guides/baselines.md) says how.
-
 ## Images, snapshots and moving between providers
 
 ### Do I need my image or snapshot on every provider?

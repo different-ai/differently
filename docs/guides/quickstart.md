@@ -62,17 +62,6 @@ differently run -- echo hello
 That created a sandbox, ran the command in it, printed its output and deleted
 the sandbox. The CLI found the local server and its token by itself.
 
-<!-- Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. -->
-> **Version note.** `differently run`, and the SDKs finding a local server
-> by themselves (below), are newer than `v0.1.0-alpha.5`, the latest
-> release. With that release, use `differently sandbox create --wait` and
-> the commands under [A longer tour](#a-longer-tour) instead of `run`, and
-> give the SDKs the key and project yourself:
-> `DIFFERENTLY_API_KEY=$(cat ~/.differently/dev/token)` and
-> `projectId: "prj_default"` in `sandboxes.create`. `--from-snapshot` is
-> newer too, and `differently capabilities` prints JSON there instead of a
-> table. Building from source gives you everything on this page.
-
 The dashboard at <http://localhost:8080/dashboard/> shows sandboxes, pools
 and the audit trail.
 

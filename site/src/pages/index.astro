@@ -12,7 +12,7 @@ const simProviders = [
 ];
 const repo = 'https://github.com/different-ai/differently';
 const releases = `${repo}/releases`;
-const version = 'v0.1.0-alpha.5';
+const version = 'v0.1.0-alpha.6';
 
 // Launch video slot. Set videoSrc to a video URL (and optionally a poster image and a
 // WebVTT captions file) to show it under the hero. While videoSrc is '' nothing renders.
@@ -576,8 +576,6 @@ const compare = [
           <Code code={tryIt} lang="sh" themes={{ light: 'github-light', dark: 'github-dark' }} />
         </div>
         <p class="warn"><strong>Dev mode has no isolation.</strong> State is kept in memory and the devhost pool runs commands directly on the host as the current user. Use it to try the API, not for untrusted code.</p>
-        {/* Remove this note in the release that ships `differently run` (the first after v0.1.0-alpha.5); do not bump its version. */}
-        <p class="note"><code>differently run</code> is newer than v0.1.0-alpha.5, the latest release. The <a href={`${base}/docs/guides/quickstart/`}>quickstart</a> says what to type with that release, and how to build from source.</p>
 
         <div class="section-head agent-head">
           <h3>Or hand it to a coding agent</h3>

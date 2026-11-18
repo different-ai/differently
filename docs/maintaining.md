@@ -223,6 +223,13 @@ What the releases so far have shown:
   (`site/src/pages/index.astro`). Merge it and push
   the tag one after the other, so the website never names a release that
   is not published yet.
+- The website publishes from `pre-release`, so a page can describe a command
+  before any release has it, while `install.sh` still installs the latest
+  release. Such a page carries a version note saying what to type with that
+  release, under a comment that starts `Remove this note in the release that
+  ships`. The release prep PR removes every such note (`git grep "Remove this
+  note"` must find none afterwards) and updates `install.sh`'s examples; the
+  comment is stripped from `/agents.txt` and the Markdown pages.
 - `main` follows `pre-release` through a PR titled
   `chore: merge pre-release into main`. Its auto-merge can stay `BLOCKED`
   with every check green and the CI approval present. Merge it with the
