@@ -85,12 +85,13 @@ All notable changes are recorded here. The format follows
     file that six documented lines create from the image itself
     (`differently-server token` and `secrets-key`). Without it
     `docker compose` refuses to start and says so.
-  - **Nothing listens on a public interface by default.** The API is
+  - **Less is published by default.** The API is
     published on `127.0.0.1`; Postgres, the OpenSandbox API and `/metrics`
     are not published; sandbox control ports, which have no authentication
     of their own, are published on Docker's bridge gateway only
     (`publish_host`), not on every interface as OpenSandbox does by
-    default.
+    default. Whether another machine can route to the gateway address
+    depends on the host's forwarding and firewall, which is untested.
   - The server image's own CLI runs the first sandbox
     (`docker compose exec server differently ...`), so nothing is installed.
   - CI starts the file as the guide says on every pull request and creates,

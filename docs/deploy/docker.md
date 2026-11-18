@@ -26,9 +26,13 @@ which has no isolation, and before a server for a team
 Know what you are getting:
 
 - Sandboxes are containers on Docker's default bridge network. They share
-  the host's kernel and can reach each other and the internet. Use this to
-  try the real thing and for code you trust. It is not a boundary for code
-  you do not trust; for that, see the microVM runtime in
+  the host's kernel and can reach the internet and each other.
+- That includes each other's control port, which has no authentication:
+  code in one sandbox could run commands in another, whatever organization
+  or project either belongs to. This follows from how OpenSandbox's Docker
+  runtime is set up here and has not been tested. Use this stack to try the
+  real thing and for code you trust. It is not a boundary for code you do
+  not trust; for that, see the microVM runtime in
   [OpenSandbox pools](../guides/opensandbox-pools.md).
 - The OpenSandbox container holds the Docker socket, so whoever controls it
   controls this Docker host. Do not run this next to containers that must
@@ -52,18 +56,24 @@ the repository. Both config files it needs are inside it.
 ## 2. Create the secrets
 
 The file contains no credentials, and `docker compose` refuses to start it
-until four values exist in a file named `.env` beside it. Create them once:
+until four values exist in a file named `.env` beside it. Create them once.
+The commands write nothing if `.env` is already there or if Docker cannot
+run the image:
 
 <!-- test/compose/check.sh runs the next block -->
 ```bash
 img=ghcr.io/different-ai/differently-server:0.1.0-alpha.5
-cat > .env <<EOF
+if [ -e .env ]; then
+  echo "Keeping the .env that is already here: it holds the only copy of this stack's secrets."
+elif docker run --rm $img version >/dev/null; then
+  (umask 077 && cat > .env <<EOF
 DIFFERENTLY_BOOTSTRAP_TOKEN=$(docker run --rm $img token)
 DIFFERENTLY_SECRETS_KEY=$(docker run --rm $img secrets-key)
 POSTGRES_PASSWORD=$(docker run --rm $img token)
 OPENSANDBOX_API_KEY=$(docker run --rm $img token)
 EOF
-chmod 600 .env
+  )
+fi
 ```
 
 | Value | What it is |
@@ -74,9 +84,11 @@ chmod 600 .env
 | `OPENSANDBOX_API_KEY` | The key Differently uses to call OpenSandbox |
 
 `token` prints a new random value on every run. The two internal passwords
-use it too because its output is safe inside a URL. Keep `.env` with the
-stack and out of version control: without the secrets key, stored provider
-credentials cannot be opened again.
+use it too because its output is safe inside a URL. The file is created
+readable by you alone, and an `.env` that is already there is never
+replaced: new values would not open the database, which keeps its first
+password, or the provider credentials sealed with the first secrets key.
+Keep `.env` with the stack and out of version control.
 
 ## 3. Start it
 
@@ -84,8 +96,8 @@ credentials cannot be opened again.
 docker compose up -d --wait
 ```
 
-The first start pulls three images. The command returns when Postgres,
-OpenSandbox and Differently are healthy.
+The first start pulls two more images, Postgres and OpenSandbox; step 2
+already pulled the server's. The command returns when all three are healthy.
 
 ## 4. Run a first sandbox
 
@@ -97,7 +109,7 @@ docker compose exec server differently doctor
 ```
 
 ```text
-[ok  ] server http://localhost:8080 reachable (version v0.1.0-alpha.5, installation inst_...)
+[ok  ] server http://localhost:8080 reachable (version ..., installation inst_...)
 [ok  ] authenticated as key... (scopes [admin])
 [ok  ] pool opensandbox (private): healthy
 ```
@@ -138,7 +150,10 @@ differently sandbox create --wait
 The [quickstart's longer tour](../guides/quickstart.md#a-longer-tour) and the
 SDKs work the same against this stack. The operator key can do everything,
 so give applications a key limited to one project:
-[organization onboarding](../guides/organization-onboarding.md).
+[organization onboarding](../guides/organization-onboarding.md). A key
+limits what its holder can ask the API for. On this stack it does not keep
+sandboxes apart: as said at the top, code in one sandbox could run commands
+in a sandbox of another project.
 
 From another machine, tunnel to it (`ssh -L 8080:localhost:8080 <host>`)
 instead of publishing the port. To serve a team, put a TLS proxy in front of
@@ -150,10 +165,15 @@ it, as in [One Linux VM](single-vm.md#5-optional-https-for-your-team).
 |---|---|---|
 | The API and dashboard | `127.0.0.1:8080` | Every request needs a key, but nothing outside the host needs it yet |
 | Postgres, the OpenSandbox API, `/metrics` (port 9091 in the `server` container) | Not published | Only the stack's own containers use them |
-| Each sandbox's control ports, two per sandbox from 40000 to 60000 | The gateway address of Docker's default bridge, `172.17.0.1` | OpenSandbox reaches sandboxes through them. They have no authentication of their own, so they must not be on a public interface |
+| Each sandbox's control ports, two per sandbox from 40000 to 60000 | The gateway address of Docker's default bridge, `172.17.0.1` | OpenSandbox reaches sandboxes through them. They have no authentication of their own, so this file does not publish them on every interface |
 
 OpenSandbox's own default publishes sandbox ports on every interface; this
-file narrows that. If your Docker's default bridge has another address,
+file narrows that to the bridge gateway. That address is not loopback.
+Whether another machine can reach those ports through it depends on the
+host's forwarding and firewall rules, which has not been tested, so keep
+ports 40000 to 60000 closed to other machines yourself.
+
+If your Docker's default bridge has another address,
 Docker cannot publish on `172.17.0.1` and sandboxes fail to start. Find the
 right one and add it to `.env`:
 
@@ -182,11 +202,17 @@ Add these to `.env`, then run `docker compose up -d --force-recreate`:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DIFFERENTLY_VERSION` | `0.1.0-alpha.5` | Image tag of the control plane, a [release](https://github.com/different-ai/differently/releases) without the leading `v` |
+| `DIFFERENTLY_VERSION` | `0.1.0-alpha.5` | Image tag of the control plane: a [release](https://github.com/different-ai/differently/releases)'s version without its leading `v` |
 | `DIFFERENTLY_IMAGE` | `ghcr.io/different-ai/differently-server` | Image repository, for a mirror or your own build |
 | `DIFFERENTLY_BIND` | `127.0.0.1` | Host address the API is published on |
 | `DIFFERENTLY_PORT` | `8080` | Host port of the API |
 | `SANDBOX_PUBLISH_HOST` | `172.17.0.1` | Host address sandbox ports are published on |
+
+A variable exported in your shell wins over the same name in `.env`. The
+[install script](../guides/quickstart.md#1-install) reads
+`DIFFERENTLY_VERSION` too, written with the `v`. If that is still exported,
+Compose asks for an image tag that does not exist and the pull fails:
+`unset DIFFERENTLY_VERSION` first.
 
 The control plane's config (the pool, the profiles `small` and `medium`, a
 one-hour default lifetime, `external: never`) is the `differently` entry
@@ -214,11 +240,12 @@ pool options.
 
 | What you see | Cause |
 |---|---|
-| `required variable ... is missing a value: create .env first` | Step 2 has not run in this directory |
+| `required variable ... is missing a value: create .env first` | Step 2 has not run in this directory, or an `.env` without the four values was there first and step 2 kept it: move it away, run step 2, then add your settings back |
 | `docker compose` rejects the file: `start_interval`, or the `content` of a config | Docker Engine older than 25, or Docker Compose older than 2.23.1 |
+| The `server` image cannot be pulled because its tag does not exist | `DIFFERENTLY_VERSION` has a leading `v`, usually exported for the install script: `unset DIFFERENTLY_VERSION` |
 | The `server` container cannot publish port 8080 | Something else uses it: set `DIFFERENTLY_PORT` |
 | A sandbox fails to start with a Docker error about publishing a port | Another bridge address: set `SANDBOX_PUBLISH_HOST` as above |
-| The stack is healthy but a sandbox never becomes ready, on Colima or Docker Desktop | See [Docker in a VM](#docker-in-a-vm-colima-docker-desktop) |
+| The stack is healthy but a sandbox never becomes ready | OpenSandbox cannot reach the sandbox's published ports. On Colima or Docker Desktop, see [Docker in a VM](#docker-in-a-vm-colima-docker-desktop). On Linux, a firewall that denies incoming connections by default, such as ufw, may block the stack's containers from reaching ports 40000 to 60000 on the bridge gateway. Neither case has been tested |
 | The server cannot sign in to Postgres after `.env` was recreated | The database kept its first password. Restore the old `.env`, or start over with `docker compose down -v` |
 
 `docker compose logs server` and `docker compose logs opensandbox-server`

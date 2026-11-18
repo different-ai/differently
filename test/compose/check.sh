@@ -41,10 +41,19 @@ secrets=$(awk '
 	want && fence == 1 { print }
 	fence == 2 { exit }' "$guide")
 [ -n "$secrets" ] || fail "cannot find the secrets block in $guide"
-header=$(sed -n 's/^#      //p' "$file" | sed -n '/^img=/,/^chmod/p')
+header=$(sed -n 's/^#      //p' "$file" | sed -n '/^img=/,/^fi$/p')
 [ "$header" = "$secrets" ] || fail "the secrets commands at the top of compose.yaml and in docs/deploy/docker.md differ"
 printf '%s\n' "$secrets" | grep -qx "img=$default_image" ||
 	fail "the guide's secrets block does not use $default_image, the image compose.yaml defaults to"
+# A release changes the version in one place and the lint finds the rest:
+# every image the guide or the file names, and the default in the guide's
+# settings table.
+tag=${default_image##*:}
+named=$(grep -ho 'differently-server:[A-Za-z0-9._-]*' "$guide" "$file" | sort -u)
+[ "$named" = "differently-server:$tag" ] ||
+	fail "the guide and compose.yaml name other images than differently-server:$tag: $(printf '%s' "$named" | tr '\n' ' ')"
+grep -q "^| \`DIFFERENTLY_VERSION\` | \`$tag\` |" "$guide" ||
+	fail "the settings table in the guide does not give $tag as the default DIFFERENTLY_VERSION"
 echo "default image: $default_image"
 
 # The end-to-end stack (test/e2e) is where these services are tested in
@@ -138,6 +147,7 @@ esac
 
 step "create the secrets with the guide's commands (image: $image)"
 printf '%s\n' "$secrets" | sed "s|^img=.*|img=$image|" | sh -eu
+[ -f .env ] || fail "the guide's commands did not write .env"
 for name in DIFFERENTLY_BOOTSTRAP_TOKEN DIFFERENTLY_SECRETS_KEY POSTGRES_PASSWORD OPENSANDBOX_API_KEY; do
 	grep -q "^$name=..*" .env || fail "$name is empty in the generated .env"
 done
@@ -148,6 +158,15 @@ case $(ls -l .env) in
 *) fail ".env is readable by others: $(ls -l .env)" ;;
 esac
 docker compose config -q
+
+step "the same commands again keep the .env that is there"
+written=$(cksum <.env)
+again=$(printf '%s\n' "$secrets" | sed "s|^img=.*|img=$image|" | sh -eu)
+case $again in
+*"Keeping the .env"*) echo "$again" ;;
+*) fail "a second run did not say it kept .env: $again" ;;
+esac
+[ "$written" = "$(cksum <.env)" ] || fail "a second run of the guide's commands changed .env"
 
 step "docker compose up -d --wait"
 started=1

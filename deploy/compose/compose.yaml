@@ -8,16 +8,20 @@
 #
 # 1. Create the four secrets, once, in a file named `.env` beside this one.
 #    Nothing in this file is a default credential, and the stack refuses to
-#    start without them:
+#    start without them. An `.env` that is already there is kept:
 #
 #      img=ghcr.io/different-ai/differently-server:0.1.0-alpha.5
-#      cat > .env <<EOF
+#      if [ -e .env ]; then
+#        echo "Keeping the .env that is already here: it holds the only copy of this stack's secrets."
+#      elif docker run --rm $img version >/dev/null; then
+#        (umask 077 && cat > .env <<EOF
 #      DIFFERENTLY_BOOTSTRAP_TOKEN=$(docker run --rm $img token)
 #      DIFFERENTLY_SECRETS_KEY=$(docker run --rm $img secrets-key)
 #      POSTGRES_PASSWORD=$(docker run --rm $img token)
 #      OPENSANDBOX_API_KEY=$(docker run --rm $img token)
 #      EOF
-#      chmod 600 .env
+#        )
+#      fi
 #
 # 2. Start it and check it. The guide goes on to a first sandbox:
 #
@@ -26,7 +30,8 @@
 #
 # Optional settings, as lines in `.env` or variables in the environment:
 #
-#   DIFFERENTLY_VERSION   image tag of the control plane (default below)
+#   DIFFERENTLY_VERSION   image tag of the control plane, without a leading
+#                         `v` (default below). An exported value wins over .env
 #   DIFFERENTLY_IMAGE     image repository, for a mirror or your own build
 #   DIFFERENTLY_BIND      host address the API is published on (127.0.0.1)
 #   DIFFERENTLY_PORT      host port of the API (8080)
@@ -170,7 +175,7 @@ configs:
       network_mode = "bridge"
       host_ip = "host.docker.internal"
       # Sandbox ports have no authentication of their own, so they are
-      # published on the bridge gateway only, never on a public interface.
+      # published on the bridge gateway only, not on every interface.
       publish_host = "${SANDBOX_PUBLISH_HOST:-172.17.0.1}"
       port_range_min = 40000
       port_range_max = 60000
