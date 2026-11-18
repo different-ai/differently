@@ -62,6 +62,14 @@ that covers it, and say in the PR what did not run.
 - Recorded runtimes: `internal/adapters/opensandbox/testdata/recordings`,
   replayed by `TestReplayRecordings`; re-record with the live test after an
   OpenSandbox upgrade or a new adapter call.
+- The stack people install on one Docker host: `deploy/compose/compose.yaml`
+  (published images, both config files inside it, secrets from a `.env`
+  the guide generates; the site serves it as `/compose.yaml`),
+  [docs/deploy/docker.md](docs/deploy/docker.md), and
+  `test/compose/check.sh`, which starts it and runs a sandbox
+  (`make compose-check-built`, CI's `docker host stack` jobs). It is
+  separate from `test/e2e/compose.yaml`, which builds from the checkout
+  and uses fixed test credentials.
 - Stored credentials: `internal/secrets` (sealed values, `secret:` refs).
 - Capacity: `internal/scheduler/capacity.go` (slots, resume queue,
   preemption, lifecycle limits) and its model `internal/capsim`
@@ -85,14 +93,6 @@ that covers it, and say in the PR what did not run.
   snapshots across providers, [docs/guides/baselines.md](docs/guides/baselines.md)
   (`templates[].images`, `differently templates`, `differently capabilities`).
   An answer there must say where Differently stops, and match the code.
-- The stack people install on one Docker host: `deploy/compose/compose.yaml`
-  (published images, both config files inside it, secrets from a `.env`
-  the guide generates; the site serves it as `/compose.yaml`),
-  [docs/deploy/docker.md](docs/deploy/docker.md), and
-  `test/compose/check.sh`, which starts it and runs a sandbox
-  (`make compose-check-built`, CI's `docker host stack` jobs). It is
-  separate from `test/e2e/compose.yaml`, which builds from the checkout
-  and uses fixed test credentials.
 - How to change, prove, re-record, optimise and release:
   [docs/maintaining.md](docs/maintaining.md).
 - Docs that must stay truthful: `docs/feature-parity.md`, `docs/roadmap.md`,
