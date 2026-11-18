@@ -141,5 +141,14 @@ No external provider is registered and config.policy.external is
 {{- end }}
 
      helm test {{ .Release.Name }} -n {{ $ns }} --logs
+{{- if .Values.console.enabled }}
+
+The console is at {{ .Values.console.url }}. Choose "Create account" with one
+of the allowed emails ({{ join ", " .Values.console.allowedEmails | default "none set: add console.allowedEmails, or nobody can sign up" }}).
+{{- if not .Values.console.ingress.enabled }}
+console.ingress is off; route {{ include "differently.consoleHost" . }} to the Service
+{{ include "differently.consoleName" . }}:{{ .Values.console.service.port }} yourself.
+{{- end }}
+{{- end }}
 
 Differently has no telemetry or phone-home code paths.

@@ -55,6 +55,20 @@ app.kubernetes.io/component: {{ .component }}
 {{- printf "%s-server" (include "differently.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "differently.consoleName" -}}
+{{- printf "%s-console" (include "differently.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/* Secret holding the console's session-signing secret. */}}
+{{- define "differently.consoleAuthSecretName" -}}
+{{- .Values.console.auth.existingSecret | default (printf "%s-auth" (include "differently.consoleName" .)) -}}
+{{- end -}}
+
+{{/* Host of console.url, for the console's ingress. */}}
+{{- define "differently.consoleHost" -}}
+{{- (urlParse .Values.console.url).host -}}
+{{- end -}}
+
 {{- define "differently.configName" -}}
 {{- printf "%s-config" (include "differently.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -352,6 +366,19 @@ Validation. Fails the render with an actionable message. The server's
 {{- end -}}
 {{- if and (eq (include "differently.migrationMode" .) "hook") $pg.embedded.enabled -}}
 {{- fail "migrations.mode=hook cannot reach postgresql.embedded (it does not exist yet when pre-install hooks run); use migrations.mode=auto or initContainer." -}}
+{{- end -}}
+{{- $c := .Values.console -}}
+{{- if $c.enabled -}}
+{{- $u := urlParse $c.url -}}
+{{- if or (not $u.host) (and (ne $u.scheme "https") (ne $u.scheme "http")) -}}
+{{- fail "console.enabled=true needs console.url, the URL people open the console at (for example https://console.example.com)." -}}
+{{- end -}}
+{{- if and $u.path (ne $u.path "/") -}}
+{{- fail "console.url must be an origin without a path; the console image serves at the root." -}}
+{{- end -}}
+{{- if and $c.ingress.tls.enabled (ne $u.scheme "https") -}}
+{{- fail "console.ingress.tls.enabled=true needs an https console.url." -}}
+{{- end -}}
 {{- end -}}
 {{- if and .Values.auth.existingSecret .Values.auth.bootstrapToken -}}
 {{- fail "auth.existingSecret is set, so auth.bootstrapToken would be ignored; remove it." -}}

@@ -36,6 +36,11 @@ spec:
       {{- with $np.server.ingressFrom }}
       from:
         {{- toYaml . | nindent 8 }}
+        {{- if $.Values.console.enabled }}
+        - podSelector:
+            matchLabels:
+              {{- include "differently.componentSelectorLabels" (dict "ctx" $ "component" "console") | nindent 14 }}
+        {{- end }}
       {{- end }}
     {{- if .Values.metrics.port }}
     - ports:

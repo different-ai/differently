@@ -52,6 +52,12 @@ it lets you.
 
 ## Server
 
+On Kubernetes the Helm chart runs this for you: set `console.enabled`,
+`console.url` and `console.allowedEmails`
+([guide](../docs/deploy/kubernetes.md#the-console-with-sign-in)). The image is
+built by [`build/console.Dockerfile`](../build/console.Dockerfile). To run it
+yourself:
+
 ```bash
 npm ci
 npm run build:server

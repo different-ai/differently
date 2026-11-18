@@ -178,6 +178,12 @@ jobs:
           context: .
           file: build/cli.Dockerfile
           push: false
+      - name: build console image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: build/console.Dockerfile
+          push: false
 
   dco:
     name: dco sign-off
