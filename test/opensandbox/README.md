@@ -50,7 +50,11 @@ OPENSANDBOX_URL=http://localhost:8090/v1 OPENSANDBOX_RECORD=docker-1.2.0 \
 
 The API key in `config.toml` is a test value. Sandboxes are Docker
 containers on the same host, so this checks the API contract, not
-isolation.
+isolation. The config is for a throwaway test host: it leaves
+`publish_host` at OpenSandbox's default, so each sandbox's ports (two, from
+40000 to 60000, with no authentication of their own) are published on every
+interface of the Docker host; for a host that stays up, see
+[bare-metal.md](../../docs/deploy/bare-metal.md#keep-sandbox-ports-off-public-interfaces).
 
 Verified 2026-10-28 on Colima (`colima-differently`, arm64) with server
 1.2.0 and `execd` v1.1.0: passes; sandbox creation 0.5–0.9 s. Re-verified
