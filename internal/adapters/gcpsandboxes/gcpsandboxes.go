@@ -440,9 +440,17 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 }
 
 // Delete starts the deletion and returns; the sandbox then lists as
-// deprovisioning, which List and Get treat as gone.
+// deprovisioning, which List and Get treat as gone. A sandbox already being
+// deleted counts as deleted, whether Google answers NOT_FOUND or refuses a
+// second deletion with FAILED_PRECONDITION.
 func (a *Adapter) Delete(ctx context.Context, ref string) error {
 	err := a.c.JSON(ctx, http.MethodDelete, "/"+a.name(ref), nil, nil)
+	if api.IsCode(err, api.CodeInvalidState) {
+		s, gerr := a.get(ctx, ref)
+		if api.IsCode(gerr, api.CodeNotFound) || (gerr == nil && gone(s)) {
+			return nil
+		}
+	}
 	if api.IsCode(err, api.CodeNotFound) {
 		return nil
 	}

@@ -142,6 +142,10 @@ func (f *fakeAgentPlatform) serve(w http.ResponseWriter, r *http.Request) {
 			}
 			json.NewEncoder(w).Encode(box)
 		case r.Method == http.MethodDelete:
+			if box["state"] == "STATE_DEPROVISIONING" {
+				gerr(w, 400, "FAILED_PRECONDITION", "sandbox is being deleted")
+				return
+			}
 			box["state"] = "STATE_DEPROVISIONING"
 			json.NewEncoder(w).Encode(f.op(map[string]any{}))
 		case verb == "pause":
@@ -295,6 +299,9 @@ func TestAgentPlatformAdapter(t *testing.T) {
 	}
 	if _, err := a.Get(ctx, inst.Ref); !api.IsCode(err, api.CodeNotFound) {
 		t.Fatalf("get after delete: %v", err)
+	}
+	if err := a.Delete(ctx, inst.Ref); err != nil {
+		t.Fatalf("a delete while deprovisioning must succeed: %v", err)
 	}
 	f.boxes["sb1"]["state"] = "STATE_DELETED"
 	if err := a.Delete(ctx, inst.Ref); err != nil {
