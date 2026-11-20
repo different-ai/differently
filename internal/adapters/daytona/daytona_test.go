@@ -231,7 +231,7 @@ func TestDaytonaAdapter(t *testing.T) {
 	if err := a.Start(ctx, inst.Ref); err != nil || f.state(inst.Ref) != "started" {
 		t.Fatalf("start: %v, state %s", err, f.state(inst.Ref))
 	}
-	if err := a.Pause(ctx, inst.Ref); !api.IsCode(err, api.CodeInvalidRequest) {
+	if err := a.Pause(ctx, inst.Ref); !api.IsCode(err, api.CodeUnsupportedOperation) {
 		t.Fatalf("a container cannot pause: %v", err)
 	}
 	snap, err := a.Snapshot(ctx, inst.Ref, "disk")

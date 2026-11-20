@@ -604,8 +604,11 @@ func (a *Adapter) IdlesNatively() bool { return a.opts.Runtime == runtimeFastSan
 // rather than the server. An image that cannot be pulled is the request's
 // fault (the Docker runtime says so at once). A pod that did not become ready
 // in time is worth retrying, since a first pull can be slow, but on the
-// Kubernetes runtime it is also how a missing image shows up. Neither means
-// the server is unhealthy.
+// Kubernetes runtime it is also how a missing image shows up. A container
+// the Docker runtime could not start is this sandbox's failure too: Docker
+// answering 400 refused the request itself (more CPUs than the host has,
+// found by the acid test, L0.06), anything else is retried. None of these
+// means the server is unhealthy.
 func createError(err error) error {
 	var e *api.Error
 	if !errors.As(err, &e) {
@@ -615,6 +618,10 @@ func createError(err error) error {
 	switch {
 	case strings.HasSuffix(code, "IMAGE_PULL_FAILED"):
 		return &api.Error{Code: api.CodeInvalidRequest, Message: e.Message, Details: e.Details}
+	case strings.HasSuffix(code, "SANDBOX_START_FAILED") && strings.Contains(e.Message, "400 Client Error"):
+		return &api.Error{Code: api.CodeInvalidRequest, Message: e.Message, Details: e.Details}
+	case strings.HasSuffix(code, "SANDBOX_START_FAILED"):
+		return &api.Error{Code: adapter.CodeSandboxFailed, Message: e.Message, Details: e.Details}
 	case strings.HasSuffix(code, "POD_READY_TIMEOUT"):
 		return &api.Error{Code: adapter.CodeSandboxFailed, Message: e.Message + "; the image may still be pulling, or may not exist", Details: e.Details}
 	}

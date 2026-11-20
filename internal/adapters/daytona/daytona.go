@@ -417,8 +417,12 @@ func (a *Adapter) Start(ctx context.Context, ref string) error {
 
 // Pause is only meaningful for VM-class sandboxes (containers answer 422);
 // Capabilities hides it for containers so placement never routes
-// pause-requiring work here.
+// pause-requiring work here, and a direct call answers
+// unsupported_operation instead of passing the 422 on as invalid_request.
 func (a *Adapter) Pause(ctx context.Context, ref string) error {
+	if a.opts.Class != "linux-vm" {
+		return adapter.Unsupported(adapter.FeaturePauseResume)
+	}
 	return a.action(ctx, ref, "pause", "paused")
 }
 func (a *Adapter) Resume(ctx context.Context, ref string) error {

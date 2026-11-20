@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Design, nothing implemented.** No test below has run. This page is the proposal to build, argue with and change. |
+| Status | **Levels 0–2 run (phase 1); levels 3–8 are design.** `go test` runs levels 0–2 against devhost, the fake adapter, a `remote` pool and the Daytona adapter's fake API. One live run so far: OpenSandbox's Docker runtime on Colima ([results](#results-so-far)). No external provider has been run. |
 | Goal | One open, reproducible test that any sandbox provider can be run through, getting harder level by level, so we can publish real numbers, file precise issues upstream, and help customers pick a provider for what they actually need. |
 | Builds on | The [adapter contract](adapters/specification.md) (`pkg/adapter`), the conformance checklist in [§11](adapters/specification.md#11-adapter-conformance-checklist) and backlog [E0.34](backlog.md#e0-correctness-and-security-fixes-from-the-code-review), [E2.4](backlog.md) (budget-guarded live tests) and the benchmark plan in [reliability-and-performance.md §4](reliability-and-performance.md#4-benchmark-plan) |
 
@@ -73,10 +73,10 @@ Does the provider behave like an API a scheduler can rely on? This is the
 |---|---|---|
 | L0.01 | Health | `Health` succeeds with valid credentials and fails, as `provider_unavailable`, with bad ones |
 | L0.02 | Create and get | A created instance reaches `running`; `Get` reports it |
-| L0.03 | Idempotent create | Creating the same ID twice returns the same ref, including when the first response is dropped (the harness drops it in the transport) |
+| L0.03 | Idempotent create | Creating the same ID twice returns the same ref, and List shows one instance (a dropped first response and concurrent creates are level 8) |
 | L0.04 | List ownership | `List(installation)` returns exactly this run's instances, each with its `sandboxId` |
 | L0.05 | Idempotent delete | Deleting twice succeeds; `Get` afterwards answers `not_found` |
-| L0.06 | Error classes | A bad request is `invalid_request`, an oversized one is refused before creation, and no message contains the credential |
+| L0.06 | Error classes | A ref that never existed answers `not_found`; an impossible size (4096 CPUs) is refused by the declared limits or answers `invalid_request`, `insufficient_capacity` or `sandbox_failed`, never `provider_unavailable`, and leaves nothing behind; no error for a wrong credential contains it |
 | L0.07 | Honest features | Every undeclared optional operation answers `unsupported_operation` |
 
 **Measures:** time to `running` (cold), API call latency per operation.
@@ -87,12 +87,12 @@ Does the provider behave like an API a scheduler can rely on? This is the
 |---|---|---|
 | L1.01 | Exit codes | `exit 3` returns exit code 3 as a result, not an error |
 | L1.02 | Separate streams | stdout and stderr arrive separately and in full |
-| L1.03 | cwd and env | `cwd` and `env` are honoured |
-| L1.04 | Timeout | A command past its timeout is stopped and reported as timed out; the sandbox stays usable |
+| L1.03 | cwd, env and argv | `cwd` and `env` are honoured; `args` reach the command without shell splitting |
+| L1.04 | Timeout | A command past its timeout is stopped within 20 s and not reported as a success; the sandbox stays usable |
 | L1.05 | Bytes, not text | Arbitrary bytes and UTF-8 in output survive unchanged |
-| L1.06 | Large output | 10 MiB of output arrives complete (or is cut at a documented limit and says so) |
+| L1.06 | Large output | 10 MiB of output arrives complete, or is cut and flagged `truncated` (cut silently is ⚠️) |
 | L1.07 | Long command | A 10-minute command completes and returns its exit code |
-| L1.08 | stdin | Input passed to a command reaches it, or the call answers `unsupported_operation` |
+| L1.08 | stdin | Input passed to a command reaches it, or the call answers `unsupported_operation` (accepted and dropped is ⚠️) |
 
 **Measures:** exec round trip for `true` (p50, p95), time to first exec after
 create.
@@ -105,8 +105,8 @@ create.
 | L2.02 | Seen from inside | A file written through the API is visible to `exec`, and the reverse |
 | L2.03 | Awkward paths | Spaces, UTF-8 and nested directories work |
 | L2.04 | Listing | `ListFiles` reports names, sizes and directories correctly |
-| L2.05 | Large file | A 100 MiB file round-trips, or is refused at a documented limit |
-| L2.06 | Missing file | Reading a missing path answers `not_found`, not empty content |
+| L2.05 | Large file | A 100 MiB file round-trips byte for byte |
+| L2.06 | Missing file | Reading a missing path answers `not_found` (empty content is ⚠️) |
 
 **Measures:** upload and download throughput.
 
@@ -219,12 +219,30 @@ Speed and cost are published next to the score and never inside it.
 
 ## How it runs
 
+What exists today (phase 1):
+
 ```text
-differently-acid run --config pools.yaml --pool e2b --max-level 5 \
-  --budget-usd 5 --repeat 5 --out results/e2b-2026-11-19.json
-differently-acid report results/*.json --format html
-differently-acid repro L5.02 --pool e2b      # one test, verbose, for an issue
+differently-acid run -config pools.yaml -pool daytona -out daytona.json
+differently-acid run -config pools.yaml -pool daytona -only L1.04,L2.05   # one or a few tests
+differently-acid report daytona.json opensandbox.json                     # a matrix, then each run
+differently-acid list
 ```
+
+`-config` is a server config or a file holding only `pools:`; credentials
+are `env:` or `file:` references (a `secret:` one needs the server's store).
+`-dev` allows devhost and fake. `-long`, `-large-output` and `-large-file`
+shrink the slow tests for a quick look; the result records them, so a quick
+run is never mistaken for a comparable one. When the pool has a credential,
+the run also builds it with a wrong one to check L0.01 and L0.06. From an
+adapter's own tests, `acidtest.Check(t, adapter, acidtest.Quick(), want)`
+runs the suite against a fake of the provider's API, as
+`internal/adapters/daytona/acid_test.go` does.
+
+Still to build, from the design below: `--repeat`, `--budget-usd`, a
+`repro` command, HTML reports, and everything inside the sandbox
+(`acid-probe`).
+
+The design for the rest:
 
 - **One harness, any pool.** `cmd/differently-acid` loads the same pool
   configuration as the server and builds adapters through `internal/wiring`,
@@ -279,6 +297,60 @@ website renders them on an `/acid/` page: the matrix, the profiles, the
 measurements with their spread, and for each failure the repro command and
 a link to the provider's issue if one is open.
 
+## Results so far
+
+One live run, and the suite's checks against itself. Raw results are in
+[`acid/results`](../acid/results/README.md).
+
+### OpenSandbox, Docker runtime (2026-11-20)
+
+OpenSandbox server release-1.2.0 with the Docker runtime and `execd`
+release-1.2.0 ([`test/opensandbox`](../test/opensandbox/README.md)),
+`debian:bookworm-slim`, Colima on an Apple Silicon Mac, with the runner on
+the same machine. Full size: the 10-minute command and the 100 MiB file.
+**Level 2 · 21/21**, nothing left behind, 609 s.
+
+| Measurement | Value |
+|---|---:|
+| Create to running (L0.02) | 0.41 s |
+| Create to first command | 0.41 s |
+| Exec round trip, p50 of 5 (L1.01) | 6 ms |
+| 10 MiB of output (L1.06) | 0.16 s |
+| 100 MiB file up / down (L2.05) | 121 / 161 MiB/s |
+| Delete (L0.05) | 0.14 s |
+
+Single samples, with no network between runner and backend: what the
+backend does, not how fast it is for anyone else.
+
+The first run, before the fix below, scored 20/21: an impossible size
+(L0.06) came back as `provider_unavailable`, which marks the whole pool
+unhealthy because of one request.
+
+### Found and fixed by the suite
+
+| Where | Found by | What was wrong | Now |
+|---|---|---|---|
+| `opensandbox` adapter | L0.06, live | A container Docker cannot start (here: more CPUs than the host has) answered `provider_unavailable`, marking the pool unhealthy | `invalid_request` when Docker refused the request (400), `sandbox_failed` otherwise |
+| `remote` pools (`adapterhttp` client) | L0.01, through the protocol | A plugin rejecting the adapter token was passed through as `unauthenticated`, which reaches API callers as a 401 about their own key | `provider_unavailable`, as for every other backend |
+| `daytona` adapter | L0.07, against its fake | Pausing a container-class sandbox (pause not declared) answered `invalid_request` | `unsupported_operation` |
+
+### The suite checked against itself
+
+`go test ./internal/acid/...` pins each outcome below, so a test that
+passes or fails everything shows up before it misjudges a provider.
+Failures here are real properties of these dev-only backends, kept as is:
+
+| Backend | Result | What fails, and why |
+|---|---|---|
+| devhost, in process and as a `remote` pool | no level · 18/21 | L0.06 accepts any size; L1.03 and L2.02: files and cwd map under its root, commands see the host's real paths |
+| fake | no level · 10/21 | Every command "succeeds" with its own text: level 1 fails and L1.06 is ⚠️; no directories in listings (L2.04) |
+| Daytona's fake API | level 0 passes | Levels 1–2 are logged, not judged: the fake does not run commands |
+
+Deliberately broken adapters prove the other outcomes: one that never
+deletes (L0.05 ❌, leaks reported), one that echoes a wrong credential
+(L0.01, L0.06 ❌), one that drops stdin (L1.08 ⚠️), and one that hides
+features it implements (L0.07 notes them).
+
 ## Publishing and working with providers
 
 1. Run the suite at least twice on different days before publishing.
@@ -300,7 +372,7 @@ a link to the provider's issue if one is open.
 
 | Phase | Delivers | Proves |
 |---|---|---|
-| 1 | `internal/acid`, `cmd/differently-acid`, levels 0–2, run against fakes and the OpenSandbox recordings in CI | Closes E0.34 |
+| 1 ✅ | `internal/acid`, `cmd/differently-acid`, levels 0–2, run in `go test` against devhost, fake, a `remote` pool and the Daytona fake, and once live against OpenSandbox's Docker runtime | Most of E0.34. Not done: the OpenSandbox recordings (they replay a fixed scenario; the suite needs a recording of its own) and the Freestyle fake (a single-VM fake inside one test) |
 | 2 | `acid-probe`, levels 3–5, budget guard, JSON results; live runs on OpenSandbox, Daytona and Freestyle (the default build) | First real numbers, kept private |
 | 3 | Levels 6–7, `report`, the `/acid/` page; experimental adapters (E2B, Vercel, Morph, Fly, Blaxel, …) | First publication, after the provider review window |
 | 4 | Level 8, scheduled reruns on release candidates (E2.4), provider-submitted results | A living leaderboard |
