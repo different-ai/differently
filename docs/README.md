@@ -32,6 +32,7 @@ at [Use Differently with a coding agent](guides/agents.md).
 | [One Docker host](deploy/docker.md) | The real stack from published images: one downloaded Compose file, then a first sandbox in a container |
 | [One Linux VM on any cloud](deploy/single-vm.md) | The quickest team setup: k3s, OpenSandbox and Differently on Azure, AWS, Google Cloud or bare metal |
 | [Azure VMs serving OpenWork](deploy/azure-vms.md) | A verified two-VM install with Fast Sandbox microVMs, managed Postgres, a registry and Key Vault, and Freestyle and Daytona as external pools |
+| [Google Cloud VMs](deploy/gcp-vms.md) | The same two-VM layout on Compute Engine with Cloud SQL, Artifact Registry and Secret Manager (documented, not run) |
 | [Prerequisites](deploy/prerequisites.md) | Cluster, Postgres and an OpenSandbox server (or another backend) |
 | [Kubernetes (existing cluster)](deploy/kubernetes.md) | Helm install to first sandbox |
 | [AWS](deploy/aws.md) · [GCP](deploy/gcp.md) · [Azure](deploy/azure.md) · [Bare metal](deploy/bare-metal.md) | Environment-specific notes |

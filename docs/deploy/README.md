@@ -109,6 +109,7 @@ are OpenSandbox prerequisites for that runtime.
 | [gcp.md](gcp.md) | GKE Standard, with a nested-virtualization node pool for Fast Sandbox |
 | [azure.md](azure.md) | AKS, with nested-virtualization-capable sizes for Fast Sandbox (experimental) |
 | [azure-vms.md](azure-vms.md) | Two Azure VMs with k3s: Fast Sandbox microVMs, managed Postgres, ACR and Key Vault (verified for OpenWork) |
+| [gcp-vms.md](gcp-vms.md) | The Azure VMs layout on two Compute Engine VMs: Fast Sandbox on nested KVM, Cloud SQL, Artifact Registry and Secret Manager (documented, not run) |
 | [bare-metal.md](bare-metal.md) | k3s, RKE2, Talos, and an OpenSandbox server on a plain Linux host |
 | [air-gapped.md](air-gapped.md) | Mirroring images and the chart; running with no external egress |
 | [day-2.md](day-2.md) | Upgrade, rollback, migrations, backup and restore, certificates, replacing a backend, uninstall |
@@ -183,6 +184,7 @@ test it then had.
 | AWS EKS, `.metal` node group (Fast Sandbox) | Bare metal | unverified | Matches Firecracker's tested platforms. The Terraform module is **unvalidated** |
 | AWS EKS, nested-virtualization node group (Fast Sandbox) | `NestedVirtualization` CPU option (M7i/M8i/C7i/C8i/R7i/R8i…) | unverified | EKS managed node group support was reported fixed in 2026. Firecracker calls nested a development setup |
 | AWS with Karpenter (Fast Sandbox) | `EC2NodeClass` nested virtualization (v1.13.0+) | unverified | Not covered by the Terraform module |
+| Two Compute Engine VMs with k3s (Fast Sandbox) | `n4-standard-16` with `--enable-nested-virtualization`; Cloud SQL, Artifact Registry, Secret Manager | documented | [gcp-vms.md](gcp-vms.md): the [Azure VMs layout](azure-vms.md) translated step by step; `gcloud` flags checked against the SDK's help, nothing run on Google Cloud |
 | GCP GKE Standard (Fast Sandbox) | Nested virtualization node pool (Intel; not E2, Arm or most AMD) | unverified | Set at pool creation, can't be changed later. CPU-bound work runs 10%+ slower |
 | GCP GKE Autopilot (Fast Sandbox) | ComputeClasses (GKE 1.37.0-gke.4713000+) | unverified, not recommended | Privileged pods only for allowlisted workloads |
 | GCP bare metal (Fast Sandbox) | `-metal` machine types | unverified | GKE does not support C4/Z3 `-metal`. C3 `-metal` on GKE is unknown |

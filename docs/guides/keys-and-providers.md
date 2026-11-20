@@ -546,6 +546,14 @@ az keyvault secret set --vault-name <vault> --name differently-secrets-key --fil
 shred -u secrets-key.txt          # rm -P on macOS
 ```
 
+Or to Google Cloud Secret Manager (no trailing newline is added):
+
+```sh
+kubectl -n differently get secret dly-differently-secrets-key \
+  -o jsonpath='{.data.secrets-key}' | base64 -d \
+  | gcloud secrets create differently-secrets-key --replication-policy=automatic --data-file=-
+```
+
 - **A restore needs both the database backup and the key.** A database
   restore also rewinds stored values to the backup's state: store again any
   credential rotated since.
@@ -561,9 +569,10 @@ shred -u secrets-key.txt          # rm -P on macOS
      so no replica keeps sealing with the old key.
   2. Set the new key and start the server again.
   3. Store every value again.
-- **If the key lives in Key Vault** and reaches the cluster through the CSI
-  driver, do not create new versions of that Key Vault secret, and pin its
-  `objectVersion`. A new version reaching the server at its next restart
+- **If the key lives in Key Vault or Secret Manager** and reaches the
+  cluster through the CSI driver, do not create new versions of that secret,
+  and pin its version (`objectVersion` in Key Vault, `versions/<n>` in the
+  Secret Manager resource name). A new version reaching the server at its next restart
   makes every stored credential unreadable.
 
 ## Audit events

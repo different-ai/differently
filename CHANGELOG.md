@@ -6,6 +6,14 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added
+
+- `docs/deploy/gcp-vms.md`: the verified Azure VMs layout (k3s, OpenSandbox
+  with Fast Sandbox on nested KVM, managed Postgres, a snapshot registry and a
+  secret store) translated to two Compute Engine VMs with Cloud SQL, Artifact
+  Registry and Secret Manager. Documented, not run: every `gcloud` flag was
+  checked against the SDK's help, and nothing was created on Google Cloud.
+
 ## [0.1.0-alpha.7] — 2026-11-19
 
 Seventh alpha, published as a GitHub pre-release. Not for production. A small
