@@ -56,6 +56,7 @@ at [Use Differently with a coding agent](guides/agents.md).
 | [Capacity](scheduling/capacity.md) | Pool slots, paused sandboxes that give theirs back, the resume queue, preemption and lifecycle limits, with a model of real usage |
 | [Storage and lifecycle](storage-and-lifecycle.md) | Persistence, snapshots, fork, portability limits |
 | [Reliability and performance](reliability-and-performance.md) | SLOs, benchmarks to run, chaos tests |
+| [Sandbox acid test](acid-test.md) | One incremental test for every sandbox provider, to publish real numbers and file issues upstream; levels 0–2 run today |
 | [Acceptance scenarios](acceptance-scenarios.md) | Scenarios A–L and the tests that cover them |
 | [End-to-end suite](../test/e2e/README.md) | The real stack against an OpenSandbox server, and where it was verified |
 

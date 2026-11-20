@@ -564,6 +564,12 @@ func (c *Client) send(ctx context.Context, method, path string, body io.Reader, 
 		defer resp.Body.Close()
 		var env api.ErrorEnvelope
 		if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&env) == nil && env.Error != nil {
+			// A rejected adapter token is the pool's credential problem, as
+			// for every other backend (specification §5), not the API
+			// caller's: passed through, it would reach them as a 401.
+			if env.Error.Code == api.CodeUnauthenticated || env.Error.Code == api.CodePermissionDenied {
+				return nil, adapter.Unavailable(fmt.Errorf("the plugin rejected the adapter token (%s)", env.Error.Code))
+			}
 			return nil, env.Error
 		}
 		return nil, adapter.Unavailable(fmt.Errorf("%s %s: HTTP %s", method, path, strconv.Itoa(resp.StatusCode)))

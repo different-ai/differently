@@ -242,9 +242,11 @@ reaches the plugin, is never returned, and rotates without a restart.
 **Known gaps.**
 
 - No test calls `POST /v1/admin/pools`.
-- `pkg/adapter/adapterhttp`, the plugin protocol behind `remote` pools, has no
-  tests: the node-agent tests were its only coverage
-  ([backlog E0.34](backlog.md#e0-correctness-and-security-fixes-from-the-code-review)).
+- `pkg/adapter/adapterhttp`, the plugin protocol behind `remote` pools, has
+  round-trip tests against the fake adapter, and the [acid test](acid-test.md)
+  runs levels 0–2 through it against devhost
+  (`TestRemoteProtocolMatchesInProcess`). No third-party plugin has been
+  checked ([backlog E0.34](backlog.md#e0-correctness-and-security-fixes-from-the-code-review)).
 - The adapter client does not check the protocol version (E0.25).
 - No InfrastructureAdapter provisions or autoscales the backend.
 

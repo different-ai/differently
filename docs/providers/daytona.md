@@ -17,7 +17,7 @@
 | files | yes |
 | stdin | no (`unsupported_operation`) |
 | lifecycle.stop-start | yes; the disk is kept |
-| lifecycle.pause-resume | `class: linux-vm` only (not run live; containers answer `invalid_request`) |
+| lifecycle.pause-resume | `class: linux-vm` only (not run live; on containers the adapter answers `unsupported_operation` without calling Daytona) |
 | snapshots.disk | yes; restore by creating from it |
 | snapshots.memory | `class: linux-vm` only (not run live) |
 | fork | no memory fork; Differently's fork, which creates from a disk snapshot, works |

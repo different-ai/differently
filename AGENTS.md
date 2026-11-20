@@ -59,6 +59,10 @@ that covers it, and say in the PR what did not run.
   `go test` does not see them, so use `make experimental` when you touch
   them or anything they share (`httpx`, `pkg/adapter`). The real-stack suite is `test/e2e`
   (`make e2e-prepare e2e-up e2e`, or against any install).
+- Acid test: `internal/acid` (levels 0–2 of [the acid test](docs/acid-test.md)),
+  `cmd/differently-acid` to run it against a configured pool, and
+  `internal/acid/acidtest` to run it from an adapter's tests against a fake
+  of its API. A new adapter should pass level 0 against its fake.
 - Recorded runtimes: `internal/adapters/opensandbox/testdata/recordings`,
   replayed by `TestReplayRecordings`; re-record with the live test after an
   OpenSandbox upgrade or a new adapter call.

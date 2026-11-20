@@ -199,7 +199,8 @@ E0.34.
   returns `info.protocol`. A breaking change bumps the number.
 - Authentication: when the server has a token, every route (including
   `/info` and `/health`) requires `Authorization: Bearer <token>`, compared in
-  constant time; failures are `401 unauthenticated`.
+  constant time; failures are `401 unauthenticated`, which Differently's
+  client reports as `provider_unavailable` (the pool's credential problem).
 - Errors: `{"error": {"code", "message", "details"}}` with the status from
   `api.Error.HTTPStatus`, except `insufficient_capacity` and
   `sandbox_failed`, which are 503.
@@ -429,9 +430,13 @@ the HTTP route avoids both steps.
 
 ## 11. Adapter conformance checklist
 
-Until a shared conformance suite for adapters exists (backlog E0.34), check
-by hand. `internal/adapters/opensandbox/live_test.go` is an example of a live
-check against a real backend behind a build tag:
+Level 0 of the [acid test](../acid-test.md) runs this checklist (with levels
+1 and 2 for exec and files): `differently-acid run -config FILE -pool NAME`
+against a live backend, or `acidtest.Check` from an adapter's own tests
+against a fake of its API. What it does not cover yet (the dropped first
+response, concurrent creates) is checked by hand.
+`internal/adapters/opensandbox/live_test.go` is an example of a live check
+against a real backend behind a build tag:
 
 - [ ] `Create` twice with the same ID returns the same ref, including when the
       first call's response is dropped.

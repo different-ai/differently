@@ -1,0 +1,252 @@
+{
+  "suite": "acid/1",
+  "startedAt": "2026-11-20T18:54:42.717965Z",
+  "seconds": 609.255275667,
+  "pool": "opensandbox-docker",
+  "adapter": {
+    "kind": "opensandbox",
+    "version": "1",
+    "trust": "private",
+    "isolation": "container (OpenSandbox Docker or Kubernetes runtime)",
+    "description": "OpenSandbox at http://localhost:8090/v1",
+    "protocol": "1"
+  },
+  "features": [
+    "exec",
+    "exec.stream",
+    "files",
+    "fork",
+    "isolation.container",
+    "lifecycle.pause-resume",
+    "snapshots.disk"
+  ],
+  "run": {
+    "installation": "acid-wg53hetc8k",
+    "seed": 6883466225252791129,
+    "maxLevel": 2,
+    "resources": {
+      "cpu": 1,
+      "memoryMiB": 1024,
+      "diskGiB": 5
+    },
+    "longCommandSeconds": 600,
+    "largeOutputBytes": 10485760,
+    "largeFileBytes": 104857600
+  },
+  "environment": {
+    "commit": "94703589b13d77a56698fb5c9c9fad340efa8cf2",
+    "go": "go1.27.3",
+    "modified": "true",
+    "runner": "darwin/arm64"
+  },
+  "level": 2,
+  "passed": 21,
+  "total": 21,
+  "results": [
+    {
+      "id": "L0.01",
+      "level": 0,
+      "title": "Health",
+      "outcome": "pass",
+      "evidence": "a wrong credential is refused as provider_unavailable",
+      "seconds": 0.006227708,
+      "metrics": {
+        "healthSeconds": 0.005360417
+      }
+    },
+    {
+      "id": "L0.02",
+      "level": 0,
+      "title": "Create and get",
+      "outcome": "pass",
+      "evidence": "running in 0.41s",
+      "seconds": 0.414078042,
+      "metrics": {
+        "createSeconds": 0.406337125,
+        "firstExecSeconds": 0.4140545
+      }
+    },
+    {
+      "id": "L0.03",
+      "level": 0,
+      "title": "Idempotent create",
+      "outcome": "pass",
+      "evidence": "same ref twice, one instance listed",
+      "seconds": 0.402902583
+    },
+    {
+      "id": "L0.04",
+      "level": 0,
+      "title": "List ownership",
+      "outcome": "pass",
+      "evidence": "each installation lists exactly its own instances, with sandbox IDs",
+      "seconds": 1.207868542
+    },
+    {
+      "id": "L0.05",
+      "level": 0,
+      "title": "Idempotent delete",
+      "outcome": "pass",
+      "evidence": "second delete succeeds; Get answers not_found",
+      "seconds": 0.540560209,
+      "metrics": {
+        "deleteSeconds": 0.135100917
+      }
+    },
+    {
+      "id": "L0.06",
+      "level": 0,
+      "title": "Error classes",
+      "outcome": "pass",
+      "evidence": "an impossible size answers invalid_request; a wrong credential's error does not echo it",
+      "seconds": 0.031103167
+    },
+    {
+      "id": "L0.07",
+      "level": 0,
+      "title": "Honest features",
+      "outcome": "pass",
+      "evidence": "undeclared and refused as unsupported_operation: lifecycle.stop-start; works although undeclared: ports.expose",
+      "seconds": 0.83809375
+    },
+    {
+      "id": "L1.01",
+      "level": 1,
+      "title": "Exit codes",
+      "feature": "exec",
+      "outcome": "pass",
+      "evidence": "exit codes 0, 1, 3 and 255 come back as results; exec round trip p50 6 ms",
+      "seconds": 0.470288125,
+      "metrics": {
+        "execRoundTripP50Seconds": 0.005842
+      }
+    },
+    {
+      "id": "L1.02",
+      "level": 1,
+      "title": "Separate streams",
+      "feature": "exec",
+      "outcome": "pass",
+      "evidence": "stdout and stderr arrive separately",
+      "seconds": 0.006045875
+    },
+    {
+      "id": "L1.03",
+      "level": 1,
+      "title": "cwd, env and argv",
+      "feature": "exec",
+      "outcome": "pass",
+      "evidence": "cwd, env and argv are honoured exactly",
+      "seconds": 0.017024875
+    },
+    {
+      "id": "L1.04",
+      "level": 1,
+      "title": "Timeout",
+      "feature": "exec",
+      "outcome": "pass",
+      "evidence": "stopped after 2.0s (exit code -1); the sandbox still answers",
+      "seconds": 2.01741325,
+      "metrics": {
+        "timeoutReturnSeconds": 2.007833042
+      }
+    },
+    {
+      "id": "L1.05",
+      "level": 1,
+      "title": "Bytes, not text",
+      "feature": "exec",
+      "outcome": "pass",
+      "evidence": "NUL, control bytes, CRLF and UTF-8 arrive unchanged",
+      "seconds": 0.00626175
+    },
+    {
+      "id": "L1.06",
+      "level": 1,
+      "title": "Large output",
+      "feature": "exec",
+      "outcome": "pass",
+      "evidence": "10485760 bytes arrive complete in 0.2s",
+      "seconds": 0.156467792,
+      "metrics": {
+        "largeOutputSeconds": 0.156286458
+      }
+    },
+    {
+      "id": "L1.07",
+      "level": 1,
+      "title": "Long command",
+      "feature": "exec",
+      "outcome": "pass",
+      "evidence": "a 600s command completes",
+      "seconds": 600.010499083
+    },
+    {
+      "id": "L1.08",
+      "level": 1,
+      "title": "stdin",
+      "feature": "exec",
+      "outcome": "pass",
+      "evidence": "stdin reaches the command",
+      "seconds": 0.025872584
+    },
+    {
+      "id": "L2.01",
+      "level": 2,
+      "title": "Round trip",
+      "feature": "files",
+      "outcome": "pass",
+      "evidence": "256 KiB of binary (every byte value) reads back identical, into a directory that did not exist",
+      "seconds": 0.015779042
+    },
+    {
+      "id": "L2.02",
+      "level": 2,
+      "title": "Seen from inside",
+      "feature": "files",
+      "outcome": "pass",
+      "evidence": "the API and commands see the same filesystem",
+      "seconds": 0.021799917
+    },
+    {
+      "id": "L2.03",
+      "level": 2,
+      "title": "Awkward paths",
+      "feature": "files",
+      "outcome": "pass",
+      "evidence": "spaces, quotes, UTF-8 and nested new directories work",
+      "seconds": 0.012583542
+    },
+    {
+      "id": "L2.04",
+      "level": 2,
+      "title": "Listing",
+      "feature": "files",
+      "outcome": "pass",
+      "evidence": "names, sizes and directories are reported",
+      "seconds": 0.016561417
+    },
+    {
+      "id": "L2.05",
+      "level": 2,
+      "title": "Large file",
+      "feature": "files",
+      "outcome": "pass",
+      "evidence": "100 MiB round-trips: up 121.0 MiB/s, down 160.8 MiB/s",
+      "seconds": 1.900406125,
+      "metrics": {
+        "downloadMiBps": 160.8063473481425,
+        "uploadMiBps": 120.97955334489241
+      }
+    },
+    {
+      "id": "L2.06",
+      "level": 2,
+      "title": "Missing file",
+      "feature": "files",
+      "outcome": "pass",
+      "evidence": "a missing file answers not_found",
+      "seconds": 0.010753792
+    }
+  ]
+}

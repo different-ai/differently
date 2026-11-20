@@ -8,6 +8,15 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- The sandbox acid test, levels 0–2 ([docs/acid-test.md](docs/acid-test.md)):
+  `internal/acid` checks any adapter against the contract (level 0),
+  commands (level 1) and files (level 2), each test answering pass,
+  unsupported, fail or dishonest. `differently-acid run` runs it against a
+  pool from a config file and writes a JSON result; `differently-acid
+  report` prints results side by side. `go test` runs it against devhost,
+  the fake adapter, a `remote` pool served by `adapterhttp.Handler`, and the
+  Daytona adapter's fake API. Run live against OpenSandbox's Docker runtime
+  on Colima, where it found the first fix below.
 - `gcp-sandboxes` adapter (experimental): a live test against a real Agent
   Platform engine (`TestLiveGCPSandboxes`, build tags
   `live,experimental_adapters`). It covers what Differently relies on, and
@@ -29,6 +38,18 @@ All notable changes are recorded here. The format follows
 
 ### Fixed
 
+- `opensandbox` adapter: a container the Docker runtime cannot start no
+  longer counts against the pool's health. A request Docker refuses (more
+  CPUs than the host has) fails the sandbox as `invalid_request`; any other
+  start failure is retried as `sandbox_failed`. Both were
+  `provider_unavailable`, which marks the whole pool unhealthy.
+- `remote` pools: a plugin that rejects the adapter token now reads as
+  `provider_unavailable`, the pool's credential problem, as for every other
+  backend. It was passed through as `unauthenticated`, which reached API
+  callers as a 401 about their own key.
+- `daytona` adapter: pausing a container-class sandbox answers
+  `unsupported_operation` (the feature is not declared for containers)
+  instead of passing Daytona's 422 on as `invalid_request`.
 - `gcp-sandboxes` adapter (experimental): deleting a sandbox that is already
   being deleted succeeds, whether Google answers `NOT_FOUND` or
   `FAILED_PRECONDITION`.

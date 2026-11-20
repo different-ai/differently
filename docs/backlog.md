@@ -388,7 +388,14 @@ nothing. **Why** issues found while documenting the code on 2026-10-28
   store counts queued sandboxes with a pool set; Postgres excludes queued).
 - **E0.33 Scheduler unit tests** (P1). Direct tests for `dispatch`, `retry`
   backoff, `expire`, `nudge` and every `reconcilePool` branch.
-- **E0.34 Adapter conformance suite** (P1). A shared suite (`adaptertest`, like
+- **E0.34 Adapter conformance suite** (P1). 🟡 Mostly done as levels 0–2 of the
+  [acid test](acid-test.md) (`internal/acid`, run from adapter tests through
+  `internal/acid/acidtest`). It runs against fake, devhost, a `remote` pool
+  served by `adapterhttp.Handler`, the Daytona fake, and live against
+  OpenSandbox's Docker runtime with `differently-acid`. Still missing: the
+  OpenSandbox recordings (they replay a fixed scenario, so the suite needs
+  its own recording) and the Freestyle fake (a single-VM fake inside one
+  test). Original scope: a shared suite (`adaptertest`, like
   `storetest`) covering the checklist in
   [adapters/specification.md §11](adapters/specification.md#11-adapter-conformance-checklist),
   runnable against in-process adapters and against any HTTP endpoint.

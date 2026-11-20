@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/different-ai/differently/internal/adapters/fake"
@@ -100,8 +101,11 @@ func TestRoundTrip(t *testing.T) {
 func TestRejectsWrongToken(t *testing.T) {
 	srv := httptest.NewServer(adapterhttp.Handler(fake.New(fake.Options{}), "right"))
 	t.Cleanup(srv.Close)
-	if _, err := adapterhttp.NewClient(srv.URL, "wrong").Discover(context.Background()); !api.IsCode(err, api.CodeUnauthenticated) {
-		t.Fatalf("want unauthenticated, got %v", err)
+	// The plugin answers 401 unauthenticated; the client reports it as the
+	// pool's credential problem, never echoing the token.
+	_, err := adapterhttp.NewClient(srv.URL, "wrong").Discover(context.Background())
+	if !api.IsCode(err, api.CodeProviderUnavailable) || strings.Contains(err.Error(), "wrong") {
+		t.Fatalf("want provider_unavailable without the token, got %v", err)
 	}
 }
 

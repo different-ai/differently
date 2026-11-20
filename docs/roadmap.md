@@ -97,7 +97,7 @@ an operator-visible record of what left private infrastructure.
 | Daytona adapter | ✅ live (container class) | `internal/adapters/daytona`; `TestLiveDaytona` and a Differently server against a live account, 2026-10-29; the VM class (pause, memory snapshots) not run; resources not sent, because Daytona refuses them with a snapshot |
 | Freestyle adapter | ✅ live | `internal/adapters/freestyle`; `TestLiveFreestyle` and a Differently server against a live account, 2026-10-29, on the default snapshot |
 | OpenSandbox as an external pool | ✅ | `trust: external` pools follow the usual approval rules; trust must be declared |
-| HTTP plugin protocol and `remote` pools | 🟡 | `pkg/adapter/adapterhttp`; untested since the agent tests, its only coverage, were removed ([E0.34](backlog.md#e0-correctness-and-security-fixes-from-the-code-review)); no protocol-version check yet |
+| HTTP plugin protocol and `remote` pools | 🟡 | `pkg/adapter/adapterhttp`; round-trip tests, and the [acid test](acid-test.md) levels 0–2 run through it ([E0.34](backlog.md#e0-correctness-and-security-fixes-from-the-code-review)); no third-party plugin checked; no protocol-version check yet |
 | Usage and cost estimates | ✅ | `GET /v1/usage`; estimates only, no invoice reconciliation |
 | **Live-account verification** | 🟡 | Daytona and Freestyle done; the other 12 provider adapters are tested against fakes of their published APIs and are outside the default build (`experimental_adapters` tag) ([POC 7](proof-of-concepts.md#poc-7-external-provider-live-account-verification), [E2](backlog.md#e2-external-adapters-on-live-accounts)) |
 
