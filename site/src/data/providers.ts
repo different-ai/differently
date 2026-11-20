@@ -417,7 +417,6 @@ export const providers: Provider[] = [
     isolation: 'gVisor',
     billing: 'infra', cpu: null, memory: null, slot: null, fees: 'Your GKE nodes', priceSource: '',
     rates: null,
-    adapter: 'agentsandbox',
     keepsState: 'Suspend keeps volumes; memory with GKE Pod Snapshots', snapshots: 'Pod snapshots, fork', ports: 'Its Service; exposing it is up to you', maxSize: 'The pod\'s resources',
     caps: { kernel: 'no', stop: 'part', memory: 'part', snapshot: 'yes', fork: 'yes', url: 'part', own: 'yes' },
     runItYourself: 'Runs in your GKE cluster', ...own, complianceNote: 'It runs in your cluster, inside your own audit scope.',
