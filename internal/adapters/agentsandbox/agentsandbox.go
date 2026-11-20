@@ -289,8 +289,10 @@ func (s object) is(t string) bool { c, ok := s.cond(t); return ok && c.Status ==
 
 func (s object) state() string {
 	switch {
-	case s.Spec.OperatingMode == "Suspended" && s.Metadata.Annotations[annoPaused] != "":
+	case s.Spec.OperatingMode == "Suspended" && s.Metadata.Annotations[annoPaused] != "" && s.is("Suspended"):
 		return adapter.StatePaused
+	case s.Spec.OperatingMode == "Suspended" && s.Metadata.Annotations[annoPaused] != "":
+		return adapter.StatePending // the pod is still going
 	case s.Spec.OperatingMode == "Suspended":
 		return adapter.StateStopped
 	case s.is("Ready"):
@@ -549,6 +551,9 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 			_ = a.Delete(context.WithoutCancel(ctx), ref)
 			return adapter.Instance{}, err
 		}
+		if s, err = a.get(ctx, a.sandboxes(), ref); err != nil {
+			return adapter.Instance{}, err
+		}
 	}
 	return s.inst(), nil
 }
@@ -680,9 +685,13 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 			return nil, err
 		}
 		for _, s := range page.Items {
-			if s.Metadata.Labels[adapter.LabelInstallation] == installation && s.Metadata.DeletionTimestamp == "" {
-				out = append(out, s.inst())
+			if s.Metadata.Labels[adapter.LabelInstallation] != installation || s.Metadata.DeletionTimestamp != "" {
+				continue
 			}
+			if s.Metadata.Annotations[annoForking] != "" && !a.finishFork(ctx, s) {
+				continue
+			}
+			out = append(out, s.inst())
 		}
 		if cont = page.Metadata.Continue; cont == "" {
 			if a.snapshots() && a.opts.WarmPool == "" {
@@ -701,6 +710,11 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 // Delete removes the Sandbox or claim; the pod, Service and volumes are
 // owned by it and go with it.
 func (a *Adapter) Delete(ctx context.Context, ref string) error {
+	if a.snapshots() {
+		if s, err := a.get(ctx, a.sandboxes(), ref); err == nil && s.failures() >= maxRestoreFailures {
+			a.keepUnrestored(ctx, ref)
+		}
+	}
 	err := a.k.do(ctx, http.MethodDelete, a.owned()+"/"+url.PathEscape(ref), "", map[string]string{"propagationPolicy": "Background"}, nil)
 	a.mu.Lock()
 	delete(a.bound, ref)

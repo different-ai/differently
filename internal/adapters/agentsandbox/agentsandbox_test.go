@@ -44,8 +44,10 @@ type fakeKube struct {
 	// and restore, when set, decides them for a pod the controller creates.
 	markers map[string]map[string]bool
 	restore func(sandbox string, obj map[string]any) map[string]bool
-	// stuckSuspend keeps suspended Sandboxes from reporting Suspended.
+	// stuckSuspend keeps suspended Sandboxes from reporting Suspended, and
+	// failMarker fails the exec that looks for a snapshot marker.
 	stuckSuspend bool
+	failMarker   bool
 
 	// exec answers one command: stdout, stderr and the status to send.
 	exec     func(argv []string, stdin string) (string, string, map[string]any)
@@ -213,6 +215,8 @@ func newFakeKube(t *testing.T) *fakeKube {
 			}
 			f.markers[pod][argv[4]] = true
 			st = map[string]any{"status": "Success"}
+		case len(argv) == 3 && argv[0] == "test" && strings.HasPrefix(argv[2], markerPrefix) && f.failMarker:
+			st = map[string]any{"status": "Failure", "reason": "InternalError", "message": "error dialing backend: EOF"}
 		case len(argv) == 3 && argv[0] == "test" && strings.HasPrefix(argv[2], markerPrefix):
 			st = map[string]any{"status": "Success"}
 			if !f.markers[pod][argv[2]] {

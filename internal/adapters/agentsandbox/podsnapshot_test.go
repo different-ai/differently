@@ -77,7 +77,9 @@ func newFakeSnapshots(t *testing.T) *fakeSnapshots {
 	f.mux.HandleFunc("POST "+base+"podsnapshotmanualtriggers", locked(func(w http.ResponseWriter, r *http.Request) {
 		var obj map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&obj)
-		f.triggers[obj["metadata"].(map[string]any)["name"].(string)] = obj
+		md := obj["metadata"].(map[string]any)
+		md["creationTimestamp"] = time.Now().UTC().Format(time.RFC3339)
+		f.triggers[md["name"].(string)] = obj
 		jsonOut(w, 201, obj)
 	}))
 	f.mux.HandleFunc("GET "+base+"podsnapshotmanualtriggers", locked(func(w http.ResponseWriter, r *http.Request) {
@@ -98,6 +100,17 @@ func newFakeSnapshots(t *testing.T) *fakeSnapshots {
 			}
 		}
 		jsonOut(w, 200, map[string]any{"items": items})
+	}))
+	f.mux.HandleFunc("PATCH "+base+"podsnapshotmanualtriggers/{name}", locked(func(w http.ResponseWriter, r *http.Request) {
+		t, ok := f.triggers[r.PathValue("name")]
+		if !ok {
+			notFound(w, "podsnapshotmanualtriggers "+r.PathValue("name"))
+			return
+		}
+		var p map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&p)
+		mergePatch(t, p)
+		jsonOut(w, 200, t)
 	}))
 	f.mux.HandleFunc("GET "+base+"podsnapshotmanualtriggers/{name}", locked(func(w http.ResponseWriter, r *http.Request) {
 		t, ok := f.triggers[r.PathValue("name")]
@@ -699,6 +712,18 @@ func TestListCollectsOrphanedPauseCheckpoints(t *testing.T) {
 	f.mu.Lock()
 	delete(f.objects, "sandboxes/"+gone.Ref) // the TTL backstop
 	f.mu.Unlock()
+	// A young orphan may belong to a sandbox created during the List: kept.
+	if _, err := a.List(ctx, "inst_1"); err != nil {
+		t.Fatal(err)
+	}
+	if s, tr := f.count(); s != 2 || tr != 2 {
+		t.Fatalf("a young orphan was collected: %d snapshots, %d triggers", s, tr)
+	}
+	f.mu.Lock()
+	for _, tr := range f.triggers {
+		tr["metadata"].(map[string]any)["creationTimestamp"] = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	}
+	f.mu.Unlock()
 	if _, err := a.List(ctx, "inst_1"); err != nil {
 		t.Fatal(err)
 	}
@@ -707,5 +732,145 @@ func TestListCollectsOrphanedPauseCheckpoints(t *testing.T) {
 	}
 	if err := a.Resume(ctx, keep.Ref); err != nil {
 		t.Fatalf("the kept sandbox's checkpoint was collected: %v", err)
+	}
+}
+
+// A pause the caller gives up on (the reconciler recorded it) stands.
+func TestCancelledPauseIsNotUndone(t *testing.T) {
+	f := newFakeSnapshots(t)
+	a := f.adapter(t, snapCfg())
+	in, err := a.Create(context.Background(), adapter.CreateRequest{ID: "sbx_p", Installation: "inst_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.stuckSuspend = true
+	f.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	if err := a.Pause(ctx, in.Ref); err == nil {
+		t.Fatal("want the cancellation")
+	}
+	obj := f.object("sandboxes/" + in.Ref)
+	f.mu.Lock()
+	mode := obj["spec"].(map[string]any)["operatingMode"]
+	paused := obj["metadata"].(map[string]any)["annotations"].(map[string]any)[annoPaused]
+	f.mu.Unlock()
+	if mode != "Suspended" || paused == nil {
+		t.Fatalf("a cancelled pause was undone: mode %v, paused %v", mode, paused)
+	}
+	// Until the pod has gone it is pending, not yet paused.
+	if got, _ := a.Get(context.Background(), in.Ref); got.State != adapter.StatePending {
+		t.Fatalf("while suspending: %+v", got)
+	}
+	f.mu.Lock()
+	f.stuckSuspend = false
+	f.mu.Unlock()
+	if got, _ := a.Get(context.Background(), in.Ref); got.State != adapter.StatePaused {
+		t.Fatalf("once suspended: %+v", got)
+	}
+}
+
+// Only a pod that answers without the marker counts against the limit, and
+// a sandbox that reaches it keeps its pause checkpoint when deleted.
+func TestFailedResumesKeepTheCheckpoint(t *testing.T) {
+	f := newFakeSnapshots(t)
+	a := f.adapter(t, snapCfg())
+	ctx := context.Background()
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_p", Installation: "inst_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Pause(ctx, in.Ref); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.failMarker = true
+	f.mu.Unlock()
+	for range maxRestoreFailures + 1 {
+		if err := a.Resume(ctx, in.Ref); err == nil {
+			t.Fatal("a resume whose check failed succeeded")
+		}
+	}
+	if got, err := a.Get(ctx, in.Ref); err != nil || got.State != adapter.StatePaused {
+		t.Fatalf("exec errors counted as failed restores: %+v %v", got, err)
+	}
+	f.mu.Lock()
+	f.failMarker, f.noRestore = false, true
+	f.mu.Unlock()
+	for range maxRestoreFailures {
+		_ = a.Resume(ctx, in.Ref)
+	}
+	if got, _ := a.Get(ctx, in.Ref); got.State != adapter.StateError {
+		t.Fatalf("after %d failed restores: %+v", maxRestoreFailures, got)
+	}
+	if err := a.Delete(ctx, in.Ref); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.snaps) != 1 || len(f.triggers) != 1 {
+		t.Fatalf("the only copy of the sandbox's state was deleted: %d snapshots, %d triggers", len(f.snaps), len(f.triggers))
+	}
+	for _, tr := range f.triggers {
+		if tr["metadata"].(map[string]any)["labels"].(map[string]any)[labelPurpose] != "unrestored" {
+			t.Fatalf("kept checkpoint not relabelled: %v", tr["metadata"])
+		}
+	}
+}
+
+// A fork whose Create was interrupted after the Sandbox was made is finished
+// by List, or deleted if it was not restored; never listed in its source's
+// group, where the reconciler would adopt it.
+func TestListFinishesInterruptedForks(t *testing.T) {
+	for _, restores := range []bool{true, false} {
+		f := newFakeSnapshots(t)
+		a := f.adapter(t, snapCfg())
+		ctx := context.Background()
+		src, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_src", Installation: "inst_1", Resources: small})
+		if err != nil {
+			t.Fatal(err)
+		}
+		snap, err := a.Snapshot(ctx, src.Ref, "memory")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// What Create does before verifying and regrouping, then nothing.
+		req := adapter.CreateRequest{ID: "sbx_fork", Installation: "inst_1", Resources: small, FromSnapshot: snap.Ref}
+		m, _, err := a.forkManifest(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := a.k.do(ctx, http.MethodPost, a.sandboxes(), "", m, nil); err != nil {
+			t.Fatal(err)
+		}
+		f.mu.Lock()
+		f.noRestore = !restores
+		f.mu.Unlock()
+		for range 2 { // the controller starts the pod, which turns ready
+			if _, err := a.Get(ctx, "dly-sbx-fork"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		list, err := a.List(ctx, "inst_1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		listed := slices.ContainsFunc(list, func(in adapter.Instance) bool { return in.Ref == "dly-sbx-fork" })
+		if !restores {
+			if listed || f.object("sandboxes/dly-sbx-fork") != nil {
+				t.Fatalf("an unrestored fork was listed (%v) or kept", listed)
+			}
+			continue
+		}
+		if !listed {
+			t.Fatalf("a restored fork was not listed: %+v", list)
+		}
+		if labels, ann := f.tmplMeta("dly-sbx-fork"); labels[snapshotGroup] != "dly-sbx-fork" || ann[psName] != nil {
+			t.Fatalf("List did not move the fork to its own group: %v %v", labels, ann)
+		}
+		if f.object("sandboxes/dly-sbx-fork")["metadata"].(map[string]any)["annotations"].(map[string]any)[annoForking] != nil {
+			t.Fatal("the fork is still marked pending")
+		}
 	}
 }

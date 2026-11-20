@@ -62,10 +62,14 @@ const (
 	// maxRestoreFailures is how many resumes may find the pause checkpoint
 	// not restored before the sandbox is reported failed.
 	maxRestoreFailures = 3
+	// collectAfter is how old an orphaned pause checkpoint must be before
+	// List deletes it, so a sandbox created during a long List keeps its own.
+	collectAfter = 15 * time.Minute
 
 	annoToken    = "differently.dev/restore-token"    // on a Sandbox: the checkpoint its pod must come from
 	annoPaused   = "differently.dev/paused"           // on a Sandbox: the trigger of the pause it is in
 	annoFailures = "differently.dev/restore-failures" // on a Sandbox: resumes that were not restored
+	annoForking  = "differently.dev/fork-pending"     // on a Sandbox: a fork not yet verified and regrouped
 	annoTemplate = "differently.dev/sandbox-spec"     // on a trigger: the source Sandbox's spec, for forks
 	annoGroup    = "differently.dev/snapshot-group"   // on a trigger: the source's group at checkpoint
 	labelPurpose = "differently.dev/snapshot-purpose" // on a trigger: snapshot or pause
@@ -166,9 +170,10 @@ func (a *Adapter) checkPolicy(ctx context.Context) error {
 // trigger is a PodSnapshotManualTrigger: the fields the adapter reads.
 type trigger struct {
 	Metadata struct {
-		Name        string            `json:"name"`
-		Labels      map[string]string `json:"labels"`
-		Annotations map[string]string `json:"annotations"`
+		Name              string            `json:"name"`
+		CreationTimestamp time.Time         `json:"creationTimestamp"`
+		Labels            map[string]string `json:"labels"`
+		Annotations       map[string]string `json:"annotations"`
 	} `json:"metadata"`
 	Status struct {
 		Conditions []condition `json:"conditions"`
@@ -458,7 +463,7 @@ func (a *Adapter) forkManifest(ctx context.Context, req adapter.CreateRequest) (
 	}
 	return map[string]any{
 		"apiVersion": group + "/" + version, "kind": "Sandbox",
-		"metadata": map[string]any{"name": name(req.ID), "labels": labels, "annotations": map[string]string{annoToken: token}},
+		"metadata": map[string]any{"name": name(req.ID), "labels": labels, "annotations": map[string]string{annoToken: token, annoForking: "true"}},
 		"spec":     sbSpec,
 	}, token, nil
 }
@@ -480,14 +485,14 @@ func (a *Adapter) verifyRestore(ctx context.Context, ref, token string) error {
 // the new group, so none of the fork's checkpoints land in its source's
 // group. The controller patches the pod's labels; it does not recreate it.
 func (a *Adapter) adopt(ctx context.Context, ref string) error {
-	patch := map[string]any{"podTemplate": map[string]any{"metadata": map[string]any{
+	err := a.patchSandbox(ctx, ref, map[string]any{"spec": map[string]any{"podTemplate": map[string]any{"metadata": map[string]any{
 		"labels":      map[string]string{snapshotGroup: ref},
 		"annotations": map[string]any{psName: nil},
-	}}}
-	if err := a.patch(ctx, a.sandboxes(), ref, patch); err != nil {
+	}}}})
+	if err != nil {
 		return err
 	}
-	err := httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
+	err = httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
 		var p struct {
 			Metadata struct {
 				Labels map[string]string `json:"labels"`
@@ -496,7 +501,31 @@ func (a *Adapter) adopt(ctx context.Context, ref string) error {
 		err := a.k.do(ctx, http.MethodGet, "/api/v1/namespaces/"+url.PathEscape(a.opts.Namespace)+"/pods/"+url.PathEscape(ref), "", nil, &p)
 		return err == nil && p.Metadata.Labels[snapshotGroup] == ref, err
 	})
-	return timedOut(err, fmt.Sprintf("the pod of %s did not take its own snapshot group within %s", ref, a.opts.ReadyTimeout))
+	if err != nil {
+		return timedOut(err, fmt.Sprintf("the pod of %s did not take its own snapshot group within %s", ref, a.opts.ReadyTimeout))
+	}
+	return a.patchSandbox(ctx, ref, map[string]any{"metadata": map[string]any{"annotations": map[string]any{annoForking: nil}}})
+}
+
+// finishFork completes a fork whose Create was interrupted (the control
+// plane restarted between creating it and moving it to its own group), so
+// the reconciler, which adopts what List returns, never adopts a fork still
+// in its source's group. It reports whether the fork may be listed. A fork
+// that was not restored is deleted: the scheduler then creates it again.
+func (a *Adapter) finishFork(ctx context.Context, s object) bool {
+	ref := s.Metadata.Name
+	if !s.is("Ready") {
+		return false
+	}
+	ok, err := a.restored(ctx, ref, s.Metadata.Annotations[annoToken])
+	switch {
+	case err != nil:
+		return false // try again on the next List
+	case !ok:
+		_ = a.Delete(ctx, ref)
+		return false
+	}
+	return a.adopt(ctx, ref) == nil
 }
 
 func (a *Adapter) patchSandbox(ctx context.Context, ref string, patch map[string]any) error {
@@ -547,13 +576,21 @@ func (a *Adapter) Pause(ctx context.Context, ref string) error {
 		return err == nil && s.is("Suspended"), err
 	})
 	if err != nil {
-		// The scheduler keeps the sandbox running when a pause fails, so
-		// running it must be. A pod recreated meanwhile restores this
-		// checkpoint, the newest state there is.
-		_ = a.patchSandbox(context.WithoutCancel(ctx), ref, map[string]any{
+		if ctx.Err() != nil {
+			// The caller gave up, typically because the reconciler saw the
+			// pause and recorded it: the pause stands.
+			return err
+		}
+		// The suspend did not finish. The scheduler keeps the sandbox running
+		// when a pause fails, so running it must be. A pod recreated meanwhile
+		// restores this checkpoint, the newest state there is.
+		rerr := a.patchSandbox(context.WithoutCancel(ctx), ref, map[string]any{
 			"metadata": map[string]any{"annotations": map[string]any{annoPaused: nil}},
 			"spec":     map[string]any{"operatingMode": "Running"},
 		})
+		if rerr != nil {
+			return fmt.Errorf("agent-sandbox: %s was not suspended within %s, and setting it running again failed: %w", ref, a.opts.ReadyTimeout, rerr)
+		}
 		return timedOut(err, fmt.Sprintf("%s was not suspended within %s; it was set running again", ref, a.opts.ReadyTimeout))
 	}
 	a.dropCheckpoints(ctx, map[string]string{labelPurpose: "pause", labelSource: ref}, func(t trigger) bool { return t.Metadata.Name != trig })
@@ -564,7 +601,8 @@ func (a *Adapter) Pause(ctx context.Context, ref string) error {
 // checks that it did. If it did not, the sandbox is suspended again, so it
 // never runs on without its state, and a later resume tries again (GKE may
 // place it on a node it can restore onto). After maxRestoreFailures such
-// resumes the sandbox reports an error, which fails it.
+// resumes the sandbox reports an error, which fails it; its pause checkpoint
+// is then kept, relabelled unrestored, for recovery by hand.
 func (a *Adapter) Resume(ctx context.Context, ref string) error {
 	if err := a.needSnapshots(adapter.FeaturePauseResume); err != nil {
 		return err
@@ -591,11 +629,16 @@ func (a *Adapter) Resume(ctx context.Context, ref string) error {
 	if _, err := a.waitReady(ctx, ref); err != nil {
 		return err
 	}
-	if err := a.verifyRestore(ctx, ref, token); err != nil {
-		_ = a.patchSandbox(context.WithoutCancel(ctx), ref, map[string]any{
-			"metadata": map[string]any{"annotations": map[string]string{annoFailures: strconv.Itoa(s.failures() + 1)}},
-			"spec":     map[string]any{"operatingMode": "Suspended"},
-		})
+	ok, err := a.restored(ctx, ref, token)
+	if err != nil || !ok {
+		// Suspend it again either way: it must not run on unverified. Only a
+		// pod that answered, without the marker, counts as not restored.
+		patch := map[string]any{"spec": map[string]any{"operatingMode": "Suspended"}}
+		if err == nil {
+			patch["metadata"] = map[string]any{"annotations": map[string]string{annoFailures: strconv.Itoa(s.failures() + 1)}}
+			err = adapter.SandboxFailed(fmt.Errorf("agent-sandbox: %s started without its pause checkpoint (GKE restores only onto the same machine series, from a ready snapshot); it was suspended again", ref))
+		}
+		_ = a.patchSandbox(context.WithoutCancel(ctx), ref, patch)
 		return err
 	}
 	// The checkpoint stays until the next pause or the delete: GKE may still
@@ -635,8 +678,34 @@ func (a *Adapter) dropCheckpoints(ctx context.Context, labels map[string]string,
 // a delete whose clean-up failed. live holds the installation's Sandboxes.
 func (a *Adapter) collectPauses(ctx context.Context, installation string, live map[string]bool) {
 	a.dropCheckpoints(ctx, map[string]string{labelPurpose: "pause", adapter.LabelInstallation: installation}, func(t trigger) bool {
-		return !live[t.Metadata.Labels[labelSource]]
+		return !live[t.Metadata.Labels[labelSource]] && time.Since(t.createdAt()) > collectAfter
 	})
+}
+
+// createdAt is the trigger's creation time, or now when the API server did
+// not say (so it is not collected).
+func (t trigger) createdAt() time.Time {
+	if t.Metadata.CreationTimestamp.IsZero() {
+		return time.Now()
+	}
+	return t.Metadata.CreationTimestamp
+}
+
+// keepUnrestored relabels ref's pause checkpoints so that nothing deletes
+// them: the sandbox is being deleted after GKE never restored it, and the
+// checkpoint is the only copy of its state.
+func (a *Adapter) keepUnrestored(ctx context.Context, ref string) {
+	var list struct {
+		Items []trigger `json:"items"`
+	}
+	q := url.Values{"labelSelector": {labelPurpose + "=pause," + labelSource + "=" + ref}}
+	if err := a.k.do(ctx, http.MethodGet, a.triggers()+"?"+q.Encode(), "", nil, &list); err != nil {
+		return
+	}
+	for _, t := range list.Items {
+		_ = a.k.do(ctx, http.MethodPatch, a.triggers()+"/"+url.PathEscape(t.Metadata.Name), "application/merge-patch+json",
+			map[string]any{"metadata": map[string]any{"labels": map[string]string{labelPurpose: "unrestored"}}}, nil)
+	}
 }
 
 var (

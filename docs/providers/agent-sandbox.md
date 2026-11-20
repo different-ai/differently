@@ -168,7 +168,7 @@ On GKE, sandboxes that run under gVisor can be checkpointed with
 |---|---|
 | Snapshot | Creates a `PodSnapshotManualTrigger` for the sandbox's pod and waits for the `PodSnapshot` to be `Ready`. GKE captures the whole pod: memory, processes and the root filesystem. Volumes are not captured. The sandbox keeps running. The snapshot is reported as `memory`, whatever kind was asked for |
 | Fork | Creates a Sandbox with the source's pod spec, in the source's snapshot group, with `podsnapshot.gke.io/ps-name` naming the snapshot, so GKE restores it. Once the restore is verified, the fork moves to a snapshot group of its own and stops naming the snapshot (the controller patches the running pod's labels; it does not recreate it). GKE restores only a pod whose spec matches the snapshot's, so the request's image and env do not apply, and its size must be the source's: a fork asked for at another size is refused with `invalid_request`, so capacity and quotas count what it uses |
-| Pause | Checkpoints the sandbox, then suspends it (`operatingMode: Suspended`), which deletes the pod. A paused sandbox uses no node resources and holds no slot in the pool. Only the newest pause checkpoint of each sandbox is kept |
+| Pause | Checkpoints the sandbox, then suspends it (`operatingMode: Suspended`), which deletes the pod. The sandbox reports `paused` once the pod is gone. A paused sandbox uses no node resources and holds no slot in the pool. Only the newest pause checkpoint of each sandbox is kept. If the suspend does not finish in time, the sandbox is set running again |
 | Resume | Sets `operatingMode: Running`. The controller recreates the pod, and GKE restores it from the pause checkpoint. The pod template then stops naming the checkpoint |
 | Delete snapshot | Deletes the `PodSnapshot` (GKE removes its files) and its trigger. Deleting a sandbox deletes its pause checkpoints, but not its snapshots, which can still be forked. The pause checkpoints of a Sandbox deleted some other way (the TTL backstop) are deleted by the reconciler's next list |
 
@@ -194,7 +194,15 @@ Three properties of GKE's design shape this:
   again, so it never runs on without its state, and fails with
   `sandbox_failed`. The scheduler tries the resume again later, which
   succeeds once the pod lands on a node GKE can restore onto. After three
-  such resumes the sandbox reports an error, and Differently fails it.
+  such resumes (a check that could not run does not count) the sandbox
+  reports an error, and Differently fails it. Its pause checkpoint, the only
+  copy of its state, is then kept with the label
+  `differently.dev/snapshot-purpose=unrestored`. Restore it by hand, or
+  delete it: `kubectl -n <namespace> delete podsnapshots <name>` and the
+  trigger `kubectl -n <namespace> delete podsnapshotmanualtriggers -l differently.dev/snapshot-purpose=unrestored`.
+  A fork whose create was interrupted (the control plane restarted) is
+  checked and moved to its own group by the next list, or deleted and
+  created again if GKE did not restore it.
 - **Restores come from the pod template.** A stop/start would restore the
   newest checkpoint over a newer volume, so a pool with `podSnapshotPolicy`
   does not offer stop/start, even with `volumeSize`. Pause/resume takes its
@@ -258,7 +266,7 @@ Add these rules to the Role:
   verbs: [get]
 - apiGroups: [podsnapshot.gke.io]
   resources: [podsnapshotmanualtriggers]
-  verbs: [get, list, create, delete]
+  verbs: [get, list, create, patch, delete]
 - apiGroups: [podsnapshot.gke.io]
   resources: [podsnapshots]
   verbs: [get, delete]
@@ -365,7 +373,9 @@ from the SandboxTemplate, without the per-sandbox label.
   documents it: the named snapshot, or else the newest in the pod's group.
   An independent review of the first version found the fork-group, rollback,
   failed-pause, endless-retry, marker-race, leak and fork-size issues these
-  tests now cover. `TestLivePodSnapshots` (live tag, with
+  tests now cover; a second review of the fixes found three more (a
+  cancelled pause undone, a transient exec error counted as a failed
+  restore, an interrupted fork left in its source's group), also covered. `TestLivePodSnapshots` (live tag, with
   `AGENTSANDBOX_SNAPSHOT_POLICY`) checks a running process and a file through
   a fork and a pause/resume, that a new sandbox does not start from a
   snapshot, and logs each step's time. **It has not been run: nothing here
