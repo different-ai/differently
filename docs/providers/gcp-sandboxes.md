@@ -122,7 +122,9 @@ allows only port 443 to providers by default.
   gets.
 - Long-running operations (create, pause, resume, snapshot) are polled every
   second, for up to 3 minutes. Delete returns once Google accepts it; the
-  sandbox then lists as deprovisioning, which counts as gone.
+  sandbox then lists as deprovisioning, which counts as gone. A second
+  delete succeeds whether Google answers `NOT_FOUND` or refuses it with
+  `FAILED_PRECONDITION` while the first is under way.
 - **Errors**: `RESOURCE_EXHAUSTED` (429) is `insufficient_capacity`;
   `FAILED_PRECONDITION` is `invalid_state`; `INVALID_ARGUMENT` is
   `invalid_request`; 401, 403 and `UNAVAILABLE` are `provider_unavailable`. A
@@ -153,6 +155,25 @@ decoding the three input chunks and running the command with a local
 - egress control advertised from the template, a request for a template
   with internet access refused on such a pool, and an unreadable template;
 - a pool that takes its token from a fake metadata server.
+
+`live_test.go` (build tags `live,experimental_adapters`) runs the same
+scenario against a real engine: create and a replayed create, exec with env,
+cwd, stdin and an exit code, a 128 KiB file through several pieces, list,
+stop and start with the file kept, snapshot, a fork with the file, and the
+deletes. It also reports what Google does not document: whether a process
+survives `:pause` and `:resume`, and whether one survives a snapshot into a
+fork. The answers decide whether the pool could advertise
+`lifecycle.pause-resume`. **It has not been run.**
+
+```sh
+GCP_SANDBOXES_PROJECT=my-project GCP_SANDBOXES_LOCATION=us-central1 \
+GCP_SANDBOXES_ENGINE=1234567890 GCP_SANDBOXES_TEMPLATE=9876543210 \
+GCP_SANDBOXES_CREDENTIAL_FILE=./service-account.json \
+go test -tags live,experimental_adapters -v -run TestLiveGCPSandboxes ./internal/adapters/gcpsandboxes/
+```
+
+On Compute Engine or GKE, leave `GCP_SANDBOXES_CREDENTIAL_FILE` unset to use
+the metadata server.
 
 The JWT signing is checked with an RSA key in `internal/adapters/cloudhttp`,
 which also tests the metadata server route and workload identity federation

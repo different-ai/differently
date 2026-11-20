@@ -8,6 +8,13 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- `gcp-sandboxes` adapter (experimental): a live test against a real Agent
+  Platform engine (`TestLiveGCPSandboxes`, build tags
+  `live,experimental_adapters`). It covers what Differently relies on, and
+  reports whether processes survive `:pause` and a snapshot, which Google
+  does not document. It has not been run.
+
+
 - `docs/deploy/gcp-vms.md`: the verified Azure VMs layout (k3s, OpenSandbox
   with Fast Sandbox on nested KVM, managed Postgres, a snapshot registry and a
   secret store) translated to two Compute Engine VMs with Cloud SQL, Artifact
@@ -19,6 +26,12 @@ All notable changes are recorded here. The format follows
   sandboxes the other created on shared providers), draining private pools
   first or cutting over in one window, the window's steps, and rollback.
   Documented, not run.
+
+### Fixed
+
+- `gcp-sandboxes` adapter (experimental): deleting a sandbox that is already
+  being deleted succeeds, whether Google answers `NOT_FOUND` or
+  `FAILED_PRECONDITION`.
 
 ## [0.1.0-alpha.7] — 2026-11-19
 
