@@ -29,7 +29,7 @@ Chart versions: in a checkout, `Chart.yaml` says `version: 0.3.0`, and its
 `appVersion` names the release whose images it installs. Each
 [release](https://github.com/different-ai/differently/releases) publishes
 the same chart packaged under the release's own version,
-`differently-<version>.tgz` (for example `differently-0.1.0-alpha.6.tgz`).
+`differently-<version>.tgz` (for example `differently-0.1.0-alpha.7.tgz`).
 To install exactly what was released, check out the release tag, or download
 that file and pass it to `helm install` in place of `deploy/helm/differently`
 ([single-vm.md](single-vm.md#3-install-differently) does this).
