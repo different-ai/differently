@@ -7,7 +7,7 @@
 
 | | |
 |---|---|
-| Status | **Verified live** (2026-10-28): the adapter's live test and a Differently server, against agent-sandbox v1.0.8 on a single-node kind cluster (Kubernetes 1.37, runc, arm64) |
+| Status | **Verified live** (2026-10-28): the adapter's live test and a Differently server, against agent-sandbox v1.0.8 on a single-node kind cluster (Kubernetes 1.37, runc, arm64). Snapshots, fork and pause/resume through GKE Pod Snapshots: **tested with a fake server, not run on GKE** |
 | Adapter | `agent-sandbox` (`internal/adapters/agentsandbox`) |
 | Trust | declared (self-hostable) |
 | Isolation | The pod's RuntimeClass: runc containers by default, gVisor (`runsc`) or Kata microVMs when the cluster has them and the pool sets `runtimeClassName`. Only runc was run |
@@ -35,10 +35,10 @@ works.
 | files | yes: `cat`, `mkdir -p` and `stat -c` over exec; reads capped at 100 MiB | yes |
 | stdin | yes; needs Kubernetes 1.30 or later (the v5 exec protocol closes stdin) | yes |
 | lifecycle.stop-start | with `volumeSize`: `spec.operatingMode: Suspended` deletes the pod and keeps its volume; only files under `volumePath` survive | no |
-| lifecycle.pause-resume | no (Kubernetes has no memory-keeping pause) | no |
-| snapshots.disk | no | no |
-| snapshots.memory | no | no |
-| fork | no | no |
+| lifecycle.pause-resume | on GKE with `podSnapshotPolicy`: a pod snapshot, then the pod is deleted; resume restores it ([GKE](#snapshots-fork-and-pauseresume-on-gke)). Elsewhere no: Kubernetes has no memory-keeping pause | no |
+| snapshots.disk | on GKE with `podSnapshotPolicy` (the snapshot holds memory too) | no |
+| snapshots.memory | on GKE with `podSnapshotPolicy`: GKE Pod Snapshots of gVisor pods | no |
+| fork | on GKE with `podSnapshotPolicy`: a new Sandbox restored from a snapshot | no |
 | ports.expose | opt-in (`features`): the headless Service's DNS name, `http://<sandbox>.<namespace>.svc.cluster.local:<port>`, reachable inside the cluster only | opt-in: the adopted pod's IP |
 | max size | none from the adapter; the cluster's nodes and ResourceQuotas | the SandboxTemplate's |
 | provider TTL backstop | yes: `spec.shutdownTime` with `shutdownPolicy: Delete`, moved when the TTL changes | yes: the claim's `lifecycle.shutdownTime` |
@@ -156,6 +156,140 @@ template and rejects `image`, `runtimeClassName`, `volumeSize`,
 | `warmPool`, `container` | none | claim from a SandboxWarmPool instead of creating Sandboxes |
 | `features` | as above | comma list replacing the defaults |
 
+## Snapshots, fork and pause/resume on GKE
+
+On GKE, sandboxes that run under gVisor can be checkpointed with
+[GKE Pod Snapshots](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/agent-sandbox-pod-snapshots)
+(`podsnapshot.gke.io/v1`). With `podSnapshotPolicy` set, the pool adds
+`snapshots.memory`, `snapshots.disk`, `fork`, `lifecycle.pause-resume` and
+`lifecycle.pause-checkpoint`:
+
+| Operation | What the adapter does |
+|---|---|
+| Snapshot | Creates a `PodSnapshotManualTrigger` for the sandbox's pod and waits for the `PodSnapshot` to be `Ready`. GKE captures the whole pod: memory, processes and the root filesystem. Volumes are not captured. The sandbox keeps running. The snapshot is reported as `memory`, whatever kind was asked for |
+| Fork | Creates a Sandbox with the source's pod spec, in the source's snapshot group, with `podsnapshot.gke.io/ps-name` naming the snapshot, so GKE restores it. Once the restore is verified, the fork moves to a snapshot group of its own and stops naming the snapshot (the controller patches the running pod's labels; it does not recreate it). GKE restores only a pod whose spec matches the snapshot's, so the request's image and env do not apply, and its size must be the source's: a fork asked for at another size is refused with `invalid_request`, so capacity and quotas count what it uses |
+| Pause | Checkpoints the sandbox, then suspends it (`operatingMode: Suspended`), which deletes the pod. The sandbox reports `paused` once the pod is gone. A paused sandbox uses no node resources and holds no slot in the pool. Only the newest pause checkpoint of each sandbox is kept. If the suspend does not finish in time, the sandbox is set running again |
+| Resume | Sets `operatingMode: Running`. The controller recreates the pod, and GKE restores it from the pause checkpoint. The pod template then stops naming the checkpoint |
+| Delete snapshot | Deletes the `PodSnapshot` (GKE removes its files) and its trigger. Deleting a sandbox deletes its pause checkpoints, but not its snapshots, which can still be forked. The pause checkpoints of a Sandbox deleted some other way (the TTL backstop) are deleted by the reconciler's next list |
+
+Three properties of GKE's design shape this:
+
+- **GKE restores every new pod that matches.** A pod is restored from the
+  snapshot it names, or else from the newest snapshot in its group whose
+  pod spec matches. Without groups, two tenants' sandboxes with the same
+  image and size match, so a new sandbox could start from another one's
+  memory. The adapter gives every sandbox's pod the label
+  `differently.dev/snapshot-group` with a value of its own. A fork is in its
+  source's group only until its restore is verified. The pool is
+  **unhealthy** unless the policy selects on that label and groups by it.
+  A pod GKE recreates on its own (a node drain, an eviction) therefore comes
+  back from that sandbox's own newest checkpoint, never from another
+  sandbox's, and a sandbox with no checkpoint comes back fresh.
+- **A failed restore is silent.** GKE starts the pod fresh when it cannot
+  restore it: another machine series or CPU vendor, a different pod spec, or
+  a snapshot that is not ready. Before each checkpoint the adapter creates a
+  marker file named after it (`/tmp/.differently-snapshot-<token>`), and
+  looks for it after a restore. A fork without it fails with
+  `sandbox_failed` and is deleted. A resume without it suspends the sandbox
+  again, so it never runs on without its state, and fails with
+  `sandbox_failed`. The scheduler tries the resume again later, which
+  succeeds once the pod lands on a node GKE can restore onto. After three
+  such resumes (a check that could not run does not count) the sandbox
+  reports an error, and Differently fails it. Its pause checkpoint, the only
+  copy of its state, is then kept with the label
+  `differently.dev/snapshot-purpose=unrestored`. Restore it by hand, or
+  delete it: `kubectl -n <namespace> delete podsnapshots <name>` and the
+  trigger `kubectl -n <namespace> delete podsnapshotmanualtriggers -l differently.dev/snapshot-purpose=unrestored`.
+  A fork whose create was interrupted (the control plane restarted) is
+  checked and moved to its own group by the next list, or deleted and
+  created again if GKE did not restore it.
+- **Restores come from the pod template.** A stop/start would restore the
+  newest checkpoint over a newer volume, so a pool with `podSnapshotPolicy`
+  does not offer stop/start, even with `volumeSize`. Pause/resume takes its
+  place.
+
+### Set it up
+
+Requirements from Google: GKE 1.35.3-gke.1234000 or later, Standard or
+Autopilot, a gVisor node pool (not E2), and a Cloud Storage bucket. The
+commands below follow Google's guide. They were checked against its text,
+not run.
+
+```sh
+gcloud container clusters create <cluster> --location=<region> --release-channel=rapid \
+  --enable-pod-snapshots --workload-pool=<project>.svc.id.goog --workload-metadata=GKE_METADATA
+gcloud container node-pools create gvisor --cluster=<cluster> --location=<region> \
+  --machine-type=n2-standard-4 --sandbox type=gvisor
+gcloud storage buckets create gs://<bucket> --location=<region> \
+  --uniform-bucket-level-access --enable-hierarchical-namespace --soft-delete-duration=0d
+```
+
+Grant the bucket roles in Google's guide to the namespace's pods and to
+GKE's snapshot controller, or set `tokenSource: federatedP4SA` on the
+storage config. Then install agent-sandbox (or enable GKE's managed add-on)
+and create the storage config and the policy:
+
+```yaml
+apiVersion: podsnapshot.gke.io/v1
+kind: PodSnapshotStorageConfig
+metadata: {name: differently}            # cluster-scoped
+spec:
+  snapshotStorageConfig:
+    gcs: {bucket: <bucket>, path: differently}
+---
+apiVersion: podsnapshot.gke.io/v1
+kind: PodSnapshotPolicy
+metadata: {name: differently, namespace: sandboxes}
+spec:
+  storageConfigName: differently
+  selector:
+    matchExpressions:
+      - {key: differently.dev/snapshot-group, operator: Exists}   # required
+  triggerConfig: {type: manual, postCheckpoint: resume}           # required
+  snapshotGroupingRules:                                          # required
+    groupByLabelValue:
+      labels: [differently.dev/snapshot-group]
+```
+
+The pool refuses a policy whose trigger is not `manual`, whose
+`postCheckpoint` is `stop`, whose `snapshotScope` is `rootfs-only` (it keeps
+no memory), or that sets `maxSnapshotCountPerGroup` (GKE would delete
+snapshots Differently still lists). `retentionConfig.lastAccessTimeout` is
+allowed. A snapshot it expires can no longer be forked: the fork fails with
+`not_found`.
+
+Add these rules to the Role:
+
+```yaml
+- apiGroups: [podsnapshot.gke.io]
+  resources: [podsnapshotpolicies]
+  verbs: [get]
+- apiGroups: [podsnapshot.gke.io]
+  resources: [podsnapshotmanualtriggers]
+  verbs: [get, list, create, patch, delete]
+- apiGroups: [podsnapshot.gke.io]
+  resources: [podsnapshots]
+  verbs: [get, delete]
+```
+
+and configure the pool:
+
+```yaml
+  - name: gke
+    adapter: agent-sandbox
+    trust: private
+    config:
+      namespace: sandboxes
+      image: python:3.13
+      runtimeClassName: gvisor           # required with podSnapshotPolicy
+      podSnapshotPolicy: differently
+      # snapshotTimeout: 10m             # how long a checkpoint may take
+      # serviceAccountName: sandbox      # the pods' service account for the bucket roles
+```
+
+`podSnapshotPolicy` does not combine with `warmPool`: warm pods are started
+from the SandboxTemplate, without the per-sandbox label.
+
 ## Limits and differences
 
 - The adapter replaces the image's entrypoint with a shell loop that keeps
@@ -223,7 +357,30 @@ template and rejects `image`, `runtimeClassName`, `volumeSize`,
   kept) and delete all worked. Stop on the warm pool answered `501
   unsupported_operation`. A reconcile pass found nothing to clean up, and no
   Sandbox, PVC or Service was left behind.
-- **Not run:** gVisor or Kata RuntimeClasses, a multi-node cluster,
+- **GKE Pod Snapshots** (`podsnapshot_test.go`, every `go test`): the fake
+  API also plays GKE's snapshot controller: triggers that become ready
+  PodSnapshots holding the pod's marker, group and pod spec, and restores
+  that happen only when GKE's would (same group, same pod spec, a ready
+  snapshot). The tests check the policy checks, snapshot, fork (the source's
+  spec and group, the snapshot named, a deleted snapshot), both shapes of
+  `status.snapshotCreated`, a failed checkpoint, two checkpoints at once,
+  pause and resume twice with only the newest checkpoint kept, a pause whose
+  suspend does not finish (undone, the sandbox running), a fork or resume
+  that GKE did not restore, the limit on failed resumes, a source whose pod
+  GKE recreates after its fork took a newer snapshot (it comes back from its
+  own), a fork at another size, no stop/start, and the clean-up on delete and
+  of a Sandbox deleted behind Differently's back. The fake restores as GKE
+  documents it: the named snapshot, or else the newest in the pod's group.
+  An independent review of the first version found the fork-group, rollback,
+  failed-pause, endless-retry, marker-race, leak and fork-size issues these
+  tests now cover; a second review of the fixes found three more (a
+  cancelled pause undone, a transient exec error counted as a failed
+  restore, an interrupted fork left in its source's group), also covered. `TestLivePodSnapshots` (live tag, with
+  `AGENTSANDBOX_SNAPSHOT_POLICY`) checks a running process and a file through
+  a fork and a pause/resume, that a new sandbox does not start from a
+  snapshot, and logs each step's time. **It has not been run: nothing here
+  has run on GKE.**
+- **Not run:** GKE, Pod Snapshots, gVisor or Kata RuntimeClasses, a multi-node cluster,
   Kubernetes before 1.30, the in-cluster service account path (the live runs
   used a token and CA file), `ports.expose` fetched from outside the pod,
   and the Helm chart with these pools.

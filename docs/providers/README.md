@@ -66,7 +66,7 @@ add an experimental pool in the config file, with
 
 | Provider | Status | Trust |
 |---|---|---|
-| [agent-sandbox](agent-sandbox.md) `agent-sandbox` | **Verified live**: kind cluster, runc, 2026-10-28 | declared |
+| [agent-sandbox](agent-sandbox.md) `agent-sandbox` | **Verified live**: kind cluster, runc, 2026-10-28. On [GKE](gke-agent-sandbox.md) with Pod Snapshots: tested with a fake server | declared |
 | [Groundbox](groundbox.md) `groundbox` | **Verified live**: Groundbox's own image and a Docker image, 2026-11-18, run by a Groundbox maintainer | external |
 | [E2B](e2b.md) `e2b` | Tested with a fake server | declared |
 | [Boat](boat.md) `boat` | Tested with a fake server | external |
@@ -97,7 +97,7 @@ start from one. "Build" is `default` for the adapters in every server and
 | Provider | Build | Isolation | Keeps state | Snapshots | Port URLs |
 |---|---|---|---|---|---|
 | OpenSandbox | default | container or microVM | stop/start or pause, by runtime | disk + fork | signed |
-| agent-sandbox | tag | RuntimeClass | stop/start (volume) | — | in-cluster |
+| agent-sandbox | tag | RuntimeClass | stop/start (volume); pause on GKE (gVisor) | memory + fork on GKE (gVisor) | in-cluster |
 | Daytona | default | container or VM | stop/start; pause on VMs | disk + fork (memory on VMs) | signed |
 | Freestyle | default | microVM | stop/start, pause | memory + fork | public |
 | E2B | tag | microVM | pause | memory + fork | public, opt-in |
@@ -136,7 +136,6 @@ would wrap.
 | [Koyeb](koyeb.md) | Sandboxes (public preview) are driven through Koyeb's SDK |
 | [Sprites](sprites.md) (Fly.io) | Exec is specified only over WebSocket; a built-in adapter is possible later |
 | [Amazon Bedrock AgentCore Runtime](aws-agentcore-runtime.md) | Command execution needs a plugin or a future adapter |
-| [GKE Agent Sandbox](gke-agent-sandbox.md) | A GKE add-on with no Google HTTP API of its own |
 
 ### Not supported
 

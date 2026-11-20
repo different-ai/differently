@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | **Documented** (configuration described, no adapter; drive it through a `remote` plugin or OpenSandbox's Kubernetes runtime) |
-| Adapter | none |
+| Status | **Tested with a fake server**: the experimental `agent-sandbox` adapter drives it, with snapshots, fork and pause/resume through GKE Pod Snapshots. Not run on GKE |
+| Adapter | `agent-sandbox` (`internal/adapters/agentsandbox`), build tag `experimental_adapters` |
 | Trust | declared (self-hostable): the sandboxes run in your own GKE cluster |
 | Isolation | gVisor through a `RuntimeClass` (Kata is possible upstream but "not a Google Cloud product") |
 | API checked | [Agent Sandbox on GKE](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/agent-sandbox), [install](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/how-install-agent-sandbox), [Pod snapshots](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/agent-sandbox-pod-snapshots) and [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) v1.0.8, read 2026-10-28 |
@@ -31,26 +31,21 @@ HTTP server inside the sandbox image, not through the controller.
 
 ## Configure
 
-Nothing in Differently drives the `Sandbox` objects directly. Two routes:
+GKE's add-on installs the same controller as
+[kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox),
+so the [`agent-sandbox` adapter](agent-sandbox.md) drives it: Sandboxes and
+SandboxClaims through the Kubernetes API, commands through `pods/exec`. Set
+`runtimeClassName: gvisor` and `podSnapshotPolicy` on the pool for memory
+snapshots, fork and a pause that frees the pod
+([set it up](agent-sandbox.md#snapshots-fork-and-pauseresume-on-gke)).
 
-- **OpenSandbox's Kubernetes runtime on GKE**, with a gVisor `RuntimeClass`,
-  behind the built-in `opensandbox` adapter
-  ([OpenSandbox pools](../guides/opensandbox-pools.md)). This is the
-  supported path for private Kubernetes capacity today.
-- **A `remote` plugin** that creates `Sandbox` or `SandboxClaim` objects
-  (`agents.x-k8s.io/v1beta1` and `extensions.agents.x-k8s.io/v1beta1`) with
-  the Differently sandbox ID as the name, so a replayed create gets a 409.
-  It would keep ownership in labels and run commands through the
-  sandbox router.
+Which agent-sandbox version GKE's add-on runs, and whether its API matches
+v1.0.8's `v1beta1` that the adapter was written against, is **unverified**.
+The adapter does not use the sandbox router or `sandboxd`.
 
-```yaml
-pools:
-  - name: gke-agent-sandbox
-    adapter: remote
-    trust: private                 # your own cluster
-    config: {endpoint: https://agent-sandbox-plugin.internal:8443}
-    credentials: {secret: agent-sandbox-plugin-token}
-```
+OpenSandbox's Kubernetes runtime on GKE, behind the built-in `opensandbox`
+adapter, remains the supported path for private Kubernetes capacity in the
+default build ([OpenSandbox pools](../guides/opensandbox-pools.md)).
 
 ## Limits and differences
 
@@ -65,5 +60,6 @@ pools:
 
 ## How it was tested
 
-Not tested. This page is from Google's documentation and the upstream
-repository only.
+The adapter's GKE Pod Snapshots support is tested against a fake API server
+that plays GKE's snapshot controller
+([how](agent-sandbox.md#how-it-was-tested)). Nothing has run on GKE.
