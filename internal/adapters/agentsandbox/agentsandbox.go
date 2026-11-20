@@ -69,6 +69,9 @@ var DefaultFeatures = []string{adapter.FeatureExec, adapter.FeatureExecStream, a
 // (comma list), volumeSize, volumePath (default /workspace) and
 // storageClassName, serviceAccountName; or warmPool (a SandboxWarmPool to
 // claim from) with container (its pod's container, if it has several).
+// podSnapshotPolicy names a GKE PodSnapshotPolicy in the namespace and turns
+// on snapshots, fork and pause/resume (podsnapshot.go); snapshotTimeout bounds
+// a checkpoint (default 10m).
 type Options struct {
 	APIServer          string
 	CAFile             string
@@ -86,7 +89,9 @@ type Options struct {
 	ServiceAccountName string
 	WarmPool           string
 	Container          string
+	PodSnapshotPolicy  string
 	ReadyTimeout       time.Duration
+	SnapshotTimeout    time.Duration
 }
 
 var quantity = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|k|M|G|T)?$`)
@@ -100,7 +105,15 @@ func FromConfig(cfg map[string]string, trust, token string) (Options, error) {
 		Namespace: cfg["namespace"], Image: cfg["image"], RuntimeClassName: cfg["runtimeClassName"], Isolation: cfg["isolation"],
 		VolumeSize: cfg["volumeSize"], VolumePath: cfg["volumePath"], StorageClassName: cfg["storageClassName"],
 		ServiceAccountName: cfg["serviceAccountName"], WarmPool: cfg["warmPool"], Container: cfg["container"],
-		Features: slices.Clone(DefaultFeatures),
+		PodSnapshotPolicy: cfg["podSnapshotPolicy"],
+		Features:          slices.Clone(DefaultFeatures),
+	}
+	if v := cfg["snapshotTimeout"]; v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return o, fmt.Errorf("agent-sandbox config.snapshotTimeout must be a duration such as 10m, not %q", v)
+		}
+		o.SnapshotTimeout = d
 	}
 	if o.APIServer == "" {
 		host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")
@@ -146,6 +159,17 @@ func FromConfig(cfg map[string]string, trust, token string) (Options, error) {
 		}
 		o.Features = append(o.Features, adapter.FeatureStopStart, adapter.FeaturePersistDisk)
 	}
+	if o.PodSnapshotPolicy != "" {
+		switch {
+		case o.WarmPool != "":
+			// Warm pods are started by the controller from the SandboxTemplate,
+			// without the per-sandbox label snapshots are grouped by.
+			return o, errors.New("agent-sandbox: config.podSnapshotPolicy is not offered with config.warmPool")
+		case o.RuntimeClassName == "":
+			return o, errors.New("agent-sandbox: GKE Pod Snapshots need gVisor: set config.runtimeClassName (gvisor on GKE) with config.podSnapshotPolicy")
+		}
+		o.Features = append(o.Features, SnapshotFeatures...)
+	}
 	if f := strings.TrimSpace(cfg["features"]); f != "" {
 		o.Features = nil
 		for _, v := range strings.Split(f, ",") {
@@ -182,6 +206,9 @@ type Adapter struct {
 func New(o Options) (*Adapter, error) {
 	if o.ReadyTimeout == 0 {
 		o.ReadyTimeout = 3 * time.Minute
+	}
+	if o.SnapshotTimeout == 0 {
+		o.SnapshotTimeout = 10 * time.Minute
 	}
 	k, err := newKube(o.APIServer, o.CAFile, o.Token, o.TokenFile)
 	if err != nil {
@@ -222,6 +249,7 @@ type object struct {
 	Metadata struct {
 		Name              string            `json:"name"`
 		Labels            map[string]string `json:"labels"`
+		Annotations       map[string]string `json:"annotations"`
 		Generation        int64             `json:"generation"`
 		DeletionTimestamp string            `json:"deletionTimestamp"`
 	} `json:"metadata"`
@@ -255,6 +283,8 @@ func (s object) is(t string) bool { c, ok := s.cond(t); return ok && c.Status ==
 
 func (s object) state() string {
 	switch {
+	case s.Spec.OperatingMode == "Suspended" && s.Metadata.Annotations[annoPaused] != "":
+		return adapter.StatePaused
 	case s.Spec.OperatingMode == "Suspended":
 		return adapter.StateStopped
 	case s.is("Ready"):
@@ -318,7 +348,13 @@ func (a *Adapter) Health(ctx context.Context) error {
 		}
 		return err
 	}
-	return a.k.do(ctx, http.MethodGet, a.sandboxes()+"?limit=1", "", nil, nil)
+	if err := a.k.do(ctx, http.MethodGet, a.sandboxes()+"?limit=1", "", nil, nil); err != nil {
+		return err
+	}
+	if a.snapshots() {
+		return a.checkPolicy(ctx)
+	}
+	return nil
 }
 
 // name derives the object name from the Differently ID, which makes Create
@@ -433,7 +469,16 @@ func (a *Adapter) manifest(req adapter.CreateRequest) map[string]any {
 	if a.opts.ServiceAccountName != "" {
 		pod["serviceAccountName"] = a.opts.ServiceAccountName
 	}
-	spec := map[string]any{"podTemplate": map[string]any{"metadata": map[string]any{"labels": labels}, "spec": pod}}
+	podLabels := map[string]string{}
+	for k, v := range labels {
+		podLabels[k] = v
+	}
+	if a.snapshots() {
+		// A group of its own: GKE restores a pod only from its group's
+		// snapshots, so a new sandbox never starts from another one's.
+		podLabels[snapshotGroup] = name(req.ID)
+	}
+	spec := map[string]any{"podTemplate": map[string]any{"metadata": map[string]any{"labels": podLabels}, "spec": pod}}
 	if a.opts.VolumeSize != "" {
 		ctr["volumeMounts"] = []any{map[string]string{"name": "workspace", "mountPath": a.opts.VolumePath}}
 		pvc := map[string]any{"accessModes": []string{"ReadWriteOnce"}, "resources": map[string]any{"requests": map[string]string{"storage": a.opts.VolumeSize}}}
@@ -454,11 +499,18 @@ func (a *Adapter) manifest(req adapter.CreateRequest) map[string]any {
 // Create implements adapter.ExecutionAdapter. It is idempotent on req.ID: the
 // object's name is derived from it, so a second create finds the first.
 func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapter.Instance, error) {
+	manifest, token := a.manifest(req), ""
 	if req.FromSnapshot != "" {
-		return adapter.Instance{}, adapter.Unsupported(adapter.FeatureSnapshotDisk)
+		if err := a.needSnapshots(adapter.FeatureFork); err != nil {
+			return adapter.Instance{}, err
+		}
+		var err error
+		if manifest, token, err = a.forkManifest(ctx, req); err != nil {
+			return adapter.Instance{}, err
+		}
 	}
 	ref := name(req.ID)
-	err := a.k.do(ctx, http.MethodPost, a.owned(), "", a.manifest(req), nil)
+	err := a.k.do(ctx, http.MethodPost, a.owned(), "", manifest, nil)
 	if err != nil && !api.IsCode(err, api.CodeInvalidState) { // 409: it already exists
 		return adapter.Instance{}, err
 	}
@@ -476,6 +528,12 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 			_ = a.Delete(context.WithoutCancel(ctx), ref)
 		}
 		return adapter.Instance{}, err
+	}
+	if req.FromSnapshot != "" {
+		if err := a.verifyRestore(ctx, ref, token); err != nil {
+			_ = a.Delete(context.WithoutCancel(ctx), ref)
+			return adapter.Instance{}, err
+		}
 	}
 	return s.inst(), nil
 }
@@ -626,7 +684,11 @@ func (a *Adapter) Delete(ctx context.Context, ref string) error {
 	delete(a.bound, ref)
 	a.mu.Unlock()
 	if api.IsCode(err, api.CodeNotFound) {
-		return nil
+		err = nil
+	}
+	if err == nil && a.snapshots() {
+		// Pause checkpoints belong to the sandbox; snapshots outlive it.
+		a.dropCheckpoints(ctx, ref, "pause", "")
 	}
 	return err
 }

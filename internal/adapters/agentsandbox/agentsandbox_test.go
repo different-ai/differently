@@ -30,6 +30,7 @@ const token = "kube-token-0123456789"
 type fakeKube struct {
 	t   *testing.T
 	srv *httptest.Server
+	mux *http.ServeMux
 
 	mu       sync.Mutex
 	objects  map[string]map[string]any // "sandboxes/name" or "sandboxclaims/name"
@@ -39,6 +40,11 @@ type fakeKube struct {
 	protos   []string // exec subprotocols the server accepts
 	failList bool
 
+	// markers is the snapshot marker file of each pod (podsnapshot.go), and
+	// restore, when set, decides it for a pod the controller creates.
+	markers map[string]string
+	restore func(sandbox string, obj map[string]any) string
+
 	// exec answers one command: stdout, stderr and the status to send.
 	exec     func(argv []string, stdin string) (string, string, map[string]any)
 	lastArgv []string
@@ -46,11 +52,12 @@ type fakeKube struct {
 }
 
 func newFakeKube(t *testing.T) *fakeKube {
-	f := &fakeKube{t: t, objects: map[string]map[string]any{}, pods: map[string]map[string]any{}, protos: []string{"v5.channel.k8s.io", "v4.channel.k8s.io"}}
+	f := &fakeKube{t: t, objects: map[string]map[string]any{}, pods: map[string]map[string]any{}, markers: map[string]string{}, protos: []string{"v5.channel.k8s.io", "v4.channel.k8s.io"}}
 	f.exec = func(argv []string, stdin string) (string, string, map[string]any) {
 		return "out\n", "err\n", map[string]any{"status": "Success"}
 	}
 	mux := http.NewServeMux()
+	f.mux = mux
 	jsonOut := func(w http.ResponseWriter, code int, v any) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(code)
@@ -139,14 +146,13 @@ func newFakeKube(t *testing.T) *fakeKube {
 				status(w, 404, "NotFound", key+" not found")
 				return
 			}
-			var p map[string]map[string]any
+			var p map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&p)
-			spec, _ := obj["spec"].(map[string]any)
-			for k, v := range p["spec"] {
-				spec[k] = v
+			mergePatch(obj, p)
+			if p["spec"] != nil {
+				md := obj["metadata"].(map[string]any)
+				md["generation"] = md["generation"].(int) + 1
 			}
-			md := obj["metadata"].(map[string]any)
-			md["generation"] = md["generation"].(int) + 1
 			jsonOut(w, 200, obj)
 		}))
 		mux.HandleFunc("DELETE "+base+"/{name}", authed(func(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +163,7 @@ func newFakeKube(t *testing.T) *fakeKube {
 			}
 			delete(f.objects, key)
 			delete(f.pods, r.PathValue("name"))
+			delete(f.markers, r.PathValue("name"))
 			jsonOut(w, 200, map[string]any{"status": "Success"})
 		}))
 	}
@@ -192,7 +199,20 @@ func newFakeKube(t *testing.T) *fakeKube {
 		}
 		_ = proto
 		f.mu.Lock()
-		out, errOut, st := f.exec(r.URL.Query()["command"], stdin)
+		argv := r.URL.Query()["command"]
+		var out, errOut string
+		var st map[string]any
+		if len(argv) > 2 && strings.Contains(argv[2], markerPath) {
+			// The snapshot marker: written before a checkpoint, read after a restore.
+			st = map[string]any{"status": "Success"}
+			if strings.HasPrefix(argv[2], "printf") {
+				f.markers[r.PathValue("name")] = argv[4]
+			} else {
+				out = f.markers[r.PathValue("name")]
+			}
+		} else {
+			out, errOut, st = f.exec(argv, stdin)
+		}
 		f.mu.Unlock()
 		ws.send(chStdout, nil) // channel-open frames carry nothing
 		if out != "" {
@@ -227,6 +247,7 @@ func (f *fakeKube) reconcile(key string, obj map[string]any) {
 	case "sandboxes":
 		if spec["operatingMode"] == "Suspended" {
 			delete(f.pods, name)
+			delete(f.markers, name)
 			obj["status"] = map[string]any{"conditions": []any{
 				map[string]any{"type": "Suspended", "status": "True", "reason": "PodTerminated", "observedGeneration": gen},
 				map[string]any{"type": "Ready", "status": "False", "reason": "SandboxSuspended", "observedGeneration": gen},
@@ -244,6 +265,9 @@ func (f *fakeKube) reconcile(key string, obj map[string]any) {
 			// First read: the pod is being created. After a spec change, Ready
 			// still reflects the previous generation, which must not count.
 			f.pods[name] = runningPod()
+			if f.restore != nil {
+				f.markers[name] = f.restore(name, obj)
+			}
 			c := map[string]any{"type": "Ready", "status": "False", "reason": "DependenciesNotReady", "observedGeneration": gen}
 			if g := gen.(int); g > 1 {
 				c = map[string]any{"type": "Ready", "status": "True", "reason": "DependenciesReady", "observedGeneration": g - 1}
@@ -256,6 +280,25 @@ func (f *fakeKube) reconcile(key string, obj map[string]any) {
 			st["serviceFQDN"] = name + ".ns1.svc.cluster.local"
 		}
 		obj["status"] = st
+	}
+}
+
+// mergePatch applies a JSON merge patch (RFC 7386) to obj.
+func mergePatch(obj, patch map[string]any) {
+	for k, v := range patch {
+		switch pv := v.(type) {
+		case nil:
+			delete(obj, k)
+		case map[string]any:
+			cur, ok := obj[k].(map[string]any)
+			if !ok {
+				cur = map[string]any{}
+				obj[k] = cur
+			}
+			mergePatch(cur, pv)
+		default:
+			obj[k] = v
+		}
 	}
 }
 

@@ -13,6 +13,12 @@ package agentsandbox
 // debian:bookworm-slim), AGENTSANDBOX_VOLUME_SIZE (enables stop/start, default
 // 1Gi), AGENTSANDBOX_WARM_POOL (also run the scenario through claims on that
 // SandboxWarmPool).
+//
+// GKE Pod Snapshots (TestLivePodSnapshots): a GKE cluster with
+// --enable-pod-snapshots, a gVisor node pool, and a PodSnapshotPolicy as in
+// docs/providers/agent-sandbox.md#snapshots-fork-and-pauseresume-on-gke, named by
+// AGENTSANDBOX_SNAPSHOT_POLICY. The service account also needs the
+// podsnapshot.gke.io rules listed there.
 
 import (
 	"bytes"
@@ -72,6 +78,97 @@ func TestLiveAgentSandboxWarmPool(t *testing.T) {
 	start := time.Now()
 	scenario(t, a, "sbx_live_claim")
 	t.Logf("warm pool %s: scenario passed in %s", pool, time.Since(start).Round(time.Second))
+}
+
+// TestLivePodSnapshots checks what GKE Pod Snapshots give Differently: a
+// fork and a resume keep a running process and its files, and a new sandbox
+// does not start from anyone's snapshot. It logs the time each step took.
+func TestLivePodSnapshots(t *testing.T) {
+	policy := os.Getenv("AGENTSANDBOX_SNAPSHOT_POLICY")
+	if policy == "" {
+		t.Skip("set AGENTSANDBOX_SNAPSHOT_POLICY to a PodSnapshotPolicy (GKE with --enable-pod-snapshots)")
+	}
+	a := liveAdapter(t, map[string]string{
+		"image": liveEnv("AGENTSANDBOX_IMAGE", "debian:bookworm-slim"), "runtimeClassName": liveEnv("AGENTSANDBOX_RUNTIME_CLASS", "gvisor"),
+		"podSnapshotPolicy": policy,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	if err := a.Health(ctx); err != nil {
+		t.Fatalf("health: %v", err)
+	}
+	step := func(what string, fn func() error) {
+		t.Helper()
+		start := time.Now()
+		if err := fn(); err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+		t.Logf("%s: %s", what, time.Since(start).Round(100*time.Millisecond))
+	}
+	run := func(ref, cmd string) string {
+		t.Helper()
+		res, err := a.Exec(ctx, ref, api.ExecRequest{Command: cmd, TimeoutSeconds: 30})
+		if err != nil || res.ExitCode != 0 {
+			t.Fatalf("%s: %q: %+v %v", ref, cmd, res, err)
+		}
+		return strings.TrimSpace(res.Stdout)
+	}
+	// A process whose only state is in memory: a counter it keeps advancing.
+	const counter = `n=0; while :; do n=$((n+1)); echo $n > /tmp/count; sleep 1; done`
+	alive := func(ref, pid string) bool {
+		res, err := a.Exec(ctx, ref, api.ExecRequest{Command: "kill -0 " + pid})
+		return err == nil && res.ExitCode == 0
+	}
+
+	var src adapter.Instance
+	step("create", func() (err error) {
+		src, err = a.Create(ctx, adapter.CreateRequest{ID: "sbx_live_snap_src", Installation: "inst_live", TTLSeconds: 3600})
+		return err
+	})
+	t.Cleanup(func() { _ = a.Delete(context.Background(), src.Ref) })
+	pid := run(src.Ref, `sh -c '`+counter+`' >/dev/null 2>&1 & echo $!`)
+	run(src.Ref, "echo kept > /tmp/file")
+	time.Sleep(3 * time.Second)
+
+	var snap adapter.Snapshot
+	step("snapshot", func() (err error) {
+		snap, err = a.Snapshot(ctx, src.Ref, adapter.FeatureSnapshotMem)
+		return err
+	})
+	t.Cleanup(func() { _ = a.DeleteSnapshot(context.Background(), snap.Ref) })
+	if !alive(src.Ref, pid) {
+		t.Fatal("the source's process did not survive its snapshot")
+	}
+
+	var fork adapter.Instance
+	step("fork", func() (err error) {
+		fork, err = a.Create(ctx, adapter.CreateRequest{ID: "sbx_live_snap_fork", Installation: "inst_live", FromSnapshot: snap.Ref, TTLSeconds: 3600})
+		return err
+	})
+	t.Cleanup(func() { _ = a.Delete(context.Background(), fork.Ref) })
+	if !alive(fork.Ref, pid) || run(fork.Ref, "cat /tmp/file") != "kept" {
+		t.Fatal("the fork lacks its source's process or file")
+	}
+	before := run(fork.Ref, "cat /tmp/count")
+	time.Sleep(2 * time.Second)
+	if after := run(fork.Ref, "cat /tmp/count"); after == before {
+		t.Fatalf("the fork's process is not running: count stayed at %s", after)
+	}
+
+	fresh, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_live_snap_fresh", Installation: "inst_live", TTLSeconds: 3600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Delete(context.Background(), fresh.Ref) })
+	if res, err := a.Exec(ctx, fresh.Ref, api.ExecRequest{Command: "test -e /tmp/file"}); err != nil || res.ExitCode == 0 {
+		t.Fatalf("a new sandbox with the same pod spec started from a snapshot: %+v %v", res, err)
+	}
+
+	step("pause", func() error { return a.Pause(ctx, fork.Ref) })
+	step("resume", func() error { return a.Resume(ctx, fork.Ref) })
+	if !alive(fork.Ref, pid) || run(fork.Ref, "cat /tmp/file") != "kept" {
+		t.Fatal("the resumed sandbox lacks its process or file")
+	}
 }
 
 // scenario drives the adapter through what Differently relies on.

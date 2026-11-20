@@ -26,6 +26,17 @@ All notable changes are recorded here. The format follows
   sandboxes the other created on shared providers), draining private pools
   first or cutting over in one window, the window's steps, and rollback.
   Documented, not run.
+- `agent-sandbox` adapter (experimental): snapshots, fork and pause/resume on
+  GKE through [GKE Pod Snapshots](docs/providers/agent-sandbox.md#snapshots-fork-and-pauseresume-on-gke)
+  of gVisor pods, with `config.podSnapshotPolicy`. A snapshot captures the
+  pod's memory, processes and root filesystem. A pause checkpoints the
+  sandbox and deletes its pod, so a paused sandbox holds no slot. The pool is
+  unhealthy unless the PodSnapshotPolicy groups snapshots by a per-sandbox
+  label, because GKE otherwise restores any new pod with a matching spec from
+  the newest snapshot, possibly another tenant's. A fork or resume that GKE
+  started fresh instead of restoring is detected through a marker file, and
+  fails rather than running on without its state. Tested with a fake server;
+  `TestLivePodSnapshots` is written but has not run on GKE.
 
 ### Fixed
 
