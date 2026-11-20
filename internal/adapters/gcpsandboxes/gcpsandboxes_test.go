@@ -4,6 +4,7 @@ package gcpsandboxes
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -17,6 +18,7 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,6 +47,9 @@ type fakeAgentPlatform struct {
 	srv   *httptest.Server
 
 	templateReads int
+	// snaps holds each snapshot's owner; stuck keeps operations running.
+	snaps map[string]string
+	stuck bool
 }
 
 func gerr(w http.ResponseWriter, code int, status, msg string) {
@@ -53,7 +58,7 @@ func gerr(w http.ResponseWriter, code int, status, msg string) {
 }
 
 func newFake(t *testing.T) *fakeAgentPlatform {
-	f := &fakeAgentPlatform{t: t, boxes: map[string]map[string]any{}, ops: map[string]map[string]any{}, dir: t.TempDir()}
+	f := &fakeAgentPlatform{t: t, boxes: map[string]map[string]any{}, ops: map[string]map[string]any{}, snaps: map[string]string{}, dir: t.TempDir()}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -88,7 +93,7 @@ func (f *fakeAgentPlatform) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.Contains(p, "/operations/"):
 		op := f.ops[p]
-		op["done"] = true
+		op["done"] = !f.stuck
 		json.NewEncoder(w).Encode(op)
 	case strings.HasPrefix(p, engine+"/sandboxEnvironmentTemplates/") && r.Method == http.MethodGet:
 		// "shell" has no egress configuration (internet off); "open" allows it.
@@ -121,12 +126,30 @@ func (f *fakeAgentPlatform) serve(w http.ResponseWriter, r *http.Request) {
 			gerr(w, 400, "INVALID_ARGUMENT", "a template or snapshot is required")
 			return
 		}
+		if t, ok := body["sandboxEnvironmentTemplate"].(string); ok && !slices.Contains([]string{"shell", "closed", "open"}, lastSegment(t)) {
+			gerr(w, 404, "NOT_FOUND", "no such template")
+			return
+		}
+		if sn, ok := body["sandboxEnvironmentSnapshot"].(string); ok {
+			owner, known := f.snaps[lastSegment(sn)]
+			if !known {
+				gerr(w, 404, "NOT_FOUND", "no such snapshot")
+				return
+			}
+			if want, _ := body["owner"].(string); owner != cmp.Or(want, "default") {
+				// "A Sandbox can only be restored from a snapshot that
+				// belongs to the same owner."
+				gerr(w, 400, "FAILED_PRECONDITION", "the snapshot belongs to another owner")
+				return
+			}
+		}
 		id := fmt.Sprintf("sb%d", len(f.order)+1)
 		box := map[string]any{"name": list + "/" + id, "displayName": body["displayName"], "owner": body["owner"], "state": "STATE_PROVISIONING",
 			"ttl": body["ttl"], "sandboxEnvironmentTemplate": body["sandboxEnvironmentTemplate"], "sandboxEnvironmentSnapshot": body["sandboxEnvironmentSnapshot"]}
 		f.boxes[id], f.order = box, append(f.order, id)
 		json.NewEncoder(w).Encode(f.op(box))
 	case strings.HasPrefix(p, engine+"/sandboxEnvironmentSnapshots/") && r.Method == http.MethodDelete:
+		delete(f.snaps, lastSegment(p))
 		json.NewEncoder(w).Encode(f.op(map[string]any{}))
 	case strings.HasPrefix(p, list+"/"):
 		id, verb, _ := strings.Cut(strings.TrimPrefix(p, list+"/"), ":")
@@ -159,7 +182,12 @@ func (f *fakeAgentPlatform) serve(w http.ResponseWriter, r *http.Request) {
 			box["state"] = "STATE_RUNNING"
 			json.NewEncoder(w).Encode(f.op(box))
 		case verb == "snapshot":
-			json.NewEncoder(w).Encode(f.op(map[string]any{"name": engine + "/sandboxEnvironmentSnapshots/snap-1", "sizeBytes": "2048"}))
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			name := fmt.Sprintf("snap-%d", len(f.snaps)+1)
+			owner, _ := body["owner"].(string)
+			f.snaps[name] = cmp.Or(owner, "default") // Google's default owner when unset
+			json.NewEncoder(w).Encode(f.op(map[string]any{"name": engine + "/sandboxEnvironmentSnapshots/" + name, "sizeBytes": "2048"}))
 		case verb == "execute":
 			f.execute(w, r, id)
 		default:
@@ -240,7 +268,7 @@ func TestAgentPlatformAdapter(t *testing.T) {
 		t.Fatalf("instance %+v", inst)
 	}
 	box := f.boxes["sb1"]
-	if box["ttl"] != "3900s" || box["owner"] != "inst_1" || box["sandboxEnvironmentTemplate"] != engine+"/sandboxEnvironmentTemplates/shell" {
+	if box["ttl"] != nil || box["owner"] != "inst_1" || box["sandboxEnvironmentTemplate"] != engine+"/sandboxEnvironmentTemplates/shell" {
 		t.Fatalf("create body %v", box)
 	}
 	if again, err := a.Create(ctx, req); err != nil || again.Ref != inst.Ref || len(f.order) != 1 {
@@ -279,8 +307,8 @@ func TestAgentPlatformAdapter(t *testing.T) {
 	if err != nil || f.boxes[fork.Ref]["sandboxEnvironmentSnapshot"] != engine+"/sandboxEnvironmentSnapshots/snap-1" {
 		t.Fatalf("fork %+v %v", fork, err)
 	}
-	if f.boxes[fork.Ref]["ttl"] != fmt.Sprintf("%ds", defaultTTL) {
-		t.Fatalf("no TTL should use the default, got %v", f.boxes[fork.Ref]["ttl"])
+	if f.boxes[fork.Ref]["ttl"] != nil {
+		t.Fatalf("Google cannot move a sandbox's TTL, so none is set; got %v", f.boxes[fork.Ref]["ttl"])
 	}
 	if err := a.DeleteSnapshot(ctx, snap.Ref); err != nil {
 		t.Fatal(err)
@@ -408,5 +436,66 @@ func TestAgentPlatformEgressControl(t *testing.T) {
 	}
 	if caps, err := adapterFor("missing").Capabilities(ctx); err != nil || caps.Has(adapter.FeatureEgressControl) {
 		t.Fatalf("an unreadable template leaves the feature out: %v %v", caps.Features, err)
+	}
+}
+
+// What a request names that Google does not have fails that one sandbox
+// (invalid_request), not the pool; a slow create fails it too.
+func TestRequestFaultsFailTheSandboxNotThePool(t *testing.T) {
+	f := newFake(t)
+	a := newAdapter(t, f.srv.URL)
+	a.opts.ReadyTimeout = 300 * time.Millisecond
+	a.opts.PollEvery = 50 * time.Millisecond
+	ctx := context.Background()
+	for what, req := range map[string]adapter.CreateRequest{
+		"a template Google does not have": {ID: "sbx_t", Installation: "inst_1", Template: "missing"},
+		"a deleted or expired snapshot":   {ID: "sbx_s", Installation: "inst_1", FromSnapshot: "snap-9"},
+	} {
+		if _, err := a.Create(ctx, req); !api.IsCode(err, api.CodeInvalidRequest) {
+			t.Errorf("%s: want invalid_request, got %v", what, err)
+		}
+	}
+	// The pool's own template missing is the pool's problem.
+	a.opts.Template = "gone"
+	if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_p", Installation: "inst_1"}); api.IsCode(err, api.CodeInvalidRequest) || err == nil {
+		t.Errorf("the pool's own template missing: want a pool error, got %v", err)
+	}
+	a.opts.Template = "shell"
+	f.mu.Lock()
+	f.stuck = true
+	f.mu.Unlock()
+	if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_slow", Installation: "inst_1"}); !api.IsCode(err, adapter.CodeSandboxFailed) {
+		t.Errorf("a create that does not finish: want sandbox_failed, got %v", err)
+	}
+	f.mu.Lock()
+	f.stuck = false
+	f.mu.Unlock()
+	short, cancel := context.WithTimeout(ctx, time.Nanosecond)
+	defer cancel()
+	time.Sleep(time.Millisecond)
+	if _, err := a.Create(short, adapter.CreateRequest{ID: "sbx_late", Installation: "inst_1"}); api.IsCode(err, api.CodeProviderUnavailable) {
+		t.Errorf("the scheduler's deadline passing: %v", err)
+	}
+}
+
+// A fork is created with the installation as owner, and Google restores only
+// from a snapshot of the same owner, so the snapshot carries it too.
+func TestSnapshotsKeepTheirSourcesOwner(t *testing.T) {
+	f := newFake(t)
+	a := newAdapter(t, f.srv.URL)
+	ctx := context.Background()
+	src, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_o", Installation: "inst_9"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := a.Snapshot(ctx, src.Ref, "memory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.snaps[snap.Ref] != "inst_9" {
+		t.Fatalf("snapshot owner %q", f.snaps[snap.Ref])
+	}
+	if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_of", Installation: "inst_9", FromSnapshot: snap.Ref}); err != nil {
+		t.Fatalf("fork: %v", err)
 	}
 }
