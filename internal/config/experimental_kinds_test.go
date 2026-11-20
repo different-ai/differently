@@ -29,7 +29,7 @@ func TestProviderKindsTrust(t *testing.T) {
 	pool := func(kind, trust string) []byte {
 		return []byte("pools:\n  - name: p\n    adapter: " + kind + "\n" + trust + "    credentials: {env: KEY}\n")
 	}
-	for _, kind := range []string{"boat", "morph"} {
+	for _, kind := range []string{"boat", "morph", "groundbox"} {
 		for _, trust := range []string{"", "    trust: private\n"} {
 			c, err := Parse(pool(kind, trust))
 			if err != nil || c.Pools[0].Trust != api.TrustExternal {

@@ -6,6 +6,47 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.7] — 2026-11-19
+
+Seventh alpha, published as a GitHub pre-release. Not for production. A small
+one: an experimental adapter for Groundbox, and the feature-parity page gains
+the row for setting a template on a running server. Nothing in the default
+build changed since 0.1.0-alpha.6: the Groundbox adapter is behind the
+`experimental_adapters` build tag, like every adapter outside the default
+set, so the published binaries and images behave as 0.1.0-alpha.6 did apart
+from their version.
+What ran for this release: the unit and in-process tests, the Postgres
+conformance and acceptance job, the end-to-end suite on OpenSandbox's Docker
+runtime, the Compose start and the container image builds, in CI on each
+pull request (#117, #126) and on this release's preparation. The Groundbox
+adapter's live test was run against Groundbox's hosted API on 2026-11-18 by
+a Groundbox maintainer, who wrote the adapter.
+What has not run: the Groundbox adapter by the Differently maintainers,
+against Groundbox or through a Differently server; and everything listed as
+not run under 0.1.0-alpha.6, which this release does not change.
+Upgrading from 0.1.0-alpha.6: no migration, configuration or API change.
+
+### Added
+
+- `groundbox` adapter for [Groundbox](docs/providers/groundbox.md), a hosted
+  sandbox service (Firecracker microVMs), always external and experimental
+  (`experimental_adapters` build tag): exec, streamed exec and stdin over
+  Groundbox's WebSocket endpoint, files, stop/start keeping the disk,
+  pause/resume, Groundbox's own idle pause with wake on request (the adapter
+  is an `adapter.NativeIdler`), memory snapshots that outlive their sandbox
+  and fork from them, sandboxes from a template or a Docker image, port URLs
+  (share links or public), egress allow and deny lists, and the auto-stop
+  time as the TTL backstop. Tested with a fake
+  server, and run against Groundbox's live API and through a Differently
+  server on 2026-11-18 by a Groundbox maintainer; the Differently maintainers
+  have not run it. It is on the comparison page with its list price.
+
+### Changed (documentation)
+
+- `docs/feature-parity.md` has a row for one template name across providers,
+  set in the config file or on a running server, with what has not run: no
+  real provider and no two server processes on one database.
+
 ## [0.1.0-alpha.6] — 2026-11-18
 
 Sixth alpha, published as a GitHub pre-release. Not for production. This one
@@ -1153,7 +1194,8 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.6...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.7...pre-release
+[0.1.0-alpha.7]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.4

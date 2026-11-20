@@ -13,6 +13,7 @@ import (
 	"github.com/different-ai/differently/internal/adapters/e2b"
 	"github.com/different-ai/differently/internal/adapters/fly"
 	"github.com/different-ai/differently/internal/adapters/gcpsandboxes"
+	"github.com/different-ai/differently/internal/adapters/groundbox"
 	"github.com/different-ai/differently/internal/adapters/morph"
 	"github.com/different-ai/differently/internal/adapters/northflank"
 	"github.com/different-ai/differently/internal/adapters/vercel"
@@ -72,6 +73,17 @@ func registerExperimental() {
 			return nil, err
 		}
 		return e2b.New(e2b.FromConfig(p.Config, p.Trust, key)), nil
+	})
+	pools.Register("groundbox", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
+		key, err := resolve(p, d)
+		if err != nil {
+			return nil, err
+		}
+		opts, err := groundbox.FromConfig(p.Config, key)
+		if err != nil {
+			return nil, err
+		}
+		return groundbox.New(opts), nil
 	})
 	pools.Register("morph", func(p api.Pool, d pools.Deps) (adapter.ExecutionAdapter, error) {
 		key, err := resolve(p, d)

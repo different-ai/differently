@@ -288,7 +288,7 @@ type DashboardConfig struct {
 func (d DashboardConfig) On() bool { return d.Enabled == nil || *d.Enabled }
 
 // Adapter kinds that always run on third-party infrastructure.
-var externalKinds = []string{"daytona", "freestyle", "vercel", "fly", "boat", "morph", "blaxel"}
+var externalKinds = []string{"daytona", "freestyle", "vercel", "fly", "boat", "morph", "blaxel", "groundbox"}
 
 // DefaultAdapters lists the adapter kinds in every build: the backends
 // Differently has run against for real, the remote plugin protocol, and the
@@ -302,7 +302,7 @@ const ExperimentalTag = "experimental_adapters"
 // Apart from agent-sandbox, which ran live against a kind cluster, they are
 // tested only against fakes of each provider's published API. A server built
 // with -tags experimental_adapters has them.
-var ExperimentalAdapters = []string{"vercel", "fly", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel"}
+var ExperimentalAdapters = []string{"vercel", "fly", "agent-sandbox", "cubesandbox", "aws-agentcore", "azure-sandboxes", "azure-sessions", "gcp-sandboxes", "northflank", "boat", "e2b", "morph", "blaxel", "groundbox"}
 
 // KnownAdapters lists adapter kinds this binary can build.
 var KnownAdapters = knownAdapters()

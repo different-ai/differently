@@ -10,7 +10,7 @@
 #    Nothing in this file is a default credential, and the stack refuses to
 #    start without them. An `.env` that is already there is kept:
 #
-#      img=ghcr.io/different-ai/differently-server:0.1.0-alpha.6
+#      img=ghcr.io/different-ai/differently-server:0.1.0-alpha.7
 #      if [ -e .env ]; then
 #        echo "Keeping the .env that is already here: it holds the only copy of this stack's secrets."
 #      elif docker run --rm $img version >/dev/null; then
@@ -76,7 +76,7 @@ services:
       retries: 30
 
   server:
-    image: "${DIFFERENTLY_IMAGE:-ghcr.io/different-ai/differently-server}:${DIFFERENTLY_VERSION:-0.1.0-alpha.6}"
+    image: "${DIFFERENTLY_IMAGE:-ghcr.io/different-ai/differently-server}:${DIFFERENTLY_VERSION:-0.1.0-alpha.7}"
     restart: unless-stopped
     command: ["--config", "/etc/differently/config.yaml"]
     environment:

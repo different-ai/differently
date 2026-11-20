@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status date | 2026-10-29 |
-| Evidence rule | **Done** means implemented and covered by automated tests, most of which run in-process with fakes. **Validated** means run against real infrastructure or live accounts: so far the `opensandbox` adapter on OpenSandbox's Docker, Kubernetes and Fast Sandbox runtimes, `agent-sandbox` on kind, and Daytona and Freestyle on live accounts. The default build holds only the validated `opensandbox`, `daytona` and `freestyle` adapters (plus `remote` and `devhost`); the other 13 are experimental and need the `experimental_adapters` build tag ([provider catalog](providers/README.md#what-the-server-contains)). |
+| Evidence rule | **Done** means implemented and covered by automated tests, most of which run in-process with fakes. **Validated** means run against real infrastructure or live accounts: so far the `opensandbox` adapter on OpenSandbox's Docker, Kubernetes and Fast Sandbox runtimes, `agent-sandbox` on kind, Daytona and Freestyle on live accounts, and `groundbox` on Groundbox's API (run by a Groundbox maintainer). The default build holds only the validated `opensandbox`, `daytona` and `freestyle` adapters (plus `remote` and `devhost`); the other 14 are experimental and need the `experimental_adapters` build tag ([provider catalog](providers/README.md#what-the-server-contains)). |
 | Detail | Tasks and acceptance criteria in [backlog.md](backlog.md); experiments in [proof-of-concepts.md](proof-of-concepts.md) |
 | Runtime change | Differently's own Firecracker node agent was removed; OpenSandbox is the default private runtime. |
 

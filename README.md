@@ -34,7 +34,7 @@ account of it:
   on your own Docker hosts, Kubernetes clusters or microVM nodes;
 - on Daytona or Freestyle, or a plugin for any other backend, only where
   your policies allow it;
-- on 13 more [provider adapters](docs/providers/README.md#what-the-server-contains),
+- on 14 more [provider adapters](docs/providers/README.md#what-the-server-contains),
   from E2B and Vercel to the AWS, Azure and Google Cloud sandbox services,
   which are experimental: tested against fake servers and left out of the
   published build unless you compile them in.
@@ -47,7 +47,7 @@ Apache-2.0, fully self-hosted, no telemetry. Built by the
   <br><sub>▶ <a href="https://different-ai.github.io/differently/#video">Watch the 36-second intro</a></sub>
 </p>
 
-> **Pre-release ([`v0.1.0-alpha.6`](https://github.com/different-ai/differently/releases)).**
+> **Pre-release ([`v0.1.0-alpha.7`](https://github.com/different-ai/differently/releases)).**
 > The whole platform is implemented and tested end to end against real
 > OpenSandbox servers (Docker, Kubernetes and Fast Sandbox microVM
 > runtimes). It isn't ready for production workloads yet: see
@@ -188,12 +188,12 @@ prerequisites, [day-2 operations](docs/deploy/day-2.md) and the
 - node drains, and more than one KVM node;
 - managed EKS, GKE and AKS;
 - the other 12 provider adapters against live accounts: each is tested
-  against a fake of its provider's published API. These 12 and
-  `agent-sandbox` are experimental and not in the published image or
-  binaries; a server built with `-tags experimental_adapters` has them
+  against a fake of its provider's published API. These 12,
+  `agent-sandbox` and `groundbox` are experimental and not in the published
+  image or binaries; a server built with `-tags experimental_adapters` has them
   ([what the server contains](docs/providers/README.md#what-the-server-contains)).
 
-Each of the 26 providers has a page with its tested status, capabilities and
+Each of the 27 providers has a page with its tested status, capabilities and
 configuration in the [provider catalog](docs/providers/README.md). The
 [roadmap](docs/roadmap.md) and [feature parity](docs/feature-parity.md)
 pages track the details. Releases follow [semantic versioning](https://semver.org/):
@@ -211,7 +211,7 @@ records why. Adapters talk to the backends:
 - `opensandbox`, the default private runtime;
 - `daytona` and `freestyle`, managed providers that receive work only when
   policy allows it;
-- 13 experimental adapters behind the `experimental_adapters` build tag,
+- 14 experimental adapters behind the `experimental_adapters` build tag,
   from `agent-sandbox` and `cubesandbox` you run to `e2b`, `vercel` and the
   cloud providers' sandbox services
   ([provider catalog](docs/providers/README.md));
