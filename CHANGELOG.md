@@ -13,6 +13,12 @@ All notable changes are recorded here. The format follows
   secret store) translated to two Compute Engine VMs with Cloud SQL, Artifact
   Registry and Secret Manager. Documented, not run: every `gcloud` flag was
   checked against the SDK's help, and nothing was created on Google Cloud.
+- `docs/deploy/day-2.md`, [move an installation to another cloud](docs/deploy/day-2.md#move-an-installation-to-another-cloud):
+  what moves with the database and what does not, why two control planes
+  must never run from copies of the same data (each reconciler deletes the
+  sandboxes the other created on shared providers), draining private pools
+  first or cutting over in one window, the window's steps, and rollback.
+  Documented, not run.
 
 ## [0.1.0-alpha.7] — 2026-11-19
 

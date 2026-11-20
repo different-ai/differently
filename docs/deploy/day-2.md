@@ -123,6 +123,151 @@ Notes:
   only instances left behind by an earlier placement. But they add no
   isolation, because the server has one API key.
 
+## Move an installation to another cloud
+
+To move a running installation to new infrastructure, for example from the
+[Azure VMs layout](azure-vms.md) to [Google Cloud VMs](gcp-vms.md), build the
+target first, then move the database and the keys in one short maintenance
+window. Status: **documented, not run**. Like the rest of this page, it has
+not been rehearsed on a live installation, and it has not been run from one
+cloud to another.
+
+### What moves and what does not
+
+| | Moves with the database | Moves by hand | Does not move |
+|---|---|---|---|
+| Installation ID, organizations, projects, API keys (hashes), policies, pools, usage, audit chain | ✓ | | |
+| Sandbox records | ✓ | | |
+| Provider credentials stored in Differently (`secret:`) | ✓, sealed | The **secrets key** that opens them, byte for byte | |
+| Bootstrap token | Its operator key's hash | The token itself, so the key stays the same ([rotation](#token-and-key-rotation)) | |
+| Sandboxes on external providers (Freestyle, Daytona, ...) | | | Nothing to move: they keep running, and the new control plane manages them through the same records |
+| Sandboxes on your own backends (OpenSandbox servers), their snapshots and templates | | | They stay on the old backend. Templates are built again on the new one |
+| OpenSandbox API keys and `file:` credentials | | New servers, new keys: store them on the target | |
+
+API keys keep working, so clients need only the new address. If the API's
+host name stays the same and only its DNS record changes, they need nothing.
+
+### Never run two control planes on one database's data
+
+A restored database carries the installation ID. Every sandbox Differently
+creates is labelled with it, and the reconciler deletes any instance with
+this installation's label that has no live record
+([backup and restore](#backup-and-restore-postgresql)). Two control planes
+started from copies of the same data, with access to the same backends,
+therefore each delete the sandboxes the other created after the copy was
+taken. External providers are shared by both clouds, so this is the normal
+case, not an edge case. Hence:
+
+- Stop the source's servers before the target's servers start, and keep
+  them stopped (`--replicas=0`).
+- To rehearse a restore while the source is still running, install the
+  target with `server.replicas: 0`: the chart's migration Job runs against the
+  restored copy, and no reconciler starts. Count rows, then drop that
+  database again.
+- To roll back after the target has taken writes, restore the target's
+  database into the source, not the source's old one (see
+  [rollback](#rolling-back-the-move)).
+
+### Choose how private sandboxes end
+
+Sandboxes on the source's own backends cannot follow the database. Pick one:
+
+- **Drain first (no running sandbox is cut off).** Weeks before the window,
+  register the target's OpenSandbox servers as new pools **on the source
+  control plane**: `POST /v1/admin/pools` or `config.pools`, over HTTPS to an
+  address the target exposes only to the source's egress IP, with the target
+  server's own key. Then `differently admin pool drain <old-pool>` for each
+  of the source's private pools. New sandboxes start on the target while the
+  old ones run to their end, as in [replacing a backend](#replacing-a-backend).
+  When `differently admin pool get <old-pool> | jq .active` is 0, delete the
+  old pools. Do not use `pool use` here, because it also drains the external
+  pools. This costs a cross-cloud hop on every call to the new pools until
+  the window, and the target's OpenSandbox API exposed to one address.
+- **Cut over in one window (simpler).** Sandboxes still on the source's
+  private pools are lost at the window. After the move their records point
+  at a backend that no longer has them, and the reconciler marks them
+  failed. Tell their owners first, or delete them yourself.
+
+### The window
+
+Run the **same Differently version** on both sides; upgrade before or after
+the move, not during it. Lower the TTL of the DNS records you will change a
+day ahead.
+
+1. **Stop the source.**
+
+   ```sh
+   kubectl -n differently scale deploy/dly-differently-server --replicas=0
+   kubectl -n differently get pods -l app.kubernetes.io/component=server   # none left
+   ```
+
+   The API is down from here until the DNS change.
+2. **Dump** from a host that reaches the source database (the source's
+   control node, for a private database):
+
+   ```sh
+   pg_dump --format=custom --no-owner --no-acl -d "$SOURCE_DATABASE_URL" -f differently.dump
+   ```
+
+   Use a `pg_dump` at least as new as the source server. The dump holds key
+   hashes and sealed credentials: copy it to the target over SSH, never
+   through a bucket with public access, and `shred` it when done.
+3. **Restore** into the target's empty database, as its application user:
+
+   ```sh
+   pg_restore --no-owner --no-acl --exit-on-error -d "$TARGET_DATABASE_URL" differently.dump
+   ```
+
+   `--no-owner --no-acl` drops the source cloud's own roles (such as
+   `azure_pg_admin`), which the target does not have. Differently's schema
+   needs no extension and no superuser.
+4. **Keys.** The target's secret store holds the source's secrets key and
+   bootstrap token exactly, without a trailing newline, and the target's own
+   OpenSandbox keys.
+5. **Start the target** (`helm install`, or `helm upgrade` with
+   `server.replicas` back at its usual value). The migration Job finds the
+   schema current.
+6. **Check it before anyone else does**, against the target's own address:
+
+   ```sh
+   curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$TARGET_URL/v1/admin/audit/verify" | jq .
+   curl -fsS -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$TARGET_URL/v1/admin/pools" \
+     | jq '.items[] | {name, trust, draining, health: .health.status}'
+   curl -fsS -X POST -H "Authorization: Bearer $DIFFERENTLY_API_KEY" "$TARGET_URL/v1/admin/reconcile"
+   ```
+
+   Pools with `secret:` credentials must be healthy. One that shows
+   `secret <name> cannot be opened with this key` means the secrets key
+   differs from the source's: stop and fix the key, rather than storing the
+   credentials again. Then create, use and delete one sandbox on each pool. A pool that the
+   database still holds from the source and that points at a backend the
+   target cannot reach shows as unavailable. Delete it once its sandboxes
+   are gone.
+7. **Switch DNS** for the API host, and for the sandbox host if the target
+   reuses it (only after the one-window cut-over, since a drained-first
+   target already serves its own sandbox host).
+
+### Rolling back the move
+
+- **Before the target has taken writes** (before the DNS change, or with
+  no traffic yet): scale the target's servers to 0, scale the source's back
+  up, and point DNS back. The source's database was never changed.
+- **After the target has taken writes:** scale the target's servers to 0
+  first. Dump the target's database and restore it into the source's with
+  `pg_restore --clean`, then start the source and point DNS back. Sandboxes
+  the target created on its own private pools are reachable from the source
+  only if it can reach those servers. Never start the source on its old
+  database once the target has created sandboxes on external providers:
+  its reconciler would delete them.
+
+### Decommission
+
+Keep the source stopped, with its database, for as long as you may roll
+back. Then take a last dump, store it with the secrets key's backup, and
+delete the source's resources. Back up the secrets key in the target's
+secret store before you delete the source's
+([back up the secrets key](../guides/keys-and-providers.md#back-up-the-secrets-key)).
+
 ## Rollback
 
 ```sh

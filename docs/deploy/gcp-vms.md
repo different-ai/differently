@@ -4,7 +4,8 @@ The [Azure VMs layout](azure-vms.md) on Compute Engine: two VMs with k3s,
 OpenSandbox with both its Kubernetes runtime (containers) and Fast Sandbox
 (Firecracker microVMs), Differently in front, and managed Google Cloud
 services around it. Use it to run that layout on Google Cloud, or as the
-target when moving an installation from Azure to Google Cloud.
+target when moving an installation from Azure to Google Cloud
+([move an installation to another cloud](day-2.md#move-an-installation-to-another-cloud)).
 
 > **Status: documented, not run.** Nothing on this page has been run on
 > Google Cloud. Every step mirrors one that ran on Azure on 2026-10-29
@@ -293,7 +294,7 @@ done
 When moving an installation, `differently-secrets-key` and
 `differently-bootstrap-token` must hold the old installation's exact values:
 without the same secrets key, the provider credentials stored in the database
-cannot be opened.
+cannot be opened ([what moves](day-2.md#what-moves-and-what-does-not)).
 
 Install the Secrets Store CSI driver with Secret syncing
 (`helm install csi-secrets-store secrets-store-csi-driver/secrets-store-csi-driver -n kube-system --set syncSecret.enabled=true`

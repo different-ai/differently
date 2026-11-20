@@ -112,7 +112,7 @@ are OpenSandbox prerequisites for that runtime.
 | [gcp-vms.md](gcp-vms.md) | The Azure VMs layout on two Compute Engine VMs: Fast Sandbox on nested KVM, Cloud SQL, Artifact Registry and Secret Manager (documented, not run) |
 | [bare-metal.md](bare-metal.md) | k3s, RKE2, Talos, and an OpenSandbox server on a plain Linux host |
 | [air-gapped.md](air-gapped.md) | Mirroring images and the chart; running with no external egress |
-| [day-2.md](day-2.md) | Upgrade, rollback, migrations, backup and restore, certificates, replacing a backend, uninstall |
+| [day-2.md](day-2.md) | Upgrade, rollback, migrations, backup and restore, certificates, replacing a backend, moving to another cloud, uninstall |
 | [../guides/opensandbox-pools.md](../guides/opensandbox-pools.md) | Configuring an OpenSandbox pool and what it supports |
 
 Deployment artifacts:
