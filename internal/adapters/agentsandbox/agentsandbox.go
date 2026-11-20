@@ -160,12 +160,8 @@ func FromConfig(cfg map[string]string, trust, token string) (Options, error) {
 		o.Features = append(o.Features, adapter.FeatureStopStart, adapter.FeaturePersistDisk)
 	}
 	if o.PodSnapshotPolicy != "" {
-		switch {
-		case o.WarmPool != "":
-			// Warm pods are started by the controller from the SandboxTemplate,
-			// without the per-sandbox label snapshots are grouped by.
-			return o, errors.New("agent-sandbox: config.podSnapshotPolicy is not offered with config.warmPool")
-		case o.RuntimeClassName == "":
+		if o.WarmPool == "" && o.RuntimeClassName == "" {
+			// With a warm pool the SandboxTemplate sets it; Health checks that.
 			return o, errors.New("agent-sandbox: GKE Pod Snapshots need gVisor: set config.runtimeClassName (gvisor on GKE) with config.podSnapshotPolicy")
 		}
 		// Restores come from the pod template, so a start would restore the
@@ -174,7 +170,13 @@ func FromConfig(cfg map[string]string, trust, token string) (Options, error) {
 		o.Features = slices.DeleteFunc(o.Features, func(f string) bool {
 			return f == adapter.FeatureStopStart || f == adapter.FeaturePersistDisk
 		})
-		o.Features = append(o.Features, SnapshotFeatures...)
+		if o.WarmPool != "" {
+			// A warm pod is already running when it is claimed, so it cannot
+			// be restored from a snapshot: no fork, so no snapshots to fork.
+			o.Features = append(o.Features, WarmSnapshotFeatures...)
+		} else {
+			o.Features = append(o.Features, SnapshotFeatures...)
+		}
 	}
 	if f := strings.TrimSpace(cfg["features"]); f != "" {
 		o.Features = nil
@@ -260,7 +262,15 @@ type object struct {
 		DeletionTimestamp string            `json:"deletionTimestamp"`
 	} `json:"metadata"`
 	Spec struct {
-		OperatingMode string `json:"operatingMode"`
+		OperatingMode string   `json:"operatingMode"`
+		PodTemplate   struct { // Sandboxes only
+			Metadata struct {
+				Annotations map[string]string `json:"annotations"`
+			} `json:"metadata"`
+		} `json:"podTemplate"`
+		AdditionalPodMetadata struct { // claims only
+			Annotations map[string]string `json:"annotations"`
+		} `json:"additionalPodMetadata"`
 	} `json:"spec"`
 	Status struct {
 		Conditions  []condition `json:"conditions"`
@@ -352,14 +362,29 @@ func (a *Adapter) Capabilities(context.Context) (adapter.Capabilities, error) {
 func (a *Adapter) Capacity(context.Context) (adapter.Capacity, error) { return adapter.Capacity{}, nil }
 
 // Health fails when the API server is unreachable, the credential is refused,
-// the agent-sandbox CRDs are not installed or the warm pool does not exist.
+// the agent-sandbox CRDs are not installed or the warm pool does not exist;
+// with snapshots, also when the PodSnapshotPolicy would not keep sandboxes
+// apart, or the warm pool's pods do not run under a RuntimeClass.
 func (a *Adapter) Health(ctx context.Context) error {
 	if a.opts.WarmPool != "" {
-		err := a.k.do(ctx, http.MethodGet, a.path(extensions, "sandboxwarmpools")+"/"+url.PathEscape(a.opts.WarmPool), "", nil, nil)
+		var wp struct {
+			Spec struct {
+				TemplateRef struct {
+					Name string `json:"name"`
+				} `json:"sandboxTemplateRef"`
+			} `json:"spec"`
+		}
+		err := a.k.do(ctx, http.MethodGet, a.path(extensions, "sandboxwarmpools")+"/"+url.PathEscape(a.opts.WarmPool), "", nil, &wp)
 		if api.IsCode(err, api.CodeNotFound) {
 			return adapter.Unavailable(fmt.Errorf("agent-sandbox: SandboxWarmPool %s not found in namespace %s", a.opts.WarmPool, a.opts.Namespace))
 		}
-		return err
+		if err != nil || !a.snapshots() {
+			return err
+		}
+		if err := a.checkWarmRuntime(ctx, wp.Spec.TemplateRef.Name); err != nil {
+			return err
+		}
+		return a.checkPolicy(ctx)
 	}
 	if err := a.k.do(ctx, http.MethodGet, a.sandboxes()+"?limit=1", "", nil, nil); err != nil {
 		return err
@@ -389,7 +414,10 @@ func (a *Adapter) get(ctx context.Context, base, ref string) (object, error) {
 
 func (a *Adapter) Get(ctx context.Context, ref string) (adapter.Instance, error) {
 	s, err := a.get(ctx, a.owned(), ref)
-	return s.inst(), err
+	if err != nil {
+		return s.inst(), err
+	}
+	return a.instOf(ctx, s)
 }
 
 // sandbox returns the Sandbox behind ref: ref itself, or the one its claim
@@ -451,6 +479,13 @@ func (a *Adapter) manifest(req adapter.CreateRequest) map[string]any {
 		}
 		if shutdown != nil {
 			spec["lifecycle"] = shutdown
+		}
+		if a.snapshots() {
+			// The claim controller merges this into the claimed Sandbox's pod
+			// template, and the Sandbox controller onto its running pod: the
+			// warm pod joins a snapshot group of its own once it is claimed.
+			// Before that it has no group, so GKE never restores it.
+			spec["additionalPodMetadata"] = map[string]any{"labels": map[string]string{snapshotGroup: name(req.ID)}}
 		}
 		return map[string]any{"apiVersion": extensions + "/" + version, "kind": "SandboxClaim", "metadata": meta, "spec": spec}
 	}
@@ -563,13 +598,21 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 // than at the timeout.
 func (a *Adapter) waitReady(ctx context.Context, ref string) (object, error) {
 	var s object
-	err := httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
+	every := 500 * time.Millisecond
+	if a.opts.WarmPool != "" {
+		// A claim adopts a running warm pod in a fraction of a second; a
+		// coarse poll would be most of the create.
+		every = 100 * time.Millisecond
+	}
+	err := httpx.Poll(ctx, every, a.opts.ReadyTimeout, func() (bool, error) {
 		var err error
 		if s, err = a.get(ctx, a.owned(), ref); err != nil {
 			return false, err
 		}
 		if c, ok := s.cond("Ready"); ok && c.Status != "True" {
 			switch {
+			case c.Reason == "InvalidMetadata" && a.snapshots() && a.opts.WarmPool != "":
+				return false, api.Errorf(api.CodeInvalidRequest, "agent-sandbox: %s: %s %s (the claim's pod label %s needs the domain differently.dev in the allowed-label-domains of agent-sandbox's controller config)", ref, c.Reason, c.Message, snapshotGroup)
 			case invalidReasons[c.Reason]:
 				return false, api.Errorf(api.CodeInvalidRequest, "agent-sandbox: %s: %s %s", ref, c.Reason, c.Message)
 			case failedReasons[c.Reason]:
@@ -691,10 +734,14 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 			if s.Metadata.Annotations[annoForking] != "" && !a.finishFork(ctx, s) {
 				continue
 			}
-			out = append(out, s.inst())
+			in, err := a.instOf(ctx, s)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, in)
 		}
 		if cont = page.Metadata.Continue; cont == "" {
-			if a.snapshots() && a.opts.WarmPool == "" {
+			if a.snapshots() {
 				live := map[string]bool{}
 				for _, in := range out {
 					live[in.Ref] = true
@@ -711,7 +758,7 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 // owned by it and go with it.
 func (a *Adapter) Delete(ctx context.Context, ref string) error {
 	if a.snapshots() {
-		if s, err := a.get(ctx, a.sandboxes(), ref); err == nil && s.failures() >= maxRestoreFailures {
+		if s, err := a.get(ctx, a.owned(), ref); err == nil && s.failures() >= maxRestoreFailures {
 			a.keepUnrestored(ctx, ref)
 		}
 	}
@@ -787,8 +834,12 @@ func (a *Adapter) exec(ctx context.Context, ref string, cmd []string, stdin io.R
 	}
 	code, err := a.k.exec(ctx, a.opts.Namespace, sb, a.opts.Container, cmd, stdin, emit)
 	if api.IsCode(err, api.CodeNotFound) {
-		if s, gerr := a.get(ctx, a.sandboxes(), sb); gerr == nil && s.Spec.OperatingMode == "Suspended" {
+		s, gerr := a.get(ctx, a.sandboxes(), sb)
+		if gerr == nil && s.Spec.OperatingMode == "Suspended" {
 			return -1, api.Errorf(api.CodeInvalidState, "agent-sandbox: %s is stopped", ref)
+		}
+		if a.opts.WarmPool != "" && api.IsCode(gerr, api.CodeNotFound) {
+			a.unbind(ref) // the claim may have adopted another Sandbox
 		}
 		return -1, adapter.NotFound(ref)
 	}

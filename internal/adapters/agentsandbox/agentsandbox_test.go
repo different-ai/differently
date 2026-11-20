@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,6 +49,15 @@ type fakeKube struct {
 	// failMarker fails the exec that looks for a snapshot marker.
 	stuckSuspend bool
 	failMarker   bool
+	// allowedDomains are the label domains claims may add to their pods
+	// (agent-sandbox's allowed-label-domains); warm counts adopted Sandboxes.
+	allowedDomains []string
+	warm           int
+	// claimLag stops the claim controller copying claims' pod metadata onto
+	// their Sandboxes, as a controller that is behind would.
+	claimLag bool
+	// failClaimPatch refuses patches of claims.
+	failClaimPatch bool
 
 	// exec answers one command: stdout, stderr and the status to send.
 	exec     func(argv []string, stdin string) (string, string, map[string]any)
@@ -56,7 +66,7 @@ type fakeKube struct {
 }
 
 func newFakeKube(t *testing.T) *fakeKube {
-	f := &fakeKube{t: t, objects: map[string]map[string]any{}, pods: map[string]map[string]any{}, markers: map[string]map[string]bool{}, protos: []string{"v5.channel.k8s.io", "v4.channel.k8s.io"}}
+	f := &fakeKube{t: t, objects: map[string]map[string]any{}, pods: map[string]map[string]any{}, markers: map[string]map[string]bool{}, protos: []string{"v5.channel.k8s.io", "v4.channel.k8s.io"}, allowedDomains: []string{"sandbox.users.io"}}
 	f.exec = func(argv []string, stdin string) (string, string, map[string]any) {
 		return "out\n", "err\n", map[string]any{"status": "Success"}
 	}
@@ -150,12 +160,19 @@ func newFakeKube(t *testing.T) *fakeKube {
 				status(w, 404, "NotFound", key+" not found")
 				return
 			}
+			if f.failClaimPatch && r.PathValue("plural") == "sandboxclaims" {
+				status(w, 500, "InternalError", "etcd timeout")
+				return
+			}
 			var p map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&p)
 			mergePatch(obj, p)
 			if p["spec"] != nil {
 				md := obj["metadata"].(map[string]any)
 				md["generation"] = md["generation"].(int) + 1
+			}
+			if r.PathValue("plural") == "sandboxclaims" {
+				f.reconcile(key, obj) // the claim controller watches its claims
 			}
 			jsonOut(w, 200, obj)
 		}))
@@ -164,6 +181,14 @@ func newFakeKube(t *testing.T) *fakeKube {
 			if _, ok := f.objects[key]; !ok {
 				status(w, 404, "NotFound", key+" not found")
 				return
+			}
+			if r.PathValue("plural") == "sandboxclaims" {
+				// The claim owns the Sandbox it adopted, and so its pod.
+				if sb := claimedSandbox(f.objects[key]); sb != "" {
+					delete(f.objects, "sandboxes/"+sb)
+					delete(f.pods, sb)
+					delete(f.markers, sb)
+				}
 			}
 			delete(f.objects, key)
 			delete(f.pods, r.PathValue("name"))
@@ -240,6 +265,74 @@ func newFakeKube(t *testing.T) *fakeKube {
 	return f
 }
 
+// warmTemplateLabels are the pod labels of the warm pool's SandboxTemplate.
+var warmTemplateLabels = map[string]any{"app": "py"}
+
+func claimedSandbox(claim map[string]any) string {
+	st, _ := claim["status"].(map[string]any)
+	sb, _ := st["sandbox"].(map[string]any)
+	return str(sb["name"])
+}
+
+// reconcileClaim plays the claim controller: it adopts a warm Sandbox, whose
+// pod is already running and carries only the template's labels, then on
+// every pass rewrites that Sandbox's pod template metadata from the template
+// and the claim's additionalPodMetadata, whose labels must be in an allowed
+// domain. The claim is Ready when its Sandbox is.
+func (f *fakeKube) reconcileClaim(obj map[string]any) {
+	gen := obj["metadata"].(map[string]any)["generation"]
+	spec, _ := obj["spec"].(map[string]any)
+	extra, _ := spec["additionalPodMetadata"].(map[string]any)
+	extraLabels, _ := extra["labels"].(map[string]any)
+	extraAnn, _ := extra["annotations"].(map[string]any)
+	for k := range extraLabels {
+		domain, _, _ := strings.Cut(k, "/")
+		if !slices.Contains(f.allowedDomains, domain) {
+			obj["status"] = map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": "False", "reason": "InvalidMetadata",
+				"message": fmt.Sprintf("invalid additionalPodMetadata: label domain %q is not in the allowlist", domain), "observedGeneration": gen}}}
+			return
+		}
+	}
+	sb := claimedSandbox(obj)
+	if sb == "" || f.objects["sandboxes/"+sb] == nil {
+		// Unclaimed, or its Sandbox is gone: the controller adopts another.
+		f.warm++
+		sb = fmt.Sprintf("py-warm-%d", f.warm)
+		pod := runningPod()
+		pod["metadata"] = map[string]any{"labels": maps.Clone(warmTemplateLabels)}
+		f.pods[sb] = pod
+		f.objects["sandboxes/"+sb] = map[string]any{
+			"metadata": map[string]any{"name": sb, "generation": 1},
+			"spec": map[string]any{"podTemplate": map[string]any{
+				"metadata": map[string]any{"labels": maps.Clone(warmTemplateLabels)},
+				"spec":     map[string]any{"runtimeClassName": "gvisor", "containers": []any{map[string]any{"name": "python", "image": "python:3.13"}}},
+			}},
+		}
+	}
+	sbObj := f.objects["sandboxes/"+sb]
+	labels := maps.Clone(warmTemplateLabels)
+	maps.Copy(labels, extraLabels)
+	meta := map[string]any{"labels": labels}
+	if len(extraAnn) > 0 {
+		meta["annotations"] = maps.Clone(extraAnn)
+	}
+	tmpl := sbObj["spec"].(map[string]any)["podTemplate"].(map[string]any)
+	if !f.claimLag && !sameJSON(tmpl["metadata"], meta) {
+		tmpl["metadata"] = meta
+		md := sbObj["metadata"].(map[string]any)
+		md["generation"] = md["generation"].(int) + 1
+	}
+	f.reconcile("sandboxes/"+sb, sbObj)
+	var sbState object
+	b, _ := json.Marshal(sbObj)
+	_ = json.Unmarshal(b, &sbState)
+	ready := map[string]any{"type": "Ready", "status": "False", "reason": "SandboxNotReady", "observedGeneration": gen}
+	if sbState.is("Ready") {
+		ready = map[string]any{"type": "Ready", "status": "True", "reason": "DependenciesReady", "observedGeneration": gen}
+	}
+	obj["status"] = map[string]any{"conditions": []any{ready}, "sandbox": map[string]any{"name": sb, "podIPs": []string{"10.0.0.9"}}}
+}
+
 // reconcile plays the controllers: a Sandbox gets a running pod and turns
 // Ready for its current generation (or Suspended), and a claim adopts a
 // warm Sandbox. Images named "missing" fail to pull.
@@ -250,12 +343,7 @@ func (f *fakeKube) reconcile(key string, obj map[string]any) {
 	spec, _ := obj["spec"].(map[string]any)
 	switch plural {
 	case "sandboxclaims":
-		warm := "warm-abcde"
-		f.pods[warm] = runningPod()
-		obj["status"] = map[string]any{
-			"conditions": []any{map[string]any{"type": "Ready", "status": "True", "reason": "DependenciesReady", "observedGeneration": gen}},
-			"sandbox":    map[string]any{"name": warm, "podIPs": []string{"10.0.0.9"}},
-		}
+		f.reconcileClaim(obj)
 	case "sandboxes":
 		if spec["operatingMode"] == "Suspended" {
 			if f.stuckSuspend {

@@ -200,7 +200,13 @@ func (f *fakeSnapshots) checkpoint(name string, t map[string]any) {
 	}
 	// The group is the running pod's label, which the controller copies from
 	// the template.
-	podLabels := f.pods[pod]["metadata"].(map[string]any)["labels"].(map[string]any)
+	podMeta, _ := f.pods[pod]["metadata"].(map[string]any)
+	podLabels, _ := podMeta["labels"].(map[string]any)
+	if podLabels[snapshotGroup] == nil {
+		// The policy selects on the group label: GKE checkpoints no other pod.
+		t["status"] = map[string]any{"conditions": []any{map[string]any{"type": "Triggered", "status": "False", "reason": "CheckpointFailed", "message": "pod " + pod + " is not selected by any PodSnapshotPolicy"}}}
+		return
+	}
 	if podLabels[snapshotGroup] != labels[snapshotGroup] {
 		f.t.Errorf("checkpoint of %s: the pod's group %v differs from its template's %v", pod, podLabels[snapshotGroup], labels[snapshotGroup])
 	}
@@ -231,7 +237,6 @@ func TestFromConfigPodSnapshots(t *testing.T) {
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 	for cfg, want := range map[string]string{
 		`{"apiServer":"https://k","podSnapshotPolicy":"p"}`:                                                   "need gVisor",
-		`{"apiServer":"https://k","podSnapshotPolicy":"p","warmPool":"w"}`:                                    "not offered with config.warmPool",
 		`{"apiServer":"https://k","podSnapshotPolicy":"p","runtimeClassName":"gvisor","snapshotTimeout":"x"}`: "snapshotTimeout must be a duration",
 	} {
 		var m map[string]string
@@ -872,5 +877,314 @@ func TestListFinishesInterruptedForks(t *testing.T) {
 		if f.object("sandboxes/dly-sbx-fork")["metadata"].(map[string]any)["annotations"].(map[string]any)[annoForking] != nil {
 			t.Fatal("the fork is still marked pending")
 		}
+	}
+}
+
+// warmSnapshots is a fake with a warm pool whose SandboxTemplate runs gVisor,
+// and an adapter on it with snapshots on.
+func warmSnapshots(t *testing.T) (*fakeSnapshots, *Adapter) {
+	f := newFakeSnapshots(t)
+	f.mu.Lock()
+	f.allowedDomains = []string{"differently.dev"}
+	f.objects["sandboxwarmpools/py"] = map[string]any{"metadata": map[string]any{"name": "py"}, "spec": map[string]any{"sandboxTemplateRef": map[string]any{"name": "py-tmpl"}}}
+	f.objects["sandboxtemplates/py-tmpl"] = map[string]any{"metadata": map[string]any{"name": "py-tmpl"}, "spec": map[string]any{"podTemplate": map[string]any{"spec": map[string]any{"runtimeClassName": "gvisor"}}}}
+	f.mu.Unlock()
+	return f, f.adapter(t, map[string]string{"podSnapshotPolicy": "dly", "warmPool": "py"})
+}
+
+func TestWarmPoolSnapshotConfig(t *testing.T) {
+	f, a := warmSnapshots(t)
+	ctx := context.Background()
+	if err := a.Health(ctx); err != nil {
+		t.Fatal(err)
+	}
+	caps, _ := a.Capabilities(ctx)
+	for _, feat := range WarmSnapshotFeatures {
+		if !slices.Contains(caps.Features, feat) {
+			t.Errorf("features %v lack %s", caps.Features, feat)
+		}
+	}
+	for _, feat := range []string{adapter.FeatureFork, adapter.FeatureSnapshotMem, adapter.FeatureSnapshotDisk, adapter.FeatureStopStart} {
+		if slices.Contains(caps.Features, feat) {
+			t.Errorf("features %v offer %s: a claimed warm pod is already running, so nothing can be restored into it", caps.Features, feat)
+		}
+	}
+	if got := adapter.EffectiveFeatures(a, caps.Features); len(got) != len(caps.Features) {
+		t.Errorf("effective features %v, advertised %v", got, caps.Features)
+	}
+	if _, err := a.Snapshot(ctx, "x", "memory"); !api.IsCode(err, api.CodeUnsupportedOperation) {
+		t.Errorf("snapshot: %v", err)
+	}
+	if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_f", Installation: "i", FromSnapshot: "a/b"}); !api.IsCode(err, api.CodeUnsupportedOperation) {
+		t.Errorf("fork: %v", err)
+	}
+	// Health refuses a warm pool GKE cannot checkpoint, and a bad policy.
+	f.mu.Lock()
+	f.objects["sandboxtemplates/py-tmpl"]["spec"] = map[string]any{"podTemplate": map[string]any{"spec": map[string]any{}}}
+	f.mu.Unlock()
+	if err := a.Health(ctx); !api.IsCode(err, api.CodeProviderUnavailable) || !strings.Contains(err.Error(), "sets no runtimeClassName") {
+		t.Errorf("a template without gVisor: %v", err)
+	}
+	f.mu.Lock()
+	delete(f.objects, "sandboxtemplates/py-tmpl")
+	f.mu.Unlock()
+	if err := a.Health(ctx); !api.IsCode(err, api.CodeProviderUnavailable) || !strings.Contains(err.Error(), "SandboxTemplate py-tmpl of warm pool py not found") {
+		t.Errorf("a missing template: %v", err)
+	}
+	f.mu.Lock()
+	f.objects["sandboxtemplates/py-tmpl"] = map[string]any{"metadata": map[string]any{"name": "py-tmpl"}, "spec": map[string]any{"podTemplate": map[string]any{"spec": map[string]any{"runtimeClassName": "gvisor"}}}}
+	delete(f.policy["spec"].(map[string]any), "snapshotGroupingRules")
+	f.mu.Unlock()
+	if err := a.Health(ctx); !api.IsCode(err, api.CodeProviderUnavailable) || !strings.Contains(err.Error(), "groupByLabelValue") {
+		t.Errorf("a policy without grouping: %v", err)
+	}
+	// Without differently.dev among the controller's allowed label domains,
+	// a claim cannot give its pod a group: the create says how to fix it.
+	f.mu.Lock()
+	f.allowedDomains = []string{"sandbox.users.io"}
+	f.mu.Unlock()
+	_, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_n", Installation: "i"})
+	if !api.IsCode(err, api.CodeInvalidRequest) || !strings.Contains(err.Error(), "allowed-label-domains") {
+		t.Errorf("a label the controller refuses: %v", err)
+	}
+}
+
+func TestWarmPoolPauseResume(t *testing.T) {
+	f, a := warmSnapshots(t)
+	ctx := context.Background()
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_w", Installation: "inst_1"})
+	if err != nil || in.State != adapter.StateRunning {
+		t.Fatalf("create %+v %v", in, err)
+	}
+	claim := f.object("sandboxclaims/" + in.Ref)
+	extra, _ := claim["spec"].(map[string]any)["additionalPodMetadata"].(map[string]any)
+	if labels, _ := extra["labels"].(map[string]any); labels[snapshotGroup] != in.Ref {
+		t.Fatalf("the claim does not give its pod a snapshot group of its own: %v", extra)
+	}
+	warmPod := claimedSandbox(claim)
+	if _, ann := f.tmplMeta(warmPod); ann[psName] != nil {
+		t.Fatal("a new claim names a checkpoint")
+	}
+	for round := 1; round <= 2; round++ {
+		if err := a.Pause(ctx, in.Ref); err != nil {
+			t.Fatalf("pause %d: %v", round, err)
+		}
+		if err := a.Pause(ctx, in.Ref); err != nil {
+			t.Fatalf("pause %d again: %v", round, err)
+		}
+		if got, err := a.Get(ctx, in.Ref); err != nil || got.State != adapter.StatePaused {
+			t.Fatalf("after pause %d: %+v %v", round, got, err)
+		}
+		if list, err := a.List(ctx, "inst_1"); err != nil || len(list) != 1 || list[0].State != adapter.StatePaused || list[0].Ref != in.Ref {
+			t.Fatalf("list after pause %d: %+v %v", round, list, err)
+		}
+		f.mu.Lock()
+		_, podLeft := f.pods[warmPod]
+		var target any
+		for _, tr := range f.triggers {
+			target = tr["spec"].(map[string]any)["targetPod"]
+		}
+		f.mu.Unlock()
+		if podLeft {
+			t.Fatalf("pause %d kept the pod", round)
+		}
+		if target != warmPod {
+			t.Fatalf("pause %d checkpointed %v, not the claimed pod %s", round, target, warmPod)
+		}
+		if s, tr := f.count(); s != 1 || tr != 1 {
+			t.Fatalf("pause %d keeps only the newest checkpoint: %d snapshots, %d triggers", round, s, tr)
+		}
+		if _, ann := f.tmplMeta(warmPod); ann[psName] == nil {
+			t.Fatalf("pause %d: the claimed Sandbox does not name the checkpoint, so resume would start fresh", round)
+		}
+		if _, err := a.Exec(ctx, in.Ref, api.ExecRequest{Command: "true"}); !api.IsCode(err, api.CodeInvalidState) {
+			t.Fatalf("exec while paused: %v", err)
+		}
+		token := f.object("sandboxclaims/" + in.Ref)["metadata"].(map[string]any)["annotations"].(map[string]any)[annoToken].(string)
+		if err := a.Resume(ctx, in.Ref); err != nil {
+			t.Fatalf("resume %d: %v", round, err)
+		}
+		if err := a.Resume(ctx, in.Ref); err != nil {
+			t.Fatalf("resume %d again: %v", round, err)
+		}
+		if !f.has(warmPod, token) {
+			t.Fatalf("resume %d: the pod was not restored from the pause checkpoint", round)
+		}
+		if got, err := a.Get(ctx, in.Ref); err != nil || got.State != adapter.StateRunning {
+			t.Fatalf("after resume %d: %+v %v", round, got, err)
+		}
+		if _, ann := f.tmplMeta(warmPod); ann[psName] != nil {
+			t.Fatalf("after resume %d the Sandbox still names the pause checkpoint", round)
+		}
+	}
+	// A resume GKE did not restore leaves it paused, counted on the claim.
+	if err := a.Pause(ctx, in.Ref); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.noRestore = true
+	f.mu.Unlock()
+	if err := a.Resume(ctx, in.Ref); !api.IsCode(err, adapter.CodeSandboxFailed) {
+		t.Fatalf("want sandbox_failed, got %v", err)
+	}
+	if got, err := a.Get(ctx, in.Ref); err != nil || got.State != adapter.StatePaused {
+		t.Fatalf("a resume without the checkpoint must leave it paused: %+v %v", got, err)
+	}
+	if n := f.object("sandboxclaims/" + in.Ref)["metadata"].(map[string]any)["annotations"].(map[string]any)[annoFailures]; n != "1" {
+		t.Fatalf("failures on the claim: %v", n)
+	}
+	if err := a.Delete(ctx, in.Ref); err != nil {
+		t.Fatal(err)
+	}
+	if s, tr := f.count(); s != 0 || tr != 0 {
+		t.Fatalf("delete left %d pause snapshots and %d triggers", s, tr)
+	}
+}
+
+// A paused claim whose Sandbox is gone gets another from the claim
+// controller. The adapter follows it, and the next resumes restore the pause
+// checkpoint into it: the first finds the running warm pod unrestored and
+// suspends it, the second starts a pod GKE restores.
+func TestWarmPoolPausedSandboxReplaced(t *testing.T) {
+	f, a := warmSnapshots(t)
+	ctx := context.Background()
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_w", Installation: "inst_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_o", Installation: "inst_1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Pause(ctx, in.Ref); err != nil {
+		t.Fatal(err)
+	}
+	token := f.object("sandboxclaims/" + in.Ref)["metadata"].(map[string]any)["annotations"].(map[string]any)[annoToken].(string)
+	f.mu.Lock()
+	old := claimedSandbox(f.objects["sandboxclaims/"+in.Ref])
+	delete(f.objects, "sandboxes/"+old)
+	f.mu.Unlock()
+	if list, err := a.List(ctx, "inst_1"); err != nil || len(list) != 2 {
+		t.Fatalf("list %+v %v", list, err)
+	}
+	if err := a.Resume(ctx, in.Ref); !api.IsCode(err, adapter.CodeSandboxFailed) {
+		t.Fatalf("first resume, onto a running warm pod: %v", err)
+	}
+	if err := a.Resume(ctx, in.Ref); err != nil {
+		t.Fatalf("second resume: %v", err)
+	}
+	now := claimedSandbox(f.object("sandboxclaims/" + in.Ref))
+	if now == old || !f.has(now, token) {
+		t.Fatalf("the new Sandbox %s (was %s) was not restored from the pause checkpoint", now, old)
+	}
+}
+
+// A Sandbox that cannot be read reports that one sandbox pending; List goes
+// on.
+func TestWarmPoolUnreadableSandboxDoesNotFailList(t *testing.T) {
+	f, a := warmSnapshots(t)
+	ctx := context.Background()
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_w", Installation: "inst_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Pause(ctx, in.Ref); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	// The controller cleared the claim's Sandbox (an expired claim, say).
+	delete(f.objects["sandboxclaims/"+in.Ref], "status")
+	f.mu.Unlock()
+	a.unbind(in.Ref)
+	f.mu.Lock()
+	f.allowedDomains = nil // the claim cannot be adopted again
+	f.mu.Unlock()
+	list, err := a.List(ctx, "inst_1")
+	if err != nil || len(list) != 1 || list[0].State != adapter.StatePending {
+		t.Fatalf("list %+v %v", list, err)
+	}
+}
+
+// The claim controller copies the checkpoint's name onto the Sandbox
+// asynchronously. A pause it never catches up with is undone, and a resume
+// does not start the pod before the Sandbox names the checkpoint, which a
+// pause whose caller gave up may not have waited for.
+func TestWarmPoolLaggingClaimController(t *testing.T) {
+	f, a := warmSnapshots(t)
+	a.opts.ReadyTimeout = 800 * time.Millisecond
+	ctx := context.Background()
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_w", Installation: "inst_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod := claimedSandbox(f.object("sandboxclaims/" + in.Ref))
+	f.mu.Lock()
+	f.claimLag = true
+	f.mu.Unlock()
+	if err := a.Pause(ctx, in.Ref); !api.IsCode(err, adapter.CodeSandboxFailed) {
+		t.Fatalf("a pause the claim controller never catches up with: %v", err)
+	}
+	if got, err := a.Get(ctx, in.Ref); err != nil || got.State != adapter.StateRunning {
+		t.Fatalf("after the undone pause: %+v %v", got, err)
+	}
+
+	// A pause whose caller gave up stands, with the Sandbox not yet naming
+	// the checkpoint.
+	cctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	err = a.Pause(cctx, in.Ref)
+	cancel()
+	if err == nil {
+		t.Fatal("the pause finished although the claim controller is behind")
+	}
+	if got, _ := a.Get(ctx, in.Ref); got.State != adapter.StatePaused {
+		t.Fatalf("the cancelled pause: %+v", got)
+	}
+	gen := f.object("sandboxes/" + pod)["metadata"].(map[string]any)["generation"]
+	if err := a.Resume(ctx, in.Ref); !api.IsCode(err, adapter.CodeSandboxFailed) {
+		t.Fatalf("resume before the Sandbox names the checkpoint: %v", err)
+	}
+	if f.object("sandboxes/" + pod)["metadata"].(map[string]any)["generation"] != gen {
+		t.Fatal("resume started the pod before the Sandbox named its checkpoint: GKE would start it fresh")
+	}
+	f.mu.Lock()
+	f.claimLag = false
+	f.mu.Unlock()
+	token := f.object("sandboxclaims/" + in.Ref)["metadata"].(map[string]any)["annotations"].(map[string]any)[annoToken].(string)
+	if err := a.Resume(ctx, in.Ref); err != nil {
+		t.Fatalf("resume once the controller caught up: %v", err)
+	}
+	if !f.has(pod, token) {
+		t.Fatal("not restored from the pause checkpoint")
+	}
+}
+
+// A claim patch that fails while undoing a pause or suspending an unverified
+// resume must not leave the Sandbox's mode undone.
+func TestWarmPoolModeChangesComeFirstWhenUndoing(t *testing.T) {
+	f, a := warmSnapshots(t)
+	ctx := context.Background()
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_w", Installation: "inst_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod := claimedSandbox(f.object("sandboxclaims/" + in.Ref))
+	if err := a.Pause(ctx, in.Ref); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.noRestore = true
+	f.mu.Unlock()
+	// The claim patch that counts the failure is refused.
+	f.mu.Lock()
+	f.failClaimPatch = true
+	f.mu.Unlock()
+	if err := a.Resume(ctx, in.Ref); err == nil {
+		t.Fatal("resume of an unrestored pod succeeded")
+	}
+	f.mu.Lock()
+	f.failClaimPatch = false
+	mode := f.objects["sandboxes/"+pod]["spec"].(map[string]any)["operatingMode"]
+	f.mu.Unlock()
+	if mode != "Suspended" {
+		t.Fatalf("the unverified pod runs on (mode %v) because the claim patch failed", mode)
 	}
 }

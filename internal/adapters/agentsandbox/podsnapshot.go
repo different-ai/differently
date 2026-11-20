@@ -29,6 +29,14 @@ package agentsandbox
 //   - Restores come from the pod template, so stop/start would restore the
 //     newest checkpoint over a newer volume. With snapshots, the pool offers
 //     pause/resume instead of stop/start.
+//
+// With a warm pool, sandboxes are SandboxClaims on already running pods. A
+// running pod cannot be restored, so such a pool offers pause/resume only, no
+// snapshots or fork. The claim controller rewrites the claimed Sandbox's pod
+// template from the SandboxTemplate and the claim on every pass, so the
+// snapshot group and the checkpoint to restore go into the claim's
+// additionalPodMetadata, and the adapter's annotations onto the claim; only
+// the operating mode is set on the Sandbox itself.
 
 import (
 	"context"
@@ -82,6 +90,10 @@ var SnapshotFeatures = []string{
 	adapter.FeaturePauseResume, adapter.FeaturePauseCheckpoint,
 }
 
+// WarmSnapshotFeatures are added instead when the pool also sets
+// config.warmPool.
+var WarmSnapshotFeatures = []string{adapter.FeaturePauseResume, adapter.FeaturePauseCheckpoint}
+
 func (a *Adapter) snapPath(plural string) string {
 	return "/apis/" + snapGroup + "/" + snapVersion + "/namespaces/" + url.PathEscape(a.opts.Namespace) + "/" + plural
 }
@@ -89,6 +101,8 @@ func (a *Adapter) snapPath(plural string) string {
 func (a *Adapter) triggers() string { return a.snapPath("podsnapshotmanualtriggers") }
 
 func (a *Adapter) snapshots() bool { return a.opts.PodSnapshotPolicy != "" }
+
+func (a *Adapter) warm() bool { return a.opts.WarmPool != "" }
 
 type expression struct {
 	Key      string `json:"key"`
@@ -167,6 +181,34 @@ func (a *Adapter) checkPolicy(ctx context.Context) error {
 	return p.check(a.opts.PodSnapshotPolicy)
 }
 
+// checkWarmRuntime refuses a warm pool whose pods GKE cannot checkpoint: Pod
+// Snapshots need gVisor, which a pod gets from its RuntimeClass.
+func (a *Adapter) checkWarmRuntime(ctx context.Context, template string) error {
+	if template == "" {
+		return adapter.Unavailable(fmt.Errorf("agent-sandbox: SandboxWarmPool %s names no sandboxTemplateRef", a.opts.WarmPool))
+	}
+	var t struct {
+		Spec struct {
+			PodTemplate struct {
+				Spec struct {
+					RuntimeClassName string `json:"runtimeClassName"`
+				} `json:"spec"`
+			} `json:"podTemplate"`
+		} `json:"spec"`
+	}
+	err := a.k.do(ctx, http.MethodGet, a.path(extensions, "sandboxtemplates")+"/"+url.PathEscape(template), "", nil, &t)
+	if api.IsCode(err, api.CodeNotFound) {
+		return adapter.Unavailable(fmt.Errorf("agent-sandbox: SandboxTemplate %s of warm pool %s not found", template, a.opts.WarmPool))
+	}
+	if err != nil {
+		return err
+	}
+	if t.Spec.PodTemplate.Spec.RuntimeClassName == "" {
+		return adapter.Unavailable(fmt.Errorf("agent-sandbox: GKE Pod Snapshots need gVisor, but SandboxTemplate %s of warm pool %s sets no runtimeClassName", template, a.opts.WarmPool))
+	}
+	return nil
+}
+
 // trigger is a PodSnapshotManualTrigger: the fields the adapter reads.
 type trigger struct {
 	Metadata struct {
@@ -228,6 +270,10 @@ func (a *Adapter) restored(ctx context.Context, ref, token string) (bool, error)
 // for the PodSnapshot to be ready. It returns the trigger's and the
 // snapshot's names and the checkpoint's token.
 func (a *Adapter) checkpoint(ctx context.Context, ref, installation, purpose string, annotations map[string]string) (trig, snap, token string, err error) {
+	pod, err := a.sandbox(ctx, ref) // the pod has the Sandbox's name
+	if err != nil {
+		return "", "", "", err
+	}
 	token = newToken()
 	if err = a.writeMarker(ctx, ref, token); err != nil {
 		return "", "", "", err
@@ -241,7 +287,7 @@ func (a *Adapter) checkpoint(ctx context.Context, ref, installation, purpose str
 			"labels":      map[string]string{labelPurpose: purpose, labelSource: ref, adapter.LabelInstallation: installation},
 			"annotations": annotations,
 		},
-		"spec": map[string]string{"targetPod": ref},
+		"spec": map[string]string{"targetPod": pod},
 	}
 	if err = a.k.do(ctx, http.MethodPost, a.triggers(), "", body, nil); err != nil {
 		return "", "", "", err
@@ -320,7 +366,7 @@ func parseSnapshotRef(ref string) (snap, trig string, err error) {
 }
 
 func (a *Adapter) needSnapshots(feature string) error {
-	if !a.snapshots() || a.opts.WarmPool != "" {
+	if !a.snapshots() || (a.warm() && !slices.Contains(WarmSnapshotFeatures, feature)) {
 		return adapter.Unsupported(feature)
 	}
 	return nil
@@ -492,19 +538,28 @@ func (a *Adapter) adopt(ctx context.Context, ref string) error {
 	if err != nil {
 		return err
 	}
-	err = httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
+	if err := a.waitGroup(ctx, ref, ref); err != nil {
+		return err
+	}
+	return a.patchSandbox(ctx, ref, map[string]any{"metadata": map[string]any{"annotations": map[string]any{annoForking: nil}}})
+}
+
+// waitGroup waits until the running pod carries ref as its snapshot group,
+// which GKE reads from the pod, not from the template.
+func (a *Adapter) waitGroup(ctx context.Context, ref, pod string) error {
+	err := httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
 		var p struct {
 			Metadata struct {
 				Labels map[string]string `json:"labels"`
 			} `json:"metadata"`
 		}
-		err := a.k.do(ctx, http.MethodGet, "/api/v1/namespaces/"+url.PathEscape(a.opts.Namespace)+"/pods/"+url.PathEscape(ref), "", nil, &p)
+		err := a.k.do(ctx, http.MethodGet, "/api/v1/namespaces/"+url.PathEscape(a.opts.Namespace)+"/pods/"+url.PathEscape(pod), "", nil, &p)
 		return err == nil && p.Metadata.Labels[snapshotGroup] == ref, err
 	})
 	if err != nil {
 		return timedOut(err, fmt.Sprintf("the pod of %s did not take its own snapshot group within %s", ref, a.opts.ReadyTimeout))
 	}
-	return a.patchSandbox(ctx, ref, map[string]any{"metadata": map[string]any{"annotations": map[string]any{annoForking: nil}}})
+	return nil
 }
 
 // finishFork completes a fork whose Create was interrupted (the control
@@ -538,6 +593,111 @@ func (s object) failures() int {
 	return n
 }
 
+// record returns ref's own object, which holds the adapter's annotations,
+// and the Sandbox that runs it: the same object without a warm pool, the
+// claimed Sandbox with one.
+func (a *Adapter) record(ctx context.Context, ref string) (rec, sb object, err error) {
+	if rec, err = a.get(ctx, a.owned(), ref); err != nil || !a.warm() {
+		return rec, rec, err
+	}
+	sb, err = a.claimed(ctx, ref)
+	return rec, sb, err
+}
+
+// claimed returns the Sandbox claim ref adopted. When the Sandbox it was
+// bound to is gone, the claim controller adopts another, so the binding is
+// dropped and read again from the claim once.
+func (a *Adapter) claimed(ctx context.Context, ref string) (object, error) {
+	for attempt := 0; ; attempt++ {
+		name, err := a.sandbox(ctx, ref)
+		if err != nil {
+			return object{}, err
+		}
+		sb, err := a.get(ctx, a.sandboxes(), name)
+		if !api.IsCode(err, api.CodeNotFound) || attempt > 0 {
+			return sb, err
+		}
+		a.unbind(ref)
+	}
+}
+
+func (a *Adapter) unbind(ref string) {
+	a.mu.Lock()
+	delete(a.bound, ref)
+	a.mu.Unlock()
+}
+
+// update writes, each when given, ref's own annotations, the annotations of
+// its pod template and its Sandbox's operating mode. Without a warm pool
+// that is one patch of one Sandbox. With one, the annotations go on the
+// claim, the pod's through its additionalPodMetadata (the claim controller
+// copies them onto the Sandbox), and the mode on the claimed Sandbox: last
+// when entering a pause, so a sandbox is never suspended without the claim
+// saying so; first otherwise (undoing a pause, suspending an unverified
+// resume), so a failed claim patch cannot leave the mode undone.
+func (a *Adapter) update(ctx context.Context, ref, sb string, annotations, podAnnotations map[string]any, mode string) error {
+	patch, spec := map[string]any{}, map[string]any{}
+	if annotations != nil {
+		patch["metadata"] = map[string]any{"annotations": annotations}
+	}
+	if !a.warm() {
+		if mode != "" {
+			spec["operatingMode"] = mode
+		}
+		if podAnnotations != nil {
+			spec["podTemplate"] = map[string]any{"metadata": map[string]any{"annotations": podAnnotations}}
+		}
+		if len(spec) > 0 {
+			patch["spec"] = spec
+		}
+		return a.patchSandbox(ctx, ref, patch)
+	}
+	if podAnnotations != nil {
+		patch["spec"] = map[string]any{"additionalPodMetadata": map[string]any{"annotations": podAnnotations}}
+	}
+	setMode := func() error {
+		if mode == "" {
+			return nil
+		}
+		return a.patch(ctx, a.sandboxes(), sb, map[string]any{"operatingMode": mode})
+	}
+	pausing := annotations != nil && annotations[annoPaused] != nil
+	if !pausing {
+		if err := setMode(); err != nil {
+			return err
+		}
+	}
+	if len(patch) > 0 {
+		if err := a.k.do(ctx, http.MethodPatch, a.owned()+"/"+url.PathEscape(ref), "application/merge-patch+json", patch, nil); err != nil {
+			return err
+		}
+	}
+	if pausing {
+		return setMode()
+	}
+	return nil
+}
+
+// instOf reports s. A claim whose sandbox is pausing, paused, resuming or
+// suspended takes its state from the claimed Sandbox: the claim's own
+// conditions do not describe a suspended Sandbox. A Sandbox that cannot be
+// read reports that one sandbox pending (which the reconciler leaves alone)
+// rather than failing a whole List.
+func (a *Adapter) instOf(ctx context.Context, s object) (adapter.Instance, error) {
+	c, _ := s.cond("Ready")
+	if !a.warm() || (s.Metadata.Annotations[annoPaused] == "" && c.Reason != "SandboxSuspended") {
+		return s.inst(), nil
+	}
+	sb, err := a.claimed(ctx, s.Metadata.Name)
+	if err != nil {
+		in := s.inst()
+		in.State, in.Message = adapter.StatePending, "its Sandbox cannot be read: "+err.Error()
+		return in, nil
+	}
+	sb.Metadata.Name, sb.Metadata.Labels, sb.Metadata.Annotations = s.Metadata.Name, s.Metadata.Labels, s.Metadata.Annotations
+	return sb.inst(), nil
+}
+
 // Pause checkpoints the sandbox and suspends it: the pod is deleted, so the
 // sandbox holds no node resources while paused. Resume restores that
 // checkpoint. Only the newest pause checkpoint is kept.
@@ -545,35 +705,50 @@ func (a *Adapter) Pause(ctx context.Context, ref string) error {
 	if err := a.needSnapshots(adapter.FeaturePauseResume); err != nil {
 		return err
 	}
-	s, err := a.get(ctx, a.sandboxes(), ref)
+	rec, sb, err := a.record(ctx, ref)
 	if err != nil {
 		return err
 	}
-	if s.Metadata.Annotations[annoPaused] != "" && s.Spec.OperatingMode == "Suspended" {
+	if rec.Metadata.Annotations[annoPaused] != "" && sb.Spec.OperatingMode == "Suspended" {
 		return nil // already paused
 	}
-	if s.Spec.OperatingMode == "Suspended" {
+	if sb.Spec.OperatingMode == "Suspended" {
 		return api.Errorf(api.CodeInvalidState, "agent-sandbox: %s is stopped", ref)
 	}
-	trig, snap, token, err := a.checkpoint(ctx, ref, s.Metadata.Labels[adapter.LabelInstallation], "pause", map[string]string{})
+	sbName := sb.Metadata.Name
+	if a.warm() {
+		// A claimed warm pod joins its group a moment after the claim; GKE
+		// checkpoints only a pod its policy selects.
+		if err := a.waitGroup(ctx, ref, sbName); err != nil {
+			return err
+		}
+	}
+	trig, snap, token, err := a.checkpoint(ctx, ref, rec.Metadata.Labels[adapter.LabelInstallation], "pause", map[string]string{})
 	if err != nil {
 		return err
 	}
-	err = a.patchSandbox(ctx, ref, map[string]any{
-		"metadata": map[string]any{"annotations": map[string]any{annoPaused: trig, annoToken: token, annoFailures: nil}},
-		"spec": map[string]any{
-			"operatingMode": "Suspended",
-			// The pod the controller creates on resume restores this snapshot.
-			"podTemplate": map[string]any{"metadata": map[string]any{"annotations": map[string]string{psName: snap}}},
-		},
-	})
+	// The pod the controller creates on resume restores this snapshot.
+	err = a.update(ctx, ref, sbName, map[string]any{annoPaused: trig, annoToken: token, annoFailures: nil}, map[string]any{psName: snap}, "Suspended")
 	if err != nil {
-		_ = a.deleteCheckpoint(context.WithoutCancel(ctx), trig, snap)
+		bg := context.WithoutCancel(ctx)
+		if a.warm() {
+			// The claim may already name the checkpoint about to be deleted,
+			// and the suspend may have landed with its answer lost: set the
+			// Sandbox running first, then clear the claim.
+			if rerr := a.update(bg, ref, sbName, map[string]any{annoPaused: nil}, map[string]any{psName: nil}, "Running"); rerr != nil {
+				// Something may still need the checkpoint: keep it, as the
+				// orphan collection does for a live sandbox.
+				return err
+			}
+		}
+		_ = a.deleteCheckpoint(bg, trig, snap)
 		return err
 	}
+	// Suspended, and, with a warm pool, the claim controller has copied the
+	// checkpoint's name onto the Sandbox's pod template.
 	err = httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
-		s, err := a.get(ctx, a.sandboxes(), ref)
-		return err == nil && s.is("Suspended"), err
+		_, s, err := a.record(ctx, ref)
+		return err == nil && s.is("Suspended") && s.Spec.PodTemplate.Metadata.Annotations[psName] == snap, err
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -584,10 +759,7 @@ func (a *Adapter) Pause(ctx context.Context, ref string) error {
 		// The suspend did not finish. The scheduler keeps the sandbox running
 		// when a pause fails, so running it must be. A pod recreated meanwhile
 		// restores this checkpoint, the newest state there is.
-		rerr := a.patchSandbox(context.WithoutCancel(ctx), ref, map[string]any{
-			"metadata": map[string]any{"annotations": map[string]any{annoPaused: nil}},
-			"spec":     map[string]any{"operatingMode": "Running"},
-		})
+		rerr := a.update(context.WithoutCancel(ctx), ref, sbName, map[string]any{annoPaused: nil}, nil, "Running")
 		if rerr != nil {
 			return fmt.Errorf("agent-sandbox: %s was not suspended within %s, and setting it running again failed: %w", ref, a.opts.ReadyTimeout, rerr)
 		}
@@ -607,22 +779,35 @@ func (a *Adapter) Resume(ctx context.Context, ref string) error {
 	if err := a.needSnapshots(adapter.FeaturePauseResume); err != nil {
 		return err
 	}
-	s, err := a.get(ctx, a.sandboxes(), ref)
+	rec, sb, err := a.record(ctx, ref)
 	if err != nil {
 		return err
 	}
-	if s.Metadata.Annotations[annoPaused] == "" {
-		if s.Spec.OperatingMode == "Suspended" {
+	if rec.Metadata.Annotations[annoPaused] == "" {
+		if sb.Spec.OperatingMode == "Suspended" {
 			return api.Errorf(api.CodeInvalidState, "agent-sandbox: %s is stopped, not paused", ref)
 		}
 		return nil // running
 	}
-	if n := s.failures(); n >= maxRestoreFailures {
+	if n := rec.failures(); n >= maxRestoreFailures {
 		return adapter.SandboxFailed(fmt.Errorf("agent-sandbox: %s could not be restored from its pause checkpoint in %d resumes", ref, n))
 	}
-	token := s.Metadata.Annotations[annoToken]
-	if s.Spec.OperatingMode == "Suspended" {
-		if err := a.patch(ctx, a.sandboxes(), ref, map[string]any{"operatingMode": "Running"}); err != nil {
+	token, sbName := rec.Metadata.Annotations[annoToken], sb.Metadata.Name
+	if sb.Spec.OperatingMode == "Suspended" {
+		if a.warm() {
+			// The pod must not start before the claim controller has copied
+			// the checkpoint's name onto the Sandbox's pod template (a pause
+			// whose caller gave up may not have waited for it).
+			want := rec.Spec.AdditionalPodMetadata.Annotations[psName]
+			err := httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
+				s, err := a.get(ctx, a.sandboxes(), sbName)
+				return err == nil && want != "" && s.Spec.PodTemplate.Metadata.Annotations[psName] == want, err
+			})
+			if err != nil {
+				return timedOut(err, fmt.Sprintf("the Sandbox of %s did not name its pause checkpoint within %s", ref, a.opts.ReadyTimeout))
+			}
+		}
+		if err := a.patch(ctx, a.sandboxes(), sbName, map[string]any{"operatingMode": "Running"}); err != nil {
 			return err
 		}
 	}
@@ -633,22 +818,19 @@ func (a *Adapter) Resume(ctx context.Context, ref string) error {
 	if err != nil || !ok {
 		// Suspend it again either way: it must not run on unverified. Only a
 		// pod that answered, without the marker, counts as not restored.
-		patch := map[string]any{"spec": map[string]any{"operatingMode": "Suspended"}}
+		var annotations map[string]any
 		if err == nil {
-			patch["metadata"] = map[string]any{"annotations": map[string]string{annoFailures: strconv.Itoa(s.failures() + 1)}}
+			annotations = map[string]any{annoFailures: strconv.Itoa(rec.failures() + 1)}
 			err = adapter.SandboxFailed(fmt.Errorf("agent-sandbox: %s started without its pause checkpoint (GKE restores only onto the same machine series, from a ready snapshot); it was suspended again", ref))
 		}
-		_ = a.patchSandbox(context.WithoutCancel(ctx), ref, patch)
+		_ = a.update(context.WithoutCancel(ctx), ref, sbName, annotations, nil, "Suspended")
 		return err
 	}
 	// The checkpoint stays until the next pause or the delete: GKE may still
 	// be streaming memory into the pod from it. The pod template stops naming
 	// it, so a pod GKE recreates later restores the sandbox's newest
 	// checkpoint instead of rolling back to this one.
-	return a.patchSandbox(ctx, ref, map[string]any{
-		"metadata": map[string]any{"annotations": map[string]any{annoPaused: nil, annoFailures: nil}},
-		"spec":     map[string]any{"podTemplate": map[string]any{"metadata": map[string]any{"annotations": map[string]any{psName: nil}}}},
-	})
+	return a.update(ctx, ref, sbName, map[string]any{annoPaused: nil, annoFailures: nil}, map[string]any{psName: nil}, "")
 }
 
 // dropCheckpoints deletes the checkpoints whose triggers carry labels and
