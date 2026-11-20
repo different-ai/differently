@@ -1,8 +1,10 @@
 # Google Cloud (GKE)
 
 > **Quickest path:** a single Compute Engine VM with k3s, following
-> [One Linux VM on any cloud](single-vm.md). Use this page when you run a
-> managed Kubernetes cluster.
+> [One Linux VM on any cloud](single-vm.md). For Fast Sandbox microVMs and
+> managed services on VMs, see [Google Cloud VMs with Fast Sandbox](gcp-vms.md),
+> the verified Azure layout translated to Compute Engine. Use this page when
+> you run a managed Kubernetes cluster.
 
 Status: **unverified**. No step here has been run.
 
