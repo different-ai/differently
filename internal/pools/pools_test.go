@@ -1,6 +1,7 @@
 package pools
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -51,5 +52,29 @@ func TestSyncKeepsAdapterWhenCredentialUnreadable(t *testing.T) {
 	m.Sync(list)
 	if _, err := m.Adapter("provider"); err == nil {
 		t.Fatal("a deleted credential left the pool's adapter in place")
+	}
+}
+
+// Supports reads a pool's capabilities while Refresh rewrites them from its
+// probe goroutines; under -race this caught Supports reading the entry after
+// releasing the lock.
+func TestSupportsDuringRefresh(t *testing.T) {
+	m := NewManager(Deps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	m.Set(api.Pool{Name: "provider", Adapter: "fake", Trust: api.TrustExternal, Enabled: true}, fake.New(fake.Options{Trust: api.TrustExternal}))
+	ctx := context.Background()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 50; i++ {
+			m.Refresh(ctx)
+		}
+	}()
+	for {
+		select {
+		case <-done:
+			return
+		default:
+			m.Supports(ctx, "provider", "exec")
+		}
 	}
 }

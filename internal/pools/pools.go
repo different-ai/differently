@@ -257,19 +257,25 @@ func (m *Manager) Refresh(ctx context.Context) {
 // Supports reports whether a pool advertises feature (declared by the
 // adapter and backed by an implemented interface).
 func (m *Manager) Supports(ctx context.Context, name, feature string) bool {
+	// Refresh writes the entry's fields under the lock, so copy what is
+	// needed before releasing it; the adapter call below runs unlocked.
 	m.mu.RLock()
 	e, ok := m.entries[name]
+	var a adapter.ExecutionAdapter
+	var caps adapter.Capabilities
+	if ok {
+		a, caps = e.adapter, e.caps
+	}
 	m.mu.RUnlock()
-	if !ok || e.adapter == nil {
+	if a == nil {
 		return false
 	}
-	caps := e.caps
 	if caps.Features == nil {
-		c, err := e.adapter.Capabilities(ctx)
+		c, err := a.Capabilities(ctx)
 		if err != nil {
 			return false
 		}
-		c.Features = adapter.EffectiveFeatures(e.adapter, c.Features)
+		c.Features = adapter.EffectiveFeatures(a, c.Features)
 		caps = c
 	}
 	return caps.Has(feature)
