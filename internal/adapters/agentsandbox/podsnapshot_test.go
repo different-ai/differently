@@ -8,8 +8,11 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/different-ai/differently/pkg/adapter"
 	"github.com/different-ai/differently/pkg/api"
@@ -17,9 +20,11 @@ import (
 
 // fakeSnapshots adds GKE Pod Snapshots to fakeKube: a PodSnapshotPolicy, and
 // triggers that checkpoint a pod on the next read into a ready PodSnapshot
-// holding the pod's marker, group and pod spec. A pod the controller creates
-// is restored from the snapshot its template names when GKE would: same
-// group, same pod spec, ready, and noRestore unset.
+// holding the pod's marker files, group and pod spec. A pod the controller
+// creates is restored as GKE would: from the snapshot its template names, or
+// else from the newest one in its group with the same pod spec; only if the
+// snapshot is in the pod's group, has the same pod spec, and noRestore is
+// unset.
 type fakeSnapshots struct {
 	*fakeKube
 	policy     map[string]any
@@ -28,6 +33,7 @@ type fakeSnapshots struct {
 	noRestore  bool // GKE starts restored pods fresh (another machine series, say)
 	snaps      map[string]map[string]any
 	triggers   map[string]map[string]any
+	seq        int // orders snapshots, newest last
 }
 
 func validPolicy() map[string]any {
@@ -121,16 +127,30 @@ func newFakeSnapshots(t *testing.T) *fakeSnapshots {
 		}
 		jsonOut(w, 200, s)
 	}))
-	f.restore = func(sandbox string, obj map[string]any) string {
+	f.restore = func(sandbox string, obj map[string]any) map[string]bool {
 		tmpl := obj["spec"].(map[string]any)["podTemplate"].(map[string]any)
 		md, _ := tmpl["metadata"].(map[string]any)
 		ann, _ := md["annotations"].(map[string]any)
 		labels, _ := md["labels"].(map[string]any)
-		snap, ok := f.snaps[str(ann[psName])]
-		if !ok || f.noRestore || snap["group"] != labels[snapshotGroup] || !sameJSON(snap["podSpec"], tmpl["spec"]) {
-			return "" // a fresh start, as GKE does it: silently
+		group := labels[snapshotGroup]
+		var snap map[string]any
+		if n := str(ann[psName]); n != "" {
+			snap = f.snaps[n]
+		} else {
+			for _, s := range f.snaps {
+				if s["group"] == group && sameJSON(s["podSpec"], tmpl["spec"]) && (snap == nil || s["seq"].(int) > snap["seq"].(int)) {
+					snap = s
+				}
+			}
 		}
-		return snap["marker"].(string)
+		if snap == nil || f.noRestore || group == nil || snap["group"] != group || !sameJSON(snap["podSpec"], tmpl["spec"]) {
+			return map[string]bool{} // a fresh start, as GKE does it: silently
+		}
+		out := map[string]bool{}
+		for k := range snap["markers"].(map[string]bool) {
+			out[k] = true
+		}
+		return out
 	}
 	return f
 }
@@ -161,10 +181,21 @@ func (f *fakeSnapshots) checkpoint(name string, t map[string]any) {
 	tmpl := sb["spec"].(map[string]any)["podTemplate"].(map[string]any)
 	labels := tmpl["metadata"].(map[string]any)["labels"].(map[string]any)
 	snap := name + "-ps"
+	markers := map[string]bool{}
+	for k := range f.markers[pod] {
+		markers[k] = true
+	}
+	// The group is the running pod's label, which the controller copies from
+	// the template.
+	podLabels := f.pods[pod]["metadata"].(map[string]any)["labels"].(map[string]any)
+	if podLabels[snapshotGroup] != labels[snapshotGroup] {
+		f.t.Errorf("checkpoint of %s: the pod's group %v differs from its template's %v", pod, podLabels[snapshotGroup], labels[snapshotGroup])
+	}
+	f.seq++
 	f.snaps[snap] = map[string]any{
 		"metadata": map[string]any{"name": snap},
 		"status":   map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": "True", "reason": "AllSnapshotsAvailable"}}},
-		"marker":   f.markers[pod], "group": labels[snapshotGroup], "podSpec": tmpl["spec"],
+		"markers":  markers, "group": podLabels[snapshotGroup], "podSpec": tmpl["spec"], "seq": f.seq,
 	}
 	var created any = map[string]any{"name": snap}
 	if f.snapString {
@@ -274,18 +305,53 @@ func TestPodSnapshotPolicyIsChecked(t *testing.T) {
 	}
 }
 
+// tmplMeta returns a Sandbox's pod template metadata.
+func (f *fakeSnapshots) tmplMeta(ref string) (labels, annotations map[string]any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	md := f.objects["sandboxes/"+ref]["spec"].(map[string]any)["podTemplate"].(map[string]any)["metadata"].(map[string]any)
+	labels, _ = md["labels"].(map[string]any)
+	annotations, _ = md["annotations"].(map[string]any)
+	return labels, annotations
+}
+
+// token returns the marker token of the checkpoint behind a snapshot ref.
+func (f *fakeSnapshots) token(snapRef string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, trig, _ := strings.Cut(snapRef, "/")
+	return f.triggers[trig]["metadata"].(map[string]any)["annotations"].(map[string]any)[annoToken].(string)
+}
+
+// has reports whether a pod holds the marker of the checkpoint with token.
+func (f *fakeSnapshots) has(pod, token string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.markers[pod][markerPrefix+token]
+}
+
+// recreatePod deletes a pod, as a node drain does; the next read of its
+// Sandbox makes the controller create it again, and GKE restore it.
+func (f *fakeSnapshots) recreatePod(ref string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.pods, ref)
+	delete(f.markers, ref)
+}
+
+var small = api.Resources{CPU: 1, MemoryMiB: 512}
+
 func TestSnapshotAndFork(t *testing.T) {
 	ctx := context.Background()
 	for _, asString := range []bool{false, true} {
 		f := newFakeSnapshots(t)
 		f.snapString = asString
 		a := f.adapter(t, snapCfg())
-		src, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_src", Installation: "inst_1", Resources: api.Resources{CPU: 1, MemoryMiB: 512}})
+		src, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_src", Installation: "inst_1", Resources: small})
 		if err != nil {
 			t.Fatal(err)
 		}
-		labels := f.object("sandboxes/dly-sbx-src")["spec"].(map[string]any)["podTemplate"].(map[string]any)["metadata"].(map[string]any)["labels"].(map[string]any)
-		if labels[snapshotGroup] != "dly-sbx-src" {
+		if labels, _ := f.tmplMeta(src.Ref); labels[snapshotGroup] != "dly-sbx-src" {
 			t.Fatalf("a new sandbox must have a snapshot group of its own: %v", labels)
 		}
 
@@ -294,22 +360,29 @@ func TestSnapshotAndFork(t *testing.T) {
 			t.Fatalf("snapshot %+v %v", snap, err)
 		}
 
-		// The fork asks for another image and size: it gets its source's pod
-		// spec, which GKE needs to restore it, and its source's group.
-		fork, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_fork", Installation: "inst_1", Template: "busybox", Resources: api.Resources{CPU: 4}, FromSnapshot: snap.Ref, TTLSeconds: 60})
+		if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_big", Installation: "inst_1", Resources: api.Resources{CPU: 4, MemoryMiB: 512}, FromSnapshot: snap.Ref}); !api.IsCode(err, api.CodeInvalidRequest) || !strings.Contains(err.Error(), "ask for cpu 1 and memory 512Mi") {
+			t.Fatalf("a fork at another size: %v", err)
+		}
+
+		// The fork asks for another image: it gets its source's pod spec,
+		// which GKE needs to restore it.
+		fork, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_fork", Installation: "inst_1", Template: "busybox", Resources: small, FromSnapshot: snap.Ref, TTLSeconds: 60})
 		if err != nil || fork.State != adapter.StateRunning {
 			t.Fatalf("fork %+v %v", fork, err)
 		}
-		obj := f.object("sandboxes/dly-sbx-fork")
-		tmpl := obj["spec"].(map[string]any)["podTemplate"].(map[string]any)
-		md := tmpl["metadata"].(map[string]any)
-		snapName, _, _ := strings.Cut(snap.Ref, "/")
-		if md["annotations"].(map[string]any)[psName] != snapName || md["labels"].(map[string]any)[snapshotGroup] != "dly-sbx-src" ||
-			md["labels"].(map[string]any)[adapter.LabelSandboxID] != "sbx_fork" || obj["spec"].(map[string]any)["shutdownPolicy"] != "Delete" {
-			t.Fatalf("fork metadata %v, spec %v", md, obj["spec"])
+		if !f.has(fork.Ref, f.token(snap.Ref)) {
+			t.Fatal("the fork was not restored from the snapshot")
 		}
-		if !sameJSON(tmpl["spec"], f.object("sandboxes/dly-sbx-src")["spec"].(map[string]any)["podTemplate"].(map[string]any)["spec"]) {
+		obj := f.object("sandboxes/dly-sbx-fork")
+		if obj["metadata"].(map[string]any)["labels"].(map[string]any)[adapter.LabelSandboxID] != "sbx_fork" || obj["spec"].(map[string]any)["shutdownPolicy"] != "Delete" {
+			t.Fatalf("fork %v", obj)
+		}
+		if !sameJSON(obj["spec"].(map[string]any)["podTemplate"].(map[string]any)["spec"], f.object("sandboxes/dly-sbx-src")["spec"].(map[string]any)["podTemplate"].(map[string]any)["spec"]) {
 			t.Fatalf("the fork's pod spec differs from its source's")
+		}
+		// Once restored, the fork is in a group of its own and names no snapshot.
+		if labels, ann := f.tmplMeta(fork.Ref); labels[snapshotGroup] != "dly-sbx-fork" || ann[psName] != nil {
+			t.Fatalf("the fork stayed in its source's group or kept naming the snapshot: %v %v", labels, ann)
 		}
 
 		// Snapshots outlive their sandbox, and are deleted with their files.
@@ -328,9 +401,53 @@ func TestSnapshotAndFork(t *testing.T) {
 		if s, tr := f.count(); s != 0 || tr != 0 {
 			t.Fatalf("after deleting the snapshot: %d snapshots, %d triggers", s, tr)
 		}
-		if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_gone", Installation: "inst_1", FromSnapshot: snap.Ref}); !api.IsCode(err, api.CodeNotFound) {
+		if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_gone", Installation: "inst_1", Resources: small, FromSnapshot: snap.Ref}); !api.IsCode(err, api.CodeNotFound) {
 			t.Fatalf("fork of a deleted snapshot: %v", err)
 		}
+	}
+}
+
+// A sandbox whose pod GKE recreates comes back from its own newest
+// checkpoint, never from a fork's, and a new sandbox from nothing.
+func TestRecreatedPodsRestoreOnlyTheirOwnCheckpoints(t *testing.T) {
+	f := newFakeSnapshots(t)
+	a := f.adapter(t, snapCfg())
+	ctx := context.Background()
+	src, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_a", Installation: "inst_1", Resources: small})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapA, err := a.Snapshot(ctx, src.Ref, "memory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fork, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_b", Installation: "inst_1", Resources: small, FromSnapshot: snapA.Ref})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapB, err := a.Snapshot(ctx, fork.Ref, "memory") // newer than snapA, same pod spec
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.recreatePod(src.Ref)
+	if _, err := a.Get(ctx, src.Ref); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Get(ctx, src.Ref); err != nil { // the pod is back
+		t.Fatal(err)
+	}
+	if f.has(src.Ref, f.token(snapB.Ref)) {
+		t.Fatal("the source came back with its fork's memory")
+	}
+	if !f.has(src.Ref, f.token(snapA.Ref)) {
+		t.Fatal("the source did not come back from its own snapshot")
+	}
+	fresh, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_c", Installation: "inst_1", Resources: small})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.has(fresh.Ref, f.token(snapA.Ref)) || f.has(fresh.Ref, f.token(snapB.Ref)) {
+		t.Fatal("a new sandbox started from another sandbox's snapshot")
 	}
 }
 
@@ -338,7 +455,7 @@ func TestForkThatGKEDidNotRestoreFails(t *testing.T) {
 	f := newFakeSnapshots(t)
 	a := f.adapter(t, snapCfg())
 	ctx := context.Background()
-	src, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_src", Installation: "inst_1"})
+	src, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_src", Installation: "inst_1", Resources: small})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +466,7 @@ func TestForkThatGKEDidNotRestoreFails(t *testing.T) {
 	f.mu.Lock()
 	f.noRestore = true
 	f.mu.Unlock()
-	_, err = a.Create(ctx, adapter.CreateRequest{ID: "sbx_fork", Installation: "inst_1", FromSnapshot: snap.Ref})
+	_, err = a.Create(ctx, adapter.CreateRequest{ID: "sbx_fork", Installation: "inst_1", Resources: small, FromSnapshot: snap.Ref})
 	if !api.IsCode(err, adapter.CodeSandboxFailed) || !strings.Contains(err.Error(), "started without its snapshot") {
 		t.Fatalf("want sandbox_failed, got %v", err)
 	}
@@ -358,6 +475,36 @@ func TestForkThatGKEDidNotRestoreFails(t *testing.T) {
 	}
 	if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_x", Installation: "inst_1", FromSnapshot: "no-slash"}); !api.IsCode(err, api.CodeInvalidRequest) {
 		t.Fatalf("a malformed snapshot ref: %v", err)
+	}
+}
+
+// Two checkpoints of one sandbox at once each keep their own marker.
+func TestConcurrentCheckpoints(t *testing.T) {
+	f := newFakeSnapshots(t)
+	a := f.adapter(t, snapCfg())
+	ctx := context.Background()
+	src, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_src", Installation: "inst_1", Resources: small})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snaps := make([]adapter.Snapshot, 2)
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for i := range snaps {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			snaps[i], errs[i] = a.Snapshot(ctx, src.Ref, "memory")
+		}()
+	}
+	wg.Wait()
+	for i, s := range snaps {
+		if errs[i] != nil {
+			t.Fatal(errs[i])
+		}
+		if _, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_f" + strconv.Itoa(i), Installation: "inst_1", Resources: small, FromSnapshot: s.Ref}); err != nil {
+			t.Fatalf("fork of concurrent snapshot %d: %v", i, err)
+		}
 	}
 }
 
@@ -398,6 +545,9 @@ func TestPauseResume(t *testing.T) {
 		if got, err := a.Get(ctx, in.Ref); err != nil || got.State != adapter.StatePaused {
 			t.Fatalf("after pause %d: %+v %v", round, got, err)
 		}
+		if list, err := a.List(ctx, "inst_1"); err != nil || len(list) != 1 || list[0].State != adapter.StatePaused {
+			t.Fatalf("list after pause %d: %+v %v", round, list, err)
+		}
 		f.mu.Lock()
 		_, podLeft := f.pods[in.Ref]
 		f.mu.Unlock()
@@ -419,6 +569,9 @@ func TestPauseResume(t *testing.T) {
 		if got, err := a.Get(ctx, in.Ref); err != nil || got.State != adapter.StateRunning {
 			t.Fatalf("after resume %d: %+v %v", round, got, err)
 		}
+		if _, ann := f.tmplMeta(in.Ref); ann[psName] != nil {
+			t.Fatalf("after resume %d the template still names the pause checkpoint: a recreated pod would roll back to it", round)
+		}
 	}
 	if err := a.Delete(ctx, in.Ref); err != nil {
 		t.Fatal(err)
@@ -428,7 +581,35 @@ func TestPauseResume(t *testing.T) {
 	}
 }
 
-func TestResumeThatGKEDidNotRestoreStaysPaused(t *testing.T) {
+// A pause whose suspend does not finish leaves the sandbox running, as the
+// scheduler records it.
+func TestPauseThatDoesNotSuspendIsUndone(t *testing.T) {
+	f := newFakeSnapshots(t)
+	a := f.adapter(t, snapCfg())
+	a.opts.ReadyTimeout = time.Second
+	ctx := context.Background()
+	in, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_p", Installation: "inst_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.stuckSuspend = true
+	f.mu.Unlock()
+	if err := a.Pause(ctx, in.Ref); !api.IsCode(err, adapter.CodeSandboxFailed) {
+		t.Fatalf("want sandbox_failed, got %v", err)
+	}
+	f.mu.Lock()
+	f.stuckSuspend = false
+	f.mu.Unlock()
+	if got, err := a.Get(ctx, in.Ref); err != nil || got.State != adapter.StateRunning {
+		t.Fatalf("after a failed pause: %+v %v", got, err)
+	}
+	if res, err := a.Exec(ctx, in.Ref, api.ExecRequest{Command: "true"}); err != nil || res.ExitCode != 0 {
+		t.Fatalf("exec after a failed pause: %+v %v", res, err)
+	}
+}
+
+func TestResumeThatGKEDidNotRestore(t *testing.T) {
 	f := newFakeSnapshots(t)
 	a := f.adapter(t, snapCfg())
 	ctx := context.Background()
@@ -454,5 +635,77 @@ func TestResumeThatGKEDidNotRestoreStaysPaused(t *testing.T) {
 	f.mu.Unlock()
 	if err := a.Resume(ctx, in.Ref); err != nil {
 		t.Fatalf("second resume: %v", err)
+	}
+
+	// A sandbox GKE never restores fails after maxRestoreFailures resumes,
+	// rather than being retried for ever.
+	if err := a.Pause(ctx, in.Ref); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.noRestore = true
+	f.mu.Unlock()
+	for range maxRestoreFailures {
+		if err := a.Resume(ctx, in.Ref); !api.IsCode(err, adapter.CodeSandboxFailed) {
+			t.Fatalf("want sandbox_failed, got %v", err)
+		}
+	}
+	got, err := a.Get(ctx, in.Ref)
+	if err != nil || got.State != adapter.StateError || !strings.Contains(got.Message, "could not be restored") {
+		t.Fatalf("after %d failed resumes: %+v %v", maxRestoreFailures, got, err)
+	}
+	gen := f.object("sandboxes/" + in.Ref)["metadata"].(map[string]any)["generation"]
+	if err := a.Resume(ctx, in.Ref); !api.IsCode(err, adapter.CodeSandboxFailed) {
+		t.Fatalf("one more resume: %v", err)
+	}
+	if f.object("sandboxes/" + in.Ref)["metadata"].(map[string]any)["generation"] != gen {
+		t.Fatal("a resume past the limit started the pod again")
+	}
+}
+
+func TestStopStartIsNotOfferedWithSnapshots(t *testing.T) {
+	f := newFakeSnapshots(t)
+	cfg := snapCfg()
+	cfg["volumeSize"] = "1Gi"
+	a := f.adapter(t, cfg)
+	caps, _ := a.Capabilities(context.Background())
+	if slices.Contains(caps.Features, adapter.FeatureStopStart) {
+		t.Fatalf("features %v offer stop/start, which would restore the newest checkpoint over a newer volume", caps.Features)
+	}
+	if err := a.Stop(context.Background(), "x"); !api.IsCode(err, api.CodeUnsupportedOperation) {
+		t.Fatalf("stop: %v", err)
+	}
+}
+
+// Pause checkpoints of a Sandbox deleted behind Differently's back are
+// collected by the next List.
+func TestListCollectsOrphanedPauseCheckpoints(t *testing.T) {
+	f := newFakeSnapshots(t)
+	a := f.adapter(t, snapCfg())
+	ctx := context.Background()
+	keep, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_keep", Installation: "inst_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone, err := a.Create(ctx, adapter.CreateRequest{ID: "sbx_gone", Installation: "inst_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{keep.Ref, gone.Ref} {
+		if err := a.Pause(ctx, ref); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.mu.Lock()
+	delete(f.objects, "sandboxes/"+gone.Ref) // the TTL backstop
+	f.mu.Unlock()
+	if _, err := a.List(ctx, "inst_1"); err != nil {
+		t.Fatal(err)
+	}
+	if s, tr := f.count(); s != 1 || tr != 1 {
+		t.Fatalf("after list: %d snapshots, %d triggers; want the kept sandbox's only", s, tr)
+	}
+	if err := a.Resume(ctx, keep.Ref); err != nil {
+		t.Fatalf("the kept sandbox's checkpoint was collected: %v", err)
 	}
 }

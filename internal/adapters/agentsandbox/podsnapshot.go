@@ -7,21 +7,28 @@ package agentsandbox
 // that writes the sandbox out and deletes its pod.
 //
 // GKE checkpoints a pod when a PodSnapshotManualTrigger names it, and
-// restores a new pod from a snapshot when the pod matches a
-// PodSnapshotPolicy and either carries the annotation
-// podsnapshot.gke.io/ps-name or is the newest match. Two properties of that
+// restores every new pod that matches a PodSnapshotPolicy: from the snapshot
+// its annotation podsnapshot.gke.io/ps-name names, or else from the newest
+// snapshot with a matching pod spec in its group. Three properties of that
 // design shape this file:
 //
-//   - By default a new pod is restored from the newest snapshot whose pod
-//     spec matches. Two tenants' sandboxes with the same image and resources
-//     match, so a fresh sandbox could start from someone else's memory. The
-//     pool therefore refuses a policy that does not select on, and group by,
-//     the label snapshotGroup, which every sandbox carries with a value of its
-//     own (a fork carries its source's).
+//   - Any new pod is restored. Without grouping, a fresh sandbox could start
+//     from another one's memory, so the pool refuses a policy that does not
+//     select on, and group by, the label snapshotGroup. Every sandbox's pod
+//     carries a value of its own: a fork starts in its source's group, which
+//     its restore needs, and moves to its own group as soon as the restore is
+//     verified (agent-sandbox's controller patches template label changes
+//     onto the running pod; it does not recreate it). A pod GKE recreates
+//     later (a node drain) therefore comes back from the sandbox's own newest
+//     checkpoint, never from another sandbox's.
 //   - A pod that cannot be restored (another machine series, a different pod
 //     spec, a snapshot that is not ready) starts fresh, silently. Before each
-//     checkpoint the adapter writes a token to markerPath in the sandbox, and
-//     after a restore it reads it back: a fork or a resume without it failed.
+//     checkpoint the adapter creates a marker file named after it in the
+//     sandbox and looks for it after a restore. Each checkpoint has its own
+//     file, so concurrent checkpoints cannot overwrite each other's.
+//   - Restores come from the pod template, so stop/start would restore the
+//     newest checkpoint over a newer volume. With snapshots, the pool offers
+//     pause/resume instead of stop/start.
 
 import (
 	"context"
@@ -49,13 +56,18 @@ const (
 	snapshotGroup = "differently.dev/snapshot-group"
 	// psName is GKE's pod annotation naming the snapshot to restore.
 	psName = "podsnapshot.gke.io/ps-name"
-	// markerPath holds the token written before a checkpoint.
-	markerPath = "/tmp/.differently-snapshot"
+	// markerPrefix plus a checkpoint's token is the file created in the
+	// sandbox just before that checkpoint.
+	markerPrefix = "/tmp/.differently-snapshot-"
+	// maxRestoreFailures is how many resumes may find the pause checkpoint
+	// not restored before the sandbox is reported failed.
+	maxRestoreFailures = 3
 
-	annoToken    = "differently.dev/restore-token" // on a Sandbox: the token its pod must hold
-	annoPaused   = "differently.dev/paused"        // on a Sandbox: the trigger of the pause it is in
-	annoTemplate = "differently.dev/sandbox-spec"  // on a trigger: the source Sandbox's spec, for forks
-	annoGroup    = "differently.dev/snapshot-group"
+	annoToken    = "differently.dev/restore-token"    // on a Sandbox: the checkpoint its pod must come from
+	annoPaused   = "differently.dev/paused"           // on a Sandbox: the trigger of the pause it is in
+	annoFailures = "differently.dev/restore-failures" // on a Sandbox: resumes that were not restored
+	annoTemplate = "differently.dev/sandbox-spec"     // on a trigger: the source Sandbox's spec, for forks
+	annoGroup    = "differently.dev/snapshot-group"   // on a trigger: the source's group at checkpoint
 	labelPurpose = "differently.dev/snapshot-purpose" // on a trigger: snapshot or pause
 	labelSource  = "differently.dev/snapshot-source"  // on a trigger: the Sandbox it checkpointed
 )
@@ -70,14 +82,16 @@ func (a *Adapter) snapPath(plural string) string {
 	return "/apis/" + snapGroup + "/" + snapVersion + "/namespaces/" + url.PathEscape(a.opts.Namespace) + "/" + plural
 }
 
+func (a *Adapter) triggers() string { return a.snapPath("podsnapshotmanualtriggers") }
+
 func (a *Adapter) snapshots() bool { return a.opts.PodSnapshotPolicy != "" }
 
-// policy is the part of a PodSnapshotPolicy the adapter checks.
 type expression struct {
 	Key      string `json:"key"`
 	Operator string `json:"operator"`
 }
 
+// policy is the part of a PodSnapshotPolicy the adapter checks.
 type policy struct {
 	Spec struct {
 		Selector struct {
@@ -153,6 +167,7 @@ func (a *Adapter) checkPolicy(ctx context.Context) error {
 type trigger struct {
 	Metadata struct {
 		Name        string            `json:"name"`
+		Labels      map[string]string `json:"labels"`
 		Annotations map[string]string `json:"annotations"`
 	} `json:"metadata"`
 	Status struct {
@@ -175,7 +190,9 @@ func (t trigger) created() string {
 	return o.Name
 }
 
-// failed reports a trigger whose checkpoint ended without a snapshot.
+// failed reports a trigger whose checkpoint ended without a snapshot. GKE
+// does not document its failure reasons; one that names neither a failure
+// nor an error is waited out until config.snapshotTimeout.
 func (t trigger) failed() (string, bool) {
 	for _, c := range t.Status.Conditions {
 		if c.Status == "False" && (strings.Contains(c.Reason, "Fail") || strings.Contains(c.Reason, "Error")) {
@@ -189,22 +206,23 @@ func (t trigger) failed() (string, bool) {
 func newToken() string { return strconv.FormatInt(time.Now().UnixNano(), 36) }
 
 func (a *Adapter) writeMarker(ctx context.Context, ref, token string) error {
-	_, err := a.shell(ctx, ref, `printf '%s' "$1" > `+markerPath, nil, token)
-	if err != nil {
-		return fmt.Errorf("agent-sandbox: writing the snapshot marker %s in %s: %w", markerPath, ref, err)
+	if _, err := a.shell(ctx, ref, `: > "$1"`, nil, markerPrefix+token); err != nil {
+		return fmt.Errorf("agent-sandbox: creating the snapshot marker %s in %s: %w", markerPrefix+token, ref, err)
 	}
 	return nil
 }
 
-func (a *Adapter) readMarker(ctx context.Context, ref string) (string, error) {
-	out, err := a.shell(ctx, ref, `cat `+markerPath+` 2>/dev/null || true`, nil)
-	return strings.TrimSpace(string(out)), err
+// restored reports whether ref's pod holds the marker of the checkpoint
+// with this token, that is, whether GKE restored it from that checkpoint.
+func (a *Adapter) restored(ctx context.Context, ref, token string) (bool, error) {
+	code, err := a.exec(ctx, ref, []string{"test", "-e", markerPrefix + token}, nil, func(string, []byte) error { return nil })
+	return err == nil && code == 0, err
 }
 
-// checkpoint writes the marker, triggers a snapshot of ref's pod and waits
+// checkpoint creates the marker, triggers a snapshot of ref's pod and waits
 // for the PodSnapshot to be ready. It returns the trigger's and the
-// snapshot's names.
-func (a *Adapter) checkpoint(ctx context.Context, ref, purpose string, annotations map[string]string) (trig, snap, token string, err error) {
+// snapshot's names and the checkpoint's token.
+func (a *Adapter) checkpoint(ctx context.Context, ref, installation, purpose string, annotations map[string]string) (trig, snap, token string, err error) {
 	token = newToken()
 	if err = a.writeMarker(ctx, ref, token); err != nil {
 		return "", "", "", err
@@ -215,17 +233,17 @@ func (a *Adapter) checkpoint(ctx context.Context, ref, purpose string, annotatio
 		"apiVersion": snapGroup + "/" + snapVersion, "kind": "PodSnapshotManualTrigger",
 		"metadata": map[string]any{
 			"name":        trig,
-			"labels":      map[string]string{labelPurpose: purpose, labelSource: ref},
+			"labels":      map[string]string{labelPurpose: purpose, labelSource: ref, adapter.LabelInstallation: installation},
 			"annotations": annotations,
 		},
 		"spec": map[string]string{"targetPod": ref},
 	}
-	if err = a.k.do(ctx, http.MethodPost, a.snapPath("podsnapshotmanualtriggers"), "", body, nil); err != nil {
+	if err = a.k.do(ctx, http.MethodPost, a.triggers(), "", body, nil); err != nil {
 		return "", "", "", err
 	}
 	err = httpx.Poll(ctx, time.Second, a.opts.SnapshotTimeout, func() (bool, error) {
 		var t trigger
-		if err := a.k.do(ctx, http.MethodGet, a.snapPath("podsnapshotmanualtriggers")+"/"+url.PathEscape(trig), "", nil, &t); err != nil {
+		if err := a.k.do(ctx, http.MethodGet, a.triggers()+"/"+url.PathEscape(trig), "", nil, &t); err != nil {
 			return false, err
 		}
 		if msg, bad := t.failed(); bad {
@@ -237,13 +255,21 @@ func (a *Adapter) checkpoint(ctx context.Context, ref, purpose string, annotatio
 		return a.snapshotReady(ctx, snap)
 	})
 	if err != nil {
+		// A PodSnapshot GKE finishes after its trigger is gone is not tracked;
+		// it sits in ref's own group, so it can only ever restore ref.
 		_ = a.deleteCheckpoint(context.WithoutCancel(ctx), trig, snap)
-		if api.IsCode(err, api.CodeProviderUnavailable) && strings.Contains(err.Error(), "timed out") {
-			err = adapter.SandboxFailed(fmt.Errorf("agent-sandbox: the snapshot of %s was not ready within %s", ref, a.opts.SnapshotTimeout))
-		}
-		return "", "", "", err
+		return "", "", "", timedOut(err, fmt.Sprintf("the snapshot of %s was not ready within %s", ref, a.opts.SnapshotTimeout))
 	}
 	return trig, snap, token, nil
+}
+
+// timedOut turns a poll's timeout into sandbox_failed: the cluster is fine,
+// this one sandbox's operation is not.
+func timedOut(err error, msg string) error {
+	if api.IsCode(err, api.CodeProviderUnavailable) && strings.Contains(err.Error(), "timed out") {
+		return adapter.SandboxFailed(fmt.Errorf("agent-sandbox: %s", msg))
+	}
+	return err
 }
 
 func (a *Adapter) snapshotReady(ctx context.Context, snap string) (bool, error) {
@@ -269,7 +295,7 @@ func (a *Adapter) deleteCheckpoint(ctx context.Context, trig, snap string) error
 		}
 	}
 	if trig != "" {
-		if err := a.k.do(ctx, http.MethodDelete, a.snapPath("podsnapshotmanualtriggers")+"/"+url.PathEscape(trig), "", nil, nil); err != nil && !api.IsCode(err, api.CodeNotFound) {
+		if err := a.k.do(ctx, http.MethodDelete, a.triggers()+"/"+url.PathEscape(trig), "", nil, nil); err != nil && !api.IsCode(err, api.CodeNotFound) {
 			errs = append(errs, err)
 		}
 	}
@@ -298,15 +324,19 @@ func (a *Adapter) needSnapshots(feature string) error {
 // sandboxSpec is what a fork copies from its source: the pod spec, the
 // volume claim templates and the Service flag. GKE restores a pod only when
 // its spec matches the snapshot's, so a fork does not take the request's
-// image, resources or env.
+// image or env, and its size must be its source's.
 type sandboxSpec struct {
 	PodSpec              json.RawMessage `json:"podSpec"`
 	VolumeClaimTemplates json.RawMessage `json:"volumeClaimTemplates,omitempty"`
 	Service              json.RawMessage `json:"service,omitempty"`
 }
 
-func (a *Adapter) readSpec(ctx context.Context, ref string) (sandboxSpec, string, error) {
+// readSpec returns ref's spec, its pod's snapshot group and its installation.
+func (a *Adapter) readSpec(ctx context.Context, ref string) (sandboxSpec, string, string, error) {
 	var s struct {
+		Metadata struct {
+			Labels map[string]string `json:"labels"`
+		} `json:"metadata"`
 		Spec struct {
 			PodTemplate struct {
 				Metadata struct {
@@ -319,13 +349,13 @@ func (a *Adapter) readSpec(ctx context.Context, ref string) (sandboxSpec, string
 		} `json:"spec"`
 	}
 	if err := a.k.do(ctx, http.MethodGet, a.sandboxes()+"/"+url.PathEscape(ref), "", nil, &s); err != nil {
-		return sandboxSpec{}, "", err
+		return sandboxSpec{}, "", "", err
 	}
 	group := s.Spec.PodTemplate.Metadata.Labels[snapshotGroup]
 	if group == "" {
-		return sandboxSpec{}, "", api.Errorf(api.CodeInvalidState, "agent-sandbox: %s was created without snapshots enabled (no %s label)", ref, snapshotGroup)
+		return sandboxSpec{}, "", "", api.Errorf(api.CodeInvalidState, "agent-sandbox: %s was created without snapshots enabled (no %s label)", ref, snapshotGroup)
 	}
-	return sandboxSpec{PodSpec: s.Spec.PodTemplate.Spec, VolumeClaimTemplates: s.Spec.VolumeClaimTemplates, Service: s.Spec.Service}, group, nil
+	return sandboxSpec{PodSpec: s.Spec.PodTemplate.Spec, VolumeClaimTemplates: s.Spec.VolumeClaimTemplates, Service: s.Spec.Service}, group, s.Metadata.Labels[adapter.LabelInstallation], nil
 }
 
 // Snapshot checkpoints the sandbox's whole pod: memory, processes and its
@@ -334,7 +364,7 @@ func (a *Adapter) Snapshot(ctx context.Context, ref, kind string) (adapter.Snaps
 	if err := a.needSnapshots(adapter.FeatureSnapshotMem); err != nil {
 		return adapter.Snapshot{}, err
 	}
-	spec, group, err := a.readSpec(ctx, ref)
+	spec, group, installation, err := a.readSpec(ctx, ref)
 	if err != nil {
 		return adapter.Snapshot{}, err
 	}
@@ -342,7 +372,7 @@ func (a *Adapter) Snapshot(ctx context.Context, ref, kind string) (adapter.Snaps
 	if err != nil {
 		return adapter.Snapshot{}, err
 	}
-	trig, snap, _, err := a.checkpoint(ctx, ref, "snapshot", map[string]string{annoTemplate: string(raw), annoGroup: group})
+	trig, snap, _, err := a.checkpoint(ctx, ref, installation, "snapshot", map[string]string{annoTemplate: string(raw), annoGroup: group})
 	if err != nil {
 		return adapter.Snapshot{}, err
 	}
@@ -359,29 +389,52 @@ func (a *Adapter) DeleteSnapshot(ctx context.Context, snapshotRef string) error 
 	return a.deleteCheckpoint(ctx, trig, snap)
 }
 
+// sizeOf reads the cpu and memory limits the adapter's own manifest sets.
+func sizeOf(podSpec json.RawMessage) (cpu, memory string) {
+	var s struct {
+		Containers []struct {
+			Resources struct {
+				Limits map[string]string `json:"limits"`
+			} `json:"resources"`
+		} `json:"containers"`
+	}
+	if json.Unmarshal(podSpec, &s) != nil || len(s.Containers) == 0 {
+		return "", ""
+	}
+	return s.Containers[0].Resources.Limits["cpu"], s.Containers[0].Resources.Limits["memory"]
+}
+
 // forkManifest is a Sandbox restored from a snapshot: the source's spec, in
-// the source's snapshot group, naming the snapshot to restore.
+// the source's snapshot group (until adopt moves it), naming the snapshot.
 func (a *Adapter) forkManifest(ctx context.Context, req adapter.CreateRequest) (map[string]any, string, error) {
 	snap, trig, err := parseSnapshotRef(req.FromSnapshot)
 	if err != nil {
 		return nil, "", err
 	}
 	var t trigger
-	if err := a.k.do(ctx, http.MethodGet, a.snapPath("podsnapshotmanualtriggers")+"/"+url.PathEscape(trig), "", nil, &t); err != nil {
+	if err := a.k.do(ctx, http.MethodGet, a.triggers()+"/"+url.PathEscape(trig), "", nil, &t); err != nil {
 		return nil, "", err
 	}
 	if t.created() != snap || t.Metadata.Annotations[annoTemplate] == "" {
 		return nil, "", api.Errorf(api.CodeInvalidRequest, "agent-sandbox: snapshot %s cannot be forked", req.FromSnapshot)
+	}
+	var spec sandboxSpec
+	if err := json.Unmarshal([]byte(t.Metadata.Annotations[annoTemplate]), &spec); err != nil {
+		return nil, "", fmt.Errorf("agent-sandbox: snapshot %s: %w", snap, err)
+	}
+	// The fork runs at its source's size, so it must be asked for at that
+	// size, or the pool's capacity and the tenant's quota would count less
+	// than it uses.
+	cpu, mem := sizeOf(spec.PodSpec)
+	wantCPU, wantMem := strconv.Itoa(max(req.Resources.CPU, 1)), strconv.Itoa(max(req.Resources.MemoryMiB, 128))+"Mi"
+	if cpu != wantCPU || mem != wantMem {
+		return nil, "", api.Errorf(api.CodeInvalidRequest, "agent-sandbox: a fork runs at its source's size: ask for cpu %s and memory %s, not cpu %s and memory %s", cpu, mem, wantCPU, wantMem)
 	}
 	if ok, err := a.snapshotReady(ctx, snap); err != nil || !ok {
 		if err == nil {
 			err = api.Errorf(api.CodeInvalidState, "agent-sandbox: snapshot %s is not ready", snap)
 		}
 		return nil, "", err
-	}
-	var spec sandboxSpec
-	if err := json.Unmarshal([]byte(t.Metadata.Annotations[annoTemplate]), &spec); err != nil {
-		return nil, "", fmt.Errorf("agent-sandbox: snapshot %s: %w", snap, err)
 	}
 	token := t.Metadata.Annotations[annoToken]
 	labels := adapter.OwnershipLabels(req)
@@ -410,16 +463,50 @@ func (a *Adapter) forkManifest(ctx context.Context, req adapter.CreateRequest) (
 	}, token, nil
 }
 
-// verifyRestore reads the marker back from a restored pod.
+// verifyRestore checks that ref's pod came from the checkpoint with token.
 func (a *Adapter) verifyRestore(ctx context.Context, ref, token string) error {
-	got, err := a.readMarker(ctx, ref)
+	ok, err := a.restored(ctx, ref, token)
 	if err != nil {
 		return err
 	}
-	if got != token {
+	if !ok {
 		return adapter.SandboxFailed(fmt.Errorf("agent-sandbox: %s started without its snapshot (GKE restores only onto the same machine series, with the same pod spec, from a ready snapshot); its memory and files were not restored", ref))
 	}
 	return nil
+}
+
+// adopt moves a restored fork into its own snapshot group and drops the
+// snapshot it was restored from, then waits until the running pod carries
+// the new group, so none of the fork's checkpoints land in its source's
+// group. The controller patches the pod's labels; it does not recreate it.
+func (a *Adapter) adopt(ctx context.Context, ref string) error {
+	patch := map[string]any{"podTemplate": map[string]any{"metadata": map[string]any{
+		"labels":      map[string]string{snapshotGroup: ref},
+		"annotations": map[string]any{psName: nil},
+	}}}
+	if err := a.patch(ctx, a.sandboxes(), ref, patch); err != nil {
+		return err
+	}
+	err := httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
+		var p struct {
+			Metadata struct {
+				Labels map[string]string `json:"labels"`
+			} `json:"metadata"`
+		}
+		err := a.k.do(ctx, http.MethodGet, "/api/v1/namespaces/"+url.PathEscape(a.opts.Namespace)+"/pods/"+url.PathEscape(ref), "", nil, &p)
+		return err == nil && p.Metadata.Labels[snapshotGroup] == ref, err
+	})
+	return timedOut(err, fmt.Sprintf("the pod of %s did not take its own snapshot group within %s", ref, a.opts.ReadyTimeout))
+}
+
+func (a *Adapter) patchSandbox(ctx context.Context, ref string, patch map[string]any) error {
+	return a.k.do(ctx, http.MethodPatch, a.sandboxes()+"/"+url.PathEscape(ref), "application/merge-patch+json", patch, nil)
+}
+
+// failures is how many resumes found the pause checkpoint not restored.
+func (s object) failures() int {
+	n, _ := strconv.Atoi(s.Metadata.Annotations[annoFailures])
+	return n
 }
 
 // Pause checkpoints the sandbox and suspends it: the pod is deleted, so the
@@ -439,36 +526,45 @@ func (a *Adapter) Pause(ctx context.Context, ref string) error {
 	if s.Spec.OperatingMode == "Suspended" {
 		return api.Errorf(api.CodeInvalidState, "agent-sandbox: %s is stopped", ref)
 	}
-	trig, snap, token, err := a.checkpoint(ctx, ref, "pause", map[string]string{})
+	trig, snap, token, err := a.checkpoint(ctx, ref, s.Metadata.Labels[adapter.LabelInstallation], "pause", map[string]string{})
 	if err != nil {
 		return err
 	}
-	patch := map[string]any{
-		"metadata": map[string]any{"annotations": map[string]string{annoPaused: trig, annoToken: token}},
+	err = a.patchSandbox(ctx, ref, map[string]any{
+		"metadata": map[string]any{"annotations": map[string]any{annoPaused: trig, annoToken: token, annoFailures: nil}},
 		"spec": map[string]any{
 			"operatingMode": "Suspended",
 			// The pod the controller creates on resume restores this snapshot.
 			"podTemplate": map[string]any{"metadata": map[string]any{"annotations": map[string]string{psName: snap}}},
 		},
-	}
-	if err := a.k.do(ctx, http.MethodPatch, a.sandboxes()+"/"+url.PathEscape(ref), "application/merge-patch+json", patch, nil); err != nil {
+	})
+	if err != nil {
 		_ = a.deleteCheckpoint(context.WithoutCancel(ctx), trig, snap)
 		return err
 	}
-	if err := httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
+	err = httpx.Poll(ctx, 500*time.Millisecond, a.opts.ReadyTimeout, func() (bool, error) {
 		s, err := a.get(ctx, a.sandboxes(), ref)
 		return err == nil && s.is("Suspended"), err
-	}); err != nil {
-		return err
+	})
+	if err != nil {
+		// The scheduler keeps the sandbox running when a pause fails, so
+		// running it must be. A pod recreated meanwhile restores this
+		// checkpoint, the newest state there is.
+		_ = a.patchSandbox(context.WithoutCancel(ctx), ref, map[string]any{
+			"metadata": map[string]any{"annotations": map[string]any{annoPaused: nil}},
+			"spec":     map[string]any{"operatingMode": "Running"},
+		})
+		return timedOut(err, fmt.Sprintf("%s was not suspended within %s; it was set running again", ref, a.opts.ReadyTimeout))
 	}
-	a.dropCheckpoints(ctx, ref, "pause", trig)
+	a.dropCheckpoints(ctx, map[string]string{labelPurpose: "pause", labelSource: ref}, func(t trigger) bool { return t.Metadata.Name != trig })
 	return nil
 }
 
 // Resume restarts the pod, which GKE restores from the pause checkpoint, and
 // checks that it did. If it did not, the sandbox is suspended again, so it
-// never runs on without its state, and the error says why; a later resume
-// tries again.
+// never runs on without its state, and a later resume tries again (GKE may
+// place it on a node it can restore onto). After maxRestoreFailures such
+// resumes the sandbox reports an error, which fails it.
 func (a *Adapter) Resume(ctx context.Context, ref string) error {
 	if err := a.needSnapshots(adapter.FeaturePauseResume); err != nil {
 		return err
@@ -483,6 +579,9 @@ func (a *Adapter) Resume(ctx context.Context, ref string) error {
 		}
 		return nil // running
 	}
+	if n := s.failures(); n >= maxRestoreFailures {
+		return adapter.SandboxFailed(fmt.Errorf("agent-sandbox: %s could not be restored from its pause checkpoint in %d resumes", ref, n))
+	}
 	token := s.Metadata.Annotations[annoToken]
 	if s.Spec.OperatingMode == "Suspended" {
 		if err := a.patch(ctx, a.sandboxes(), ref, map[string]any{"operatingMode": "Running"}); err != nil {
@@ -493,30 +592,51 @@ func (a *Adapter) Resume(ctx context.Context, ref string) error {
 		return err
 	}
 	if err := a.verifyRestore(ctx, ref, token); err != nil {
-		_ = a.patch(context.WithoutCancel(ctx), a.sandboxes(), ref, map[string]any{"operatingMode": "Suspended"})
+		_ = a.patchSandbox(context.WithoutCancel(ctx), ref, map[string]any{
+			"metadata": map[string]any{"annotations": map[string]string{annoFailures: strconv.Itoa(s.failures() + 1)}},
+			"spec":     map[string]any{"operatingMode": "Suspended"},
+		})
 		return err
 	}
-	// The checkpoint stays until the next pause or the delete: GKE may still be
-	// streaming memory into the pod from it.
-	return a.k.do(ctx, http.MethodPatch, a.sandboxes()+"/"+url.PathEscape(ref), "application/merge-patch+json",
-		map[string]any{"metadata": map[string]any{"annotations": map[string]any{annoPaused: nil}}}, nil)
+	// The checkpoint stays until the next pause or the delete: GKE may still
+	// be streaming memory into the pod from it. The pod template stops naming
+	// it, so a pod GKE recreates later restores the sandbox's newest
+	// checkpoint instead of rolling back to this one.
+	return a.patchSandbox(ctx, ref, map[string]any{
+		"metadata": map[string]any{"annotations": map[string]any{annoPaused: nil, annoFailures: nil}},
+		"spec":     map[string]any{"podTemplate": map[string]any{"metadata": map[string]any{"annotations": map[string]any{psName: nil}}}},
+	})
 }
 
-// dropCheckpoints deletes ref's checkpoints of one purpose except keep.
-// Failures are left for the next call: a leftover costs storage only.
-func (a *Adapter) dropCheckpoints(ctx context.Context, ref, purpose, keep string) {
+// dropCheckpoints deletes the checkpoints whose triggers carry labels and
+// that drop selects. Failures are left for the next call: a leftover costs
+// storage only, and can only restore the sandbox it came from.
+func (a *Adapter) dropCheckpoints(ctx context.Context, labels map[string]string, drop func(trigger) bool) {
+	sel := make([]string, 0, len(labels))
+	for k, v := range labels {
+		sel = append(sel, k+"="+v)
+	}
+	slices.Sort(sel)
 	var list struct {
 		Items []trigger `json:"items"`
 	}
-	q := url.Values{"labelSelector": {labelPurpose + "=" + purpose + "," + labelSource + "=" + ref}}
-	if err := a.k.do(ctx, http.MethodGet, a.snapPath("podsnapshotmanualtriggers")+"?"+q.Encode(), "", nil, &list); err != nil {
+	if err := a.k.do(ctx, http.MethodGet, a.triggers()+"?"+url.Values{"labelSelector": {strings.Join(sel, ",")}}.Encode(), "", nil, &list); err != nil {
 		return
 	}
 	for _, t := range list.Items {
-		if t.Metadata.Name != keep {
+		if drop(t) {
 			_ = a.deleteCheckpoint(ctx, t.Metadata.Name, t.created())
 		}
 	}
+}
+
+// collectPauses deletes this installation's pause checkpoints whose sandbox
+// no longer exists: deleted behind Differently's back (the TTL backstop), or
+// a delete whose clean-up failed. live holds the installation's Sandboxes.
+func (a *Adapter) collectPauses(ctx context.Context, installation string, live map[string]bool) {
+	a.dropCheckpoints(ctx, map[string]string{labelPurpose: "pause", adapter.LabelInstallation: installation}, func(t trigger) bool {
+		return !live[t.Metadata.Labels[labelSource]]
+	})
 }
 
 var (

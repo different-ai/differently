@@ -33,9 +33,12 @@ All notable changes are recorded here. The format follows
   sandbox and deletes its pod, so a paused sandbox holds no slot. The pool is
   unhealthy unless the PodSnapshotPolicy groups snapshots by a per-sandbox
   label, because GKE otherwise restores any new pod with a matching spec from
-  the newest snapshot, possibly another tenant's. A fork or resume that GKE
-  started fresh instead of restoring is detected through a marker file, and
-  fails rather than running on without its state. Tested with a fake server;
+  the newest snapshot, possibly another tenant's; a fork leaves its source's
+  group once restored, and must be asked for at its source's size. A fork or
+  resume that GKE started fresh instead of restoring is detected through a
+  marker file per checkpoint, and fails rather than running on without its
+  state; three such resumes fail the sandbox. Stop/start is not offered with
+  snapshots. Tested with a fake server;
   `TestLivePodSnapshots` is written but has not run on GKE.
 
 ### Fixed

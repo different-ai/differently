@@ -40,10 +40,12 @@ type fakeKube struct {
 	protos   []string // exec subprotocols the server accepts
 	failList bool
 
-	// markers is the snapshot marker file of each pod (podsnapshot.go), and
-	// restore, when set, decides it for a pod the controller creates.
-	markers map[string]string
-	restore func(sandbox string, obj map[string]any) string
+	// markers holds the snapshot marker files of each pod (podsnapshot.go),
+	// and restore, when set, decides them for a pod the controller creates.
+	markers map[string]map[string]bool
+	restore func(sandbox string, obj map[string]any) map[string]bool
+	// stuckSuspend keeps suspended Sandboxes from reporting Suspended.
+	stuckSuspend bool
 
 	// exec answers one command: stdout, stderr and the status to send.
 	exec     func(argv []string, stdin string) (string, string, map[string]any)
@@ -52,7 +54,7 @@ type fakeKube struct {
 }
 
 func newFakeKube(t *testing.T) *fakeKube {
-	f := &fakeKube{t: t, objects: map[string]map[string]any{}, pods: map[string]map[string]any{}, markers: map[string]string{}, protos: []string{"v5.channel.k8s.io", "v4.channel.k8s.io"}}
+	f := &fakeKube{t: t, objects: map[string]map[string]any{}, pods: map[string]map[string]any{}, markers: map[string]map[string]bool{}, protos: []string{"v5.channel.k8s.io", "v4.channel.k8s.io"}}
 	f.exec = func(argv []string, stdin string) (string, string, map[string]any) {
 		return "out\n", "err\n", map[string]any{"status": "Success"}
 	}
@@ -202,15 +204,21 @@ func newFakeKube(t *testing.T) *fakeKube {
 		argv := r.URL.Query()["command"]
 		var out, errOut string
 		var st map[string]any
-		if len(argv) > 2 && strings.Contains(argv[2], markerPath) {
-			// The snapshot marker: written before a checkpoint, read after a restore.
-			st = map[string]any{"status": "Success"}
-			if strings.HasPrefix(argv[2], "printf") {
-				f.markers[r.PathValue("name")] = argv[4]
-			} else {
-				out = f.markers[r.PathValue("name")]
+		pod := r.PathValue("name")
+		switch {
+		case len(argv) == 5 && argv[2] == `: > "$1"` && strings.HasPrefix(argv[4], markerPrefix):
+			// A snapshot marker, created before a checkpoint.
+			if f.markers[pod] == nil {
+				f.markers[pod] = map[string]bool{}
 			}
-		} else {
+			f.markers[pod][argv[4]] = true
+			st = map[string]any{"status": "Success"}
+		case len(argv) == 3 && argv[0] == "test" && strings.HasPrefix(argv[2], markerPrefix):
+			st = map[string]any{"status": "Success"}
+			if !f.markers[pod][argv[2]] {
+				st = exitStatus("1")
+			}
+		default:
 			out, errOut, st = f.exec(argv, stdin)
 		}
 		f.mu.Unlock()
@@ -246,6 +254,9 @@ func (f *fakeKube) reconcile(key string, obj map[string]any) {
 		}
 	case "sandboxes":
 		if spec["operatingMode"] == "Suspended" {
+			if f.stuckSuspend {
+				return
+			}
 			delete(f.pods, name)
 			delete(f.markers, name)
 			obj["status"] = map[string]any{"conditions": []any{
@@ -275,6 +286,9 @@ func (f *fakeKube) reconcile(key string, obj map[string]any) {
 			obj["status"] = map[string]any{"conditions": []any{c}}
 			return
 		}
+		// The controller patches the template's labels onto the running pod.
+		tmd, _ := spec["podTemplate"].(map[string]any)["metadata"].(map[string]any)
+		f.pods[name]["metadata"] = map[string]any{"labels": tmd["labels"]}
 		st := map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": "True", "reason": "DependenciesReady", "observedGeneration": gen}}, "podIPs": []string{"10.0.0.5"}}
 		if spec["service"] == true {
 			st["serviceFQDN"] = name + ".ns1.svc.cluster.local"

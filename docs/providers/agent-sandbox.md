@@ -167,29 +167,38 @@ On GKE, sandboxes that run under gVisor can be checkpointed with
 | Operation | What the adapter does |
 |---|---|
 | Snapshot | Creates a `PodSnapshotManualTrigger` for the sandbox's pod and waits for the `PodSnapshot` to be `Ready`. GKE captures the whole pod: memory, processes and the root filesystem. Volumes are not captured. The sandbox keeps running. The snapshot is reported as `memory`, whatever kind was asked for |
-| Fork | Creates a Sandbox with the source's pod spec, in the source's snapshot group, with `podsnapshot.gke.io/ps-name` naming the snapshot, so GKE restores it. The request's image, resources and env do not apply: GKE restores only a pod whose spec matches the snapshot's |
+| Fork | Creates a Sandbox with the source's pod spec, in the source's snapshot group, with `podsnapshot.gke.io/ps-name` naming the snapshot, so GKE restores it. Once the restore is verified, the fork moves to a snapshot group of its own and stops naming the snapshot (the controller patches the running pod's labels; it does not recreate it). GKE restores only a pod whose spec matches the snapshot's, so the request's image and env do not apply, and its size must be the source's: a fork asked for at another size is refused with `invalid_request`, so capacity and quotas count what it uses |
 | Pause | Checkpoints the sandbox, then suspends it (`operatingMode: Suspended`), which deletes the pod. A paused sandbox uses no node resources and holds no slot in the pool. Only the newest pause checkpoint of each sandbox is kept |
-| Resume | Sets `operatingMode: Running`. The controller recreates the pod, and GKE restores it from the pause checkpoint |
-| Delete snapshot | Deletes the `PodSnapshot` (GKE removes its files) and its trigger. Deleting a sandbox deletes its pause checkpoints, but not its snapshots, which can still be forked |
+| Resume | Sets `operatingMode: Running`. The controller recreates the pod, and GKE restores it from the pause checkpoint. The pod template then stops naming the checkpoint |
+| Delete snapshot | Deletes the `PodSnapshot` (GKE removes its files) and its trigger. Deleting a sandbox deletes its pause checkpoints, but not its snapshots, which can still be forked. The pause checkpoints of a Sandbox deleted some other way (the TTL backstop) are deleted by the reconciler's next list |
 
-Two properties of GKE's design shape this:
+Three properties of GKE's design shape this:
 
-- **GKE restores any new pod that matches.** Without grouping, a pod is
-  restored from the newest snapshot whose pod spec matches. Two tenants'
-  sandboxes with the same image and size match, so a new sandbox could start
-  from another one's memory. The adapter gives every sandbox's pod the label
-  `differently.dev/snapshot-group` with a value of its own (a fork gets its
-  source's), and the pool is **unhealthy** unless the policy selects on that
-  label and groups by it.
+- **GKE restores every new pod that matches.** A pod is restored from the
+  snapshot it names, or else from the newest snapshot in its group whose
+  pod spec matches. Without groups, two tenants' sandboxes with the same
+  image and size match, so a new sandbox could start from another one's
+  memory. The adapter gives every sandbox's pod the label
+  `differently.dev/snapshot-group` with a value of its own. A fork is in its
+  source's group only until its restore is verified. The pool is
+  **unhealthy** unless the policy selects on that label and groups by it.
+  A pod GKE recreates on its own (a node drain, an eviction) therefore comes
+  back from that sandbox's own newest checkpoint, never from another
+  sandbox's, and a sandbox with no checkpoint comes back fresh.
 - **A failed restore is silent.** GKE starts the pod fresh when it cannot
   restore it: another machine series or CPU vendor, a different pod spec, or
-  a snapshot that is not ready. Before each checkpoint the adapter writes a
-  token to `/tmp/.differently-snapshot` in the sandbox, and reads it back
-  after a restore. A fork without it fails with `sandbox_failed` and is
-  deleted. A resume without it suspends the sandbox again, so it never runs
-  on without its state, and fails with `sandbox_failed`. The scheduler tries
-  the resume again later, which succeeds once the pod lands on a node GKE can
-  restore onto.
+  a snapshot that is not ready. Before each checkpoint the adapter creates a
+  marker file named after it (`/tmp/.differently-snapshot-<token>`), and
+  looks for it after a restore. A fork without it fails with
+  `sandbox_failed` and is deleted. A resume without it suspends the sandbox
+  again, so it never runs on without its state, and fails with
+  `sandbox_failed`. The scheduler tries the resume again later, which
+  succeeds once the pod lands on a node GKE can restore onto. After three
+  such resumes the sandbox reports an error, and Differently fails it.
+- **Restores come from the pod template.** A stop/start would restore the
+  newest checkpoint over a newer volume, so a pool with `podSnapshotPolicy`
+  does not offer stop/start, even with `volumeSize`. Pause/resume takes its
+  place.
 
 ### Set it up
 
@@ -346,9 +355,17 @@ from the SandboxTemplate, without the per-sandbox label.
   that happen only when GKE's would (same group, same pod spec, a ready
   snapshot). The tests check the policy checks, snapshot, fork (the source's
   spec and group, the snapshot named, a deleted snapshot), both shapes of
-  `status.snapshotCreated`, a failed checkpoint, pause and resume twice with
-  only the newest checkpoint kept, a fork or resume that GKE did not restore,
-  and the clean-up on delete. `TestLivePodSnapshots` (live tag, with
+  `status.snapshotCreated`, a failed checkpoint, two checkpoints at once,
+  pause and resume twice with only the newest checkpoint kept, a pause whose
+  suspend does not finish (undone, the sandbox running), a fork or resume
+  that GKE did not restore, the limit on failed resumes, a source whose pod
+  GKE recreates after its fork took a newer snapshot (it comes back from its
+  own), a fork at another size, no stop/start, and the clean-up on delete and
+  of a Sandbox deleted behind Differently's back. The fake restores as GKE
+  documents it: the named snapshot, or else the newest in the pod's group.
+  An independent review of the first version found the fork-group, rollback,
+  failed-pause, endless-retry, marker-race, leak and fork-size issues these
+  tests now cover. `TestLivePodSnapshots` (live tag, with
   `AGENTSANDBOX_SNAPSHOT_POLICY`) checks a running process and a file through
   a fork and a pause/resume, that a new sandbox does not start from a
   snapshot, and logs each step's time. **It has not been run: nothing here

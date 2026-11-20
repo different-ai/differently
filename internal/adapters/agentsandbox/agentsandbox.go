@@ -168,6 +168,12 @@ func FromConfig(cfg map[string]string, trust, token string) (Options, error) {
 		case o.RuntimeClassName == "":
 			return o, errors.New("agent-sandbox: GKE Pod Snapshots need gVisor: set config.runtimeClassName (gvisor on GKE) with config.podSnapshotPolicy")
 		}
+		// Restores come from the pod template, so a start would restore the
+		// newest checkpoint over a newer volume: pause/resume replaces
+		// stop/start.
+		o.Features = slices.DeleteFunc(o.Features, func(f string) bool {
+			return f == adapter.FeatureStopStart || f == adapter.FeaturePersistDisk
+		})
 		o.Features = append(o.Features, SnapshotFeatures...)
 	}
 	if f := strings.TrimSpace(cfg["features"]); f != "" {
@@ -301,7 +307,12 @@ func (s object) inst() adapter.Instance {
 	if c, ok := s.cond("Ready"); ok && c.Status != "True" {
 		msg = strings.TrimSpace(c.Reason + " " + c.Message)
 	}
-	return adapter.Instance{Ref: s.Metadata.Name, SandboxID: s.Metadata.Labels[adapter.LabelSandboxID], State: s.state(), Message: msg}
+	in := adapter.Instance{Ref: s.Metadata.Name, SandboxID: s.Metadata.Labels[adapter.LabelSandboxID], State: s.state(), Message: msg}
+	if in.State == adapter.StatePaused && s.failures() >= maxRestoreFailures {
+		in.State = adapter.StateError
+		in.Message = fmt.Sprintf("could not be restored from its pause checkpoint in %d resumes (GKE restores only onto the same machine series)", s.failures())
+	}
+	return in
 }
 
 // Ready=False reasons the controllers do not recover from: the request is
@@ -530,7 +541,11 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 		return adapter.Instance{}, err
 	}
 	if req.FromSnapshot != "" {
-		if err := a.verifyRestore(ctx, ref, token); err != nil {
+		err := a.verifyRestore(ctx, ref, token)
+		if err == nil {
+			err = a.adopt(ctx, ref)
+		}
+		if err != nil {
 			_ = a.Delete(context.WithoutCancel(ctx), ref)
 			return adapter.Instance{}, err
 		}
@@ -670,6 +685,13 @@ func (a *Adapter) List(ctx context.Context, installation string) ([]adapter.Inst
 			}
 		}
 		if cont = page.Metadata.Continue; cont == "" {
+			if a.snapshots() && a.opts.WarmPool == "" {
+				live := map[string]bool{}
+				for _, in := range out {
+					live[in.Ref] = true
+				}
+				a.collectPauses(ctx, installation, live)
+			}
 			return out, nil
 		}
 	}
@@ -687,8 +709,9 @@ func (a *Adapter) Delete(ctx context.Context, ref string) error {
 		err = nil
 	}
 	if err == nil && a.snapshots() {
-		// Pause checkpoints belong to the sandbox; snapshots outlive it.
-		a.dropCheckpoints(ctx, ref, "pause", "")
+		// Pause checkpoints belong to the sandbox; snapshots outlive it. What
+		// fails here, List collects later.
+		a.dropCheckpoints(ctx, map[string]string{labelPurpose: "pause", labelSource: ref}, func(trigger) bool { return true })
 	}
 	return err
 }
@@ -860,7 +883,7 @@ func (a *Adapter) patch(ctx context.Context, base, ref string, spec map[string]a
 // Stop suspends the Sandbox: the controller deletes its pod and keeps its
 // volumes, so only files under config.volumePath survive.
 func (a *Adapter) Stop(ctx context.Context, ref string) error {
-	if !slices.Contains(a.opts.Features, adapter.FeatureStopStart) || a.opts.WarmPool != "" {
+	if !slices.Contains(a.opts.Features, adapter.FeatureStopStart) || a.opts.WarmPool != "" || a.snapshots() {
 		return adapter.Unsupported(adapter.FeatureStopStart)
 	}
 	if err := a.patch(ctx, a.sandboxes(), ref, map[string]any{"operatingMode": "Suspended"}); err != nil {
@@ -873,7 +896,7 @@ func (a *Adapter) Stop(ctx context.Context, ref string) error {
 }
 
 func (a *Adapter) Start(ctx context.Context, ref string) error {
-	if !slices.Contains(a.opts.Features, adapter.FeatureStopStart) || a.opts.WarmPool != "" {
+	if !slices.Contains(a.opts.Features, adapter.FeatureStopStart) || a.opts.WarmPool != "" || a.snapshots() {
 		return adapter.Unsupported(adapter.FeatureStopStart)
 	}
 	if err := a.patch(ctx, a.sandboxes(), ref, map[string]any{"operatingMode": "Running"}); err != nil {
