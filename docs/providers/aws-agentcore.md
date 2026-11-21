@@ -28,7 +28,7 @@ other AWS service fills the gap: see
 |---|---|---|
 | exec | yes | `executeCommand` returns stdout, stderr and the exit code. The working directory, environment, stdin and timeout are added to the command line; the timeout uses coreutils `timeout` (exit 124) |
 | exec.stream | no | Output arrives when the command ends (buffered fallback) |
-| files | yes | Through commands: `base64` and `find` in the session. Writes go in 64 KiB pieces, so a large file takes many calls |
+| files | yes | Through commands: `base64` and `find` in the session. Writes go in 64 KiB pieces and reads in 512 KiB pieces, so a large file takes several calls |
 | stdin | yes | Piped in through the command line |
 | lifecycle.stop-start | no | A stopped session cannot restart |
 | lifecycle.pause-resume | no | |

@@ -6,11 +6,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/different-ai/differently/pkg/adapter"
 	"github.com/different-ai/differently/pkg/api"
 )
 
@@ -76,6 +79,47 @@ func TestFilesOverCommands(t *testing.T) {
 	got, err := ReadFile(ctx, run, path)
 	if err != nil || !bytes.Equal(got, big) {
 		t.Fatalf("read back %d bytes (want %d): %v", len(got), len(big), err)
+	}
+	// A file over ReadChunkBytes is read in pieces, each answer well under
+	// the ~1 MB some backends allow; one exactly a chunk long, in one.
+	for _, n := range []int{2*ReadChunkBytes + 12345, ReadChunkBytes, 2 * ReadChunkBytes} {
+		huge := make([]byte, n)
+		for i := range huge {
+			huge[i] = byte(i * 7 % 251)
+		}
+		hp := filepath.Join(dir, fmt.Sprintf("huge-%d.bin", n))
+		if err := os.WriteFile(hp, huge, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		calls, biggest := 0, 0
+		watching := func(ctx context.Context, c string) (api.ExecResult, error) {
+			calls++
+			r, err := run(ctx, c)
+			biggest = max(biggest, len(r.Stdout))
+			return r, err
+		}
+		got, err := ReadFile(ctx, watching, hp)
+		if err != nil || !bytes.Equal(got, huge) {
+			t.Fatalf("%d bytes: read back %d: %v", n, len(got), err)
+		}
+		if want := (n + ReadChunkBytes - 1) / ReadChunkBytes; calls != want || biggest > 800<<10 {
+			t.Fatalf("%d bytes: %d commands (want %d), largest answer %d bytes", n, calls, want, biggest)
+		}
+	}
+	// A file that grows between pieces is refused, not spliced.
+	grow := filepath.Join(dir, "grow.bin")
+	_ = os.WriteFile(grow, make([]byte, ReadChunkBytes+10), 0o600)
+	first := true
+	growing := func(ctx context.Context, c string) (api.ExecResult, error) {
+		r, err := run(ctx, c)
+		if first {
+			first = false
+			_ = os.WriteFile(grow, make([]byte, 3*ReadChunkBytes), 0o600)
+		}
+		return r, err
+	}
+	if _, err := ReadFile(ctx, growing, grow); !api.IsCode(err, adapter.CodeSandboxFailed) {
+		t.Fatalf("a file that changed while read: %v", err)
 	}
 	if err := WriteFile(ctx, run, filepath.Join(dir, "empty"), nil); err != nil {
 		t.Fatal(err)

@@ -27,7 +27,7 @@ resource).
 |---|---|---|
 | exec | yes | `:execute` forwards `{command, cwd, timeout}` to the shell container's `/exec` and returns `stdout`, `stderr` and `returncode`. Each command runs in a new shell, as user `appuser` without sudo |
 | exec.stream | no | Only `bidiExecute` (v1beta1), which is undocumented over REST |
-| files | yes | Through commands (`base64` and `find`), in 64 KiB pieces |
+| files | yes | Through commands (`base64` and `find`): writes in 64 KiB pieces, reads in 512 KiB pieces (under 700 KB of output each) |
 | stdin | yes | Piped in through the command line |
 | lifecycle.stop-start | yes | `:pause` and `:resume`; Google keeps the ID, endpoint and filesystem. `persistence.disk` is advertised |
 | lifecycle.pause-resume | no | Whether processes and memory survive pause is not documented |
@@ -145,8 +145,8 @@ allows only port 443 to providers by default.
 - **Quotas** per project and region: 1,000 execute requests a minute, 500
   write requests a minute, 1,000 sandboxes.
 - A third party measured about 1 MB per request or response through the
-  `:execute` proxy and a 502 after 600 s. Google documents neither; keep
-  commands' output small.
+  `:execute` proxy and a 502 after 600 s. Google documents neither. File
+  reads stay under it (512 KiB pieces); keep commands' own output small.
 - **Pricing**: $0.085 per vCPU-hour and $0.009 per GiB-hour, rounded per second.
 
 ## How it was tested
