@@ -5,6 +5,7 @@ package cloudhttp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -330,5 +331,30 @@ func TestGoogleWorkloadIdentityFederation(t *testing.T) {
 	gone, _ := GoogleTokens(config(filepath.Join(t.TempDir(), "absent"), false, ""), scope, srv.Client())
 	if _, err := gone.Token(ctx); !api.IsCode(err, api.CodeProviderUnavailable) {
 		t.Fatalf("a missing token file: %v", err)
+	}
+}
+
+// Invalidate drops only the token that was rejected, and at most once per
+// invalidateEvery.
+func TestInvalidateDropsOnlyTheRejectedToken(t *testing.T) {
+	n := 0
+	c := &cached{fetch: func(context.Context) (string, time.Duration, error) {
+		n++
+		return fmt.Sprintf("tok-%d", n), time.Hour, nil
+	}}
+	ctx := context.Background()
+	first, _ := c.Token(ctx)
+	c.Invalidate("some-other-token")
+	if tok, _ := c.Token(ctx); tok != first {
+		t.Fatalf("a token that is not the cached one dropped it: %s", tok)
+	}
+	c.Invalidate(first)
+	second, _ := c.Token(ctx)
+	if second == first {
+		t.Fatal("the rejected token was kept")
+	}
+	c.Invalidate(second) // within invalidateEvery of the last drop
+	if tok, _ := c.Token(ctx); tok != second || n != 2 {
+		t.Fatalf("a second drop within %s fetched again: %s after %d fetches", invalidateEvery, tok, n)
 	}
 }

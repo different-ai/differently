@@ -128,10 +128,16 @@ as a Google service account instead of holding a Kubernetes token. Set
 `auth: google`; the pool's credential is then a Google credential, the same
 kinds `gcp-sandboxes` takes: a service-account JSON key,
 `{"type": "metadata_server"}` (the VM's service account, the default when the
-pool has no credential), or a workload identity federation configuration.
-The adapter sends access tokens with the `cloud-platform` and
-`userinfo.email` scopes, refreshes them before they expire, and fetches a new
-one when the API server rejects one (a revoked key, say).
+pool has no credential), or a workload identity federation configuration
+that impersonates a service account (`service_account_impersonation_url`;
+a federated identity alone has no email for RBAC to bind, so the pool
+refuses it). `apiServer` must be `https://`: the token opens every Google API
+its account may use. The adapter sends access tokens with the
+`cloud-platform` and `userinfo.email` scopes and refreshes them before they
+expire. When the API server rejects a token, the adapter drops it (at most
+every 10 seconds) so the next call fetches again; the metadata server may
+hand back the same token until it expires, and a revoked key fails the fetch
+itself.
 
 ```yaml
   - name: gke
@@ -170,12 +176,16 @@ needs the cluster's CA in `caFile`. On the Google side:
   `cloud-platform`: GKE identifies the account by email only from a token
   with that scope, and Compute Engine leaves it out by default. Without it
   the RoleBinding does not match and every call is refused.
-- With the Helm chart's restricted server egress, allow the metadata server
-  (`169.254.169.254`, port 80) and the GKE endpoint (port 443).
+- With the Helm chart's restricted server egress, allow the GKE endpoint
+  (port 443), DNS, and the metadata server: `169.254.169.254` port 80 on a
+  Compute Engine VM, or GKE's own metadata server, `169.254.169.252` port 988,
+  for a server on GKE with Workload Identity and Dataplane V2.
 
 Status: tested with a fake metadata server and the fake API server (the
-scopes asked for, a rejected token replaced, the configuration checks); not
-run against GKE.
+scopes asked for, a rejected token dropped and fetched again, http and
+federation without impersonation refused); not run against GKE. An
+independent review found the plain-http and federation gaps and the
+over-eager token drop, now fixed.
 
 With Differently's Helm chart, server egress is restricted by default
 (`networkPolicy.server.egress.restricted`). Allow the API server with an

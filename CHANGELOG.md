@@ -21,8 +21,9 @@ All notable changes are recorded here. The format follows
   GKE cluster with a Google credential (the VM's service account through the
   metadata server, a key, or workload identity federation) instead of a
   Kubernetes token, so a control plane on Compute Engine can drive GKE pools.
-  Tokens carry the `userinfo.email` scope GKE needs for RBAC, and a token the
-  API server rejects is replaced at once. The Compute Engine guide gives the
+  Tokens carry the `userinfo.email` scope GKE needs for RBAC; the API server
+  must be `https://`; federation must impersonate a service account; a token
+  the API server rejects is dropped (at most every 10 seconds). The Compute Engine guide gives the
   control node that scope. Google credentials now take several scopes.
   Tested with fakes; not run against GKE.
 - `agent-sandbox` adapter (experimental): pause/resume on a warm pool with

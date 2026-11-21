@@ -882,14 +882,19 @@ func TestGoogleAuth(t *testing.T) {
 func TestGoogleAuthConfig(t *testing.T) {
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 	for cfg, want := range map[string]string{
-		`{"auth":"google"}`:                           "needs config.apiServer",
-		`{"apiServer":"https://k","auth":"kerberos"}`: "auth must be google or unset",
+		`{"auth":"google"}`:                             "needs config.apiServer",
+		`{"apiServer":"https://k","auth":"kerberos"}`:   "auth must be google or unset",
+		`{"apiServer":"http://k:8080","auth":"google"}`: "needs an https://",
 	} {
 		var m map[string]string
 		_ = json.Unmarshal([]byte(cfg), &m)
 		if _, err := FromConfig(m, api.TrustPrivate, ""); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: want %q, got %v", cfg, want, err)
 		}
+	}
+	federated := `{"type":"external_account","audience":"//iam.googleapis.com/x","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","token_url":"https://sts.googleapis.com/v1/token","credential_source":{"file":"/var/run/token"}}`
+	if _, err := FromConfig(map[string]string{"apiServer": "https://k", "auth": "google"}, api.TrustPrivate, federated); err == nil || !strings.Contains(err.Error(), "service_account_impersonation_url") {
+		t.Errorf("federation without impersonation: %v", err)
 	}
 	o, err := FromConfig(map[string]string{"apiServer": "https://gke-1.us-central1.gke.goog", "auth": "google"}, api.TrustPrivate, "")
 	if err != nil || o.GoogleCredential != `{"type":"metadata_server"}` || o.Token != "" {

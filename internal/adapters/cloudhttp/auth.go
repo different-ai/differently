@@ -31,12 +31,16 @@ type TokenSource interface {
 	Token(ctx context.Context) (string, error)
 }
 
-// Invalidator is a TokenSource that can drop its cached token, so the next
-// call fetches a new one: for a token the server rejected before its expiry
-// (revoked, or its account's permissions changed).
+// Invalidator is a TokenSource that can drop a token the server rejected
+// before its expiry (revoked, or its account's permissions changed), so the
+// next call fetches a new one. Only that token is dropped, at most every
+// invalidateEvery, so concurrent rejections or a server that rejects every
+// token do not turn each call into a token fetch.
 type Invalidator interface {
-	Invalidate()
+	Invalidate(token string)
 }
+
+const invalidateEvery = 10 * time.Second
 
 // refreshMargin renews a token this long before it expires.
 const refreshMargin = 2 * time.Minute
@@ -45,9 +49,10 @@ const refreshMargin = 2 * time.Minute
 type cached struct {
 	fetch func(ctx context.Context) (token string, ttl time.Duration, err error)
 
-	mu  sync.Mutex
-	tok string
-	exp time.Time
+	mu      sync.Mutex
+	tok     string
+	exp     time.Time
+	dropped time.Time
 }
 
 func (c *cached) Token(ctx context.Context) (string, error) {
@@ -65,10 +70,13 @@ func (c *cached) Token(ctx context.Context) (string, error) {
 	return tok, nil
 }
 
-func (c *cached) Invalidate() {
+func (c *cached) Invalidate(token string) {
 	c.mu.Lock()
-	c.tok = ""
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	if token == "" || c.tok != token || time.Since(c.dropped) < invalidateEvery {
+		return
+	}
+	c.tok, c.dropped = "", time.Now()
 }
 
 // EntraCredential is a Microsoft Entra ID app registration (service

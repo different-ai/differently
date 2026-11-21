@@ -120,12 +120,12 @@ func (k *kube) auth(ctx context.Context) (http.Header, error) {
 	return h, nil
 }
 
-// rejected drops a Google token the API server refused (401), so the next
+// rejected drops a Google token the API server refused (401), so a later
 // call fetches a new one instead of failing until the old one expires.
-func (k *kube) rejected(err error) {
+func (k *kube) rejected(h http.Header, err error) {
 	var e *api.Error
 	if inv, ok := k.tokens.(cloudhttp.Invalidator); ok && errors.As(err, &e) && e.Details["providerStatus"] == "401" {
-		inv.Invalidate()
+		inv.Invalidate(strings.TrimPrefix(h.Get("Authorization"), "Bearer "))
 	}
 }
 
@@ -148,7 +148,7 @@ func (k *kube) do(ctx context.Context, method, path, contentType string, in, out
 	}
 	resp, err := k.c.Do(ctx, method, path, body, contentType, h)
 	if err != nil {
-		k.rejected(err)
+		k.rejected(h, err)
 		return err
 	}
 	defer resp.Body.Close()
@@ -210,7 +210,7 @@ func (k *kube) exec(ctx context.Context, ns, pod, container string, argv []strin
 	up := &httpx.Client{BaseURL: k.c.BaseURL, HTTP: k.ws, Provider: k.c.Provider}
 	resp, err := up.Do(ctx, http.MethodGet, "/api/v1/namespaces/"+url.PathEscape(ns)+"/pods/"+url.PathEscape(pod)+"/exec?"+q.Encode(), nil, "", h)
 	if err != nil {
-		k.rejected(err)
+		k.rejected(h, err)
 		return -1, err
 	}
 	conn, ok := resp.Body.(io.ReadWriteCloser)

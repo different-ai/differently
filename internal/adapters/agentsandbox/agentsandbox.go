@@ -27,6 +27,7 @@ package agentsandbox
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -126,9 +127,21 @@ func FromConfig(cfg map[string]string, trust, token string) (Options, error) {
 		if o.APIServer == "" {
 			return o, errors.New("agent-sandbox config.auth: google needs config.apiServer: the cluster's DNS-based endpoint (https://gke-....gke.goog), or its IP endpoint with config.caFile")
 		}
+		if !strings.HasPrefix(o.APIServer, "https://") {
+			// The token opens every Google API its account may use.
+			return o, errors.New("agent-sandbox config.auth: google needs an https:// config.apiServer: a Google access token must not travel in clear text")
+		}
 		o.GoogleCredential, o.Token = token, ""
 		if o.GoogleCredential == "" {
 			o.GoogleCredential = `{"type":"metadata_server"}`
+		}
+		var kind struct {
+			Type          string `json:"type"`
+			Impersonation string `json:"service_account_impersonation_url"`
+		}
+		if json.Unmarshal([]byte(o.GoogleCredential), &kind) == nil && kind.Type == "external_account" && kind.Impersonation == "" {
+			// A federated principal has no email for RBAC to bind.
+			return o, errors.New("agent-sandbox config.auth: google with workload identity federation needs service_account_impersonation_url: GKE's RBAC binds a service account's email, which a federated identity does not have")
 		}
 	default:
 		return o, fmt.Errorf("agent-sandbox config.auth must be google or unset, not %q", cfg["auth"])
