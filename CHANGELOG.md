@@ -52,6 +52,14 @@ All notable changes are recorded here. The format follows
 
 ### Fixed
 
+- `gcp-sandboxes`: a fork from a snapshot was refused, because snapshots
+  were taken with Google's default owner while forks are created with the
+  installation as owner; a snapshot now takes its source's owner. The
+  adapter no longer sets a Google `ttl`, which can never move: extending a
+  sandbox's TTL left Google to delete it at the original deadline, and a
+  sandbox without a TTL was deleted after 7 days. A request's missing
+  template or snapshot, and a slow create, now fail that one sandbox instead
+  of marking the pool unhealthy. Tested against the fake server only.
 - `opensandbox` adapter: a container the Docker runtime cannot start no
   longer counts against the pool's health. A request Docker refuses (more
   CPUs than the host has) fails the sandbox as `invalid_request`; any other

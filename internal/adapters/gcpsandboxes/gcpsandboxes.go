@@ -64,16 +64,8 @@ import (
 // Scope is the OAuth scope the sandbox methods accept.
 const Scope = "https://www.googleapis.com/auth/cloud-platform"
 
-const (
-	// defaultTTL applies when a sandbox has no TTL: Google's documented
-	// lifetimes run from 7 days (custom containers) to 14 (code execution).
-	defaultTTL = 7 * 24 * 3600
-	// backstopGrace keeps Google's deadline behind Differently's own,
-	// audited expiry.
-	backstopGrace = 5 * 60
-	// shellPort is where the shell container serves /exec.
-	shellPort = "8080"
-)
+// shellPort is where the shell container serves /exec.
+const shellPort = "8080"
 
 // Options configures the adapter. Pool config keys: project, location (or
 // the pool's region), reasoningEngine, template (all required), apiURL.
@@ -352,28 +344,27 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 		}
 	}
 	if s.Name == "" {
-		ttl := req.TTLSeconds
-		if ttl <= 0 {
-			ttl = defaultTTL
-		} else {
-			ttl += backstopGrace
-		}
-		body := map[string]any{"displayName": display, "owner": req.Installation, "ttl": strconv.Itoa(ttl) + "s"}
+		// No ttl: Google cannot move a sandbox's deadline once it is set, so
+		// a backstop there would delete a sandbox whose TTL was extended.
+		// Differently's own expiry deletes it, and the reconciler any orphan.
+		body := map[string]any{"displayName": display, "owner": req.Installation}
+		named := "" // what the request names, if Google may not have it
 		if req.FromSnapshot != "" {
 			body["sandboxEnvironmentSnapshot"] = a.snapshotName(req.FromSnapshot)
+			named = "snapshot " + req.FromSnapshot + " (Google deletes snapshots 30 days after they are taken)"
 		} else {
 			tmpl := a.opts.Template
 			if req.Template != "" && a.templateName(req.Template) != a.templateName(a.opts.Template) {
 				// A pool whose template denies internet access advertises
 				// egress control, so a request may not swap in a template
 				// that allows it.
-				tmpl = req.Template
+				tmpl, named = req.Template, "template "+req.Template
 				if poolOff, err := a.internetOff(ctx, a.templateName(a.opts.Template)); err != nil {
 					return adapter.Instance{}, err
 				} else if poolOff {
 					off, err := a.internetOff(ctx, a.templateName(tmpl))
 					if err != nil {
-						return adapter.Instance{}, err
+						return adapter.Instance{}, requestFault(err, named)
 					}
 					if !off {
 						return adapter.Instance{}, api.Errorf(api.CodeInvalidRequest, "gcp-sandboxes: template %s allows internet access, but this pool's template does not; use a pool whose template allows it", tmpl)
@@ -385,10 +376,10 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 		}
 		var op operation
 		if err := a.c.JSON(ctx, http.MethodPost, "/"+a.parent()+"/sandboxEnvironments", body, &op); err != nil {
-			return adapter.Instance{}, err
+			return adapter.Instance{}, requestFault(err, named)
 		}
 		if op, err = a.wait(ctx, "creating the sandbox", op); err != nil {
-			return adapter.Instance{}, err
+			return adapter.Instance{}, slow(requestFault(err, named), "the create")
 		}
 		// The operation's response may lack fields; read the sandbox again.
 		if err := json.Unmarshal(op.Response, &s); err != nil || s.Name == "" {
@@ -398,7 +389,7 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 	ref := lastSegment(s.Name)
 	if s.State != "STATE_RUNNING" {
 		if s, err = a.waitState(ctx, ref, "STATE_RUNNING"); err != nil {
-			return adapter.Instance{}, err
+			return adapter.Instance{}, slow(err, "the start")
 		}
 	}
 	if len(req.Env) > 0 {
@@ -411,6 +402,32 @@ func (a *Adapter) Create(ctx context.Context, req adapter.CreateRequest) (adapte
 		}
 	}
 	return a.instance(s), nil
+}
+
+// requestFault reports a failure caused by what the request names (a
+// template or snapshot Google does not have, has deleted, or does not let
+// this engine use) as invalid_request: it fails that one sandbox instead of
+// marking the shared pool unhealthy. named is empty when the request names
+// nothing beyond the pool's own template, and err is then returned as is.
+func requestFault(err error, named string) error {
+	var e *api.Error
+	if named == "" || !errors.As(err, &e) {
+		return err
+	}
+	switch {
+	case e.Code == api.CodeNotFound, e.Code == api.CodeInvalidState, e.Details["providerStatus"] == "403":
+		return api.Errorf(api.CodeInvalidRequest, "gcp-sandboxes: %s cannot be used: %s", named, e.Message)
+	}
+	return err
+}
+
+// slow turns a wait that ran out of time, the scheduler's or the adapter's,
+// into sandbox_failed: one slow sandbox does not make the pool unhealthy.
+func slow(err error, what string) error {
+	if errors.Is(err, context.DeadlineExceeded) || (api.IsCode(err, api.CodeProviderUnavailable) && strings.Contains(err.Error(), "timed out")) {
+		return adapter.SandboxFailed(fmt.Errorf("gcp-sandboxes: %s did not finish in time: %w", what, err))
+	}
+	return err
 }
 
 func (a *Adapter) Get(ctx context.Context, ref string) (adapter.Instance, error) {
@@ -551,12 +568,22 @@ func (a *Adapter) Start(ctx context.Context, ref string) error {
 // Snapshot captures memory and filesystem, whatever kind is asked for, and
 // leaves the sandbox running.
 func (a *Adapter) Snapshot(ctx context.Context, ref, _ string) (adapter.Snapshot, error) {
+	// Google restores a sandbox only from a snapshot of the same owner, and
+	// forks are created with the installation as owner: the snapshot takes
+	// its source's owner rather than Google's default one.
+	src, err := a.get(ctx, ref)
+	if err != nil {
+		return adapter.Snapshot{}, err
+	}
 	var op operation
 	body := map[string]any{"displayName": "dly:" + ref, "postSnapshotAction": "RUNNING"}
+	if src.Owner != "" {
+		body["owner"] = src.Owner
+	}
 	if err := a.c.JSON(ctx, http.MethodPost, "/"+a.name(ref)+":snapshot", body, &op); err != nil {
 		return adapter.Snapshot{}, err
 	}
-	op, err := a.wait(ctx, "the snapshot", op)
+	op, err = a.wait(ctx, "the snapshot", op)
 	if err != nil {
 		return adapter.Snapshot{}, err
 	}

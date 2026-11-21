@@ -33,11 +33,11 @@ resource).
 | lifecycle.pause-resume | no | Whether processes and memory survive pause is not documented |
 | snapshots.disk | yes | A snapshot always captures memory and filesystem |
 | snapshots.memory | yes | Reported as `kind: memory` whatever was requested |
-| fork | yes | A new sandbox from a snapshot (same owner) |
+| fork | yes | A new sandbox from a snapshot. Google restores only from a snapshot of the same owner, so a snapshot takes its source's `owner` (the installation). Google deletes snapshots after 30 days |
 | ports.expose | no | The data plane proxies a request only when it carries the caller's Google credential (`authorizeAccess`) and a routing token, so there is no plain URL to return. A custom-container template can declare ports, but reaching them needs the same credential |
 | network.egress-control | yes, by template | Google sets egress on the template (`egressControlConfig.internetAccess`, off unless set), not per sandbox. The pool advertises the feature when its template has internet access off, and then refuses a request whose `template` allows it. A pool whose template allows internet access does not advertise it |
 | max size | set by the template | Requested resources are not applied |
-| provider TTL backstop | yes | `ttl`: the TTL plus 5 minutes, or 7 days without one. It cannot be moved later |
+| provider TTL backstop | no | Google cannot move a sandbox's `ttl` once set, so a backstop would delete a sandbox whose TTL was extended. None is set: Differently's own expiry deletes the sandbox, and the reconciler any orphan |
 
 ## Configure
 
@@ -114,9 +114,15 @@ allows only port 443 to providers by default.
   this installation's prefix. Use an engine dedicated to Differently.
 - **Not read:** user credentials (`authorized_user`) and federation
   configurations that take their token from a URL, AWS or an executable.
-- **The TTL cannot be moved.** Sandboxes have no update method; Google's
-  guide says to delete and create again. Azure's auto-delete policy can be
-  moved, so this differs from `azure-sandboxes`.
+- **No TTL at Google.** Sandboxes have no update method, so a `ttl` set at
+  create could never follow a TTL change, and Google would delete a sandbox
+  Differently still counts as alive. The adapter sets none, so a sandbox
+  outlives a control plane that is gone for good; delete the engine's
+  sandboxes by hand then. Azure's auto-delete policy can be moved, so
+  `azure-sandboxes` keeps its backstop.
+- **Snapshots last 30 days**, Google's default; the adapter sets no `ttl` on
+  them. A fork from an expired or deleted snapshot fails with
+  `invalid_request`.
 - **A fork's egress is not checked.** A create from a snapshot names no
   template, and Google does not document which egress the restored sandbox
   gets.
@@ -130,6 +136,12 @@ allows only port 443 to providers by default.
   `invalid_request`; 401, 403 and `UNAVAILABLE` are `provider_unavailable`. A
   failed operation is `sandbox_failed`, except for quota (code 8) and invalid
   argument (code 3). `STATE_TERMINATED` (a runtime failure) is an error state.
+  On create, what the request names fails that one sandbox with
+  `invalid_request` rather than marking the pool unhealthy: a template other
+  than the pool's that Google does not have or refuses (404, 403), and a
+  snapshot that is gone, expired or of another owner. A create or start that
+  outlasts its wait, the adapter's or the scheduler's provision timeout, is
+  `sandbox_failed`.
 - **Quotas** per project and region: 1,000 execute requests a minute, 500
   write requests a minute, 1,000 sandboxes.
 - A third party measured about 1 MB per request or response through the
@@ -145,11 +157,15 @@ bearer grant and runs long-running operations. It answers `:execute` by
 decoding the three input chunks and running the command with a local
 `/bin/sh`. The tests cover:
 
-- create, a replayed create, the create body (TTL, owner, template), exec
+- create, a replayed create, the create body (no TTL, owner, template), exec
   with env, stdin and cwd;
 - file write and read;
 - pause and resume, including a resume refused with `FAILED_PRECONDITION`;
-- snapshot, fork from a snapshot, the default TTL, deleting a snapshot;
+- snapshot, fork from a snapshot (the fake refuses a snapshot of another
+  owner, as Google documents), deleting a snapshot;
+- a request's missing template, a missing snapshot and a create that does
+  not finish fail that sandbox, while the pool's own template missing does
+  not;
 - paged List per installation, Delete and a deleted sandbox;
 - a 429, a failed operation and credential parsing;
 - egress control advertised from the template, a request for a template
