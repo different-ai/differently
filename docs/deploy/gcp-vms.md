@@ -108,7 +108,10 @@ gcloud compute firewall-rules create dly-nodes --network=differently \
 Give the control node its own service account with no roles yet (step 5
 grants it access to its secrets, and nothing else). Do not use the Compute
 Engine default service account, which often holds the project-wide Editor
-role. The KVM node gets no service account at all: nothing on it needs
+role. The `userinfo-email` scope lets the control node's
+service account sign in to a GKE cluster as itself, for an
+[agent-sandbox pool on GKE](../providers/agent-sandbox.md#a-gke-cluster-with-google-credentials)
+with fast, snapshottable sandboxes; it grants no access of its own. The KVM node gets no service account at all: nothing on it needs
 Google APIs, and a sandbox that escaped to the host would find no
 credentials on the metadata server.
 
@@ -122,7 +125,7 @@ gcloud compute instances create dly-control --zone=<zone> \
   --subnet=differently-nodes --private-network-ip=10.20.0.10 \
   --address=dly-api --tags=differently-control \
   --service-account=dly-control@<project>.iam.gserviceaccount.com \
-  --scopes=cloud-platform --shielded-secure-boot
+  --scopes=cloud-platform,userinfo-email --shielded-secure-boot
 
 gcloud compute instances create dly-kvm --zone=<zone> \
   --machine-type=n4-standard-16 --enable-nested-virtualization \

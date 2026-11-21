@@ -120,6 +120,73 @@ For another cluster set `apiServer` and `caFile`, and pass a token:
 Tokens from `kubectl create token` expire (one hour by default); for a
 pool, use a long-lived service account token Secret.
 
+### A GKE cluster, with Google credentials
+
+A control plane outside the cluster, for example on the Compute Engine VMs
+of [the Compute Engine guide](../deploy/gcp-vms.md), can authenticate to GKE
+as a Google service account instead of holding a Kubernetes token. Set
+`auth: google`; the pool's credential is then a Google credential, the same
+kinds `gcp-sandboxes` takes: a service-account JSON key,
+`{"type": "metadata_server"}` (the VM's service account, the default when the
+pool has no credential), or a workload identity federation configuration
+that impersonates a service account (`service_account_impersonation_url`;
+a federated identity alone has no email for RBAC to bind, so the pool
+refuses it). `apiServer` must be `https://`: the token opens every Google API
+its account may use. The adapter sends access tokens with the
+`cloud-platform` and `userinfo.email` scopes and refreshes them before they
+expire. When the API server rejects a token, the adapter drops it (at most
+every 10 seconds) so the next call fetches again; the metadata server may
+hand back the same token until it expires, and a revoked key fails the fetch
+itself.
+
+```yaml
+  - name: gke
+    adapter: agent-sandbox
+    trust: private
+    config:
+      apiServer: https://gke-0123456789abcdef.us-central1.gke.goog   # the DNS-based endpoint
+      auth: google
+      namespace: sandboxes
+      # ... runtimeClassName, podSnapshotPolicy or warmPool as above
+    # no credentials: the VM's service account, through the metadata server
+```
+
+The DNS-based endpoint (`gcloud container clusters describe <cluster>
+--location=<region> --format='value(controlPlaneEndpointsConfig.dnsEndpointConfig.endpoint)'`)
+has a publicly trusted certificate, so no `caFile` is needed; the IP endpoint
+needs the cluster's CA in `caFile`. On the Google side:
+
+- Give the service account `roles/container.clusterViewer` on the project
+  (it holds `container.clusters.get` and `container.clusters.connect`, which
+  GKE needs to let the account in) and nothing broader: what it may do in the
+  cluster comes from Kubernetes RBAC.
+- Bind the Role above to the account by its email:
+
+  ```yaml
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata: {name: differently-sandboxes, namespace: sandboxes}
+  roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: differently-sandboxes}
+  subjects:
+  - kind: User
+    name: dly-control@<project>.iam.gserviceaccount.com
+  ```
+
+- On Compute Engine, the VM needs the `userinfo-email` access scope besides
+  `cloud-platform`: GKE identifies the account by email only from a token
+  with that scope, and Compute Engine leaves it out by default. Without it
+  the RoleBinding does not match and every call is refused.
+- With the Helm chart's restricted server egress, allow the GKE endpoint
+  (port 443), DNS, and the metadata server: `169.254.169.254` port 80 on a
+  Compute Engine VM, or GKE's own metadata server, `169.254.169.252` port 988,
+  for a server on GKE with Workload Identity and Dataplane V2.
+
+Status: tested with a fake metadata server and the fake API server (the
+scopes asked for, a rejected token dropped and fetched again, http and
+federation without impersonation refused); not run against GKE. An
+independent review found the plain-http and federation gaps and the
+over-eager token drop, now fixed.
+
 With Differently's Helm chart, server egress is restricted by default
 (`networkPolicy.server.egress.restricted`). Allow the API server with an
 entry in `networkPolicy.server.egress.extra`: NetworkPolicy sees the
@@ -154,6 +221,7 @@ template and rejects `image`, `runtimeClassName`, `volumeSize`,
 | `volumeSize`, `volumePath`, `storageClassName` | none, `/workspace`, cluster default | a PersistentVolumeClaim per sandbox |
 | `serviceAccountName` | namespace default | the sandbox pod's service account (its token is never mounted) |
 | `warmPool`, `container` | none | claim from a SandboxWarmPool instead of creating Sandboxes |
+| `auth` | unset | `google`: authenticate to GKE with a Google credential ([GKE with Google credentials](#a-gke-cluster-with-google-credentials)) |
 | `features` | as above | comma list replacing the defaults |
 
 ## Snapshots, fork and pause/resume on GKE

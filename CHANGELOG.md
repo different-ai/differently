@@ -17,6 +17,15 @@ All notable changes are recorded here. The format follows
   the fake adapter, a `remote` pool served by `adapterhttp.Handler`, and the
   Daytona adapter's fake API. Run live against OpenSandbox's Docker runtime
   on Colima, where it found the first fix below.
+- `agent-sandbox` adapter (experimental): `auth: google` authenticates to a
+  GKE cluster with a Google credential (the VM's service account through the
+  metadata server, a key, or workload identity federation) instead of a
+  Kubernetes token, so a control plane on Compute Engine can drive GKE pools.
+  Tokens carry the `userinfo.email` scope GKE needs for RBAC; the API server
+  must be `https://`; federation must impersonate a service account; a token
+  the API server rejects is dropped (at most every 10 seconds). The Compute Engine guide gives the
+  control node that scope. Google credentials now take several scopes.
+  Tested with fakes; not run against GKE.
 - `agent-sandbox` adapter (experimental): pause/resume on a warm pool with
   GKE Pod Snapshots. A pool with both `warmPool` and `podSnapshotPolicy`
   claims a running warm pod and gives it a snapshot group of its own through

@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/different-ai/differently/internal/adapters/cloudhttp"
 	"github.com/different-ai/differently/internal/adapters/httpx"
 	"github.com/different-ai/differently/pkg/adapter"
 	"github.com/different-ai/differently/pkg/api"
@@ -46,8 +47,9 @@ type kube struct {
 	c  *httpx.Client // JSON calls; the token is set per request
 	ws *http.Client  // exec upgrades, without a client timeout: it would make a 101 body read-only
 
-	token     string // a fixed token (the pool's credential), or
-	tokenFile string // a projected token re-read as it rotates
+	token     string                // a fixed token (the pool's credential), or
+	tokenFile string                // a projected token re-read as it rotates, or
+	tokens    cloudhttp.TokenSource // Google access tokens (GKE)
 
 	mu       sync.Mutex
 	cached   string
@@ -88,8 +90,16 @@ func (t acceptAny) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // auth returns the Authorization header. A projected service account token
 // rotates, so the file is re-read every minute.
-func (k *kube) auth() (http.Header, error) {
+func (k *kube) auth(ctx context.Context) (http.Header, error) {
 	h := http.Header{}
+	if k.tokens != nil {
+		tok, err := k.tokens.Token(ctx)
+		if err != nil {
+			return nil, err
+		}
+		h.Set("Authorization", "Bearer "+tok)
+		return h, nil
+	}
 	tok := k.token
 	if tok == "" && k.tokenFile != "" {
 		k.mu.Lock()
@@ -110,6 +120,15 @@ func (k *kube) auth() (http.Header, error) {
 	return h, nil
 }
 
+// rejected drops a Google token the API server refused (401), so a later
+// call fetches a new one instead of failing until the old one expires.
+func (k *kube) rejected(h http.Header, err error) {
+	var e *api.Error
+	if inv, ok := k.tokens.(cloudhttp.Invalidator); ok && errors.As(err, &e) && e.Details["providerStatus"] == "401" {
+		inv.Invalidate(strings.TrimPrefix(h.Get("Authorization"), "Bearer "))
+	}
+}
+
 // do sends a JSON request; contentType defaults to application/json.
 func (k *kube) do(ctx context.Context, method, path, contentType string, in, out any) error {
 	var body io.Reader
@@ -123,12 +142,13 @@ func (k *kube) do(ctx context.Context, method, path, contentType string, in, out
 			contentType = "application/json"
 		}
 	}
-	h, err := k.auth()
+	h, err := k.auth(ctx)
 	if err != nil {
 		return err
 	}
 	resp, err := k.c.Do(ctx, method, path, body, contentType, h)
 	if err != nil {
+		k.rejected(h, err)
 		return err
 	}
 	defer resp.Body.Close()
@@ -175,7 +195,7 @@ func (k *kube) exec(ctx context.Context, ns, pod, container string, argv []strin
 	for _, a := range argv {
 		q.Add("command", a)
 	}
-	h, err := k.auth()
+	h, err := k.auth(ctx)
 	if err != nil {
 		return -1, err
 	}
@@ -190,6 +210,7 @@ func (k *kube) exec(ctx context.Context, ns, pod, container string, argv []strin
 	up := &httpx.Client{BaseURL: k.c.BaseURL, HTTP: k.ws, Provider: k.c.Provider}
 	resp, err := up.Do(ctx, http.MethodGet, "/api/v1/namespaces/"+url.PathEscape(ns)+"/pods/"+url.PathEscape(pod)+"/exec?"+q.Encode(), nil, "", h)
 	if err != nil {
+		k.rejected(h, err)
 		return -1, err
 	}
 	conn, ok := resp.Body.(io.ReadWriteCloser)
