@@ -17,6 +17,15 @@ All notable changes are recorded here. The format follows
   the fake adapter, a `remote` pool served by `adapterhttp.Handler`, and the
   Daytona adapter's fake API. Run live against OpenSandbox's Docker runtime
   on Colima, where it found the first fix below.
+- `agent-sandbox` adapter (experimental): pause/resume on a warm pool with
+  GKE Pod Snapshots. A pool with both `warmPool` and `podSnapshotPolicy`
+  claims a running warm pod and gives it a snapshot group of its own through
+  the claim's `additionalPodMetadata`, so fast starts and checkpointing
+  pauses combine; snapshots and fork are not offered there. Claims are
+  polled every 100 ms, so a create from a warm pool took 110 ms on kind
+  (was 510 ms). Needs `differently.dev` in agent-sandbox's
+  `allowed-label-domains`. Run against agent-sandbox v1.0.12 on kind with a
+  stand-in for GKE's snapshot controller; not run on GKE.
 - `gcp-sandboxes` adapter (experimental): a live test against a real Agent
   Platform engine (`TestLiveGCPSandboxes`, build tags
   `live,experimental_adapters`). It covers what Differently relies on, and

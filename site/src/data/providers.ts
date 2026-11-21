@@ -131,7 +131,7 @@ export const providers: Provider[] = [
     billing: 'infra', cpu: null, memory: null, slot: null, fees: 'Your own cluster', priceSource: '',
     rates: null,
     adapter: 'agentsandbox',
-    keepsState: 'Stop/start with a volume; pause on GKE (gVisor)', snapshots: 'Memory + fork on GKE (gVisor)', ports: 'In-cluster', maxSize: 'Your nodes and quota',
+    keepsState: 'Stop/start with a volume; pause on GKE (gVisor), warm pools too', snapshots: 'Memory + fork on GKE (gVisor)', ports: 'In-cluster', maxSize: 'Your nodes and quota',
     caps: { kernel: 'part', stop: 'part', memory: 'part', snapshot: 'part', fork: 'part', url: 'part', own: 'yes' },
     runItYourself: 'Yes, Apache-2.0', ...own, complianceNote: 'It runs in your cluster, inside your own audit scope.',
     note: 'A Kubernetes SIG project that adds a Sandbox resource to a cluster. Isolation is whatever RuntimeClass the pod uses.',

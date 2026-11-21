@@ -7,7 +7,7 @@
 
 | | |
 |---|---|
-| Status | **Verified live** (2026-10-28): the adapter's live test and a Differently server, against agent-sandbox v1.0.8 on a single-node kind cluster (Kubernetes 1.37, runc, arm64). Snapshots, fork and pause/resume through GKE Pod Snapshots: **tested with a fake server, not run on GKE** |
+| Status | **Verified live** (2026-10-28): the adapter's live test and a Differently server, against agent-sandbox v1.0.8 on a single-node kind cluster (Kubernetes 1.37, runc, arm64). Snapshots, fork and pause/resume through GKE Pod Snapshots: **tested with a fake server, not run on GKE**. Pause/resume on a warm pool: the adapter ran against agent-sandbox v1.0.12 on kind (2026-11-20) with a stand-in for GKE's snapshot controller, which checkpoints and restores nothing ([how](#how-it-was-tested)) |
 | Adapter | `agent-sandbox` (`internal/adapters/agentsandbox`) |
 | Trust | declared (self-hostable) |
 | Isolation | The pod's RuntimeClass: runc containers by default, gVisor (`runsc`) or Kata microVMs when the cluster has them and the pool sets `runtimeClassName`. Only runc was run |
@@ -35,10 +35,10 @@ works.
 | files | yes: `cat`, `mkdir -p` and `stat -c` over exec; reads capped at 100 MiB | yes |
 | stdin | yes; needs Kubernetes 1.30 or later (the v5 exec protocol closes stdin) | yes |
 | lifecycle.stop-start | with `volumeSize`: `spec.operatingMode: Suspended` deletes the pod and keeps its volume; only files under `volumePath` survive | no |
-| lifecycle.pause-resume | on GKE with `podSnapshotPolicy`: a pod snapshot, then the pod is deleted; resume restores it ([GKE](#snapshots-fork-and-pauseresume-on-gke)). Elsewhere no: Kubernetes has no memory-keeping pause | no |
+| lifecycle.pause-resume | on GKE with `podSnapshotPolicy`: a pod snapshot, then the pod is deleted; resume restores it ([GKE](#snapshots-fork-and-pauseresume-on-gke)). Elsewhere no: Kubernetes has no memory-keeping pause | on GKE with `podSnapshotPolicy` ([warm pools](#with-a-warm-pool)) |
 | snapshots.disk | on GKE with `podSnapshotPolicy` (the snapshot holds memory too) | no |
-| snapshots.memory | on GKE with `podSnapshotPolicy`: GKE Pod Snapshots of gVisor pods | no |
-| fork | on GKE with `podSnapshotPolicy`: a new Sandbox restored from a snapshot | no |
+| snapshots.memory | on GKE with `podSnapshotPolicy`: GKE Pod Snapshots of gVisor pods | no: nothing could be forked from it |
+| fork | on GKE with `podSnapshotPolicy`: a new Sandbox restored from a snapshot | no: a claimed pod is already running, so nothing can restore into it |
 | ports.expose | opt-in (`features`): the headless Service's DNS name, `http://<sandbox>.<namespace>.svc.cluster.local:<port>`, reachable inside the cluster only | opt-in: the adopted pod's IP |
 | max size | none from the adapter; the cluster's nodes and ResourceQuotas | the SandboxTemplate's |
 | provider TTL backstop | yes: `spec.shutdownTime` with `shutdownPolicy: Delete`, moved when the TTL changes | yes: the claim's `lifecycle.shutdownTime` |
@@ -287,8 +287,89 @@ and configure the pool:
       # serviceAccountName: sandbox      # the pods' service account for the bucket roles
 ```
 
-`podSnapshotPolicy` does not combine with `warmPool`: warm pods are started
-from the SandboxTemplate, without the per-sandbox label.
+### With a warm pool
+
+Fast starts and pause/resume together: a pool with both `warmPool` and
+`podSnapshotPolicy` claims a running warm pod (110 ms per create on kind,
+including the adapter's wait for it to be ready), and pauses it into a
+checkpoint that frees its node resources. It offers `lifecycle.pause-resume`
+and `lifecycle.pause-checkpoint`, but not snapshots or fork: a claimed pod is
+already running, so nothing can be restored into it.
+
+A warm pod has no snapshot group until it is claimed, so GKE never restores
+it. The claim gives it its own group through `additionalPodMetadata`: the
+claim controller copies that into the claimed Sandbox's pod template, and the
+Sandbox controller onto the running pod, without restarting it. Pause and
+resume then work as above, except that the claim, not the Sandbox, holds the
+adapter's annotations and names the checkpoint to restore. The claim
+controller rewrites the Sandbox's pod template from the claim on every pass,
+so nothing else could keep it there. Resume waits until the Sandbox's pod
+template names the checkpoint before it starts the pod.
+
+agent-sandbox accepts claim labels only from an allowlist of domains
+(default `sandbox.users.io`). Add `differently.dev`, keeping any domain
+other clients use, and restart the controller, which reads the list once at
+startup:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: agent-sandbox-config, namespace: agent-sandbox-system}
+data:
+  allowed-label-domains: |
+    differently.dev
+    sandbox.users.io
+```
+
+```sh
+kubectl -n agent-sandbox-system rollout restart deploy/agent-sandbox-controller
+```
+
+Without that, every create fails with `invalid_request` and a message
+naming the allowlist. The SandboxTemplate behind the warm pool must set
+`runtimeClassName: gvisor`; the pool is unhealthy otherwise. Add these
+rules to the Role (the adapter reads the template, and suspends and resumes
+the claimed Sandbox):
+
+```yaml
+- apiGroups: [extensions.agents.x-k8s.io]
+  resources: [sandboxtemplates]
+  verbs: [get]
+- apiGroups: [agents.x-k8s.io]
+  resources: [sandboxes]
+  verbs: [get, patch]
+```
+
+and configure the pool:
+
+```yaml
+  - name: gke-warm
+    adapter: agent-sandbox
+    trust: private
+    config:
+      namespace: sandboxes
+      warmPool: python-warm              # its SandboxTemplate sets runtimeClassName: gvisor
+      podSnapshotPolicy: differently
+```
+
+A paused sandbox's pod is gone, so a resume starts a new pod on whatever node
+has room, and GKE restores it there if the node is of the same machine
+series. The warm pool refills as soon as a pod is claimed, so paused
+sandboxes do not use up its pods.
+
+The claim and its Sandbox are two objects, so a pause or resume is two
+patches. A pause writes the claim first and suspends the Sandbox last;
+undoing a pause, or suspending a resume that was not restored, sets the
+Sandbox's mode first. A failed patch therefore never leaves a sandbox
+suspended without its claim saying so, or running unverified. If a paused
+claim's Sandbox is deleted, the claim controller adopts another warm one; the
+adapter follows it, and the next resumes restore the pause checkpoint into it
+(the first finds the new pod running unrestored and suspends it). A claimed
+Sandbox that cannot be read reports that sandbox `pending` without failing the
+reconciler's list. agent-sandbox still honours a legacy
+`agents.x-k8s.io/pod-name` annotation on old warm Sandboxes whose pod is named
+differently; the adapter assumes the pod has the Sandbox's name, so a pause of
+such a sandbox times out and is undone.
 
 ## Limits and differences
 
@@ -317,8 +398,7 @@ from the SandboxTemplate, without the per-sandbox label.
   pull keeps the create waiting, up to the scheduler's provision timeout.
 - `Capacity` is unbounded; set `maxConcurrency`, and Kubernetes
   ResourceQuotas in the namespace.
-- Not wired: the GKE Pod Snapshot extension, the sandbox router and
-  `sandboxd`. Recording and replaying a real cluster's exchanges, as the
+- Not wired: the sandbox router and `sandboxd`. Recording and replaying a real cluster's exchanges, as the
   OpenSandbox adapter does, is not done: exec is a WebSocket stream, which
   the HTTP recorder does not capture.
 
@@ -380,7 +460,38 @@ from the SandboxTemplate, without the per-sandbox label.
   a fork and a pause/resume, that a new sandbox does not start from a
   snapshot, and logs each step's time. **It has not been run: nothing here
   has run on GKE.**
-- **Not run:** GKE, Pod Snapshots, gVisor or Kata RuntimeClasses, a multi-node cluster,
+- **Warm pools with Pod Snapshots** (2026-11-20): the fake API's claim
+  controller adopts a separate warm Sandbox whose pod starts without a
+  group, checks claim labels against an allowlist, and rewrites the
+  Sandbox's pod template from the claim. The tests check the claim's group,
+  pause and resume twice through the claim, a resume GKE did not restore
+  (counted on the claim), a paused
+  sandbox's Sandbox replaced by the controller and restored into the new one,
+  an unreadable Sandbox reported pending without failing the list, a claim
+  controller that lags (a pause it never catches up with is undone; a
+  resume does not start the pod before the Sandbox names the checkpoint),
+  a failed claim patch that must not leave an unverified pod running, the
+  template and policy checks, the allowlist message, and that snapshot and
+  fork are refused. An independent review of the first version found the
+  patch ordering, list, lag and re-adoption issues these tests now cover;
+  each guard was removed once to see its test fail. Then, by hand,
+  on agent-sandbox v1.0.12 on kind (Kubernetes 1.37, runc, a RuntimeClass
+  named `gvisor` with the `runc` handler) with the Role above: a claim with
+  the `differently.dev` label is refused (`InvalidMetadata`) until the
+  domain is allowed; once allowed, the claim adopts a warm pod and the label
+  reaches the running pod (same UID, no restart) in 0.2 s; a `ps-name`
+  annotation set on the claim reaches the Sandbox's pod template at once, and
+  its removal too; suspending the claimed Sandbox deletes the pod and is not
+  undone by the claim controller (the claim reports `Ready=False`,
+  `SandboxSuspended`); setting it running creates a new pod carrying the
+  group label and `ps-name`, which is what GKE restores from. Finally the
+  adapter itself, with stand-in `podsnapshot.gke.io` CRDs and a loop that
+  marks each trigger's PodSnapshot ready: health, create in 110 ms, pause
+  (the claimed pod checkpointed and deleted, `paused`), a resume that, with
+  nothing restored, finds the marker missing and suspends the sandbox again
+  (`paused` again 1.4 s later), and a delete that removed the claim, the
+  trigger and the snapshot.
+- **Not run:** GKE, Pod Snapshots (checkpoint and restore themselves), gVisor or Kata RuntimeClasses, a multi-node cluster,
   Kubernetes before 1.30, the in-cluster service account path (the live runs
   used a token and CA file), `ports.expose` fetched from outside the pod,
   and the Helm chart with these pools.
