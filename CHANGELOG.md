@@ -61,6 +61,12 @@ All notable changes are recorded here. The format follows
 
 ### Fixed
 
+- `gcp-sandboxes`, `agentcore` and `northflank` (experimental): file reads
+  go through commands in 512 KiB pieces instead of one answer holding the
+  whole file, so a file over about 750 KB no longer exceeds the roughly 1 MB
+  a command's answer may carry on Agent Platform. A small file still takes
+  one command, and a file that changes while it is read is refused rather
+  than spliced. Tested with a local shell; not run against the backends.
 - `gcp-sandboxes`: a fork from a snapshot was refused, because snapshots
   were taken with Google's default owner while forks are created with the
   installation as owner; a snapshot now takes its source's owner. The

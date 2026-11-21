@@ -4,7 +4,7 @@
 // primitive is "run this command line": the exec request's working
 // directory, environment, stdin and timeout become part of the script, and
 // files move as base64 through the command line and its output. It assumes
-// the image has sh, base64, mkdir, cat and (for timeouts) coreutils timeout.
+// the image has sh, base64, mkdir, cat, head, dd, wc and (for timeouts) coreutils timeout.
 package shellcmd
 
 import (
@@ -28,6 +28,11 @@ const EnvFile = "/tmp/.differently/env"
 // ChunkBytes is the most file data sent in one command. Linux limits one
 // argument to 128 KiB and backends run the command as `sh -c <command>`.
 const ChunkBytes = 64 << 10
+
+// ReadChunkBytes is the most file data read in one command. base64 makes the
+// output a third larger, and some backends cap one command's response near
+// 1 MB (Agent Platform's :execute, by a third party's measurement).
+const ReadChunkBytes = 512 << 10
 
 // Exit codes the file scripts use to report a missing path or a directory.
 const (
@@ -103,17 +108,53 @@ func fail(path string, r api.ExecResult) error {
 	return api.Errorf(api.CodeInvalidRequest, "%s: %s", path, strings.TrimSpace(r.Stderr))
 }
 
-// ReadFile returns a file's content, read as base64 through stdout.
+// ReadFile returns a file's content, read as base64 through stdout in
+// ReadChunkBytes pieces: the first command also prints the file's size, so a
+// small file takes one command. A file whose size changes while it is read
+// is an error rather than a mix of two versions.
 func ReadFile(ctx context.Context, run Run, path string) ([]byte, error) {
 	p := q(path)
-	r, err := run(ctx, fmt.Sprintf("[ -e %s ] || exit %d; [ -d %s ] && exit %d; base64 < %s", p, exitMissing, p, exitIsDir, p))
+	r, err := run(ctx, fmt.Sprintf("[ -e %s ] || exit %d; [ -d %s ] && exit %d; wc -c < %s && head -c %d %s | base64", p, exitMissing, p, exitIsDir, p, ReadChunkBytes, p))
 	if err != nil {
 		return nil, err
 	}
 	if err := fail(path, r); err != nil {
 		return nil, err
 	}
-	data, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(r.Stdout), ""))
+	sizeLine, rest, _ := strings.Cut(r.Stdout, "\n")
+	size, err := strconv.ParseInt(strings.TrimSpace(sizeLine), 10, 64)
+	if err != nil {
+		return nil, adapter.SandboxFailed(fmt.Errorf("unreadable size of %s: %q", path, sizeLine))
+	}
+	data, err := decode(path, rest)
+	if err != nil {
+		return nil, err
+	}
+	for int64(len(data)) < size && len(data)%ReadChunkBytes == 0 {
+		r, err := run(ctx, fmt.Sprintf("[ -f %s ] || exit %d; dd if=%s bs=%d skip=%d count=1 2>/dev/null | base64", p, exitMissing, p, ReadChunkBytes, len(data)/ReadChunkBytes))
+		if err != nil {
+			return nil, err
+		}
+		if err := fail(path, r); err != nil {
+			return nil, err
+		}
+		chunk, err := decode(path, r.Stdout)
+		if err != nil {
+			return nil, err
+		}
+		if len(chunk) == 0 {
+			break
+		}
+		data = append(data, chunk...)
+	}
+	if int64(len(data)) != size {
+		return nil, adapter.SandboxFailed(fmt.Errorf("%s changed while it was read: %d bytes read, %d expected", path, len(data), size))
+	}
+	return data, nil
+}
+
+func decode(path, out string) ([]byte, error) {
+	data, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(out), ""))
 	if err != nil {
 		return nil, adapter.SandboxFailed(fmt.Errorf("unreadable file content for %s: %w", path, err))
 	}

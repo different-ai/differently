@@ -23,7 +23,7 @@ service whose container runs `sleep infinity`.
 |---|---|---|
 | exec | yes | Over Northflank's command-exec WebSocket, the only exec API. The working directory, stdin and timeout are added to the command line; the timeout uses coreutils `timeout` (exit 124) |
 | exec.stream | yes | `stdOut` and `stdErr` messages are passed on as they arrive |
-| files | yes | Through commands (`base64` and `find`), in 64 KiB pieces. Northflank has no file API either |
+| files | yes | Through commands (`base64` and `find`): writes in 64 KiB pieces, reads in 512 KiB pieces. Northflank has no file API either |
 | stdin | yes | Piped in through the command line |
 | lifecycle.stop-start | no | Northflank's pause scales to zero and wipes ephemeral storage |
 | lifecycle.pause-resume | no | |
