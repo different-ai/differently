@@ -41,6 +41,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/different-ai/differently/internal/adapters/cloudhttp"
 	"github.com/different-ai/differently/internal/adapters/httpx"
 	"github.com/different-ai/differently/pkg/adapter"
 	"github.com/different-ai/differently/pkg/api"
@@ -71,7 +72,9 @@ var DefaultFeatures = []string{adapter.FeatureExec, adapter.FeatureExecStream, a
 // claim from) with container (its pod's container, if it has several).
 // podSnapshotPolicy names a GKE PodSnapshotPolicy in the namespace and turns
 // on snapshots, fork and pause/resume (podsnapshot.go); snapshotTimeout bounds
-// a checkpoint (default 10m).
+// a checkpoint (default 10m). auth: google authenticates to a GKE cluster's
+// apiServer with Google access tokens; the pool's credential is then a Google
+// credential (cloudhttp.GoogleTokens), the metadata server when unset.
 type Options struct {
 	APIServer          string
 	CAFile             string
@@ -90,9 +93,16 @@ type Options struct {
 	WarmPool           string
 	Container          string
 	PodSnapshotPolicy  string
-	ReadyTimeout       time.Duration
-	SnapshotTimeout    time.Duration
+	// GoogleCredential is set with config.auth: google.
+	GoogleCredential string
+	ReadyTimeout     time.Duration
+	SnapshotTimeout  time.Duration
 }
+
+// GKEScopes are the OAuth scopes of the tokens sent to a GKE API server:
+// without userinfo.email GKE sees the account's numeric ID, not the email
+// Kubernetes RBAC binds.
+const GKEScopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email"
 
 var quantity = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|k|M|G|T)?$`)
 
@@ -107,6 +117,21 @@ func FromConfig(cfg map[string]string, trust, token string) (Options, error) {
 		ServiceAccountName: cfg["serviceAccountName"], WarmPool: cfg["warmPool"], Container: cfg["container"],
 		PodSnapshotPolicy: cfg["podSnapshotPolicy"],
 		Features:          slices.Clone(DefaultFeatures),
+	}
+	switch cfg["auth"] {
+	case "":
+	case "google":
+		// GKE identifies a Google account for RBAC only from a token with the
+		// userinfo.email scope; the credential is checked when the pool starts.
+		if o.APIServer == "" {
+			return o, errors.New("agent-sandbox config.auth: google needs config.apiServer: the cluster's DNS-based endpoint (https://gke-....gke.goog), or its IP endpoint with config.caFile")
+		}
+		o.GoogleCredential, o.Token = token, ""
+		if o.GoogleCredential == "" {
+			o.GoogleCredential = `{"type":"metadata_server"}`
+		}
+	default:
+		return o, fmt.Errorf("agent-sandbox config.auth must be google or unset, not %q", cfg["auth"])
 	}
 	if v := cfg["snapshotTimeout"]; v != "" {
 		d, err := time.ParseDuration(v)
@@ -221,6 +246,11 @@ func New(o Options) (*Adapter, error) {
 	k, err := newKube(o.APIServer, o.CAFile, o.Token, o.TokenFile)
 	if err != nil {
 		return nil, err
+	}
+	if o.GoogleCredential != "" {
+		if k.tokens, err = cloudhttp.GoogleTokens(o.GoogleCredential, GKEScopes, &http.Client{Timeout: time.Minute}); err != nil {
+			return nil, fmt.Errorf("agent-sandbox: config.auth google: %w", err)
+		}
 	}
 	return &Adapter{opts: o, k: k, bound: map[string]string{}}, nil
 }

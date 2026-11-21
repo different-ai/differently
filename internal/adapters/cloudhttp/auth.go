@@ -31,6 +31,13 @@ type TokenSource interface {
 	Token(ctx context.Context) (string, error)
 }
 
+// Invalidator is a TokenSource that can drop its cached token, so the next
+// call fetches a new one: for a token the server rejected before its expiry
+// (revoked, or its account's permissions changed).
+type Invalidator interface {
+	Invalidate()
+}
+
 // refreshMargin renews a token this long before it expires.
 const refreshMargin = 2 * time.Minute
 
@@ -56,6 +63,12 @@ func (c *cached) Token(ctx context.Context) (string, error) {
 	}
 	c.tok, c.exp = tok, now.Add(ttl)
 	return tok, nil
+}
+
+func (c *cached) Invalidate() {
+	c.mu.Lock()
+	c.tok = ""
+	c.mu.Unlock()
 }
 
 // EntraCredential is a Microsoft Entra ID app registration (service
@@ -208,7 +221,8 @@ type googleCredential struct {
 
 // GoogleTokens returns a token source for scope from the pool's credential
 // string: a service-account key, the metadata server, or workload identity
-// federation from a token file.
+// federation from a token file. scope may list several scopes, separated by
+// spaces as in OAuth 2.0.
 func GoogleTokens(raw, scope string, hc *http.Client) (TokenSource, error) {
 	var c googleCredential
 	if err := json.Unmarshal([]byte(raw), &c); err != nil {
@@ -252,7 +266,8 @@ func googleMetadata(c googleCredential, scope string, hc *http.Client) TokenSour
 	if account == "" {
 		account = "default"
 	}
-	tokenURL := strings.TrimRight(host, "/") + "/computeMetadata/v1/instance/service-accounts/" + url.PathEscape(account) + "/token?scopes=" + url.QueryEscape(scope)
+	// The metadata server takes scopes separated by commas.
+	tokenURL := strings.TrimRight(host, "/") + "/computeMetadata/v1/instance/service-accounts/" + url.PathEscape(account) + "/token?scopes=" + url.QueryEscape(strings.Join(strings.Fields(scope), ","))
 	return &cached{fetch: func(ctx context.Context) (string, time.Duration, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL, nil)
 		if err != nil {
@@ -306,7 +321,7 @@ func googleFederated(c googleCredential, scope string, hc *http.Client) TokenSou
 // token.
 func impersonate(ctx context.Context, hc *http.Client, rawURL, federated, scope string) (string, time.Duration, error) {
 	const who = "google workload identity"
-	body, _ := json.Marshal(map[string]any{"scope": []string{scope}})
+	body, _ := json.Marshal(map[string]any{"scope": strings.Fields(scope)})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(string(body)))
 	if err != nil {
 		return "", 0, err

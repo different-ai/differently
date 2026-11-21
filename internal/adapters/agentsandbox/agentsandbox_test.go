@@ -822,3 +822,81 @@ func TestTokenFileIsReread(t *testing.T) {
 		t.Fatalf("the rotated token was not read: %v", err)
 	}
 }
+
+// With auth: google the pool sends Google access tokens, here from a fake
+// metadata server, with the scopes GKE needs to see the account's email.
+// A token the API server rejects is dropped, so the next call fetches anew.
+func TestGoogleAuth(t *testing.T) {
+	f := newFakeKube(t)
+	var mu sync.Mutex
+	var scopes []string
+	issued := []string{"revoked-token-abc", token}
+	meta := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.Header.Get("Metadata-Flavor") != "Google" || r.URL.Path != "/computeMetadata/v1/instance/service-accounts/default/token" {
+			w.WriteHeader(403)
+			return
+		}
+		scopes = append(scopes, r.URL.Query().Get("scopes"))
+		tok := issued[0]
+		if len(issued) > 1 {
+			issued = issued[1:]
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": tok, "expires_in": 3599, "token_type": "Bearer"})
+	}))
+	t.Cleanup(meta.Close)
+	ca := filepath.Join(t.TempDir(), "ca.crt")
+	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.srv.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	o, err := FromConfig(map[string]string{"apiServer": f.srv.URL, "caFile": ca, "namespace": "ns1", "auth": "google"}, api.TrustPrivate,
+		`{"type":"metadata_server","metadataHost":"`+meta.URL+`"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := New(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := a.Health(ctx); !api.IsCode(err, api.CodeProviderUnavailable) {
+		t.Fatalf("a revoked token: %v", err)
+	}
+	if err := a.Health(ctx); err != nil {
+		t.Fatalf("after the rejected token was dropped: %v", err)
+	}
+	if err := a.Health(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(scopes) != 2 {
+		t.Fatalf("%d token fetches, want 2: one per rejected token, then the cache", len(scopes))
+	}
+	if scopes[0] != "https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/userinfo.email" {
+		t.Fatalf("scopes %q: GKE needs userinfo.email to see the account's email", scopes[0])
+	}
+}
+
+func TestGoogleAuthConfig(t *testing.T) {
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	for cfg, want := range map[string]string{
+		`{"auth":"google"}`:                           "needs config.apiServer",
+		`{"apiServer":"https://k","auth":"kerberos"}`: "auth must be google or unset",
+	} {
+		var m map[string]string
+		_ = json.Unmarshal([]byte(cfg), &m)
+		if _, err := FromConfig(m, api.TrustPrivate, ""); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: want %q, got %v", cfg, want, err)
+		}
+	}
+	o, err := FromConfig(map[string]string{"apiServer": "https://gke-1.us-central1.gke.goog", "auth": "google"}, api.TrustPrivate, "")
+	if err != nil || o.GoogleCredential != `{"type":"metadata_server"}` || o.Token != "" {
+		t.Fatalf("no credential means the metadata server: %+v %v", o, err)
+	}
+	o, _ = FromConfig(map[string]string{"apiServer": "https://k", "auth": "google"}, api.TrustPrivate, `{"type":"user"}`)
+	if _, err := New(o); err == nil || !strings.Contains(err.Error(), "config.auth google") {
+		t.Fatalf("a credential that is not Google's: %v", err)
+	}
+}

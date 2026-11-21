@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -257,6 +258,7 @@ func TestGoogleMetadataServer(t *testing.T) {
 func TestGoogleWorkloadIdentityFederation(t *testing.T) {
 	const scope = "https://www.googleapis.com/auth/cloud-platform"
 	const audience = "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/pool/providers/eks"
+	impScopes := []string{scope} // what generateAccessToken must be asked for
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/token":
@@ -278,7 +280,7 @@ func TestGoogleWorkloadIdentityFederation(t *testing.T) {
 				Scope []string `json:"scope"`
 			}
 			json.NewDecoder(r.Body).Decode(&body)
-			if r.Header.Get("Authorization") != "Bearer federated" || len(body.Scope) != 1 || body.Scope[0] != scope {
+			if r.Header.Get("Authorization") != "Bearer federated" || !slices.Equal(body.Scope, impScopes) {
 				w.WriteHeader(403)
 				json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": 403, "status": "PERMISSION_DENIED", "message": "denied"}})
 				return
@@ -314,6 +316,13 @@ func TestGoogleWorkloadIdentityFederation(t *testing.T) {
 	if tok, err := viaSA.Token(ctx); err != nil || tok != "ya29.sa" {
 		t.Fatalf("impersonated token %q %v", tok, err)
 	}
+	// Several scopes, as GKE needs, reach generateAccessToken as a list.
+	impScopes = []string{scope, "https://www.googleapis.com/auth/userinfo.email"}
+	twoScopes, _ := GoogleTokens(config(tokenFile(t, "k8s-jwt"), true, ""), scope+" https://www.googleapis.com/auth/userinfo.email", srv.Client())
+	if tok, err := twoScopes.Token(ctx); err != nil || tok != "ya29.sa" {
+		t.Fatalf("impersonated token with two scopes %q %v", tok, err)
+	}
+	impScopes = []string{scope}
 	refused, _ := GoogleTokens(config(tokenFile(t, "forged-jwt"), false, ""), scope, srv.Client())
 	if _, err := refused.Token(ctx); !api.IsCode(err, api.CodeProviderUnavailable) || !strings.Contains(err.Error(), "invalid_grant") || strings.Contains(err.Error(), "forged-jwt") {
 		t.Fatalf("a refused subject token: %v", err)
