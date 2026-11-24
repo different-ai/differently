@@ -106,7 +106,7 @@ import Icon from '../components/Icon.astro';
       }
     }
     const visible = await c.capabilities.list();
-    return visible.map((p) => ({ name: p.pool, adapter: p.adapter, trust: p.trust, region: p.region, enabled: p.enabled, draining: false, source: 'api', active: 0, costModel: {}, health: { status: p.health } }) as unknown as Pool);
+    return visible.map((p) => ({ name: p.pool, adapter: p.adapter, trust: p.trust, region: p.region, enabled: p.enabled || !!p.draining, draining: !!p.draining, source: 'api', active: 0, costModel: {}, health: { status: p.health } }) as unknown as Pool);
   }
 
   /** The latest events, so the page opens with the last few minutes already counted. */

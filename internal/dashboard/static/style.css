@@ -15,7 +15,7 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
 .card .n { font-size: 24px; font-weight: 600; }
-.ok { color: var(--accent); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+.ok { color: var(--accent); } .bad { color: var(--bad); } .warn { color: var(--warn); } .off { color: var(--muted); }
 code, pre { font: 12px ui-monospace, monospace; } pre { background: var(--card); border: 1px solid var(--line); padding: 8px; overflow-x: auto; white-space: pre-wrap; }
 input, button, select { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); }
 button { cursor: pointer; } button.link { border: 0; background: none; color: var(--muted); padding: 0; }

@@ -378,9 +378,16 @@ class _PoolCapabilitiesRequired(TypedDict):
 
 
 class PoolCapabilities(_PoolCapabilitiesRequired, total=False):
-    """A pool as tenants see it: no config or credentials."""
+    """A pool as tenants see it: no config or credentials.
+
+    ``enabled`` is whether placement may send new sandboxes there (enabled
+    and not draining). ``draining`` is true when the pool is enabled but
+    drained: it takes no new sandboxes and those running stay. It is false
+    for a disabled pool, so both false means disabled.
+    """
 
     region: str
+    draining: bool
     attestations: List[str]
 
 

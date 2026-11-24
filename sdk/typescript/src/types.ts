@@ -550,7 +550,14 @@ export interface PoolCapabilities {
   adapter: string;
   trust: string;
   region?: string;
+  /** Whether placement may send new sandboxes here: enabled and not draining. */
   enabled: boolean;
+  /**
+   * The pool is enabled but drained: it takes no new sandboxes and those
+   * running stay. False for a disabled pool, so `enabled` and `draining` both
+   * false means disabled. Older servers leave it out.
+   */
+  draining?: boolean;
   health: string;
   capabilities: string[] | null;
   /** Names of the attestations the pool currently holds. */

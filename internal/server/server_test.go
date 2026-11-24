@@ -821,6 +821,46 @@ func TestCapabilitiesFollowTenantPolicy(t *testing.T) {
 	}
 }
 
+// GET /v1/capabilities tells a drained pool from a disabled one, so the
+// dashboard and the console can label them apart: enabled is whether new
+// sandboxes may go there, draining whether undraining would let them.
+func TestCapabilitiesTellDrainingFromDisabled(t *testing.T) {
+	h := newHarness(t, overflowPolicy)
+	ctx := context.Background()
+	for _, p := range []api.Pool{
+		{Name: "off", Adapter: "fake", Trust: api.TrustPrivate, Region: "dc1", Source: "api"},
+		{Name: "off-drained", Adapter: "fake", Trust: api.TrustPrivate, Region: "dc1", Draining: true, Source: "api"},
+	} {
+		_ = h.store.UpsertPool(ctx, p)
+		h.pools.Set(p, fake.New(fake.Options{Trust: api.TrustPrivate}))
+	}
+	h.must(200, "POST", "/v1/admin/pools/fc/drain", operatorToken, nil, nil)
+
+	var out struct {
+		Items []struct {
+			Pool     string `json:"pool"`
+			Enabled  bool   `json:"enabled"`
+			Draining bool   `json:"draining"`
+		} `json:"items"`
+	}
+	h.must(200, "GET", "/v1/capabilities", operatorToken, nil, &out)
+	got := map[string][2]bool{}
+	for _, it := range out.Items {
+		got[it.Pool] = [2]bool{it.Enabled, it.Draining}
+	}
+	want := map[string][2]bool{
+		"burst":       {true, false},  // takes new work
+		"fc":          {false, true},  // drained
+		"off":         {false, false}, // disabled
+		"off-drained": {false, false}, // disabled; undraining would not help
+	}
+	for name, w := range want {
+		if got[name] != w {
+			t.Errorf("pool %s: enabled, draining = %v, want %v", name, got[name], w)
+		}
+	}
+}
+
 // checkpointPool adds a one-slot pool whose pause checkpoints (frees its slot),
 // with an optional preemption policy, and returns a tenant pinned to it.
 func checkpointPool(t *testing.T, h *harness, pre *api.Preemption) (token string, pin *api.Placement) {

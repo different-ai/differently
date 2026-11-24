@@ -44,11 +44,30 @@ export function mount(target: string | Element, ...nodes: Child[]): void {
 }
 
 const tone: Record<string, string> = {
-  running: 'ok', healthy: 'ok', active: 'ok', ok: 'ok', valid: 'ok', placed: 'ok',
+  running: 'ok', healthy: 'ok', active: 'ok', enabled: 'ok', ok: 'ok', valid: 'ok', placed: 'ok',
   queued: 'warn', provisioning: 'warn', degraded: 'warn', draining: 'warn', pausing: 'warn', terminating: 'warn',
   failed: 'bad', unavailable: 'bad', revoked: 'bad', denied: 'bad', rejected: 'bad', invalid: 'bad',
 };
 export const badge = (status: string) => el('span', { class: `badge ${tone[status] ?? ''}` }, status.replace(/_/g, ' '));
+
+export type PoolState = 'enabled' | 'draining' | 'disabled';
+const poolStateMeaning: Record<PoolState, string> = {
+  enabled: 'Placement may send new sandboxes here',
+  draining: 'Takes no new sandboxes; running ones stay',
+  disabled: 'Placement does not use this pool',
+};
+/**
+ * What a pool from GET /v1/capabilities does with new sandboxes, apart from
+ * its health: a drained pool can still be healthy. Keep it in step with
+ * poolState in internal/dashboard/static/app.js.
+ */
+export const poolState = (p: { enabled: boolean; draining?: boolean }): PoolState =>
+  p.draining ? 'draining' : p.enabled ? 'enabled' : 'disabled';
+export function poolStateBadge(s: PoolState): HTMLElement {
+  const b = badge(s);
+  b.title = poolStateMeaning[s];
+  return b;
+}
 
 // Go's zero time ("0001-01-01T00:00:00Z") means the value was never set.
 export const isSet = (iso?: string): iso is string => !!iso && !iso.startsWith('0001-');

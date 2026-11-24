@@ -270,7 +270,7 @@ paths:
       responses: { "200": { description: Stored, content: { application/json: { schema: { $ref: "#/components/schemas/PlacementPolicy" } } } }, "403": { $ref: "#/components/responses/Error" } }
     delete: { tags: [Policy], summary: Remove a policy, responses: { "204": { description: Removed } } }
   /v1/capabilities:
-    get: { tags: [Policy], summary: "Pools as tenants see them (no config or credentials): a tenant key gets the pools its placement policies allow, an operator key every pool", responses: { "200": { description: Pools } } }
+    get: { tags: [Policy], summary: "Pools as tenants see them (no config or credentials): a tenant key gets the pools its placement policies allow, an operator key every pool", responses: { "200": { description: Pools, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/PoolCapabilities" } } } } } } } } }
   /v1/profiles:
     get: { tags: [Policy], summary: Resource profiles, responses: { "200": { description: Profiles } } }
   /v1/templates:
@@ -456,6 +456,19 @@ components:
         month: { type: string, example: "2026-11" }
         estimated: { type: number }
         budgetReached: { type: boolean }
+    PoolCapabilities:
+      type: object
+      required: [pool, adapter, trust, enabled, health, capabilities]
+      properties:
+        pool: { type: string }
+        adapter: { type: string }
+        trust: { type: string, enum: [private, external] }
+        region: { type: string }
+        enabled: { type: boolean, description: "Whether placement may send new sandboxes here: the pool is enabled and not draining" }
+        draining: { type: boolean, description: "The pool is enabled but drained: it takes no new sandboxes and those running stay. False for a disabled pool, so enabled and draining both false means disabled" }
+        health: { type: string, description: "healthy, unavailable or unknown" }
+        capabilities: { type: [array, "null"], items: { type: string }, description: "Features the pool offers, as its adapter reports them" }
+        attestations: { type: array, items: { type: string }, description: Attestations the pool currently holds }
     Capability:
       type: string
       enum: [exec, exec.stream, files, lifecycle.stop-start, lifecycle.pause-resume, snapshots.disk, snapshots.memory, fork, persistence.disk, ports.expose, ssh, pty, network.egress-control, gpu, arch.amd64, arch.arm64, isolation.microvm, isolation.container]
