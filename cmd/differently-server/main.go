@@ -178,6 +178,10 @@ func serve(cfgPath string, dev, demoMode bool, listen, dataDir string) error {
 	if err := srv.Bootstrap(ctx); err != nil {
 		return fmt.Errorf("bootstrap: %w", err)
 	}
+	apiLn, metricsLn, err := bindPorts(cfg)
+	if err != nil {
+		return err
+	}
 	go sch.Run(ctx)
 	go srv.Stacks.Run(ctx)
 
@@ -199,20 +203,17 @@ func serve(cfgPath string, dev, demoMode bool, listen, dataDir string) error {
 		mux.Handle("GET /demo/{$}", demo.PageHandler())
 		mux.Handle("/", handlerHTTP)
 		handlerHTTP = mux
-		go func() {
-			time.Sleep(500 * time.Millisecond) // let the listener come up
-			gen.Run(ctx)
-		}()
+		go gen.Run(ctx) // the port is already bound: its first requests wait for Serve
 	}
 	httpSrv := &http.Server{Addr: cfg.Listen, Handler: handlerHTTP, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
 	errc := make(chan error, 2)
-	go func() { errc <- httpSrv.ListenAndServe() }()
+	go func() { errc <- httpSrv.Serve(apiLn) }()
 	var metricsSrv *http.Server
-	if cfg.Metrics.Listen != "" {
+	if metricsLn != nil {
 		mux := http.NewServeMux()
 		mux.Handle("GET /metrics", srv.MetricsHandler())
 		metricsSrv = &http.Server{Addr: cfg.Metrics.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-		go func() { errc <- metricsSrv.ListenAndServe() }()
+		go func() { errc <- metricsSrv.Serve(metricsLn) }()
 	}
 	log.Info("differently-server started", "listen", cfg.Listen, "version", version.Version, "installation", installation, "store", cfg.Store.Driver, "dev", cfg.Dev)
 	if demoMode {
@@ -305,6 +306,22 @@ func preflight(cfgPath string) error {
 	}
 	check(cfg.Policy.External == "never" || len(cfg.Policy.ExternalPools) > 0, "external placement is off, or names approved externalPools")
 	return errors.Join(problems...)
+}
+
+// bindPorts takes the API port, and the metrics port when one is set, before
+// the scheduler starts or the server says it is running, so a port that is
+// already in use stops the start with an error instead of after the welcome.
+func bindPorts(cfg config.Config) (apiLn, metricsLn net.Listener, err error) {
+	if apiLn, err = net.Listen("tcp", cfg.Listen); err != nil {
+		return nil, nil, fmt.Errorf("%w (is another server using %s? stop it, or pass --listen with another address)", err, cfg.Listen)
+	}
+	if cfg.Metrics.Listen != "" {
+		if metricsLn, err = net.Listen("tcp", cfg.Metrics.Listen); err != nil {
+			_ = apiLn.Close()
+			return nil, nil, fmt.Errorf("metrics: %w (is another server using %s? stop it, or change metrics.listen)", err, cfg.Metrics.Listen)
+		}
+	}
+	return apiLn, metricsLn, nil
 }
 
 // dashboardURL is where a local operator opens the console for a listen

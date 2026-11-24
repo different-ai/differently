@@ -1,10 +1,13 @@
 package main
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/different-ai/differently/internal/config"
 )
 
 // The command dev mode prints must work as printed: the CLI finds a dev
@@ -108,4 +111,46 @@ func TestDevFlagAllowsDevAdaptersInAConfigFile(t *testing.T) {
 	if cfg, err := loadConfig(inFile, false, ""); err != nil || !cfg.Dev {
 		t.Fatalf("dev: true in the file: dev=%v err=%v", cfg.Dev, err)
 	}
+}
+
+// A port already in use must stop the start before anything says the
+// server is running, with a hint that names the address and what to change.
+// When the metrics port is the busy one, the API port is given back.
+func TestBindPortsRefusesABusyPort(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	taken := busy.Addr().String()
+
+	var cfg config.Config
+	cfg.Listen = taken
+	if _, _, err := bindPorts(cfg); err == nil || !strings.Contains(err.Error(), taken) || !strings.Contains(err.Error(), "--listen") {
+		t.Fatalf("busy API port: %v", err)
+	}
+
+	free, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiAddr := free.Addr().String()
+	free.Close()
+	cfg.Listen, cfg.Metrics.Listen = apiAddr, taken
+	if _, _, err := bindPorts(cfg); err == nil || !strings.Contains(err.Error(), "metrics.listen") {
+		t.Fatalf("busy metrics port: %v", err)
+	}
+	again, err := net.Listen("tcp", apiAddr)
+	if err != nil {
+		t.Fatalf("the API port was not given back after the metrics port failed: %v", err)
+	}
+	again.Close()
+
+	cfg.Metrics.Listen = "127.0.0.1:0"
+	apiLn, metricsLn, err := bindPorts(cfg)
+	if err != nil || apiLn == nil || metricsLn == nil {
+		t.Fatalf("free ports: %v", err)
+	}
+	apiLn.Close()
+	metricsLn.Close()
 }

@@ -82,6 +82,12 @@ All notable changes are recorded here. The format follows
 
 ### Fixed
 
+- `differently-server` takes its ports before it starts the scheduler or
+  prints that it is running. A second server on a port already in use, such
+  as a dev or demo server started while another runs, printed the full
+  welcome and only then failed with `address already in use`; it now stops
+  first, naming the address and saying to stop the other server or pass
+  `--listen` (or change `metrics.listen` for the metrics port).
 - `differently-server --dev --config FILE` accepts a file with `devhost`
   pools without `dev: true` in it: the flag is now applied before the file
   is validated, not after, so the validator no longer refused a devhost pool
