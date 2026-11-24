@@ -15,7 +15,7 @@ const base = import.meta.env.BASE_URL;
 </Console>
 <script>
   import { client } from '../lib/connection';
-  import { badge, el, empty, section, table } from '../lib/ui';
+  import { badge, el, empty, poolState, poolStateBadge, section, table } from '../lib/ui';
   import type { PoolCapabilities } from '@differently/sdk';
 
   const c = client();
@@ -32,7 +32,8 @@ const base = import.meta.env.BASE_URL;
       { label: 'Adapter', cell: (p) => p.adapter },
       { label: 'Trust', cell: (p) => p.trust },
       { label: 'Region', cell: (p) => p.region || '—' },
-      { label: 'Health', cell: (p) => badge(p.enabled ? p.health : 'disabled') },
+      { label: 'State', cell: (p) => poolStateBadge(poolState(p)) },
+      { label: 'Health', cell: (p) => badge(p.health) },
     ], pools, empty('No pools are registered yet.', ['server']));
   });
 </script>

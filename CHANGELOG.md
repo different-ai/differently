@@ -87,6 +87,14 @@ All notable changes are recorded here. The format follows
   is validated, not after, so the validator no longer refused a devhost pool
   the flag allowed. Without `--dev` or `dev: true` such a file is still
   refused, by `serve`, `migrate` and `preflight` alike.
+- A drained pool looks drained, and the same, in the built-in dashboard and
+  the console. After `pool use` or `pool drain`, the dashboard's Overview
+  still called the other pools healthy and the console's Home called them
+  disabled. Both now show a State column (enabled, draining or disabled)
+  beside Health, since a drained pool can still be healthy. `GET
+  /v1/capabilities` gains `draining`, true for an enabled pool that is
+  drained; `enabled` still means new sandboxes may go there, so both false
+  means disabled. The SDK types and the OpenAPI file describe it.
 - `gcp-sandboxes`, `agentcore` and `northflank` (experimental): file reads
   go through commands in 512 KiB pieces instead of one answer holding the
   whole file, so a file over about 750 KB no longer exceeds the roughly 1 MB

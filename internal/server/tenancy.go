@@ -559,11 +559,17 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request, p auth.Pri
 	}
 	active, _ := s.Store.PoolActive(r.Context())
 	type view struct {
-		Pool         string   `json:"pool"`
-		Adapter      string   `json:"adapter"`
-		Trust        string   `json:"trust"`
-		Region       string   `json:"region,omitempty"`
-		Enabled      bool     `json:"enabled"`
+		Pool    string `json:"pool"`
+		Adapter string `json:"adapter"`
+		Trust   string `json:"trust"`
+		Region  string `json:"region,omitempty"`
+		// Enabled says whether placement may send new sandboxes here: the
+		// pool is enabled and not draining.
+		Enabled bool `json:"enabled"`
+		// Draining says the pool is enabled but drained: it takes no new
+		// sandboxes and those running stay. A disabled pool reports false,
+		// so enabled and draining both false means disabled.
+		Draining     bool     `json:"draining"`
 		Health       string   `json:"health"`
 		Capabilities []string `json:"capabilities"`
 		// Attestations names what the pool currently holds, so a tenant can
@@ -584,7 +590,12 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request, p auth.Pri
 			}
 		}
 		sort.Strings(held)
-		out.Items = append(out.Items, view{Pool: pl.Name, Adapter: pl.Adapter, Trust: pl.Trust, Region: pl.Region, Enabled: pl.Enabled && !pl.Draining, Health: pl.Health.Status, Capabilities: pl.Capabilities, Attestations: held})
+		health := "unknown"
+		if pl.Health != nil {
+			health = pl.Health.Status
+		}
+		out.Items = append(out.Items, view{Pool: pl.Name, Adapter: pl.Adapter, Trust: pl.Trust, Region: pl.Region,
+			Enabled: pl.Enabled && !pl.Draining, Draining: pl.Enabled && pl.Draining, Health: health, Capabilities: pl.Capabilities, Attestations: held})
 	}
 	writeJSON(w, 200, out)
 	return nil

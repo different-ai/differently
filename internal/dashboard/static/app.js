@@ -26,6 +26,12 @@ function table(cols, rows) {
   return `<div class="scroll"><table><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>${rows.map((r) => `<tr>${r.map((v) => `<td>${v}</td>`).join("")}</tr>`).join("")}</table></div>`;
 }
 const status = (s) => `<span class="${s === "running" || s === "healthy" ? "ok" : s === "failed" || s === "unavailable" ? "bad" : "warn"}">${esc(s)}</span>`;
+// poolState names what a pool from GET /v1/capabilities does with new
+// sandboxes, apart from its health: a drained pool can still be healthy. Keep
+// it in step with poolState in console/src/lib/ui.ts.
+const poolState = (p) => (p.draining ? "draining" : p.enabled ? "enabled" : "disabled");
+const POOL_STATES = { enabled: ["ok", "Placement may send new sandboxes here"], draining: ["warn", "Takes no new sandboxes; running ones stay"], disabled: ["off", "Placement does not use this pool"] };
+const stateBadge = (s) => `<span class="${POOL_STATES[s][0]}" title="${POOL_STATES[s][1]}">${s}</span>`;
 const tokenBox = (t) => `<div class="token"><strong>Store it now; it is not shown again.</strong><div><code id="new-token">${esc(t)}</code><button data-copy>Copy</button></div></div>`;
 
 // Provider kinds the console can add (those in the default server build; the
@@ -53,7 +59,7 @@ const views = {
     const cards = ["running", "queued", "provisioning", "stopped", "failed"].map((s) => `<div class="card"><div class="tag">${s}</div><div class="n">${by[s] || 0}</div></div>`).join("");
     const queued = sbx.items.filter((s) => s.status === "queued");
     return `<h1>Overview</h1><div class="cards">${cards}</div>
-      <h2>Pools</h2>${table(["Pool", "Adapter", "Trust", "Region", "Health", "Capabilities"], caps.items.map((p) => [esc(p.pool), esc(p.adapter), esc(p.trust), esc(p.region), status(p.health), `<code>${esc((p.capabilities || []).join(" "))}</code>`]))}
+      <h2>Pools</h2>${table(["Pool", "Adapter", "Trust", "Region", "State", "Health", "Capabilities"], caps.items.map((p) => [esc(p.pool), esc(p.adapter), esc(p.trust), esc(p.region), stateBadge(poolState(p)), status(p.health), `<code>${esc((p.capabilities || []).join(" "))}</code>`]))}
       <h2>Queue</h2>${table(["Sandbox", "Classification", "Waiting because"], queued.map((s) => [`<code>${esc(s.id)}</code>`, esc(s.classification), esc(s.statusReason)]))}
       ${quota ? `<h2>Quota</h2><pre>${esc(JSON.stringify(quota, null, 2))}</pre>` : ""}`;
   },
