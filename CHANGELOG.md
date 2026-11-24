@@ -8,6 +8,18 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- `differently-server --demo` (`make demo`): a separate installation for
+  showing placement without any real provider. Six mock providers on the
+  fake adapter (two private, four external, with regions, list prices,
+  illustrative attestations and monthly budgets) and generated traffic run
+  through the real scheduler, policy engine, API and audit log. A presenter
+  page at `/demo/` switches between situations (normal day, quarter-end
+  peak, regulated workload, EU data residency, vendor incident), each with
+  what to point out, and the startup message says how to watch it on the
+  console's Live routing page. Prices are multiplied by 3,600 so budgets
+  fill in minutes. A test runs the demo configuration through the control
+  plane in process and checks each situation's talk track
+  ([quickstart](docs/guides/quickstart.md#watch-placement-with-pretend-providers)).
 - The sandbox acid test, levels 0–2 ([docs/acid-test.md](docs/acid-test.md)):
   `internal/acid` checks any adapter against the contract (level 0),
   commands (level 1) and files (level 2), each test answering pass,
