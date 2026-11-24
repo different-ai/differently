@@ -197,6 +197,9 @@ With `differently-server --dev` running, connect with the token in
 - `src/lib/providers.ts` lists the provider kinds and their main fields; keep
   it in step with `internal/dashboard/static/app.js` and
   [docs/providers/](../docs/providers/README.md).
+- `poolState` in `src/lib/ui.ts` names what a pool does with new sandboxes
+  (enabled, draining or disabled), shown apart from its health; keep it in
+  step with `poolState` in `internal/dashboard/static/app.js`.
 - `src/lib/catalog.ts` is the Providers page's model: a pool's catalog entry,
   list prices as a cost model, where a pool stands against its budget. It
   reads `../site/src/data/providers.ts`, the one file the website's comparison
