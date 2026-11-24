@@ -7,6 +7,7 @@
 <style>
 :root { color-scheme: dark; --bg: #0a0a0a; --card: #141414; --fg: #fafafa; --muted: #8f8f8f; --line: #262626; --on: #fafafa; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* the form rule below sets display, which would beat the attribute */
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 ui-sans-serif, system-ui, sans-serif; }
 main { max-width: 760px; margin: 0 auto; padding: 28px 16px 56px; display: flex; flex-direction: column; gap: 18px; }
 h1 { font-size: 26px; letter-spacing: -0.02em; margin: 0; }

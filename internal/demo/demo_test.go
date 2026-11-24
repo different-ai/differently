@@ -110,3 +110,16 @@ func TestStateHandlerNeedsTheTokenToSwitch(t *testing.T) {
 		t.Fatalf("scenario not switched: %+v", g.current())
 	}
 }
+
+// The presenter shows and hides its token form with the hidden attribute,
+// and its own form rule sets display, which beats the attribute unless a
+// [hidden] rule says otherwise: without one the form never went away.
+func TestPresenterHiddenAttributeWins(t *testing.T) {
+	html := string(page)
+	if !strings.Contains(html, `<form id="auth" hidden>`) || !strings.Contains(html, "form { display:") {
+		t.Skip("the presenter no longer hides a form it styles; this check is moot")
+	}
+	if !strings.Contains(html, "[hidden] { display: none !important; }") {
+		t.Fatal("presenter.html styles the form's display but has no [hidden] rule, so hiding the token form does nothing")
+	}
+}
