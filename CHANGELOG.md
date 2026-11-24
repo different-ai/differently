@@ -82,6 +82,11 @@ All notable changes are recorded here. The format follows
 
 ### Fixed
 
+- `differently-server --dev --config FILE` accepts a file with `devhost`
+  pools without `dev: true` in it: the flag is now applied before the file
+  is validated, not after, so the validator no longer refused a devhost pool
+  the flag allowed. Without `--dev` or `dev: true` such a file is still
+  refused, by `serve`, `migrate` and `preflight` alike.
 - `gcp-sandboxes`, `agentcore` and `northflank` (experimental): file reads
   go through commands in 512 KiB pieces instead of one answer holding the
   whole file, so a file over about 750 KB no longer exceeds the roughly 1 MB

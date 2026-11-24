@@ -444,21 +444,41 @@ func (c *Config) applyDefaults() {
 
 // Load reads, defaults and validates a YAML or JSON config file.
 func Load(path string) (Config, error) {
+	c, err := Read(path)
+	if err != nil {
+		return c, err
+	}
+	return c, c.Validate()
+}
+
+// Read reads and defaults a YAML or JSON config file without validating
+// it, for a caller that changes the result first (command-line overrides
+// such as --dev, which decide whether a devhost pool is allowed). That
+// caller must call Validate before using the config.
+func Read(path string) (Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, err
 	}
-	return Parse(b)
+	return decode(b)
 }
 
 // Parse defaults and validates raw YAML or JSON.
 func Parse(b []byte) (Config, error) {
+	c, err := decode(b)
+	if err != nil {
+		return c, err
+	}
+	return c, c.Validate()
+}
+
+func decode(b []byte) (Config, error) {
 	var c Config
 	if err := yaml.UnmarshalStrict(b, &c); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
 	c.applyDefaults()
-	return c, c.Validate()
+	return c, nil
 }
 
 // Validate reports every configuration problem at once.
@@ -544,7 +564,7 @@ func (c Config) Validate() error {
 			bad("pool %s: the cubesandbox adapter needs config.apiURL (CubeAPI, e.g. http://cube-api:3000)", p.Name)
 		}
 		if p.Adapter == "devhost" && !c.Dev {
-			bad("pool %s: the devhost adapter has no isolation and is only allowed with dev: true", p.Name)
+			bad("pool %s: the devhost adapter has no isolation and is only allowed in dev mode (dev: true or --dev)", p.Name)
 		}
 		if p.Adapter == "remote" && p.Config["endpoint"] == "" {
 			bad("pool %s: remote adapter needs config.endpoint", p.Name)

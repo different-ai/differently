@@ -154,7 +154,8 @@ flowchart TB
 - Differently does not isolate sandboxes. The trust report lists, per pool,
   the adapter, trust, declared isolation, endpoint and credential reference.
 - `devhost` (no isolation) and `fake` pools refuse to start outside dev mode,
-  and the config validator rejects `devhost` without `dev: true`.
+  and the config validator rejects `devhost` unless the file says `dev: true`
+  or the server was started with `--dev`.
 - The OpenSandbox adapter tags each sandbox with its Differently and
   installation IDs, and lists, adopts or deletes only sandboxes carrying them.
   It refuses exec stdin and port endpoints that need request headers.
