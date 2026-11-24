@@ -64,7 +64,7 @@ templates:
 	if err == nil {
 		t.Fatal("expected errors")
 	}
-	for _, want := range []string{"store.driver", "only allowed with dev", "duplicate pool", "unknown adapter", "unknown pool ghost", "duplicate template", "images names pool b"} {
+	for _, want := range []string{"store.driver", "only allowed in dev mode", "duplicate pool", "unknown adapter", "unknown pool ghost", "duplicate template", "images names pool b"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %q in %v", want, err)
 		}

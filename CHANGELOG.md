@@ -82,6 +82,11 @@ All notable changes are recorded here. The format follows
 
 ### Fixed
 
+- `differently-server --dev --config FILE` accepts a file with `devhost`
+  pools without `dev: true` in it: the flag is now applied before the file
+  is validated, not after, so the validator no longer refused a devhost pool
+  the flag allowed. Without `--dev` or `dev: true` such a file is still
+  refused, by `serve`, `migrate` and `preflight` alike.
 - A drained pool looks drained, and the same, in the built-in dashboard and
   the console. After `pool use` or `pool drain`, the dashboard's Overview
   still called the other pools healthy and the console's Home called them

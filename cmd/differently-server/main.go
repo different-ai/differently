@@ -87,7 +87,9 @@ func loadConfig(path string, dev bool, dataDir string) (config.Config, error) {
 		}
 		return config.DevDefault(dataDir), nil
 	}
-	cfg, err := config.Load(path)
+	// The flags change what is valid (a devhost pool needs dev mode), so
+	// apply them first and validate once, after them.
+	cfg, err := config.Read(path)
 	if err != nil {
 		return cfg, err
 	}

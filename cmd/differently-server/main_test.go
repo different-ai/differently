@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -64,5 +65,47 @@ func TestDemoWelcomeNamesCommandsThatWork(t *testing.T) {
 		if !strings.Contains(moved, want) {
 			t.Errorf("another address: want %q in\n%s", want, moved)
 		}
+	}
+}
+
+// --dev takes effect before the config file is validated, so a file with
+// devhost and fake pools runs under the flag without saying dev: true. The
+// same file is still refused without the flag, by serve, migrate and
+// preflight alike.
+func TestDevFlagAllowsDevAdaptersInAConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	pools := "pools:\n  - {name: local, adapter: devhost}\n  - {name: sim, adapter: fake, trust: external}\n"
+	path := write("pools.yaml", "store: {driver: memory}\n"+pools)
+	dataDir := filepath.Join(dir, "data")
+
+	cfg, err := loadConfig(path, true, dataDir)
+	if err != nil {
+		t.Fatalf("--dev with a devhost pool: %v", err)
+	}
+	if !cfg.Dev || cfg.DataDir != dataDir || len(cfg.Pools) != 2 {
+		t.Fatalf("--dev and --data-dir not applied: dev=%v dataDir=%q pools=%d", cfg.Dev, cfg.DataDir, len(cfg.Pools))
+	}
+
+	const refused = "the devhost adapter has no isolation"
+	for name, load := range map[string]func() error{
+		"serve":     func() error { _, err := loadConfig(path, false, dataDir); return err },
+		"migrate":   func() error { return migrate(path) },
+		"preflight": func() error { return preflight(path) },
+	} {
+		if err := load(); err == nil || !strings.Contains(err.Error(), refused) {
+			t.Errorf("%s without --dev or dev: true: want %q, got %v", name, refused, err)
+		}
+	}
+
+	inFile := write("dev.yaml", "dev: true\nstore: {driver: memory}\n"+pools)
+	if cfg, err := loadConfig(inFile, false, ""); err != nil || !cfg.Dev {
+		t.Fatalf("dev: true in the file: dev=%v err=%v", cfg.Dev, err)
 	}
 }
