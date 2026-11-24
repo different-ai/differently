@@ -467,7 +467,7 @@ components:
         enabled: { type: boolean, description: "Whether placement may send new sandboxes here: the pool is enabled and not draining" }
         draining: { type: boolean, description: "The pool is enabled but drained: it takes no new sandboxes and those running stay. False for a disabled pool, so enabled and draining both false means disabled" }
         health: { type: string, description: "healthy, unavailable or unknown" }
-        capabilities: { type: [array, "null"], items: { type: string }, description: "Features the pool offers, as its adapter reports them" }
+        capabilities: { type: array, items: { type: string }, description: "Features the pool offers, as its adapter reports them; null when it reports none" }
         attestations: { type: array, items: { type: string }, description: Attestations the pool currently holds }
     Capability:
       type: string
