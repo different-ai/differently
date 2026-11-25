@@ -26,7 +26,7 @@ jobs:
           go-version-file: go.mod
       - name: gofmt, vet and tests (default and experimental builds)
         run: make fmt-check vet test experimental
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - name: helm lint
         run: make helm-lint
 
@@ -67,7 +67,7 @@ jobs:
         with:
           subject-path: dist/*.tar.gz
       - name: chart
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
       - name: package chart
         run: helm package deploy/helm/differently --version "${GITHUB_REF_NAME#v}" --app-version "${GITHUB_REF_NAME#v}" -d dist
       - uses: softprops/action-gh-release@v3
