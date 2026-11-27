@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-11-27. The default build holds three drivers: `memory`, `file` and `postgres`. |
+| Status | Describes the code as of 2026-11-27. The default build holds four drivers: `memory`, `file`, `sqlite` and `postgres`. |
 | Code | `internal/store` (the contract and the registry), `internal/store/storetest` (the conformance suite) |
 
 Differently keeps its own records (organizations, projects, keys, pools,
@@ -21,6 +21,7 @@ the runtime behind each pool ([storage and lifecycle](../storage-and-lifecycle.m
 |---|---|---|---|
 | `memory` | No | No | Nothing. For trying Differently and for tests; the server warns at start that state is lost when it stops. |
 | `file` | Yes | No | A directory the server can write: `<dataDir>/store`. No database. See [the file driver](#the-file-driver). |
+| `sqlite` | Yes | No | A file the server can write: `<dataDir>/sqlite/differently.db`. No database service. See [the sqlite driver](#the-sqlite-driver). |
 | `postgres` | Yes | Yes | A PostgreSQL database, its URL in the environment variable `store.dsnEnv` names (`DIFFERENTLY_DATABASE_URL` by default). |
 
 A name the build does not hold is refused at start, with the names it does
@@ -28,7 +29,16 @@ hold. The server never falls back to another driver: that would put state
 somewhere the operator did not choose.
 
 `memory` is still what a config file with no `store` section gets. Name
-`file` or `postgres` to keep state.
+`file`, `sqlite` or `postgres` to keep state.
+
+Which one:
+
+- **`file`** when you want nothing but the server. It is the memory store's
+  code with a journal, and adds no dependency.
+- **`sqlite`** when you want to look at the records with SQL or use SQLite's
+  tools. It holds on disk what `file` also holds in memory, so it suits an
+  installation whose history has grown large.
+- **`postgres`** when more than one replica must share the state.
 
 ## The file driver
 
@@ -79,6 +89,45 @@ verified afterwards. What was not: a power cut or a full disk on real
 hardware, network filesystems, and Linux outside CI. The Helm chart does not
 offer `file` yet, because its data directory is not on a volume that
 outlives the pod.
+
+## The sqlite driver
+
+```yaml
+store: {driver: sqlite}
+dataDir: /var/lib/differently   # the default
+```
+
+The database is `<dataDir>/sqlite/differently.db`, or the file named by the
+environment variable `store.dsnEnv` names. It has the postgres driver's
+tables: one row per record, the record as JSON in `doc`. The schema is
+created at start (`differently-server migrate` does the same).
+
+- **Every write is one transaction, and one runs at a time.** Where the
+  postgres driver locks rows so replicas cannot take the same capacity, one
+  server has this file, so a single writer is the whole lock. Reads go on
+  beside it (write-ahead logging).
+- **A commit is synced to disk** (`synchronous=FULL`): a call that returned
+  survives the server being killed.
+- **One server per file.** A second one is refused at start, by a lock file
+  beside the database.
+- **You can read it while the server runs**, for example
+  `sqlite3 -readonly differently.db "select doc from pools"`. Do not write to
+  it: the server's checks are in its code, not in the database, and the
+  audit chain would no longer verify.
+- The files are readable only by the server's user. To back up, use
+  SQLite's own `.backup` or `VACUUM INTO`, or copy the files while the
+  server is stopped.
+
+It is built on `modernc.org/sqlite`, a SQLite translated to Go, so the
+server stays one static binary with no C library; it adds about 4 MB to it.
+
+What was run: the conformance suite; the server acceptance scenarios
+(`make test-stores`); a process killed with SIGKILL while writing; and a real
+`differently-server` killed and restarted on macOS, read with `sqlite3` while
+running, where the audit chain verified afterwards. What was not: a power
+cut on real hardware, network filesystems, Linux outside CI, and a database
+larger than these tests make. The Helm chart does not offer `sqlite` yet,
+for the same reason as `file`.
 
 ## The contract
 

@@ -76,7 +76,9 @@ that covers it, and say in the PR what did not run.
   and uses fixed test credentials.
 - Stores: `internal/store` holds the contract, the registry of drivers
   (`store.Register`) and the memory store; `internal/store/file` keeps that
-  store's state in files by taking the changes it records, and
+  store's state in files by taking the changes it records,
+  `internal/store/sqlite` is the postgres driver's queries in SQLite's
+  dialect (a change to one usually belongs in both), and
   `internal/store/postgres` is the shared one
   ([store drivers](docs/adapters/stores.md)). Every write in `memory.go`
   goes through `put`, `drop` or `note`, or the file driver loses it.

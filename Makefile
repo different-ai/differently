@@ -39,7 +39,7 @@ test:
 
 # The server acceptance scenarios on each store driver that needs no service.
 # Their own packages run the store conformance suite as part of `test`.
-STORE_DRIVERS := file
+STORE_DRIVERS := file sqlite
 test-stores:
 	@for d in $(STORE_DRIVERS); do \
 		echo "acceptance scenarios on the $$d store"; \
