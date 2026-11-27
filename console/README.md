@@ -108,7 +108,7 @@ how much it may spend.
   until the month ends (UTC) or the budget is raised; sandboxes already there
   keep running. It needs prices, because the estimate is the prices times how
   long sandboxes ran. It is not an invoice.
-- **The catalog** shows the same 28 providers as the website's
+- **The catalog** shows the same 29 providers as the website's
   [comparison](https://different-ai.github.io/differently/compare/): list
   price, how each bills, what it documents and what it states about
   compliance. A pool is matched to its entry by adapter; a pool on a remote

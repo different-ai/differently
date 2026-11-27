@@ -1,7 +1,7 @@
 ---
 import '../styles/landing.css';
 import '../styles/compare.css';
-import { PRICES_READ, PRICES_READ_LABEL, billingLabel, evidenceLabel, providers, slotText, supportLabel, unavailable } from '../data/providers';
+import { PRICES_READ, PRICES_READ_LABEL, PRICES_READ_LATER, billingLabel, evidenceLabel, providers, slotText, supportLabel, unavailable } from '../data/providers';
 import type { Billing, Cap, Evidence, Provider } from '../data/providers';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -19,6 +19,9 @@ const logo = (p: { logo: string }) => `${base}/providers/${p.logo}`;
 const kindKey = (p: Provider) => (p.kind === 'Hosted service' ? 'hosted' : p.kind === 'Open-source runtime' ? 'open' : 'cloud');
 const dash = (v: string | null) => v ?? 'Not collected';
 const join = (...parts: (string | null | false | undefined)[]) => parts.filter(Boolean).join('. ');
+// "A, B and C": the entries read after the others.
+const readLater = PRICES_READ_LATER.ids.map((id) => providers.find((p) => p.id === id)!.name);
+const readLaterText = `${readLater.slice(0, -1).join(', ')} and ${readLater[readLater.length - 1]}`;
 
 // The price ladder: cheapest first, on one scale.
 const MAX = 0.18;
@@ -346,7 +349,7 @@ const jsonLd = {
           <div class="laxis" aria-hidden="true"><div>{ticks.map((t) => <span style={`left:${(t / MAX) * 100}%`}>${t.toFixed(2)}</span>)}</div></div>
           <div class="legend">
             <span><i></i>List price for the hour, or for a quarter-busy sandbox</span>
-            <span><i class="span"></i>Up to a fully busy sandbox, or a span between sources</span>
+            <span><i class="span"></i>Up to a fully busy sandbox, or a span between sizes or sources</span>
             <span>* The table below says what this figure covers</span>
           </div>
         </div>
@@ -498,7 +501,8 @@ const jsonLd = {
       <section class="wrap cmp-section" id="method">
         <h2 data-reveal>How we compared</h2>
         <ul class="method" data-reveal>
-          <li><strong>Prices are list prices</strong>, read on {PRICES_READ_LABEL} from each provider's pricing page or, where the source link shows it, from a published comparison. Plan fees, storage, egress and free credits are left out of the hourly figure.</li>
+          <li><strong>Prices are list prices</strong>, read on {PRICES_READ_LABEL} from each provider's pricing page or, where the source link shows it, from a published comparison. Plan fees, storage, egress and free credits are left out of the hourly figure. {readLaterText} were read on {PRICES_READ_LATER.label}.</li>
+          <li><strong>A runtime you run yourself has no list price.</strong> Its cost is your own machines. Where its authors publish an estimate, it is quoted beside the entry with its source and stays off the price scale: it depends on how many sandboxes share a machine and how idle they are.</li>
           <li><strong>The hourly figure is our arithmetic</strong>: the CPU rate plus twice the memory rate. Where a provider sells bundled sizes, it is the smallest size that fits, or left out when the sizes do not line up.</li>
           <li><strong>Features come from each provider's public documentation</strong>, as recorded with the date on our <a href={`${base}/docs/providers/`}>provider pages</a>. "Not collected" means we did not look, not that the provider lacks it.</li>
           <li><strong>A mark is a reading of that documentation, not a test.</strong> A hollow mark means the provider does not offer the capability or its documentation does not mention it. A half mark means it comes with a condition, which the full table spells out.</li>

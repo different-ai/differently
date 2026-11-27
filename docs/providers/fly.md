@@ -97,8 +97,10 @@ above.
 - Machines are not restored from snapshots, so `fromSnapshot` is refused
   with `invalid_request`.
 - Pricing: started machines are billed per second by CPU kind and memory
-  (from $2.19 per 30 days for `shared-cpu-1x` with 256 MB in `iad`); stopped
-  and suspended machines pay $0.15 per GB-month of root filesystem.
+  (from $2.19 per 30 days for `shared-cpu-1x` with 256 MB in `iad`; with
+  2 GB, $13.39 for `shared-cpu-2x` and $33.00 for `performance-1x`, read
+  2026-11-18); stopped and suspended machines pay $0.15 per GB-month of root
+  filesystem.
 
 ## How it was tested
 

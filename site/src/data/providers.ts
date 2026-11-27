@@ -6,7 +6,9 @@
 //   - Features and the Differently status: docs/providers/*.md, which name the
 //     API pages read and the date. Keep the two in step.
 //   - Prices: each provider's public pricing page or, where marked, a
-//     third-party comparison, read on PRICES_READ. They are list prices.
+//     third-party comparison, read on PRICES_READ. They are list prices. A
+//     runtime you operate has none: where its authors publish an estimate, it
+//     goes in `fees` with its source, never in `slot`.
 //   - Compliance: what the provider states on its own security or trust page.
 //
 // Rules for editing: never state a figure that was not read from a source, mark
@@ -14,6 +16,8 @@
 
 export const PRICES_READ = '2026-11-16';
 export const PRICES_READ_LABEL = '16 November 2026';
+/** Entries read again, or for the first time, after PRICES_READ. */
+export const PRICES_READ_LATER = { label: '18 November 2026', ids: ['fly', 'modal', 'sprites', 'gke-sandboxes'] };
 
 /** How a provider relates to Differently today. */
 export type Support = 'verified' | 'experimental' | 'plugin' | 'unassessed';
@@ -83,7 +87,7 @@ export interface Provider {
   adapter?: string;
   cpu: string | null;
   memory: string | null;
-  /** List price of one running hour of 1 vCPU and 2 GiB: [low] or [low, high]. For usage billing, low is 25% busy and high is 100% busy. */
+  /** List price of one running hour of 1 vCPU and 2 GiB: [low] or [low, high]. For usage billing, low is 25% busy and high is 100% busy. Any other span (two sizes, two sources) is named in slotNote. */
   slot: [number] | [number, number] | null;
   slotNote?: string;
   fees: string;
@@ -274,7 +278,7 @@ export const providers: Provider[] = [
     kind: 'Hosted service', support: 'experimental', docs: 'fly',
     supportNote: 'Experimental adapter, tested against a fake server.',
     isolation: 'Firecracker microVM',
-    billing: 'tier', cpu: 'By machine size', memory: 'By machine size', slot: null, fees: 'From $0.0093 an hour for a shared CPU with 1 GB.', priceSource: 'https://fly.io/learn/ai-sandbox-pricing/',
+    billing: 'tier', cpu: 'By machine size', memory: 'By machine size', slot: [0.0186, 0.0458], slotNote: 'A shared-cpu-2x Machine with 2 GB, up to a performance-1x with 2 GB.', fees: 'Prices are for its two lowest-priced regions; others cost more. A stopped Machine pays $0.15 / GB-month for its root filesystem.', priceSource: 'https://fly.io/docs/about/pricing/',
     rates: null,
     adapter: 'fly',
     keepsState: 'Stop/start; suspend is best effort', snapshots: 'None', ports: 'None per machine', maxSize: '16 vCPU, 128 GiB',
@@ -343,12 +347,12 @@ export const providers: Provider[] = [
     kind: 'Hosted service', support: 'plugin', docs: 'modal',
     supportNote: 'Through a remote plugin: Modal has no public REST API for sandboxes.',
     isolation: 'gVisor; a VM runtime is optional',
-    billing: 'wall', cpu: '$0.1419 / core-h', memory: '$0.024 / GiB-h', slot: [0.119], fees: 'A core is 2 vCPU. $30 a month in credit. Pinning a region costs more.', priceSource: 'https://modal.com/products/sandboxes',
-    rates: { cpuHour: 0.07095, memoryGiBHour: 0.024, basis: 'allocated', note: 'Modal prices a physical core, which is 2 vCPU; the CPU rate here is half of that.' },
+    billing: 'usage', cpu: '$0.1419 / core-h', memory: '$0.024 / GiB-h', slot: [0.0657, 0.119], slotNote: 'With nothing reserved above the default. A sandbox that reserves its size pays the high figure all the time.', fees: 'A core is 2 vCPU. Bills the larger of what is reserved and what is used; the default reservation is 0.125 core and 128 MiB. $30 a month in credit. Pinning a region costs more.', priceSource: 'https://modal.com/pricing',
+    rates: { cpuHour: 0.07095, memoryGiBHour: 0.024, basis: 'used', note: 'Modal prices a physical core, which is 2 vCPU; the CPU rate here is half of that. It bills the larger of what a sandbox reserves and what it uses.' },
     keepsState: 'None', snapshots: 'Disk, fork', ports: 'Tunnel URLs', maxSize: 'Not published; GPUs available',
     caps: { kernel: 'part', stop: 'no', memory: 'no', snapshot: 'yes', fork: 'yes', url: 'yes', own: 'no' },
     runItYourself: 'No', soc2: 'yes', hipaa: 'yes', iso: 'none', complianceNote: 'SOC 2 Type II. BAA on Enterprise, with Volumes excluded.',
-    note: 'Bills the larger of what you request and what you use. Sandboxes cost about three times its standard function rate.',
+    note: 'Bills the larger of what you reserve and what you use, down to a default of 0.125 core. Sandboxes cost about three times its standard function rate.',
   },
   {
     id: 'cloudflare', name: 'Cloudflare Sandbox', logo: 'cloudflare.png', url: 'https://developers.cloudflare.com/sandbox/',
@@ -367,8 +371,8 @@ export const providers: Provider[] = [
     kind: 'Hosted service', support: 'plugin', docs: 'sprites',
     supportNote: 'Through a remote plugin for now: exec is specified only over WebSocket.',
     isolation: 'MicroVM',
-    billing: 'usage', cpu: '$0.03825 / CPU-h used', memory: '$0.021875 / GB-h used', slot: [0.0533, 0.082], fees: 'Plans are optional. Storage is extra.', priceSource: 'https://fly.io/pricing-update/',
-    rates: { cpuHour: 0.03825, memoryGiBHour: 0.021875, basis: 'used' },
+    billing: 'usage', cpu: '$0.0385 / CPU-h used', memory: '$0.021875 / GB-h used', slot: [0.0534, 0.0823], fees: 'Plans are optional. Storage is extra.', priceSource: 'https://fly.io/pricing-update/',
+    rates: { cpuHour: 0.0385, memoryGiBHour: 0.021875, basis: 'used' },
     keepsState: 'Sleeps and wakes by itself; the disk persists, memory while warm', snapshots: 'Disk checkpoints', ports: 'One URL per sprite', maxSize: '8 vCPU, 100 GB',
     caps: { kernel: 'yes', stop: 'yes', memory: 'part', snapshot: 'yes', fork: 'no', url: 'yes', own: 'no' },
     runItYourself: 'No', soc2: 'unconfirmed', hipaa: 'unconfirmed', iso: 'unconfirmed', complianceNote: 'Fly.io holds SOC 2 Type 2 and offers a BAA. Whether Sprites is covered was not confirmed.',
@@ -421,6 +425,18 @@ export const providers: Provider[] = [
     caps: { kernel: 'no', stop: 'part', memory: 'part', snapshot: 'yes', fork: 'yes', url: 'part', own: 'yes' },
     runItYourself: 'Runs in your GKE cluster', ...own, complianceNote: 'It runs in your cluster, inside your own audit scope.',
     note: 'A GKE add-on built on agent-sandbox, with gVisor isolation.',
+  },
+  {
+    id: 'gke-sandboxes', name: 'gke-sandboxes', logo: 'gcp.png', url: 'https://github.com/comp-work/gke-sandboxes',
+    kind: 'Open-source runtime', support: 'unassessed',
+    supportNote: 'No adapter yet. It is a TypeScript library that drives the Kubernetes API, with no server of its own, so a remote plugin is the route.',
+    isolation: 'gVisor',
+    billing: 'infra', cpu: null, memory: null, slot: null, fees: 'Your GKE nodes. Its authors estimate $0.019 for each hour a sandbox is awake: a whole cluster bill shared by 520 sandboxes that each use about 4% of 2 vCPU.', priceSource: 'https://github.com/comp-work/gke-sandboxes/blob/main/docs/comparison.md',
+    rates: null,
+    keepsState: 'Sleep keeps the files, not the processes', snapshots: 'Files, restored into the same sandbox', ports: 'A private address; an example proxy signs links', maxSize: 'Your nodes (2 vCPU, 4 GiB, 20 GiB by default)',
+    caps: { kernel: 'no', stop: 'yes', memory: 'no', snapshot: 'part', fork: 'no', url: 'part', own: 'yes' },
+    runItYourself: 'Yes, Apache-2.0, on GKE', ...own, complianceNote: 'It runs in your Google Cloud project, inside your own audit scope.',
+    note: 'Energy\'s setup for GKE, published in November 2026: a gVisor pod for each sandbox, which sleeps after five idle minutes and wakes with its files. The cost is its authors\' estimate at their scale, not a list price.',
   },
   {
     id: 'novita', name: 'Novita Agent Sandbox', logo: 'novita.png', url: 'https://novita.ai/sandbox',
