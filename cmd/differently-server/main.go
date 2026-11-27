@@ -224,7 +224,8 @@ func serve(cfgPath string, dev, demoMode bool, listen, dataDir string) error {
 	} else if cfg.Dev {
 		log.Warn("DEV MODE: the devhost pool runs commands directly on this machine with no isolation",
 			"operatorTokenFile", filepath.Join(cfg.DataDir, "token"), "dashboard", dashboardURL(cfg.Listen))
-		fmt.Fprint(os.Stderr, devWelcome(cfg.Listen, cfg.DataDir))
+		d, _ := store.Lookup(cfg.Store.Driver)
+		fmt.Fprint(os.Stderr, devWelcome(cfg.Listen, cfg.DataDir, d.Durable))
 	} else if d, _ := store.Lookup(cfg.Store.Driver); !d.Durable {
 		log.Warn("the store does not survive a restart: organizations, keys, sandbox records and the audit chain are lost when this process stops",
 			"store", cfg.Store.Driver, "drivers", strings.Join(store.Drivers(), ","))
@@ -300,22 +301,36 @@ func preflight(cfgPath string) error {
 		_, err := p.Credentials.Resolve()
 		check(err == nil, "pool %s credential %s resolves", p.Name, p.Credentials.String())
 	}
-	// A store that outlives the server is somewhere else: check it opens.
-	if d, _ := store.Lookup(cfg.Store.Driver); d.Durable {
+	// A shared store is a service somewhere else: check it answers. A store
+	// kept in the data directory is not opened here, because the server that
+	// is running holds it; check the directory can be written instead.
+	if d, _ := store.Lookup(cfg.Store.Driver); d.Shared {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		st, err := openStore(ctx, cfg)
-		if cfg.Store.DSNEnv != "" {
-			check(err == nil, "%s reachable via %s", cfg.Store.Driver, cfg.Store.DSNEnv)
-		} else {
-			check(err == nil, "%s store opens", cfg.Store.Driver)
-		}
+		check(err == nil, "%s reachable via %s", cfg.Store.Driver, cfg.Store.DSNEnv)
 		if err == nil {
 			_ = st.Close()
 		}
+	} else if d.Durable {
+		check(dirWritable(cfg.DataDir) == nil, "data directory %s can be written (the %s store keeps its files there)", cfg.DataDir, cfg.Store.Driver)
 	}
 	check(cfg.Policy.External == "never" || len(cfg.Policy.ExternalPools) > 0, "external placement is off, or names approved externalPools")
 	return errors.Join(problems...)
+}
+
+// dirWritable reports whether files can be made in dir, creating it when it
+// is missing, as the server would at start.
+func dirWritable(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".preflight-*")
+	if err != nil {
+		return err
+	}
+	f.Close()
+	return os.Remove(f.Name())
 }
 
 // bindPorts takes the API port, and the metrics port when one is set, before
@@ -356,9 +371,16 @@ func localURL(listen string) string {
 // to type. The CLI and the SDKs find a dev server at the default address and
 // data directory by themselves; anywhere else they need to be told, so the
 // command shown always works as printed.
-func devWelcome(listen, dataDir string) string {
+//
+// durable says whether the store keeps its records across a restart: plain
+// --dev does not, and --dev with a config file that names no store does.
+func devWelcome(listen, dataDir string, durable bool) string {
 	api, token := localURL(listen), filepath.Join(dataDir, "token")
 	try := cliCommand(listen, dataDir, "differently run -- echo hello")
+	keeps := "keeps everything in memory"
+	if durable {
+		keeps = "keeps its records in " + dataDir
+	}
 	return fmt.Sprintf(`
 Differently is running in dev mode.
 
@@ -367,10 +389,10 @@ Differently is running in dev mode.
   Token      %s
   Try        %s
 
-Dev mode keeps everything in memory and runs commands on this machine as
+Dev mode %s and runs commands on this machine as
 you, with no isolation. Do not run code you do not trust.
 
-`, api, api, token, try)
+`, api, api, token, try, keeps)
 }
 
 // cliCommand prefixes a CLI command with the settings it needs to reach this

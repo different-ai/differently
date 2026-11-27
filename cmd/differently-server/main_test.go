@@ -18,7 +18,7 @@ func TestDevWelcomeNamesACommandThatWorks(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	def := filepath.Join(home, ".differently", "dev")
 
-	plain := devWelcome(":8080", def)
+	plain := devWelcome(":8080", def, false)
 	if !strings.Contains(plain, "  Try        differently run -- echo hello\n") {
 		t.Errorf("default address and directory need no settings:\n%s", plain)
 	}
@@ -26,12 +26,12 @@ func TestDevWelcomeNamesACommandThatWorks(t *testing.T) {
 		t.Errorf("the dashboard or the token path is missing:\n%s", plain)
 	}
 
-	moved := devWelcome("127.0.0.1:18080", def)
+	moved := devWelcome("127.0.0.1:18080", def, false)
 	if !strings.Contains(moved, "DIFFERENTLY_URL=http://127.0.0.1:18080 differently run") {
 		t.Errorf("another address must be passed to the CLI:\n%s", moved)
 	}
 
-	elsewhere := devWelcome(":8080", filepath.Join(home, "data"))
+	elsewhere := devWelcome(":8080", filepath.Join(home, "data"), false)
 	for _, want := range []string{"DIFFERENTLY_API_KEY=$(cat " + filepath.Join(home, "data", "token") + ")", "DIFFERENTLY_PROJECT=prj_default"} {
 		if !strings.Contains(elsewhere, want) {
 			t.Errorf("another data directory: want %q in\n%s", want, elsewhere)
@@ -153,4 +153,91 @@ func TestBindPortsRefusesABusyPort(t *testing.T) {
 	}
 	apiLn.Close()
 	metricsLn.Close()
+}
+
+// A config file that names no store keeps its state: it gets the file
+// store, in the data directory. Naming a store is respected, and plain --dev
+// still keeps nothing.
+func TestAConfigThatNamesNoStoreIsDurable(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	pools := "pools:\n  - {name: sim, adapter: fake, trust: private}\n"
+	dataDir := filepath.Join(dir, "data")
+
+	cfg, err := loadConfig(write("none.yaml", pools), true, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Store.Driver != "file" {
+		t.Fatalf("a config with no store section got store.driver %q, want file", cfg.Store.Driver)
+	}
+	st, err := openStore(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "store", "lock")); err != nil {
+		t.Errorf("the default store is not in the data directory: %v", err)
+	}
+
+	// Preflight does not open a store kept in the data directory: the
+	// running server holds it, and the check must still pass beside it.
+	held := write("held.yaml", "dev: true\ndataDir: "+dataDir+"\n"+pools)
+	if err := preflight(held); err != nil {
+		t.Errorf("preflight beside a running server: %v", err)
+	}
+	st.Close()
+
+	cfg, err = loadConfig(write("memory.yaml", "store: {driver: memory}\n"+pools), true, dataDir)
+	if err != nil || cfg.Store.Driver != "memory" {
+		t.Errorf("a config that names memory: driver %q, err %v", cfg.Store.Driver, err)
+	}
+	cfg, err = loadConfig("", true, dataDir)
+	if err != nil || cfg.Store.Driver != "memory" {
+		t.Errorf("plain --dev: driver %q, err %v", cfg.Store.Driver, err)
+	}
+
+	// The welcome says where the records are.
+	if got := devWelcome(":8080", dataDir, true); !strings.Contains(got, "keeps its records in "+dataDir) || strings.Contains(got, "in memory") {
+		t.Errorf("welcome for a durable store:\n%s", got)
+	}
+	if got := devWelcome(":8080", dataDir, false); !strings.Contains(got, "keeps everything in memory") {
+		t.Errorf("welcome for the memory store:\n%s", got)
+	}
+}
+
+// A data directory the server cannot write is the likely first failure of
+// the default store. The error names the directory and the ways out.
+func TestAnUnwritableDataDirectorySaysWhatToDo(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write anywhere")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	if err := os.Mkdir(locked, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "c.yaml")
+	os.WriteFile(path, []byte("dev: true\npools:\n  - {name: sim, adapter: fake, trust: private}\n"), 0o600)
+	cfg, err := loadConfig(path, false, filepath.Join(locked, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = openStore(t.Context(), cfg)
+	if err == nil {
+		t.Fatal("the store opened in a directory that cannot be written")
+	}
+	for _, want := range []string{"the file store cannot write", locked, "--data-dir", "store.driver"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q: %v", want, err)
+		}
+	}
+	if err := dirWritable(filepath.Join(locked, "data")); err == nil {
+		t.Error("dirWritable accepted a directory that cannot be written")
+	}
 }

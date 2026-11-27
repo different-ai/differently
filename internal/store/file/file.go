@@ -42,7 +42,17 @@ func init() {
 			if o.DataDir == "" {
 				return nil, errors.New("store.driver is file but the server has no data directory")
 			}
-			return Open(filepath.Join(o.DataDir, "store"))
+			dir := filepath.Join(o.DataDir, "store")
+			s, err := Open(dir)
+			if errors.Is(err, os.ErrPermission) {
+				// The usual cause is the default store on a data directory
+				// the server's user cannot write.
+				return nil, fmt.Errorf("the file store cannot write %s (%w); set dataDir (or --data-dir) to a directory the server can write, or name another store.driver: memory keeps nothing across restarts", dir, err)
+			}
+			if err != nil {
+				return nil, err
+			}
+			return s, nil
 		},
 	})
 }

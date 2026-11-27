@@ -136,7 +136,7 @@ concept only; see [adapters/specification.md §8](../adapters/specification.md#8
 | | Control plane | Data plane |
 |---|---|---|
 | Processes | `differently-server` replicas (API, scheduler, reconciler, pool manager, dashboard, `/metrics`); PostgreSQL | The OpenSandbox server and its runtime, with OpenSandbox's `execd` inside each sandbox; external providers' sandboxes; remote plugins and whatever they front |
-| State | All durable Differently state in Postgres (or memory in dev) | Backend-side: OpenSandbox's sandboxes and snapshots, provider resources. Differently tags each instance with its sandbox and installation IDs (OpenSandbox metadata, provider labels) and stores only the backend's ref |
+| State | All durable Differently state in its store: files in the data directory by default, SQLite or Postgres ([store drivers](../adapters/stores.md)); memory in dev | Backend-side: OpenSandbox's sandboxes and snapshots, provider resources. Differently tags each instance with its sandbox and installation IDs (OpenSandbox metadata, provider labels) and stores only the backend's ref |
 | Talks to | Postgres; the OpenSandbox lifecycle API (header `OPEN-SANDBOX-API-KEY`) and, through the server's proxy by default, `execd`; provider APIs over HTTPS; remote plugins over `/adapter/v1` | Nothing in the data plane calls the control plane |
 
 The control plane **is in the data path** for exec, file transfer and streamed
@@ -363,10 +363,14 @@ transition into the current state returns `200` with no backend call.
 
 ## 9. Storage and queue design
 
-PostgreSQL is the only production dependency.
+The store is a driver ([store drivers](../adapters/stores.md)). One server
+needs no database: the `file` driver, the default when a config names no
+store, keeps the memory store's state in the data directory, and `sqlite`
+keeps it in one database file. PostgreSQL is the dependency only for several
+replicas, and it is what the rest of this section describes.
 The memory store (`internal/store/memory.go`) implements the same contract with
-one mutex and is used for `--dev` and tests. Both run the same conformance
-suite (`internal/store/storetest/storetest.go`).
+one mutex and is used for `--dev` and tests. Every driver runs the same
+conformance suite (`internal/store/storetest/storetest.go`).
 
 **Schema** (`internal/store/postgres/migrations/`). Each resource is a JSONB
 `doc` with the columns needed for locking, filtering and ordering promoted:

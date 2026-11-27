@@ -466,6 +466,10 @@ func TestDriverIsRegistered(t *testing.T) {
 	if !ok || !d.Durable || d.Shared {
 		t.Fatalf("driver = %+v, registered %v", d, ok)
 	}
+	// A build that holds this driver uses it when a config names no store.
+	if got := store.DefaultDriver(); got != "file" {
+		t.Errorf("DefaultDriver() = %q, want file", got)
+	}
 	if _, err := store.Open(context.Background(), "file", store.Options{}); err == nil {
 		t.Error("opened with no data directory")
 	}
