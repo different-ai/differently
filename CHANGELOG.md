@@ -8,6 +8,20 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- `differently discover`: what the cloud tools on this machine can reach and
+  what Differently could run there. It looks for `gcloud`, `kubectl`, `helm`,
+  `docker`, `az` and `aws`, reports each one's version and the account,
+  project or context it points at, and lists what it finds: GKE clusters in
+  gcloud's current project, kubectl's contexts, OpenSandbox or agent-sandbox
+  on the current context, and a running Docker daemon. From that it names
+  the setups possible from here, each with the reason and the next command
+  or guide. It needs no Differently server, changes nothing, and uses each
+  tool's own sign-in, so Differently sees no cloud credential;
+  `--show-commands` lists every command it ran and `-o json` gives the
+  report to a script. A tool that is signed out or a cluster that does not
+  answer is a note on its row. Azure and AWS resources are not listed yet.
+  Tested with fake tools; run on one machine with Docker, gcloud (signed
+  out), kubectl (no context), helm and az.
 - `differently-server --demo` (`make demo`): a separate installation for
   showing placement without any real provider. Six mock providers on the
   fake adapter (two private, four external, with regions, list prices,

@@ -10,6 +10,14 @@
 | A Kubernetes cluster (EKS, GKE, AKS, k3s, RKE2) | [Kubernetes with Helm](kubernetes.md), then the notes for [AWS](aws.md), [Google Cloud](gcp.md), [Azure](azure.md) or [bare metal](bare-metal.md) | about an hour | Helm install tested on k3s, last on 2026-10-29; managed clusters documented |
 | No internet access | [Air-gapped](air-gapped.md) | | documented |
 
+Not sure which row is yours? `differently discover` looks at the cloud tools
+already signed in on your machine (`gcloud`, `kubectl`, `helm`, `docker`,
+`az`, `aws`), lists what they can reach and says which of these paths are
+open to you. It only reads, needs no server and lists the commands it ran
+with `--show-commands`. Today it finds GKE clusters in gcloud's current
+project, kubectl's contexts, a sandbox runtime on the current context and a
+local Docker daemon; it does not list Azure or AWS resources yet.
+
 Where each path gets Differently from:
 
 - **Laptop:** the `differently-server` binary, from a release or built
