@@ -86,6 +86,18 @@ func Drivers() []string {
 	return names
 }
 
+// DefaultDriver is the driver a config gets when it names none: file, which
+// keeps state in the data directory with nothing else to run, in a build
+// that holds it, and memory in one that does not (tests, and programs that
+// never keep state). A config that says nothing should not lose everything
+// at a restart.
+func DefaultDriver() string {
+	if _, ok := Lookup("file"); ok {
+		return "file"
+	}
+	return "memory"
+}
+
 // Open opens the store the named driver provides. An unknown name is an
 // error that lists what this build has: it never falls back to another
 // driver, because that would quietly put state somewhere else.

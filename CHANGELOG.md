@@ -141,6 +141,20 @@ All notable changes are recorded here. The format follows
 
 ### Changed
 
+- **A config file that names no store now keeps its state.** It gets the
+  `file` store, under `dataDir` (`/var/lib/differently` unless set), where it
+  used to get `memory` and lose everything at a restart. What changes for an
+  existing installation with no `store` section: the server writes to its
+  data directory, and refuses to start if it cannot, with an error that
+  names the directory and the ways out (`dataDir`, `--data-dir`, or another
+  `store.driver`). To keep the old behaviour, say `store: {driver: memory}`.
+  Unchanged: `differently-server --dev` with no config file (memory), the
+  Helm chart (it sets `store.driver`, `memory` by default) and the Compose
+  stack (Postgres). `differently-server preflight` no longer opens a store
+  that lives in the data directory, which a running server holds; it checks
+  that the directory can be written. The dev-mode welcome says where the
+  records are kept when they are kept.
+
 - The store is chosen through a registry of drivers, not a fixed pair. A
   driver registers under a name (`store.Register`), `store.driver` names
   one, and the server opens it without knowing what is behind it; no query

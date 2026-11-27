@@ -64,3 +64,14 @@ func TestRegisterAddsADriverAndRefusesMistakes(t *testing.T) {
 		}()
 	}
 }
+
+// This package's tests do not hold the file driver, so the default is the
+// one every build has. internal/store/file checks the other half.
+func TestDefaultDriverIsMemoryWithoutTheFileDriver(t *testing.T) {
+	if _, ok := Lookup("file"); ok {
+		t.Skip("the file driver is linked into this test")
+	}
+	if got := DefaultDriver(); got != "memory" {
+		t.Errorf("DefaultDriver() = %q", got)
+	}
+}

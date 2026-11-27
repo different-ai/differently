@@ -19,7 +19,7 @@ the runtime behind each pool ([storage and lifecycle](../storage-and-lifecycle.m
 
 | `store.driver` | Survives a restart | Several replicas | Needs |
 |---|---|---|---|
-| `memory` | No | No | Nothing. For trying Differently and for tests; the server warns at start that state is lost when it stops. |
+| `memory` | No | No | Nothing. For trying Differently and for tests; it has to be named, and outside dev mode the server warns at start that state is lost when it stops. |
 | `file` | Yes | No | A directory the server can write: `<dataDir>/store`. No database. See [the file driver](#the-file-driver). |
 | `sqlite` | Yes | No | A file the server can write: `<dataDir>/sqlite/differently.db`. No database service. See [the sqlite driver](#the-sqlite-driver). |
 | `postgres` | Yes | Yes | A PostgreSQL database, its URL in the environment variable `store.dsnEnv` names (`DIFFERENTLY_DATABASE_URL` by default). |
@@ -28,8 +28,13 @@ A name the build does not hold is refused at start, with the names it does
 hold. The server never falls back to another driver: that would put state
 somewhere the operator did not choose.
 
-`memory` is still what a config file with no `store` section gets. Name
-`file`, `sqlite` or `postgres` to keep state.
+**A config file that names no store gets `file`.** It keeps its records in
+the data directory, so nothing is lost at a restart and there is nothing
+else to run. If the server's user cannot write the data directory, the
+server says so at start and names the ways out: set `dataDir` (or
+`--data-dir`) to a directory it can write, or name another driver. Two
+things still use `memory`: `differently-server --dev` with no config file,
+and the Helm chart, which sets `store.driver` itself.
 
 Which one:
 

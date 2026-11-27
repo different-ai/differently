@@ -46,7 +46,8 @@ type Config struct {
 // StoreConfig selects persistence.
 type StoreConfig struct {
 	// Driver names a registered store driver: memory, file, sqlite and
-	// postgres in the default build. See internal/store.Register.
+	// postgres in the default build. Left out, it is store.DefaultDriver:
+	// file in the server. See internal/store.Register.
 	Driver string `json:"driver"`
 	DSNEnv string `json:"dsnEnv,omitempty"`
 }
@@ -372,7 +373,7 @@ func (c *Config) applyDefaults() {
 		c.DataDir = "/var/lib/differently"
 	}
 	if c.Store.Driver == "" {
-		c.Store.Driver = "memory"
+		c.Store.Driver = store.DefaultDriver()
 	}
 	if c.Store.Driver == "postgres" && c.Store.DSNEnv == "" {
 		c.Store.DSNEnv = "DIFFERENTLY_DATABASE_URL"
