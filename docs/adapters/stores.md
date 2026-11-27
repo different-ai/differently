@@ -34,7 +34,10 @@ else to run. If the server's user cannot write the data directory, the
 server says so at start and names the ways out: set `dataDir` (or
 `--data-dir`) to a directory it can write, or name another driver. Two
 things still use `memory`: `differently-server --dev` with no config file,
-and the Helm chart, which sets `store.driver` itself.
+and the Helm chart, which sets `store.driver` itself. In the container
+image the data directory is `/var/lib/differently` and belongs to the
+server's user; mount a volume there, or the records go when the container
+is replaced.
 
 Which one:
 

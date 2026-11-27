@@ -153,7 +153,10 @@ All notable changes are recorded here. The format follows
   stack (Postgres). `differently-server preflight` no longer opens a store
   that lives in the data directory, which a running server holds; it checks
   that the directory can be written. The dev-mode welcome says where the
-  records are kept when they are kept.
+  records are kept when they are kept. The server image now has
+  `/var/lib/differently`, owned by the server's user, so the default store
+  works in a container; mount a volume there to keep it when the container
+  is replaced.
 
 - The store is chosen through a registry of drivers, not a fixed pair. A
   driver registers under a name (`store.Register`), `store.driver` names
