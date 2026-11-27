@@ -112,6 +112,19 @@ All notable changes are recorded here. The format follows
 
 ### Changed
 
+- The store is chosen through a registry of drivers, not a fixed pair. A
+  driver registers under a name (`store.Register`), `store.driver` names
+  one, and the server opens it without knowing what is behind it; no query
+  language is part of the contract, which is the `store.Store` interface and
+  the conformance suite `storetest.Run`
+  ([store drivers](docs/adapters/stores.md)). The default build still holds
+  `memory` and `postgres` and behaves as before, with three differences: a
+  name the build lacks is refused with the names it has (it was "must be
+  memory or postgres"), a server on a store that does not survive a restart
+  says so at start outside dev mode, and `differently-server migrate` and
+  the preflight check ask the driver what it needs instead of testing for
+  Postgres. No new driver is added here: durable state still needs Postgres.
+
 - The provider comparison at `/compare/` has 29 entries and three corrected
   prices, read on 18 November 2026.
   - **gke-sandboxes** is added: Energy's open-source setup for running

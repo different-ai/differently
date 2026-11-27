@@ -33,7 +33,7 @@ import (
 	"github.com/different-ai/differently/internal/server"
 	"github.com/different-ai/differently/internal/stacks"
 	"github.com/different-ai/differently/internal/store"
-	"github.com/different-ai/differently/internal/store/postgres"
+	_ "github.com/different-ai/differently/internal/store/postgres" // registers the postgres driver
 	"github.com/different-ai/differently/internal/version"
 	"github.com/different-ai/differently/internal/wiring"
 )
@@ -102,15 +102,14 @@ func loadConfig(path string, dev bool, dataDir string) (config.Config, error) {
 	return cfg, cfg.Validate()
 }
 
+// openStore opens the store the config names, through whichever driver this
+// build registered under that name.
 func openStore(ctx context.Context, cfg config.Config) (store.Store, error) {
-	if cfg.Store.Driver == "postgres" {
-		dsn := os.Getenv(cfg.Store.DSNEnv)
-		if dsn == "" {
-			return nil, fmt.Errorf("store.driver is postgres but %s is empty", cfg.Store.DSNEnv)
-		}
-		return postgres.Open(ctx, dsn)
+	o := store.Options{DataDir: cfg.DataDir, DSNEnv: cfg.Store.DSNEnv}
+	if o.DSNEnv != "" {
+		o.DSN = os.Getenv(o.DSNEnv)
 	}
-	return store.NewMemory(), nil
+	return store.Open(ctx, cfg.Store.Driver, o)
 }
 
 func serve(cfgPath string, dev, demoMode bool, listen, dataDir string) error {
@@ -147,8 +146,8 @@ func serve(cfgPath string, dev, demoMode bool, listen, dataDir string) error {
 		return err
 	}
 	defer st.Close()
-	if pg, ok := st.(*postgres.Store); ok {
-		if err := pg.Migrate(ctx); err != nil {
+	if m, ok := st.(store.Migrator); ok {
+		if err := m.Migrate(ctx); err != nil {
 			return fmt.Errorf("migrate: %w", err)
 		}
 	}
@@ -224,6 +223,9 @@ func serve(cfgPath string, dev, demoMode bool, listen, dataDir string) error {
 		log.Warn("DEV MODE: the devhost pool runs commands directly on this machine with no isolation",
 			"operatorTokenFile", filepath.Join(cfg.DataDir, "token"), "dashboard", dashboardURL(cfg.Listen))
 		fmt.Fprint(os.Stderr, devWelcome(cfg.Listen, cfg.DataDir))
+	} else if d, _ := store.Lookup(cfg.Store.Driver); !d.Durable {
+		log.Warn("the store does not survive a restart: organizations, keys, sandbox records and the audit chain are lost when this process stops",
+			"store", cfg.Store.Driver, "drivers", strings.Join(store.Drivers(), ","))
 	}
 	select {
 	case err := <-errc:
@@ -246,17 +248,18 @@ func migrate(cfgPath string) error {
 	if err != nil {
 		return err
 	}
-	if cfg.Store.Driver != "postgres" {
-		fmt.Println("store.driver is memory: nothing to migrate")
-		return nil
-	}
 	ctx := context.Background()
 	st, err := openStore(ctx, cfg)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
-	if err := st.(*postgres.Store).Migrate(ctx); err != nil {
+	m, ok := st.(store.Migrator)
+	if !ok {
+		fmt.Printf("store.driver is %s: nothing to migrate\n", cfg.Store.Driver)
+		return nil
+	}
+	if err := m.Migrate(ctx); err != nil {
 		return err
 	}
 	fmt.Println("migrations applied")
@@ -295,11 +298,16 @@ func preflight(cfgPath string) error {
 		_, err := p.Credentials.Resolve()
 		check(err == nil, "pool %s credential %s resolves", p.Name, p.Credentials.String())
 	}
-	if cfg.Store.Driver == "postgres" {
+	// A store that outlives the server is somewhere else: check it opens.
+	if d, _ := store.Lookup(cfg.Store.Driver); d.Durable {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		st, err := openStore(ctx, cfg)
-		check(err == nil, "postgres reachable via %s", cfg.Store.DSNEnv)
+		if cfg.Store.DSNEnv != "" {
+			check(err == nil, "%s reachable via %s", cfg.Store.Driver, cfg.Store.DSNEnv)
+		} else {
+			check(err == nil, "%s store opens", cfg.Store.Driver)
+		}
 		if err == nil {
 			_ = st.Close()
 		}

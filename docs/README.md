@@ -51,6 +51,7 @@ at [Use Differently with a coding agent](guides/agents.md).
 | [Architecture RFC](architecture/README.md) | Layers, components, request lifecycle, state machine, HA |
 | [Security and trust model](security/trust-model.md) | Threats, boundaries, enforced controls, residual risks |
 | [Adapter specification](adapters/specification.md) | The backend contract and the HTTP plugin protocol |
+| [Store drivers](adapters/stores.md) | Where Differently keeps its own records, the drivers in a build and the contract for adding one |
 | [Maintaining and improving Differently](maintaining.md) | For agents and maintainers: where to change what, the verification ladder, recorded runtimes, performance, traps |
 | [Placement policy](scheduling/placement-policy.md) | Merge rules, strategies, overflow, quotas, fairness |
 | [Capacity](scheduling/capacity.md) | Pool slots, paused sandboxes that give theirs back, the resume queue, preemption and lifecycle limits, with a model of real usage |

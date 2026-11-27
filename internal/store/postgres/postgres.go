@@ -43,6 +43,20 @@ type Store struct {
 	leaderConn *pgxpool.Conn
 }
 
+func init() {
+	store.Register("postgres", store.Driver{
+		Summary: "PostgreSQL; durable, and shared by several replicas",
+		Durable: true,
+		Shared:  true,
+		Open: func(ctx context.Context, o store.Options) (store.Store, error) {
+			if o.DSN == "" {
+				return nil, fmt.Errorf("store.driver is postgres but %s is empty", o.DSNEnv)
+			}
+			return Open(ctx, o.DSN)
+		},
+	})
+}
+
 // Open connects to dsn.
 func Open(ctx context.Context, dsn string) (*Store, error) {
 	p, err := pgxpool.New(ctx, dsn)
