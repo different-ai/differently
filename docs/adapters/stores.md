@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Describes the code as of 2026-11-27. The default build holds two drivers, `memory` and `postgres`. |
+| Status | Describes the code as of 2026-11-27. The default build holds three drivers: `memory`, `file` and `postgres`. |
 | Code | `internal/store` (the contract and the registry), `internal/store/storetest` (the conformance suite) |
 
 Differently keeps its own records (organizations, projects, keys, pools,
@@ -20,15 +20,65 @@ the runtime behind each pool ([storage and lifecycle](../storage-and-lifecycle.m
 | `store.driver` | Survives a restart | Several replicas | Needs |
 |---|---|---|---|
 | `memory` | No | No | Nothing. For trying Differently and for tests; the server warns at start that state is lost when it stops. |
+| `file` | Yes | No | A directory the server can write: `<dataDir>/store`. No database. See [the file driver](#the-file-driver). |
 | `postgres` | Yes | Yes | A PostgreSQL database, its URL in the environment variable `store.dsnEnv` names (`DIFFERENTLY_DATABASE_URL` by default). |
 
 A name the build does not hold is refused at start, with the names it does
 hold. The server never falls back to another driver: that would put state
 somewhere the operator did not choose.
 
-No driver yet keeps state on one machine without a database. That is the
-next one planned; until it exists, anything that must survive a restart needs
-`postgres`.
+`memory` is still what a config file with no `store` section gets. Name
+`file` or `postgres` to keep state.
+
+## The file driver
+
+```yaml
+store: {driver: file}
+dataDir: /var/lib/differently   # the default
+```
+
+It keeps the same records the other drivers do, in four files under
+`<dataDir>/store`, readable only by the server's user:
+
+| File | Holds |
+|---|---|
+| `snapshot.json` | Every table as of the last compaction |
+| `journal.jsonl` | Changes since then, one line per write |
+| `audit.jsonl` | The audit chain, one event per line, only ever appended |
+| `lock` | Held while a server has the directory open |
+
+The rules are the memory store's own code: the driver repeats none of them.
+It records each change the memory store makes and writes it down.
+
+- **A call returns after its changes are synced to disk.** Calls that arrive
+  together share one sync.
+- **A server killed outright loses nothing it reported as done.** At start
+  the driver reads the snapshot, then the journal, then the audit log. A
+  last line with no newline is a write that was cut short and never
+  reported; it is cut off.
+- **A damaged file is refused**, with the file and line. The server does not
+  start with part of what was kept.
+- **If a write to disk fails** (a full disk), that call fails and the store
+  stops answering until the server is restarted: memory would be ahead of
+  the disk, and anything it said could be gone after a restart.
+- **One server per directory.** A second one is refused at start. This
+  driver cannot be shared by replicas; `postgres` can.
+- **All state is also in memory**, as with the memory store, and the journal
+  is folded into the snapshot at start and each time it passes 8 MiB.
+
+To back it up, copy the directory while the server is stopped. A copy taken
+while it runs can catch the journal mid-write; that last line is then cut
+off at restore, so the copy is usable but may lack the newest writes.
+
+What was run: the conformance suite, with the directory reopened and
+compared after every test, and again with the snapshot rewritten after
+every write; the server acceptance scenarios (`make test-stores`); a process
+killed with SIGKILL while writing; cut-short and damaged files; and a real
+`differently-server` killed and restarted on macOS, where the audit chain
+verified afterwards. What was not: a power cut or a full disk on real
+hardware, network filesystems, and Linux outside CI. The Helm chart does not
+offer `file` yet, because its data directory is not on a volume that
+outlives the pod.
 
 ## The contract
 
@@ -77,8 +127,9 @@ What the store it opens must do:
 3. Import the package in `cmd/differently-server/main.go` for its
    registration. A driver that brings a large dependency can sit behind a
    build tag instead, as the experimental backend adapters do.
-4. Run the server acceptance scenarios on it as well
-   (`internal/server`, as `make test-postgres` does for Postgres), add its
+4. Run the server acceptance scenarios on it as well: add it to
+   `STORE_DRIVERS` in the Makefile for `make test-stores` if it needs no
+   service, or do as `make test-postgres` does for Postgres. Add its
    name to the chart's `values.schema.json`, and add a row to the table
    above saying what was run and what was not.
 

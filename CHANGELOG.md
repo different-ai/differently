@@ -8,6 +8,23 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- A store that needs no database: `store: {driver: file}` keeps
+  Differently's records in files under `<dataDir>/store`
+  ([the file driver](docs/adapters/stores.md#the-file-driver)). The rules
+  are the memory store's own code; the driver records each change it makes
+  and writes it to a journal that is synced before the call returns, with
+  the audit chain in an append-only file of its own and a snapshot that the
+  journal is folded into. A server killed outright keeps everything it
+  reported as done; a write cut short is cut off at start; a damaged file is
+  refused; a failed write to disk stops the store from answering; a second
+  server on the same directory is refused. It supports one replica and holds
+  all state in memory as well. `memory` is still the default when the config
+  names no store, and the Helm chart does not offer `file` yet. Tested with
+  the conformance suite (the directory reopened and compared after every
+  test), the server acceptance scenarios (`make test-stores`, now part of
+  `make verify`), a process killed while writing, and a real server killed
+  and restarted on macOS. Not tested: a power cut or a full disk on real
+  hardware, and network filesystems.
 - `differently console`: the local admin, a page the CLI serves on this
   machine and opens in a browser. It separates managing from orchestrating:
   it deploys nothing, stores nothing and stops with the command. It shows
