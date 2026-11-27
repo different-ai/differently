@@ -74,6 +74,12 @@ that covers it, and say in the PR what did not run.
   (`make compose-check-built`, CI's `docker host stack` jobs). It is
   separate from `test/e2e/compose.yaml`, which builds from the checkout
   and uses fixed test credentials.
+- Stores: `internal/store` holds the contract, the registry of drivers
+  (`store.Register`) and the memory store; `internal/store/file` keeps that
+  store's state in files by taking the changes it records, and
+  `internal/store/postgres` is the shared one
+  ([store drivers](docs/adapters/stores.md)). Every write in `memory.go`
+  goes through `put`, `drop` or `note`, or the file driver loses it.
 - Stored credentials: `internal/secrets` (sealed values, `secret:` refs).
 - Capacity: `internal/scheduler/capacity.go` (slots, resume queue,
   preemption, lifecycle limits) and its model `internal/capsim`

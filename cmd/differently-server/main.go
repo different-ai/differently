@@ -33,6 +33,7 @@ import (
 	"github.com/different-ai/differently/internal/server"
 	"github.com/different-ai/differently/internal/stacks"
 	"github.com/different-ai/differently/internal/store"
+	_ "github.com/different-ai/differently/internal/store/file"     // registers the file driver
 	_ "github.com/different-ai/differently/internal/store/postgres" // registers the postgres driver
 	"github.com/different-ai/differently/internal/version"
 	"github.com/different-ai/differently/internal/wiring"

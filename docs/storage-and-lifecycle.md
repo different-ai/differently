@@ -22,7 +22,7 @@
 
 | State | Where |
 |---|---|
-| Sandbox, snapshot, quota, policy and audit records | The control-plane store (Postgres, or memory in dev mode) |
+| Sandbox, snapshot, quota, policy and audit records | The control-plane store: Postgres, files in the data directory, or memory in dev mode ([store drivers](adapters/stores.md)) |
 | Sandbox filesystem, processes and memory | The OpenSandbox runtime: a container (Docker or Kubernetes runtime) or a Firecracker microVM (Fast Sandbox), on hosts the OpenSandbox operator runs |
 | Snapshots | OpenSandbox's snapshot storage; Differently keeps only the snapshot ID as the backend ref |
 | Mapping between the two | OpenSandbox sandbox metadata written at create: `differently-sandbox-id`, `differently-installation` and `name` |

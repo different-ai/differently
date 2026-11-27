@@ -45,8 +45,8 @@ type Config struct {
 
 // StoreConfig selects persistence.
 type StoreConfig struct {
-	// Driver names a registered store driver: memory and postgres in the
-	// default build. See internal/store.Register.
+	// Driver names a registered store driver: memory, file and postgres in
+	// the default build. See internal/store.Register.
 	Driver string `json:"driver"`
 	DSNEnv string `json:"dsnEnv,omitempty"`
 }

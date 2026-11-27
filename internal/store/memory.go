@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/different-ai/differently/internal/audit"
@@ -13,9 +14,17 @@ import (
 )
 
 // Memory is an in-process Store for development and tests. State is lost on
-// restart; use postgres for anything durable.
+// restart. The file driver keeps this same store's state on disk by taking
+// the changes it records (changes.go); postgres is the store for several
+// replicas.
 type Memory struct {
-	mu           sync.Mutex
+	mu sync.Mutex
+	// track, pending and seq record every change for a driver that persists
+	// them (changes.go). They are unused, and cost nothing, otherwise.
+	track   bool
+	pending []Change
+	seq     atomic.Uint64
+
 	installation string
 	orgs         map[string]api.Organization
 	projects     map[string]api.Project
@@ -64,6 +73,7 @@ func (m *Memory) Installation(context.Context) (string, error) {
 	defer m.mu.Unlock()
 	if m.installation == "" {
 		m.installation = id.New("inst")
+		m.note(TableMeta, metaInstallation, m.installation, false)
 	}
 	return m.installation, nil
 }
@@ -74,7 +84,7 @@ func (m *Memory) CreateOrg(_ context.Context, o api.Organization) error {
 	if _, ok := m.orgs[o.ID]; ok {
 		return api.Errorf(api.CodeConflict, "organization %s exists", o.ID)
 	}
-	m.orgs[o.ID] = clone(o)
+	put(m, m.orgs, TableOrg, o.ID, o)
 	return nil
 }
 
@@ -110,7 +120,7 @@ func (m *Memory) UpdateOrg(_ context.Context, id string, fn func(*api.Organizati
 	if err := fn(&o); err != nil {
 		return o, err
 	}
-	m.orgs[id] = clone(o)
+	put(m, m.orgs, TableOrg, id, o)
 	return o, nil
 }
 
@@ -120,7 +130,7 @@ func (m *Memory) CreateProject(_ context.Context, p api.Project) error {
 	if _, ok := m.projects[p.ID]; ok {
 		return api.Errorf(api.CodeConflict, "project %s exists", p.ID)
 	}
-	m.projects[p.ID] = clone(p)
+	put(m, m.projects, TableProject, p.ID, p)
 	return nil
 }
 
@@ -158,7 +168,7 @@ func (m *Memory) UpdateProject(_ context.Context, id string, fn func(*api.Projec
 	if err := fn(&p); err != nil {
 		return p, err
 	}
-	m.projects[id] = clone(p)
+	put(m, m.projects, TableProject, id, p)
 	return p, nil
 }
 
@@ -173,7 +183,7 @@ func (m *Memory) DeleteProject(_ context.Context, id string) error {
 			return api.Errorf(api.CodeConflict, "project %s still has sandbox %s", id, s.ID)
 		}
 	}
-	delete(m.projects, id)
+	drop(m, m.projects, TableProject, id)
 	return nil
 }
 
@@ -183,7 +193,7 @@ func (m *Memory) CreateKey(_ context.Context, k KeyRecord) error {
 	if _, ok := m.keys[k.ID]; ok {
 		return api.Errorf(api.CodeConflict, "key %s exists", k.ID)
 	}
-	m.keys[k.ID] = clone(k)
+	put(m, m.keys, TableKey, k.ID, k)
 	return nil
 }
 
@@ -221,14 +231,14 @@ func (m *Memory) UpdateKey(_ context.Context, id string, fn func(*KeyRecord) err
 	if err := fn(&k); err != nil {
 		return k, err
 	}
-	m.keys[id] = clone(k)
+	put(m, m.keys, TableKey, id, k)
 	return k, nil
 }
 
 func (m *Memory) PutStack(_ context.Context, s api.Stack) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.stacks[s.Name] = clone(s)
+	put(m, m.stacks, TableStack, s.Name, s)
 	return nil
 }
 
@@ -259,14 +269,14 @@ func (m *Memory) DeleteStack(_ context.Context, name string) error {
 	if _, ok := m.stacks[name]; !ok {
 		return NotFound("stack", name)
 	}
-	delete(m.stacks, name)
+	drop(m, m.stacks, TableStack, name)
 	return nil
 }
 
 func (m *Memory) PutSecret(_ context.Context, s SecretRecord) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.secrets[s.Name] = clone(s)
+	put(m, m.secrets, TableSecret, s.Name, s)
 	return nil
 }
 
@@ -302,7 +312,7 @@ func (m *Memory) DeleteSecret(_ context.Context, name string) error {
 	if _, ok := m.secrets[name]; !ok {
 		return NotFound("secret", name)
 	}
-	delete(m.secrets, name)
+	drop(m, m.secrets, TableSecret, name)
 	return nil
 }
 
@@ -310,7 +320,7 @@ func (m *Memory) UpsertPool(_ context.Context, p api.Pool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p.Health, p.Capacity, p.Active = nil, nil, 0
-	m.pools[p.Name] = clone(p)
+	put(m, m.pools, TablePool, p.Name, p)
 	return nil
 }
 
@@ -343,7 +353,7 @@ func (m *Memory) DeletePool(_ context.Context, name string) error {
 			return api.Errorf(api.CodeConflict, "pool %s still hosts sandbox %s; drain it first", name, s.ID)
 		}
 	}
-	delete(m.pools, name)
+	drop(m, m.pools, TablePool, name)
 	return nil
 }
 
@@ -377,7 +387,7 @@ func (m *Memory) UpdateTemplate(_ context.Context, name string, fn func(*api.Tem
 		return api.Template{}, err
 	}
 	t.Name = name
-	m.templates[name] = clone(t)
+	put(m, m.templates, TableTemplate, name, t)
 	return t, nil
 }
 
@@ -387,14 +397,14 @@ func (m *Memory) DeleteTemplate(_ context.Context, name string) error {
 	if _, ok := m.templates[name]; !ok {
 		return NotFound("template", name)
 	}
-	delete(m.templates, name)
+	drop(m, m.templates, TableTemplate, name)
 	return nil
 }
 
 func (m *Memory) PutPolicy(_ context.Context, p api.PlacementPolicy) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.policies[p.Scope] = clone(p)
+	put(m, m.policies, TablePolicy, p.Scope, p)
 	return nil
 }
 
@@ -419,7 +429,7 @@ func (m *Memory) ListPolicies(context.Context) ([]api.PlacementPolicy, error) {
 func (m *Memory) DeletePolicy(_ context.Context, scope string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.policies, scope)
+	drop(m, m.policies, TablePolicy, scope)
 	return nil
 }
 
@@ -456,7 +466,7 @@ func (m *Memory) AdmitSandbox(_ context.Context, rec SandboxRecord, adm Admissio
 		return rec, false, err
 	}
 	rec.Status = api.StatusQueued
-	m.sandboxes[rec.ID] = clone(rec)
+	put(m, m.sandboxes, TableSandbox, rec.ID, rec)
 	return clone(rec), false, nil
 }
 
@@ -497,7 +507,7 @@ func (m *Memory) UpdateSandbox(_ context.Context, id string, fn func(*SandboxRec
 	if err := fn(&s); err != nil {
 		return s, err
 	}
-	m.sandboxes[id] = clone(s)
+	put(m, m.sandboxes, TableSandbox, id, s)
 	return s, nil
 }
 
@@ -550,7 +560,7 @@ func (m *Memory) ActivateSandbox(_ context.Context, sid string, act Activation) 
 	}
 	s = clone(s)
 	applyActivation(&s, act)
-	m.sandboxes[sid] = clone(s)
+	put(m, m.sandboxes, TableSandbox, sid, s)
 	return s, nil
 }
 
@@ -584,7 +594,7 @@ func (m *Memory) ReserveCompute(_ context.Context, sid string, from, to api.Sand
 	}
 	s = clone(s)
 	s.Status, s.UpdatedAt = to, now
-	m.sandboxes[sid] = clone(s)
+	put(m, m.sandboxes, TableSandbox, sid, s)
 	return s, nil
 }
 
@@ -611,7 +621,7 @@ func (m *Memory) ReclaimSlot(_ context.Context, sid string, maxConcurrency int, 
 	}
 	s = clone(s)
 	s.SlotReleased, s.UpdatedAt = false, now
-	m.sandboxes[sid] = clone(s)
+	put(m, m.sandboxes, TableSandbox, sid, s)
 	return s, nil
 }
 
@@ -636,7 +646,7 @@ func (m *Memory) PoolActive(context.Context) (map[string]int, error) {
 func (m *Memory) CreateSnapshot(_ context.Context, s SnapshotRecord) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.snapshots[s.ID] = clone(s)
+	put(m, m.snapshots, TableSnapshot, s.ID, s)
 	return nil
 }
 
@@ -666,7 +676,7 @@ func (m *Memory) ListSnapshots(_ context.Context, orgID, projectID string) ([]Sn
 func (m *Memory) DeleteSnapshot(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.snapshots, id)
+	drop(m, m.snapshots, TableSnapshot, id)
 	return nil
 }
 
@@ -683,6 +693,7 @@ func (m *Memory) AppendAudit(_ context.Context, ev api.AuditEvent) (api.AuditEve
 	}
 	ev = audit.Seal(prev, clone(ev))
 	m.audit = append(m.audit, ev)
+	m.note(TableAudit, "", ev, false)
 	return ev, nil
 }
 

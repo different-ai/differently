@@ -2,8 +2,8 @@
 //
 // Implementations are drivers, registered by name (driver.go) and chosen by
 // store.driver in the config file. The default build holds memory
-// (development and tests) and postgres (production, HA); any other must pass
-// storetest.Run. Quota-sensitive transitions — admitting a request
+// (development and tests), file (one machine, no database) and postgres
+// (several replicas); every driver must pass storetest.Run. Quota-sensitive transitions — admitting a request
 // and activating a queued sandbox onto a pool — are single atomic store
 // operations so concurrent requests cannot double-allocate or bypass quota.
 // Quota usage is always derived from sandbox state rather than kept in

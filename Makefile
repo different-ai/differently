@@ -11,7 +11,7 @@ GO_TAGS ?=
 EXPERIMENTAL_TAG := experimental_adapters
 PG_PORT ?= 55432
 
-.PHONY: build build-linux test test-postgres fmt-check vet experimental sdk-test helm-lint compose-lint verify dev demo images clean
+.PHONY: build build-linux test test-stores test-postgres fmt-check vet experimental sdk-test helm-lint compose-lint verify dev demo images clean
 
 build:
 	@mkdir -p bin
@@ -36,6 +36,15 @@ vet:
 
 test:
 	go test -race -count=1 ./...
+
+# The server acceptance scenarios on each store driver that needs no service.
+# Their own packages run the store conformance suite as part of `test`.
+STORE_DRIVERS := file
+test-stores:
+	@for d in $(STORE_DRIVERS); do \
+		echo "acceptance scenarios on the $$d store"; \
+		DIFFERENTLY_TEST_STORE=$$d go test -race -count=1 ./internal/server/ || exit 1; \
+	done
 
 # The adapter kinds outside the default build must keep compiling and passing
 # their fake-server tests: build, vet and test everything with the tag.
@@ -72,7 +81,7 @@ helm-lint:
 		helm template differently deploy/helm/differently -f $$f >/dev/null || exit 1; \
 	done
 
-verify: fmt-check vet test experimental sdk-test helm-lint compose-lint
+verify: fmt-check vet test test-stores experimental sdk-test helm-lint compose-lint
 
 dev: build
 	./bin/differently-server --dev
