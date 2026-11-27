@@ -124,7 +124,7 @@ test('a provider is added here, through a plugin, with the CLI, or not yet', () 
 
 test('the catalog filters by kind and by what is typed', () => {
   assert.equal(search('all', '').length, providers.length);
-  assert.deepEqual(search('open', '').map((p) => p.id), ['opensandbox', 'agent-sandbox', 'cubesandbox']);
+  assert.deepEqual(search('open', '').map((p) => p.id), ['opensandbox', 'agent-sandbox', 'cubesandbox', 'gke-sandboxes']);
   assert.deepEqual(search('all', 'azure').map((p) => p.id), ['azure-sandboxes', 'azure-sessions']);
   assert.deepEqual(search('hosted', '  FIRECRACKER ').map((p) => p.id), ['e2b', 'groundbox', 'vercel', 'fly', 'cloudflare', 'codesandbox', 'tensorlake']);
   assert.deepEqual(search('cloud', 'daytona'), []);

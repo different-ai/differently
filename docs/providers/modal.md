@@ -111,7 +111,10 @@ sandbox timeout.
   creation rate is documented.
 - Pricing: per second on the larger of requested and used CPU and memory, at
   non-preemptible rates (about $0.0000394 per core-second and $0.0000067 per
-  GiB-second).
+  GiB-second). A sandbox requests 0.125 core and 128 MiB unless told
+  otherwise, so one that requests nothing more is billed for what it uses
+  ([sandbox resources](https://modal.com/docs/guide/sandbox-resources), read
+  2026-11-18).
 
 ## How it was tested
 

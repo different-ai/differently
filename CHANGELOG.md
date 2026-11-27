@@ -80,6 +80,27 @@ All notable changes are recorded here. The format follows
   snapshots. Tested with a fake server;
   `TestLivePodSnapshots` is written but has not run on GKE.
 
+### Changed
+
+- The provider comparison at `/compare/` has 29 entries and three corrected
+  prices, read on 18 November 2026.
+  - **gke-sandboxes** is added: Energy's open-source setup for running
+    sandboxes on your own GKE cluster. It has no list price. Its authors'
+    estimate ($0.019 for each hour a sandbox is awake, a whole cluster bill
+    shared by 520 mostly idle sandboxes) is quoted beside the entry with its
+    source and kept off the price scale. Differently has no adapter for it.
+  - **Modal** is now shown as billed on use, $0.066 to $0.119 an hour: it
+    charges the larger of what a sandbox reserves and what it uses, and
+    reserves 0.125 core unless told otherwise. It was shown at $0.119 only.
+  - **Fly.io Machines** has a figure, $0.019 to $0.046 an hour, from a
+    `shared-cpu-2x` to a `performance-1x` Machine with 2 GB. It was "not
+    comparable".
+  - **Sprites** uses the CPU rate Fly states, $0.0385 an hour, not the
+    $0.03825 its worked example implies.
+
+  The console's catalog and the simulator read the same file, so they change
+  with it. The share image was redrawn for 29.
+
 ### Fixed
 
 - `differently-server` takes its ports before it starts the scheduler or
