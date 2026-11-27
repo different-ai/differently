@@ -12,7 +12,7 @@ const simProviders = [
 ];
 const repo = 'https://github.com/different-ai/differently';
 const releases = `${repo}/releases`;
-const version = 'v0.1.0-alpha.7';
+const version = 'v0.1.0-alpha.8';
 
 // Launch video slot. Set videoSrc to a video URL (and optionally a poster image and a
 // WebVTT captions file) to show it under the hero. While videoSrc is '' nothing renders.
@@ -96,7 +96,7 @@ const ways = [
   },
   {
     title: 'Any Docker host',
-    what: 'Postgres, Differently and OpenSandbox from published images, in one Compose file you download. Sandboxes are containers sharing the host kernel.',
+    what: 'Differently and OpenSandbox from published images, in one Compose file you download, with no database to run. Sandboxes are containers sharing the host kernel.',
     cmd: 'docker compose up -d --wait',
     status: 'Verified in CI',
     kind: 'verified',

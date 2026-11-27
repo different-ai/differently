@@ -8,7 +8,7 @@
 # into a directory. It never uses sudo and changes nothing else.
 #
 # Settings (environment variables):
-#   DIFFERENTLY_VERSION       release to install, e.g. v0.1.0-alpha.7
+#   DIFFERENTLY_VERSION       release to install, e.g. v0.1.0-alpha.8
 #                             (default: the newest release, pre-releases included)
 #   DIFFERENTLY_INSTALL_DIR   where the two binaries go (default: ~/.local/bin)
 #   DIFFERENTLY_DOWNLOAD_URL  where releases are served from, for a mirror
@@ -77,7 +77,7 @@ main() {
   version="${DIFFERENTLY_VERSION:-}"
   if [ -z "$version" ]; then
     version=$(newest_version)
-    [ -n "$version" ] || fail "could not find the newest release. Set DIFFERENTLY_VERSION, for example DIFFERENTLY_VERSION=v0.1.0-alpha.7 (see https://github.com/$REPO/releases)"
+    [ -n "$version" ] || fail "could not find the newest release. Set DIFFERENTLY_VERSION, for example DIFFERENTLY_VERSION=v0.1.0-alpha.8 (see https://github.com/$REPO/releases)"
   fi
   case "$version" in
     v*) ;;
@@ -85,10 +85,10 @@ main() {
   esac
   case "$version" in
     v[0-9]*) ;;
-    *) fail "'$version' is not a release version such as v0.1.0-alpha.7" ;;
+    *) fail "'$version' is not a release version such as v0.1.0-alpha.8" ;;
   esac
   case "$version" in
-    *[!A-Za-z0-9.+-]*) fail "'$version' is not a release version such as v0.1.0-alpha.7" ;;
+    *[!A-Za-z0-9.+-]*) fail "'$version' is not a release version such as v0.1.0-alpha.8" ;;
   esac
 
   base="${DIFFERENTLY_DOWNLOAD_URL:-https://github.com/$REPO/releases/download}"

@@ -58,12 +58,13 @@ echo "default image: $default_image"
 
 # The end-to-end stack (test/e2e) is where these services are tested in
 # depth. The two files stay separate, so check that this one runs the same
-# images and runtime settings.
+# images and runtime settings. Its Postgres is left out: that stack tests the
+# shared store, and this one keeps its records in a volume.
 step "the same images and runtime settings as the end-to-end stack"
 for src in test/e2e/compose.yaml test/e2e/config.yaml test/opensandbox/config.toml; do
 	[ -f "$repo/$src" ] || fail "$src is missing"
 	settings=$(grep -E '^[[:space:]]*(image|execd_image|lineEndings|network_mode|host_ip|drop_capabilities|no_new_privileges|pids_limit|resolve_internal|isolation)[[:space:]]*[:=]' "$repo/$src" |
-		grep -v 'differently-server:e2e' | sed 's/^[[:space:]]*//; s/[[:space:]]*#.*$//')
+		grep -v -e 'differently-server:e2e' -e 'image: postgres:' | sed 's/^[[:space:]]*//; s/[[:space:]]*#.*$//')
 	[ -n "$settings" ] || fail "$src has no image or runtime setting to compare"
 	printf '%s\n' "$settings" | while IFS= read -r line; do
 		grep -qF -- "$line" "$file" || fail "$src has '$line', deploy/compose/compose.yaml does not"
@@ -80,11 +81,11 @@ bind=${DIFFERENTLY_BIND:-127.0.0.1}
 port=${DIFFERENTLY_PORT:-8080}
 publish=${SANDBOX_PUBLISH_HOST:-172.17.0.1}
 # Only the generated .env may supply these.
-unset DIFFERENTLY_BOOTSTRAP_TOKEN DIFFERENTLY_SECRETS_KEY POSTGRES_PASSWORD OPENSANDBOX_API_KEY
+unset DIFFERENTLY_BOOTSTRAP_TOKEN DIFFERENTLY_SECRETS_KEY OPENSANDBOX_API_KEY
 # The file names its project `differently`, which is also the project of a
 # stack someone installed from the guide on this Docker host. This run ends
 # with `down -v`, so it must be a project of its own or it would recreate
-# that stack's containers and delete its database.
+# that stack's containers and delete its records.
 COMPOSE_PROJECT_NAME=differently-check-$$
 export COMPOSE_PROJECT_NAME
 unset COMPOSE_FILE
@@ -148,11 +149,11 @@ esac
 step "create the secrets with the guide's commands (image: $image)"
 printf '%s\n' "$secrets" | sed "s|^img=.*|img=$image|" | sh -eu
 [ -f .env ] || fail "the guide's commands did not write .env"
-for name in DIFFERENTLY_BOOTSTRAP_TOKEN DIFFERENTLY_SECRETS_KEY POSTGRES_PASSWORD OPENSANDBOX_API_KEY; do
+for name in DIFFERENTLY_BOOTSTRAP_TOKEN DIFFERENTLY_SECRETS_KEY OPENSANDBOX_API_KEY; do
 	grep -q "^$name=..*" .env || fail "$name is empty in the generated .env"
 done
-[ "$(wc -l <.env | tr -d ' ')" = 4 ] || fail ".env does not have exactly four lines"
-[ "$(sort -u .env | cut -d= -f2- | sort -u | wc -l | tr -d ' ')" = 4 ] || fail "two secrets in .env have the same value"
+[ "$(wc -l <.env | tr -d ' ')" = 3 ] || fail ".env does not have exactly three lines"
+[ "$(sort -u .env | cut -d= -f2- | sort -u | wc -l | tr -d ' ')" = 3 ] || fail "two secrets in .env have the same value"
 case $(ls -l .env) in
 -rw-------*) ;;
 *) fail ".env is readable by others: $(ls -l .env)" ;;
@@ -237,10 +238,29 @@ while [ -n "$(sandbox_bindings)" ]; do
 done
 echo "deleted, and its container is gone"
 
+step "no database runs, and the records are in a volume"
+services=$(docker compose config --services | sort | tr '\n' ' ')
+[ "$services" = "opensandbox-server server " ] || fail "the stack has other services than the two it documents: $services"
+docker compose exec -T server differently-server version >/dev/null
+docker volume inspect "${COMPOSE_PROJECT_NAME}_differently-data" >/dev/null || fail "the differently-data volume is missing"
+# The start line is JSON in the container and text on a terminal.
+docker compose logs server 2>&1 | grep -q -e '"store":"file"' -e 'store=file' || fail "the server did not start on the file store"
+echo "services: $services"
+
 step "state survives removing and recreating the containers"
+installation=$(curl -fsS "http://$bind:$port/version")
 docker compose down
 docker compose up -d --wait --wait-timeout 300
 cli admin org list | grep -q first-team || fail "the organization is gone after the stack was recreated"
-echo "the organization is still there, and the same .env still opens the database"
+[ "$(curl -fsS "http://$bind:$port/version")" = "$installation" ] || fail "the installation changed when the stack was recreated"
+cli admin verify-audit | grep -q '"ok": *true' || fail "the audit chain does not verify after the stack was recreated"
+echo "the organization, the installation and the audit chain are still there"
+
+step "the backup in the guide gives a copy of the records"
+docker compose stop server >/dev/null
+docker compose cp server:/var/lib/differently ./differently-backup >/dev/null
+docker compose start server >/dev/null
+[ -s differently-backup/store/audit.jsonl ] || fail "the backup has no audit log: $(ls -R differently-backup 2>&1 | head -20)"
+echo "backed up: $(ls differently-backup/store | tr '\n' ' ')"
 
 step "ok"

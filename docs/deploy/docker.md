@@ -1,10 +1,11 @@
 # One Docker host
 
-The real stack on any machine that runs Docker, from published images:
-Postgres, an [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox)
-server with its Docker runtime, and the Differently control plane. You
-download one file. There is no clone, no Go and no build, and every sandbox
-is a real container on that host.
+The real stack on any machine that runs Docker, from published images: an
+[OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) server with
+its Docker runtime, and the Differently control plane. You download one
+file. There is no clone, no Go, no build and no database to run: Differently
+keeps its records in a Docker volume. Every sandbox is a real container on
+that host.
 
 It is the step after the [quickstart](../guides/quickstart.md)'s dev mode,
 which has no isolation, and before a server for a team
@@ -17,9 +18,15 @@ which has no isolation, and before a server for a team
 > with the published image this file names. First run 2026-11-18, x86_64,
 > Docker Engine 29.4.2 and Compose 5.1.3: the start took 17 s including the
 > pulls, and creating the first sandbox, running `echo hello` in it and
-> deleting it took 9 s. It has not been run on Docker Desktop, on Colima,
-> on rootless Docker, on Podman or on arm64. CI stops after the first sandbox and a
-> recreation of the containers: the sections from
+> deleting it took 9 s. Those times are from the stack as it was through
+> `0.1.0-alpha.7`, with a Postgres container; since `0.1.0-alpha.8` it has
+> none, and the times have not been taken again. The stack without Postgres
+> also ran once on Colima on an Apple-silicon Mac (arm64, Docker Engine
+> 29.5.2), on 2026-11-27, with the image built from the checkout and
+> `SANDBOX_PUBLISH_HOST=0.0.0.0` ([Docker in a VM](#docker-in-a-vm-colima-docker-desktop)).
+> It has not been run on Docker Desktop, on rootless Docker or on Podman.
+> CI stops after the first sandbox, a recreation of the containers and the
+> backup command: the other sections from
 > [Use it from your machine](#use-it-from-your-machine) on describe how
 > Compose and the server behave and have not been run on this stack.
 
@@ -39,8 +46,8 @@ Know what you are getting:
   stay out of its reach.
 
 You need a Linux host with Docker Engine 25 or newer and Docker Compose
-2.23.1 or newer (`docker compose version`), and about 1.1 GB of disk for the
-five images it pulls. On macOS or Windows, read
+2.23.1 or newer (`docker compose version`), and about 1 GB of disk for the
+four images it pulls. On macOS or Windows, read
 [Docker in a VM](#docker-in-a-vm-colima-docker-desktop) first.
 
 ## 1. Download the file
@@ -56,20 +63,19 @@ the repository. Both config files it needs are inside it.
 ## 2. Create the secrets
 
 The file contains no credentials, and `docker compose` refuses to start it
-until four values exist in a file named `.env` beside it. Create them once.
+until three values exist in a file named `.env` beside it. Create them once.
 The commands write nothing if `.env` is already there or if Docker cannot
 run the image:
 
 <!-- test/compose/check.sh runs the next block -->
 ```bash
-img=ghcr.io/different-ai/differently-server:0.1.0-alpha.7
+img=ghcr.io/different-ai/differently-server:0.1.0-alpha.8
 if [ -e .env ]; then
   echo "Keeping the .env that is already here: it holds the only copy of this stack's secrets."
 elif docker run --rm $img version >/dev/null; then
   (umask 077 && cat > .env <<EOF
 DIFFERENTLY_BOOTSTRAP_TOKEN=$(docker run --rm $img token)
 DIFFERENTLY_SECRETS_KEY=$(docker run --rm $img secrets-key)
-POSTGRES_PASSWORD=$(docker run --rm $img token)
 OPENSANDBOX_API_KEY=$(docker run --rm $img token)
 EOF
   )
@@ -80,15 +86,13 @@ fi
 |---|---|
 | `DIFFERENTLY_BOOTSTRAP_TOKEN` | Your operator key: the CLI, the API and the dashboard accept it |
 | `DIFFERENTLY_SECRETS_KEY` | Seals provider credentials you store in Differently later |
-| `POSTGRES_PASSWORD` | The database password. Postgres keeps the one it was first started with |
 | `OPENSANDBOX_API_KEY` | The key Differently uses to call OpenSandbox |
 
-`token` prints a new random value on every run. The two internal passwords
-use it too because its output is safe inside a URL. The file is created
-readable by you alone, and an `.env` that is already there is never
-replaced: new values would not open the database, which keeps its first
-password, or the provider credentials sealed with the first secrets key.
-Keep `.env` with the stack and out of version control.
+`token` prints a new random value on every run; the OpenSandbox key uses it
+too. The file is created readable by you alone, and an `.env` that is
+already there is never replaced: a new secrets key would not open the
+provider credentials sealed with the first one. Keep `.env` with the stack
+and out of version control.
 
 ## 3. Start it
 
@@ -96,8 +100,8 @@ Keep `.env` with the stack and out of version control.
 docker compose up -d --wait
 ```
 
-The first start pulls two more images, Postgres and OpenSandbox; step 2
-already pulled the server's. The command returns when all three are healthy.
+The first start pulls one more image, OpenSandbox; step 2 already pulled
+the server's. The command returns when both are healthy.
 
 ## 4. Run a first sandbox
 
@@ -164,7 +168,7 @@ it, as in [One Linux VM](single-vm.md#5-optional-https-for-your-team).
 | What | Where | Why |
 |---|---|---|
 | The API and dashboard | `127.0.0.1:8080` | Every request needs a key, but nothing outside the host needs it yet |
-| Postgres, the OpenSandbox API, `/metrics` (port 9091 in the `server` container) | Not published | Only the stack's own containers use them |
+| The OpenSandbox API, `/metrics` (port 9091 in the `server` container) | Not published | Only the stack's own containers use them |
 | Each sandbox's control ports, two per sandbox from 40000 to 60000 | The gateway address of Docker's default bridge, `172.17.0.1` | OpenSandbox reaches sandboxes through them. They have no authentication of their own, so this file does not publish them on every interface |
 
 OpenSandbox's own default publishes sandbox ports on every interface; this
@@ -184,7 +188,8 @@ docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'
 
 ### Docker in a VM (Colima, Docker Desktop)
 
-This file has not been run there. OpenSandbox reaches a sandbox at
+It has run once on Colima (2026-11-27, with the setting below) and not on
+Docker Desktop. OpenSandbox reaches a sandbox at
 `host.docker.internal`, which on a Linux host is the bridge gateway. A
 Docker that runs in a VM may point that name at your Mac or PC instead,
 where a port published on `172.17.0.1` does not exist; the first sandbox
@@ -202,7 +207,7 @@ Add these to `.env`, then run `docker compose up -d --force-recreate`:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DIFFERENTLY_VERSION` | `0.1.0-alpha.7` | Image tag of the control plane: a [release](https://github.com/different-ai/differently/releases)'s version without its leading `v` |
+| `DIFFERENTLY_VERSION` | `0.1.0-alpha.8` | Image tag of the control plane: a [release](https://github.com/different-ai/differently/releases)'s version without its leading `v` |
 | `DIFFERENTLY_IMAGE` | `ghcr.io/different-ai/differently-server` | Image repository, for a mirror or your own build |
 | `DIFFERENTLY_BIND` | `127.0.0.1` | Host address the API is published on |
 | `DIFFERENTLY_PORT` | `8080` | Host port of the API |
@@ -217,7 +222,7 @@ Compose asks for an image tag that does not exist and the pull fails:
 The control plane's config (the pool, the profiles `small` and `medium`, a
 one-hour default lifetime, `external: never`) is the `differently` entry
 under `configs:` in the file. Edit it there and run
-`docker compose up -d --force-recreate`, which recreates all three
+`docker compose up -d --force-recreate`, which recreates both
 containers. [OpenSandbox pools](../guides/opensandbox-pools.md) lists the
 pool options.
 
@@ -226,27 +231,52 @@ pool options.
 - **Restart.** Every container restarts with Docker, so the stack comes
   back after a reboot. `docker compose stop` and `docker compose up -d` stop
   and start it by hand.
+- **Where the records are.** Organizations, keys, sandbox records and the
+  audit chain are files in the `differently-data` volume, written by the
+  [file store](../adapters/stores.md#the-file-driver). One server uses them;
+  for several replicas, use Postgres on [Kubernetes](kubernetes.md).
 - **Upgrade.** Set `DIFFERENTLY_VERSION` in `.env` (or download the file
-  again), then `docker compose pull && docker compose up -d`. The server
-  applies database migrations when it starts.
-- **Back up.** `docker compose exec postgres pg_dump -U postgres postgres > differently.sql`,
-  and keep a copy of `.env`.
+  again), then `docker compose pull && docker compose up -d`. The volume
+  stays. A stack installed from a file older than `0.1.0-alpha.8` keeps its
+  records in Postgres: see [From a stack with Postgres](#from-a-stack-with-postgres).
+- **Back up.** Stop the server, copy its data directory out, start it again,
+  and keep a copy of `.env`:
+  `docker compose stop server && docker compose cp server:/var/lib/differently ./differently-backup && docker compose start server`.
 - **Remove.** Delete your sandboxes first: they are containers beside the
   stack, not part of it, so `docker compose down` leaves them running.
-  Then `docker compose down` keeps the database, and
-  `docker compose down -v` deletes it.
+  Then `docker compose down` keeps the records, and
+  `docker compose down -v` deletes them.
+
+### From a stack with Postgres
+
+Through `0.1.0-alpha.7` this file started a Postgres container and kept the
+records there. The file store does not read them, and there is no tool yet
+that copies records from one store to another. Choose one:
+
+- **Keep the records.** Keep the `compose.yaml` you have and change only the
+  version: `DIFFERENTLY_VERSION=0.1.0-alpha.8` in `.env`, then
+  `docker compose pull && docker compose up -d`. Postgres remains a store
+  the server supports.
+- **Start again without Postgres.** Delete your sandboxes, run
+  `docker compose down -v` with the old file, download the new file, and
+  follow this page from step 2 with a new `.env`. Organizations, keys and
+  the audit chain start empty.
+
+Do not start the new file over the old one in the same directory: Compose
+would leave the Postgres container running as an orphan and the server would
+start on an empty store, with the old records out of sight.
 
 ## If something fails
 
 | What you see | Cause |
 |---|---|
-| `required variable ... is missing a value: create .env first` | Step 2 has not run in this directory, or an `.env` without the four values was there first and step 2 kept it: move it away, run step 2, then add your settings back |
+| `required variable ... is missing a value: create .env first` | Step 2 has not run in this directory, or an `.env` without the three values was there first and step 2 kept it: move it away, run step 2, then add your settings back |
 | `docker compose` rejects the file: `start_interval`, or the `content` of a config | Docker Engine older than 25, or Docker Compose older than 2.23.1 |
 | The `server` image cannot be pulled because its tag does not exist | `DIFFERENTLY_VERSION` has a leading `v`, usually exported for the install script: `unset DIFFERENTLY_VERSION` |
 | The `server` container cannot publish port 8080 | Something else uses it: set `DIFFERENTLY_PORT` |
 | A sandbox fails to start with a Docker error about publishing a port | Another bridge address: set `SANDBOX_PUBLISH_HOST` as above |
 | The stack is healthy but a sandbox never becomes ready | OpenSandbox cannot reach the sandbox's published ports. On Colima or Docker Desktop, see [Docker in a VM](#docker-in-a-vm-colima-docker-desktop). On Linux, a firewall that denies incoming connections by default, such as ufw, may block the stack's containers from reaching ports 40000 to 60000 on the bridge gateway. Neither case has been tested |
-| The server cannot sign in to Postgres after `.env` was recreated | The database kept its first password. Restore the old `.env`, or start over with `docker compose down -v` |
+| The `server` container exits and its log says the file store cannot write `/var/lib/differently/store` | The `differently-data` volume belongs to another user, usually because it was created by hand or by an image older than `0.1.0-alpha.8`: remove the volume (`docker compose down -v`) and start again |
 
 `docker compose logs server` and `docker compose logs opensandbox-server`
 show the rest.
