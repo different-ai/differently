@@ -257,7 +257,7 @@ func newRoot() *cobra.Command {
 	root.PersistentFlags().StringVar(&flagKey, "api-key", "", "API key (env DIFFERENTLY_API_KEY)")
 	root.PersistentFlags().StringVar(&flagProject, "project", "", "project ID for org/operator keys (env DIFFERENTLY_PROJECT; default: the one login or admin org create saved for this server)")
 	root.PersistentFlags().StringVarP(&flagOutput, "output", "o", "table", "output format: table or json")
-	root.AddCommand(runCmd(), loginCmd(), sandboxCmd(), projectCmd(), keyCmd(), usageCmd(), adminCmd(), doctorCmd(), discoverCmd(),
+	root.AddCommand(runCmd(), loginCmd(), sandboxCmd(), projectCmd(), keyCmd(), usageCmd(), adminCmd(), doctorCmd(), discoverCmd(), consoleCmd(),
 		&cobra.Command{Use: "whoami", Short: "Show the current key", RunE: func(*cobra.Command, []string) error { return raw("GET", "/v1/me", nil) }},
 		capabilitiesCmd(), templatesCmd(),
 	)

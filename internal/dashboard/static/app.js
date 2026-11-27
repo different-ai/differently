@@ -245,8 +245,13 @@ document.addEventListener("submit", async (e) => {
 $("#logout").addEventListener("click", () => { try { sessionStorage.removeItem("dly-key"); } catch {} location.reload(); });
 window.addEventListener("hashchange", render);
 
+// Behind `differently console` the server on this machine adds the key to
+// every call and says so with a cookie naming its port, so there is no key
+// to ask for here, no sign-out, and a way back to that server's own page.
+const local = document.cookie.split("; ").includes("dly_local=" + location.port);
 async function boot() {
-  if (!key()) { $("#login").hidden = false; return; }
+  if (local) { $("#logout").hidden = true; $("#local-home").hidden = false; }
+  if (!key() && !local) { $("#login").hidden = false; return; }
   try { me = await call("GET", "/v1/me"); } catch (e) { $("#login").hidden = false; $("#login-error").textContent = e.message; return; }
   me.scopes = me.scopes || [];
   $("#login").hidden = true; $("#nav").hidden = false;
