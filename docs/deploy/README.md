@@ -18,6 +18,13 @@ with `--show-commands`. Today it finds GKE clusters in gcloud's current
 project, kubectl's contexts, a sandbox runtime on the current context and a
 local Docker daemon; it does not list Azure or AWS resources yet.
 
+`differently console` shows the same in a browser: it starts a page on your
+machine (127.0.0.1 only, gone when the command stops) with what `discover`
+finds and, once a Differently server answers, its pools and dashboard, using
+the key the CLI already has. Managing does not need a deployed admin app.
+Routing sandboxes, enforcing policy and quotas and keeping the audit record
+still need the server: that is the part you deploy.
+
 Where each path gets Differently from:
 
 - **Laptop:** the `differently-server` binary, from a release or built

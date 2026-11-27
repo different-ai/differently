@@ -8,6 +8,22 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- `differently console`: the local admin, a page the CLI serves on this
+  machine and opens in a browser. It separates managing from orchestrating:
+  it deploys nothing, stores nothing and stops with the command. It shows
+  what `differently discover` finds and, when an orchestrator
+  (`differently-server`) is configured and answers, that orchestrator's
+  version, pools and the built-in dashboard, reached with the key the CLI
+  already uses, which the browser never holds. With no orchestrator it says
+  so, and says what is then missing: routing, placement policy, quotas and
+  the audit record. It listens on 127.0.0.1 only; the address it prints
+  carries a token for the run, and requests from other sites, under another
+  host name or without that session are refused before anything is read or
+  forwarded. Only `/v1/*` and `/version` are forwarded. The dashboard, when
+  served this way, asks for no key and links back to the local page. Tested
+  in process against a stand-in orchestrator, and run in a browser against a
+  demo-mode server: the page, the dashboard, draining a pool through it, and
+  the page with the server stopped.
 - `differently discover`: what the cloud tools on this machine can reach and
   what Differently could run there. It looks for `gcloud`, `kubectl`, `helm`,
   `docker`, `az` and `aws`, reports each one's version and the account,

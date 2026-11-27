@@ -1,0 +1,8 @@
+h1 { margin-top: 28px; } h1:first-child { margin-top: 8px; }
+ol.possible { padding-left: 20px; } ol.possible li { margin-bottom: 12px; }
+ol.possible .why { color: var(--muted); }
+ol.possible code { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; user-select: all; }
+a { color: var(--accent); }
+a.button { display: inline-block; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); text-decoration: none; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 16px; margin: 8px 0 12px; } .facts dt { color: var(--muted); } .facts dd { margin: 0; }
+details { margin-top: 24px; } summary { cursor: pointer; }
