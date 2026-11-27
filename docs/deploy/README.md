@@ -5,7 +5,7 @@
 | You have | Start with | Time to a first sandbox | Status |
 |---|---|---|---|
 | A laptop | [Quickstart](../guides/quickstart.md) (`differently-server --dev`, no isolation) | 2 minutes | tested |
-| Any Docker host | [One Docker host](docker.md): one Compose file with Postgres, OpenSandbox and Differently from published images | 5 minutes | tested in CI |
+| Any Docker host | [One Docker host](docker.md): one Compose file with OpenSandbox and Differently from published images, and no database | 5 minutes | tested in CI |
 | One Linux VM: Azure, AWS, Google Cloud or bare metal | [One Linux VM on any cloud](single-vm.md): k3s, OpenSandbox's charts, Differently's chart | 30 minutes | tested on Azure, last on 2026-10-29 |
 | A Kubernetes cluster (EKS, GKE, AKS, k3s, RKE2) | [Kubernetes with Helm](kubernetes.md), then the notes for [AWS](aws.md), [Google Cloud](gcp.md), [Azure](azure.md) or [bare metal](bare-metal.md) | about an hour | Helm install tested on k3s, last on 2026-10-29; managed clusters documented |
 | No internet access | [Air-gapped](air-gapped.md) | | documented |

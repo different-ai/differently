@@ -7,7 +7,7 @@ It works the same on Azure, AWS, Google Cloud or your own hardware; only the
 command that creates the VM differs.
 
 > **Last verified on 2026-10-29, not with the version installed below.**
-> The commands on this page install `v0.1.0-alpha.7`, which has not been
+> The commands on this page install `v0.1.0-alpha.8`, which has not been
 > installed on this setup. The only published release recorded as installed
 > on it is `v0.1.0-alpha.1`.
 >
@@ -161,7 +161,7 @@ Use the chart and images from the
 [latest release](https://github.com/different-ai/differently/releases):
 
 ```bash
-VERSION=0.1.0-alpha.7
+VERSION=0.1.0-alpha.8
 curl -fsSLO https://github.com/different-ai/differently/releases/download/v$VERSION/differently-$VERSION.tgz
 
 kubectl create namespace differently
@@ -211,7 +211,7 @@ Linux; the script is described in the
 [quickstart](../guides/quickstart.md#1-install)):
 
 ```bash
-curl -fsSL https://different-ai.github.io/differently/install.sh | DIFFERENTLY_VERSION=v0.1.0-alpha.7 sh
+curl -fsSL https://different-ai.github.io/differently/install.sh | DIFFERENTLY_VERSION=v0.1.0-alpha.8 sh
 ```
 
 ```bash

@@ -37,11 +37,13 @@ quota and placement policy, runnable on a laptop.
 | Placement policy engine (filter, rank, fail-closed external) | ✅ | `internal/policy` |
 | Scheduler, retries, reconciler | ✅ | `internal/scheduler` (no package-level tests; covered by server tests) |
 | Memory store | ✅ | `internal/store/memory.go` |
+| Store drivers; file and SQLite stores (one server, no database) | ✅ | `internal/store` (`store.Register`), `internal/store/file`, `internal/store/sqlite`; the conformance suite and the server acceptance scenarios on each (`make test-stores`); a process killed while writing keeps what it acknowledged. Not run: a power cut, a full disk, network filesystems, load ([store drivers](adapters/stores.md)) |
 | Postgres store, migrations, advisory-lock leadership | 🟡 | Implemented; the conformance suite and the server acceptance scenarios need `DIFFERENTLY_TEST_POSTGRES_URL` and run in the CI `postgres conformance and acceptance` job; multi-replica failover not yet run ([E5](backlog.md#e5-postgres-in-ci-failover-and-scale)) |
 | CI and release workflows | 🟡 | `.github/workflows/ci.yml`, `release.yml`; encode the branch model |
 | Tamper-evident audit chain, verify endpoint, JSON-lines mirror | ✅ | `internal/audit`, `internal/auditlog` |
 | Dev mode with `devhost` pool | ✅ | `differently-server --dev` |
 | CLI, dashboard, admin console | ✅ | `cmd/differently`, `internal/dashboard`, `console/` |
+| Local admin and discovery from the CLI | 🟡 | `differently console`, `differently discover`; tested in process, run on macOS. They read and show; nothing is configured through them yet, and discovery has not run against a real cluster |
 | TypeScript and Python SDKs | ✅ | Tested against mock servers (`sdk/*/test*`) |
 | Go client | 🟡 | `pkg/client`, used by the CLI; not yet a polished SDK ([E15](backlog.md#e15-go-sdk-polishing)) |
 | Prometheus metrics, structured logs | ✅ | `internal/metrics` |

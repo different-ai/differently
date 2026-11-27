@@ -6,6 +6,45 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.8] — 2026-11-27
+
+Eighth alpha, published as a GitHub pre-release. Not for production. Its
+subject is adoption: less to deploy before anything works.
+Differently no longer needs a database. The store is a driver; `file` and
+`sqlite` keep the records on one machine, a config that names no store gets
+`file`, and the Compose stack runs without Postgres. Postgres remains the
+store for several replicas.
+Managing no longer needs a deployed admin app: `differently console` serves
+the admin page from the CLI on your machine, and `differently discover` reads
+what your cloud tools can reach and says what could run there.
+Also here: `differently-server --demo`, the sandbox acid test, and the GKE
+work on the experimental `agent-sandbox` adapter.
+What ran for this release: the unit and in-process tests, the store
+conformance suite on every driver, the server acceptance scenarios on the
+memory, file, SQLite and Postgres stores, the end-to-end suite on
+OpenSandbox's Docker runtime, the Compose start and the container image
+builds, in CI on each pull request and on this release's preparation. The
+file and SQLite stores each kept every acknowledged write when the process
+was killed, in tests and with a real server on macOS. The Compose stack on
+the file store was started from the image built from this release's
+preparation; the published image is checked by CI once the tag exists.
+What has not run: a power cut or a full disk under the file or SQLite store,
+either store on a network filesystem or under load, `differently discover`
+against a real Kubernetes or GKE cluster, `differently console` on Linux or
+Windows or against a server over HTTPS, the GKE features of `agent-sandbox`
+on GKE, and everything listed as not run under 0.1.0-alpha.7.
+Upgrading from 0.1.0-alpha.7:
+- **A config file with no `store` section** now keeps its state in files
+  under `dataDir` and will not start if it cannot write there. Say
+  `store: {driver: memory}` to keep the old behaviour.
+- **A Compose stack from an earlier file** has its records in Postgres, and
+  the new file has none. Keep your `compose.yaml` and change only
+  `DIFFERENTLY_VERSION`, or start again with the new file
+  ([From a stack with Postgres](docs/deploy/docker.md#from-a-stack-with-postgres)).
+  No tool copies records between stores yet.
+- Installations on Postgres and Helm installs: no migration, configuration
+  or API change.
+
 ### Added
 
 - A store on SQLite: `store: {driver: sqlite}` keeps Differently's records
@@ -140,6 +179,18 @@ All notable changes are recorded here. The format follows
   `TestLivePodSnapshots` is written but has not run on GKE.
 
 ### Changed
+
+- **The Compose stack has no Postgres.** `deploy/compose/compose.yaml` runs
+  two containers, OpenSandbox and Differently, and Differently keeps its
+  records with the file store in a volume, `differently-data`. `.env` has
+  three secrets, not four: `POSTGRES_PASSWORD` is gone. Back up by stopping
+  the server and copying `/var/lib/differently` out of its container
+  ([guide](docs/deploy/docker.md#keep-it-running)). A stack installed from
+  an earlier file keeps its records in Postgres and is not converted: see
+  the upgrade note above. `test/compose/check.sh` now also checks that no
+  other service runs, that the server is on the file store, that the
+  installation and the audit chain are the same after the containers are
+  recreated, and that the guide's backup gives a copy of the records.
 
 - **A config file that names no store now keeps its state.** It gets the
   `file` store, under `dataDir` (`/var/lib/differently` unless set), where it
@@ -1429,7 +1480,8 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.7...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.8...pre-release
+[0.1.0-alpha.8]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.8
 [0.1.0-alpha.7]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.5

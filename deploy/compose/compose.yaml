@@ -1,23 +1,23 @@
-# Differently on one Docker host, from published images: Postgres, an
-# OpenSandbox server with the Docker runtime, and the Differently control
-# plane. Sandboxes are containers on this host. This file is all you download.
+# Differently on one Docker host, from published images: an OpenSandbox
+# server with the Docker runtime, and the Differently control plane, which
+# keeps its records in a volume. There is no database to run. Sandboxes are
+# containers on this host. This file is all you download.
 #
 # Guide: https://different-ai.github.io/differently/docs/deploy/docker/
 # Needs: Docker Engine 25 or newer and Docker Compose 2.23.1 or newer (the
 #        first with inline `configs`), on a Linux host.
 #
-# 1. Create the four secrets, once, in a file named `.env` beside this one.
+# 1. Create the three secrets, once, in a file named `.env` beside this one.
 #    Nothing in this file is a default credential, and the stack refuses to
 #    start without them. An `.env` that is already there is kept:
 #
-#      img=ghcr.io/different-ai/differently-server:0.1.0-alpha.7
+#      img=ghcr.io/different-ai/differently-server:0.1.0-alpha.8
 #      if [ -e .env ]; then
 #        echo "Keeping the .env that is already here: it holds the only copy of this stack's secrets."
 #      elif docker run --rm $img version >/dev/null; then
 #        (umask 077 && cat > .env <<EOF
 #      DIFFERENTLY_BOOTSTRAP_TOKEN=$(docker run --rm $img token)
 #      DIFFERENTLY_SECRETS_KEY=$(docker run --rm $img secrets-key)
-#      POSTGRES_PASSWORD=$(docker run --rm $img token)
 #      OPENSANDBOX_API_KEY=$(docker run --rm $img token)
 #      EOF
 #        )
@@ -40,22 +40,6 @@
 name: differently
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?create .env first, as described at the top of compose.yaml}"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-
-  # OpenSandbox starts each sandbox as a sibling container through the Docker
-  # socket, so this service controls the host's Docker daemon. Its API is not
-  # published on the host: only the control plane calls it.
   opensandbox-server:
     image: opensandbox/server:release-1.2.0
     restart: unless-stopped
@@ -76,7 +60,7 @@ services:
       retries: 30
 
   server:
-    image: "${DIFFERENTLY_IMAGE:-ghcr.io/different-ai/differently-server}:${DIFFERENTLY_VERSION:-0.1.0-alpha.7}"
+    image: "${DIFFERENTLY_IMAGE:-ghcr.io/different-ai/differently-server}:${DIFFERENTLY_VERSION:-0.1.0-alpha.8}"
     restart: unless-stopped
     command: ["--config", "/etc/differently/config.yaml"]
     environment:
@@ -84,7 +68,6 @@ services:
       DIFFERENTLY_BOOTSTRAP_TOKEN: "${DIFFERENTLY_BOOTSTRAP_TOKEN:?create .env first, as described at the top of compose.yaml}"
       # Seals provider credentials stored through the API.
       DIFFERENTLY_SECRETS_KEY: "${DIFFERENTLY_SECRETS_KEY:?create .env first, as described at the top of compose.yaml}"
-      DIFFERENTLY_DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres?sslmode=disable"
       DIFFERENTLY_OPENSANDBOX_API_KEY: "${OPENSANDBOX_API_KEY}"
       # For the CLI in this image (`docker compose exec server differently ...`)
       # and for the health check below. The same value as the bootstrap token.
@@ -92,11 +75,11 @@ services:
     configs:
       - source: differently
         target: /etc/differently/config.yaml
+    volumes:
+      - differently-data:/var/lib/differently
     ports:
       - "${DIFFERENTLY_BIND:-127.0.0.1}:${DIFFERENTLY_PORT:-8080}:8080"
     depends_on:
-      postgres:
-        condition: service_healthy
       opensandbox-server:
         condition: service_healthy
     # Healthy means the API answers and accepts the operator key.
@@ -109,7 +92,9 @@ services:
       start_interval: 2s
 
 volumes:
-  postgres-data:
+  # Differently's records: organizations, keys, sandbox records, the audit
+  # chain. `docker compose down` keeps it; `down -v` deletes it.
+  differently-data:
 
 configs:
   # The control plane's config: one private OpenSandbox pool. Edit it here and
@@ -118,8 +103,11 @@ configs:
   differently:
     content: |
       listen: ":8080"
+      # The file store: records in files under the data directory, which is
+      # the differently-data volume. One server, no database.
       store:
-        driver: postgres
+        driver: file
+      dataDir: /var/lib/differently
       pools:
         - name: opensandbox
           adapter: opensandbox

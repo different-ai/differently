@@ -22,9 +22,9 @@ network, is for its documentation to answer; it has not been checked here.
 
 | Image | Needed for |
 |---|---|
-| `ghcr.io/different-ai/differently-server:0.1.0-alpha.7` | Control plane, migrations, preflight |
-| `ghcr.io/different-ai/differently-cli:0.1.0-alpha.7` | `helm test` only |
-| `ghcr.io/different-ai/differently-console:0.1.0-alpha.7` | Only with `console.enabled` |
+| `ghcr.io/different-ai/differently-server:0.1.0-alpha.8` | Control plane, migrations, preflight |
+| `ghcr.io/different-ai/differently-cli:0.1.0-alpha.8` | `helm test` only |
+| `ghcr.io/different-ai/differently-console:0.1.0-alpha.8` | Only with `console.enabled` |
 | `docker.io/library/postgres:17` | Only with the evaluation-only `postgresql.embedded` |
 | `docker.io/library/busybox:1.37` | Only for the `kubectl debug` checks in these guides |
 | OpenSandbox's server, `execd` and other component images | Your OpenSandbox installation; see step 3 |
@@ -36,9 +36,9 @@ Copy by digest so the internal tags point at exactly what you reviewed. Use
 ```sh
 REG=registry.internal.example.com
 for img in differently-server differently-cli; do
-  skopeo copy --all docker://ghcr.io/different-ai/$img:0.1.0-alpha.7 docker://$REG/different-ai/$img:0.1.0-alpha.7
+  skopeo copy --all docker://ghcr.io/different-ai/$img:0.1.0-alpha.8 docker://$REG/different-ai/$img:0.1.0-alpha.8
 done
-skopeo inspect docker://$REG/different-ai/differently-server:0.1.0-alpha.7 | jq -r .Digest
+skopeo inspect docker://$REG/different-ai/differently-server:0.1.0-alpha.8 | jq -r .Digest
 ```
 
 `global.imageRegistry` replaces only the registry part of each image, so keep

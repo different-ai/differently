@@ -164,7 +164,7 @@ func (x *discoverer) docker() (up bool) {
 	t.PointedAt = "a running daemon, version " + firstLine(v)
 	x.found("docker", "Docker host", "this machine", "daemon "+firstLine(v))
 	x.possible("Run the whole stack on this Docker host",
-		"a Docker daemon is running: one Compose file starts Postgres, OpenSandbox and Differently",
+		"a Docker daemon is running: one Compose file starts OpenSandbox and Differently, with no database to run",
 		docsBase+"deploy/docker/")
 	return true
 }

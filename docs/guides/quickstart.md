@@ -103,10 +103,6 @@ Every command is in the [CLI reference](https://different-ai.github.io/different
 
 ## Watch placement with pretend providers
 
-<!-- Remove this note in the release that ships `--demo` (the first after v0.1.0-alpha.7); do not bump its version. -->
-> `--demo` is newer than `v0.1.0-alpha.7`, the latest release. Until the
-> next one, build from source and run `make demo`.
-
 ```bash
 differently-server --demo
 ```
@@ -167,7 +163,7 @@ you install with its own chart or manifests.
 
 | You have | Follow | What you get |
 |---|---|---|
-| A Docker host | [One Docker host](../deploy/docker.md): download one file, `docker compose up -d --wait` | Postgres, Differently and OpenSandbox from published images; sandboxes are containers |
+| A Docker host | [One Docker host](../deploy/docker.md): download one file, `docker compose up -d --wait` | Differently and OpenSandbox from published images, with no database to run; sandboxes are containers |
 | One Linux VM | [One Linux VM on any cloud](../deploy/single-vm.md) | k3s, OpenSandbox and Differently from release artifacts |
 | A Kubernetes cluster | [Kubernetes](../deploy/kubernetes.md) | The Helm chart next to an OpenSandbox server |
 

@@ -47,7 +47,7 @@ Apache-2.0, fully self-hosted, no telemetry. Built by the
   <br><sub>▶ <a href="https://different-ai.github.io/differently/#video">Watch the 36-second intro</a></sub>
 </p>
 
-> **Pre-release ([`v0.1.0-alpha.7`](https://github.com/different-ai/differently/releases)).**
+> **Pre-release ([`v0.1.0-alpha.8`](https://github.com/different-ai/differently/releases)).**
 > The whole platform is implemented and tested end to end against real
 > OpenSandbox servers (Docker, Kubernetes and Fast Sandbox microVM
 > runtimes). It isn't ready for production workloads yet: see
@@ -117,7 +117,7 @@ await sandbox.delete();
 
 | Step up to | How | Time |
 |---|---|---|
-| The real stack on any Docker host | [One file and `docker compose up -d --wait`](docs/deploy/docker.md): Postgres, Differently and an OpenSandbox server from published images | about 5 minutes |
+| The real stack on any Docker host | [One file and `docker compose up -d --wait`](docs/deploy/docker.md): Differently and an OpenSandbox server from published images, with no database to run | about 5 minutes |
 | A server for your team | [One Linux VM on any cloud](docs/deploy/single-vm.md): k3s, OpenSandbox and Differently | about 30 minutes |
 | Your Kubernetes cluster | The [Helm chart](docs/deploy/kubernetes.md) and images from the [latest release](https://github.com/different-ai/differently/releases) | |
 
