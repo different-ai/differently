@@ -35,6 +35,7 @@ import (
 	"github.com/different-ai/differently/internal/store"
 	_ "github.com/different-ai/differently/internal/store/file"     // registers the file driver
 	_ "github.com/different-ai/differently/internal/store/postgres" // registers the postgres driver
+	_ "github.com/different-ai/differently/internal/store/sqlite"   // registers the sqlite driver
 	"github.com/different-ai/differently/internal/version"
 	"github.com/different-ai/differently/internal/wiring"
 )

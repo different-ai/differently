@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/different-ai/differently/internal/store"
+	"github.com/different-ai/differently/internal/store/lockfile"
 	"github.com/different-ai/differently/pkg/api"
 )
 
@@ -60,8 +61,6 @@ const (
 	// rewritten and the journal emptied.
 	defaultCompactAt = 8 << 20
 )
-
-var errLocked = errors.New("another process holds the lock")
 
 // Store keeps a memory store's state in a directory.
 type Store struct {
@@ -107,15 +106,11 @@ func Open(dir string) (*Store, error) {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return nil, err
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, lockName), os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
+	lock, err := lockfile.Acquire(filepath.Join(dir, lockName))
+	if errors.Is(err, lockfile.ErrLocked) {
+		return nil, fmt.Errorf("the store in %s is in use by another differently-server; the file driver supports one at a time", dir)
 	}
-	if err := lockFile(lock); err != nil {
-		lock.Close()
-		if errors.Is(err, errLocked) {
-			return nil, fmt.Errorf("the store in %s is in use by another differently-server; the file driver supports one at a time", dir)
-		}
+	if err != nil {
 		return nil, fmt.Errorf("lock %s: %w", dir, err)
 	}
 	s := &Store{mem: store.NewMemory(), dir: dir, lock: lock, compactAt: defaultCompactAt}

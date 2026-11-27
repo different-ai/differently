@@ -8,6 +8,18 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- A store on SQLite: `store: {driver: sqlite}` keeps Differently's records
+  in one database file, `<dataDir>/sqlite/differently.db`, with no database
+  service ([the sqlite driver](docs/adapters/stores.md#the-sqlite-driver)).
+  It is the postgres driver's queries and tables in SQLite's dialect; every
+  write is one transaction and one runs at a time, commits are synced, and a
+  second server on the same file is refused. The file can be read with
+  `sqlite3` while the server runs. It supports one replica. It is built on
+  `modernc.org/sqlite`, which is Go with no C library, and adds about 4 MB
+  to `differently-server` (14.9 to 18.6 MB stripped on macOS arm64). Tested
+  with the conformance suite, the server acceptance scenarios
+  (`make test-stores`), a process killed while writing, and a real server
+  killed and restarted on macOS. The Helm chart does not offer it yet.
 - A store that needs no database: `store: {driver: file}` keeps
   Differently's records in files under `<dataDir>/store`
   ([the file driver](docs/adapters/stores.md#the-file-driver)). The rules
