@@ -1,10 +1,12 @@
 package config
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/pkg/api"
 )
 
@@ -200,5 +202,20 @@ func TestPoolBudgetNeedsACostModel(t *testing.T) {
 		if _, err := Parse(pool(extra)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("want an error containing %q, got %v", want, err)
 		}
+	}
+}
+
+// The store driver is checked against what the build registered, not a fixed
+// list: a driver a build adds is accepted, and one it lacks is refused with
+// the names it has.
+func TestStoreDriverMustBeRegistered(t *testing.T) {
+	_, err := Parse([]byte("store: {driver: etcd}\n"))
+	if err == nil || !strings.Contains(err.Error(), `store.driver "etcd" is not in this build (it has: `) || !strings.Contains(err.Error(), "memory") {
+		t.Fatalf("unregistered driver: %v", err)
+	}
+	store.Register("config-test-driver", store.Driver{Open: func(context.Context, store.Options) (store.Store, error) { return store.NewMemory(), nil }})
+	c, err := Parse([]byte("store: {driver: config-test-driver}\n"))
+	if err != nil || c.Store.Driver != "config-test-driver" {
+		t.Fatalf("registered driver: %+v, %v", c.Store, err)
 	}
 }

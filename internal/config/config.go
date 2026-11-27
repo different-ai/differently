@@ -16,6 +16,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/different-ai/differently/internal/store"
 	"github.com/different-ai/differently/pkg/api"
 )
 
@@ -44,7 +45,9 @@ type Config struct {
 
 // StoreConfig selects persistence.
 type StoreConfig struct {
-	Driver string `json:"driver"` // memory | postgres
+	// Driver names a registered store driver: memory and postgres in the
+	// default build. See internal/store.Register.
+	Driver string `json:"driver"`
 	DSNEnv string `json:"dsnEnv,omitempty"`
 }
 
@@ -513,8 +516,10 @@ func (c Config) Validate() error {
 			bad("cors.allowedOrigins: %q must be an exact origin such as https://console.example.com", o)
 		}
 	}
-	if c.Store.Driver != "memory" && c.Store.Driver != "postgres" {
-		bad("store.driver must be memory or postgres, got %q", c.Store.Driver)
+	// The drivers are whatever this build registered: the name is checked
+	// against them, not against a fixed list.
+	if _, ok := store.Lookup(c.Store.Driver); !ok {
+		bad("store.driver %q is not in this build (it has: %s)", c.Store.Driver, strings.Join(store.Drivers(), ", "))
 	}
 	classes := map[string]bool{}
 	for _, cl := range c.Classifications {

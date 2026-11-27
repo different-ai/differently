@@ -57,6 +57,7 @@ export default defineConfig({
           { label: 'Python SDK', link: '/docs/sdks/python/' },
           { label: 'Go SDK', link: '/docs/sdks/go/' },
           { label: 'Adapter specification', link: '/docs/adapters/specification/' },
+          { label: 'Store drivers', link: '/docs/adapters/stores/' },
         ] },
         { label: 'Providers', items: [{ autogenerate: { directory: 'docs/providers' } }] },
         { label: 'Deploy and operate', items: [{ autogenerate: { directory: 'docs/deploy' } }] },
