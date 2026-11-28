@@ -6,6 +6,33 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+## [0.1.0-alpha.9] — 2026-11-27
+
+Ninth alpha, published as a GitHub pre-release. Not for production. One
+subject: an installation's setup as a file in the repository.
+`differently.yaml` holds the pools work may run on, the placement policies,
+the templates, and the organizations with their projects and quotas.
+`differently diff` says what differs between the file and the server,
+`differently apply` makes the server match, and applying again changes
+nothing. `differently console` shows the same comparison on its page, with
+a button that applies it.
+Nothing in `differently-server` changed since 0.1.0-alpha.8: the commands
+use the admin API that release already has, so the new CLI works against a
+server of that release.
+What ran for this release: the unit and in-process tests, with the file
+commands and the local admin's page run against the real control plane in
+one process; the Postgres conformance and acceptance job, the end-to-end
+suite on OpenSandbox's Docker runtime, the Compose start and the container
+image builds, in CI on each pull request (#158, #159, #160) and on this
+release's preparation. The commands were also run by hand against a
+dev-mode server, and the page in a browser against a demo-mode server.
+What has not run: `diff` and `apply` against a real provider's pool, a
+server on Postgres or a server with a secrets key; two people applying
+different files at once; the local admin on Linux or Windows; and
+everything listed as not run under 0.1.0-alpha.8, which this release does
+not change.
+Upgrading from 0.1.0-alpha.8: no migration, configuration or API change.
+
 ### Added
 
 - `differently diff` and `differently apply`: an installation's setup in a
@@ -1522,7 +1549,8 @@ OpenSandbox server on its Docker runtime.
     beyond unit and in-process API tests: no live provider account, real
     cluster or multi-replica run yet.
 
-[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.8...pre-release
+[Unreleased]: https://github.com/different-ai/differently/compare/v0.1.0-alpha.9...pre-release
+[0.1.0-alpha.9]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.9
 [0.1.0-alpha.8]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.8
 [0.1.0-alpha.7]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/different-ai/differently/releases/tag/v0.1.0-alpha.6
