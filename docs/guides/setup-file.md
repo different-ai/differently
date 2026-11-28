@@ -9,11 +9,6 @@ differently diff     # what differs between differently.yaml and the server
 differently apply    # make the server match
 ```
 
-<!-- Remove this note in the release that ships `differently apply` (the first after v0.1.0-alpha.8); do not bump its version. -->
-> `differently diff` and `differently apply` are newer than `v0.1.0-alpha.8`,
-> the latest release. Until the next one, build the CLI from source
-> (`make build`).
-
 Applying the same file again changes nothing, so it can run on every merge.
 It uses the admin API the other commands use, with an operator key
 (`differently login`, or `DIFFERENTLY_URL` and `DIFFERENTLY_API_KEY`).

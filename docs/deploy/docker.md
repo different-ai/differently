@@ -69,7 +69,7 @@ run the image:
 
 <!-- test/compose/check.sh runs the next block -->
 ```bash
-img=ghcr.io/different-ai/differently-server:0.1.0-alpha.8
+img=ghcr.io/different-ai/differently-server:0.1.0-alpha.9
 if [ -e .env ]; then
   echo "Keeping the .env that is already here: it holds the only copy of this stack's secrets."
 elif docker run --rm $img version >/dev/null; then
@@ -207,7 +207,7 @@ Add these to `.env`, then run `docker compose up -d --force-recreate`:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DIFFERENTLY_VERSION` | `0.1.0-alpha.8` | Image tag of the control plane: a [release](https://github.com/different-ai/differently/releases)'s version without its leading `v` |
+| `DIFFERENTLY_VERSION` | `0.1.0-alpha.9` | Image tag of the control plane: a [release](https://github.com/different-ai/differently/releases)'s version without its leading `v` |
 | `DIFFERENTLY_IMAGE` | `ghcr.io/different-ai/differently-server` | Image repository, for a mirror or your own build |
 | `DIFFERENTLY_BIND` | `127.0.0.1` | Host address the API is published on |
 | `DIFFERENTLY_PORT` | `8080` | Host port of the API |
@@ -254,7 +254,7 @@ records there. The file store does not read them, and there is no tool yet
 that copies records from one store to another. Choose one:
 
 - **Keep the records.** Keep the `compose.yaml` you have and change only the
-  version: `DIFFERENTLY_VERSION=0.1.0-alpha.8` in `.env`, then
+  version: `DIFFERENTLY_VERSION=0.1.0-alpha.9` in `.env`, then
   `docker compose pull && docker compose up -d`. Postgres remains a store
   the server supports.
 - **Start again without Postgres.** Delete your sandboxes, run
