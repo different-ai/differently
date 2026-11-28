@@ -44,7 +44,7 @@ quota and placement policy, runnable on a laptop.
 | Dev mode with `devhost` pool | ✅ | `differently-server --dev` |
 | CLI, dashboard, admin console | ✅ | `cmd/differently`, `internal/dashboard`, `console/` |
 | Local admin and discovery from the CLI | 🟡 | `differently console`, `differently discover`; tested in process, run on macOS. The page reads, and applies the setup file; discovery has not run against a real cluster |
-| The setup in a file | 🟡 | `differently diff` and `differently apply` with `differently.yaml`: pools, policies, templates, organizations, projects and quotas ([guide](guides/setup-file.md)); tested against the real control plane in one process and a dev-mode server. Not run against a real provider's pool or a server on Postgres; API keys and stored secrets are not in the file |
+| The setup in a file | ✅ live (one stack) | `differently diff` and `differently apply` with `differently.yaml`: pools, policies, templates, organizations, projects and quotas ([guide](guides/setup-file.md)); tested against the real control plane in one process, and on 2026-11-27 the released CLI applied a file to the released Docker host stack, where a sandbox ran from the applied template in the applied project. Not run with an external provider's pool or on Postgres; API keys and stored secrets are not in the file |
 | TypeScript and Python SDKs | ✅ | Tested against mock servers (`sdk/*/test*`) |
 | Go client | 🟡 | `pkg/client`, used by the CLI; not yet a polished SDK ([E15](backlog.md#e15-go-sdk-polishing)) |
 | Prometheus metrics, structured logs | ✅ | `internal/metrics` |
