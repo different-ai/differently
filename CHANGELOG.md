@@ -6,6 +6,29 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Added
+
+- `differently diff` and `differently apply`: an installation's setup in a
+  file in the repository ([guide](docs/guides/setup-file.md)).
+  `differently.yaml` holds the pools work may run on (the same shape as the
+  server config file's `pools`), the global placement policy and the
+  templates. `diff` prints what differs and changes nothing; `apply` makes
+  the server match through the admin API, and applying the same file again
+  changes nothing. A field the file leaves out stays as the server has it,
+  and a pool or template the file does not name is left alone unless
+  `--prune` is given. A pool's attestations, a template's images and the
+  policy are exact when the file gives them, because each decides where
+  work may run. `apply` changes nothing when the file asks for what the API
+  cannot do (an existing pool's adapter, trust, labels or config, or
+  anything the server's own config file declares). The calls are made in
+  order and are not one transaction: a refusal part-way leaves the earlier
+  ones, and applying again goes on. `diff --exit-code` and `-o json` are
+  for CI. Credentials are never in the file. Organizations, projects,
+  quotas, scoped policies, keys and secrets are not covered yet. Tested
+  against the real control plane in one process and by hand against a
+  dev-mode server; not against a real provider's pool or a server on
+  Postgres.
+
 ## [0.1.0-alpha.8] — 2026-11-27
 
 Eighth alpha, published as a GitHub pre-release. Not for production. Its

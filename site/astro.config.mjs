@@ -48,6 +48,7 @@ export default defineConfig({
           { label: 'Organization onboarding', link: '/docs/guides/organization-onboarding/' },
           { label: 'Hybrid overflow', link: '/docs/guides/hybrid-overflow/' },
           { label: 'Keys and providers', link: '/docs/guides/keys-and-providers/' },
+          { label: 'Keep the setup in a file', link: '/docs/guides/setup-file/' },
           { label: 'OpenWork on Differently', link: '/docs/guides/openwork/' },
         ] },
         { label: 'Reference', items: [
