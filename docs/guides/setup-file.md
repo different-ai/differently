@@ -180,5 +180,14 @@ changes, exact sets, what cannot be applied, `--prune`, a refusal part-way,
 a new organization with its projects and policies, quotas and scoped
 policies changed whole, two organizations with one name, the local admin's
 page and its Apply) and by hand against a dev-mode server with `fake` and
-`devhost` pools, the page in a browser against a demo-mode server. Not run against
-a real provider's pool or a server on Postgres.
+`devhost` pools, the page in a browser against a demo-mode server.
+
+On 2026-11-27 the released `v0.1.0-alpha.9` CLI applied a file to the
+released [Docker host stack](../deploy/docker.md) (OpenSandbox's Docker
+runtime, the file store, on Colima): a template, an organization with a
+quota and a project. A second apply changed nothing, a sandbox created in
+that project from that template ran on the real pool, a quota edited in the
+file was applied, and the audit chain verified afterwards.
+
+Not run: an external provider's pool (the file only named the stack's own,
+config-declared pool), a server on Postgres, and `--prune` on a real stack.

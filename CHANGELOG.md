@@ -6,6 +6,14 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased] — on `pre-release`
 
+### Changed (documentation)
+
+- The setup-file guide and the roadmap record a run against a real stack:
+  on 2026-11-27 the released `v0.1.0-alpha.9` CLI applied a file to the
+  released Docker host stack, and a sandbox ran from the applied template in
+  the applied project. An external provider's pool, Postgres and `--prune`
+  on a real stack have still not run.
+
 ## [0.1.0-alpha.9] — 2026-11-27
 
 Ninth alpha, published as a GitHub pre-release. Not for production. One
