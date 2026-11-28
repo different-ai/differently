@@ -15,6 +15,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -78,6 +79,9 @@ type localAdmin struct {
 	// another site's name resolved to this machine.
 	hosts map[string]bool
 	orch  settings
+	// setupFile is the setup file the page shows and can apply
+	// (console_setup.go): an absolute path, which need not exist.
+	setupFile string
 }
 
 func newLocalAdmin(orch settings, addr net.Addr) (*localAdmin, error) {
@@ -105,6 +109,8 @@ func (a *localAdmin) handler() http.Handler {
 	mux.HandleFunc("GET /local/orchestrator", func(w http.ResponseWriter, r *http.Request) {
 		writeLocalJSON(w, a.orchestrator(r.Context()))
 	})
+	mux.HandleFunc("GET /local/setup", a.getSetup)
+	mux.HandleFunc("POST /local/setup/apply", a.applySetup)
 	proxy := a.proxy()
 	mux.Handle("/v1/", proxy)
 	mux.Handle("GET /version", proxy)
@@ -272,6 +278,7 @@ var openBrowser = func(address string) error {
 func consoleCmd() *cobra.Command {
 	var port int
 	var noOpen bool
+	var file string
 	cmd := &cobra.Command{
 		Use:   "console",
 		Short: "Open the local admin: a page on this machine for what you have and what runs",
@@ -282,6 +289,11 @@ It shows what "differently discover" finds through your own cloud tools and,
 when an orchestrator is configured and answers, that orchestrator: its pools
 and its dashboard, reached with the key this CLI already uses. The browser
 never holds the key.
+
+It also shows the setup file (differently.yaml in this directory, or -f):
+what differs between it and the orchestrator, as "differently diff" prints
+it, with a button that applies it as "differently apply" does. The button
+never deletes: pools and templates the file does not name are left alone.
 
 It needs no orchestrator. Without one there is nothing to route sandboxes,
 enforce placement policy or quotas, or keep the audit record: the local admin
@@ -297,6 +309,10 @@ run; other sites, other names for this machine and other users are refused.`,
 			}
 			a, err := newLocalAdmin(load(), ln.Addr())
 			if err != nil {
+				ln.Close()
+				return err
+			}
+			if a.setupFile, err = filepath.Abs(file); err != nil {
 				ln.Close()
 				return err
 			}
@@ -321,5 +337,6 @@ run; other sites, other names for this machine and other users are refused.`,
 	}
 	cmd.Flags().IntVar(&port, "port", 7878, "port on 127.0.0.1 (0 picks a free one)")
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "print the address without opening a browser")
+	cmd.Flags().StringVarP(&file, "file", "f", defaultApplyFile, "the setup file the page shows and can apply")
 	return cmd
 }

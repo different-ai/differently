@@ -58,6 +58,55 @@ async function machine() {
   $("#commands-box").hidden = !d.commands.length;
 }
 
-function look() { orchestrator(); machine(); }
+const ACTS = { create: ["create", "+ create"], change: ["change", "~ change"], delete: ["delete", "- delete"], blocked: ["blocked", "cannot apply"], extra: ["extra", "not in the file"] };
+function planTable(changes) {
+  return `<div class="scroll"><table class="plan"><tr><th>What</th><th>Kind</th><th>Name</th><th>Details</th></tr>${changes.map((c) => {
+    const [cls, label] = ACTS[c.action] || ["", c.action];
+    const details = c.action === "extra" ? "" : `<ul>${(c.details || []).map((d) => `<li>${esc(d)}</li>`).join("")}</ul>`;
+    return `<tr><td class="act ${cls}">${esc(label)}</td><td>${esc(c.kind)}</td><td><code>${esc(c.name)}</code></td><td>${details}</td></tr>`;
+  }).join("")}</table></div>`;
+}
+function showSetup(s, note) {
+  const box = $("#setup");
+  const file = `<code>${esc(s.file)}</code>`;
+  if (!s.exists && !s.problem) {
+    box.innerHTML = `<div class="notice"><strong>No setup file here.</strong> ${file} does not exist.</div>
+      <p class="tag">Create it to keep where work may run in your repository, then “Look again”. Start <code>differently console</code> in the directory that holds it, or name it with <code>-f</code>.
+      <a href="https://different-ai.github.io/differently/docs/guides/setup-file/" target="_blank" rel="noreferrer">What goes in it</a></p>`;
+    return;
+  }
+  if (s.problem) {
+    box.innerHTML = `<p class="tag">${file}</p><div class="notice"><strong>It could not be compared.</strong> ${esc(s.problem)}</div>`;
+    return;
+  }
+  const rows = s.changes.length ? planTable(s.changes) : "";
+  const can = s.toApply > 0 && s.blocked === 0;
+  const button = s.toApply > 0 || s.blocked > 0
+    ? `<p><button id="apply" class="primary" ${can ? "" : "disabled"}>Apply ${s.toApply} change${s.toApply === 1 ? "" : "s"}</button>
+       <span class="tag">${s.blocked > 0 ? "Nothing can be applied while something in the file cannot be." : "The same as <code>differently apply</code>. It never deletes: what the file does not name is left alone."}</span></p>`
+    : "";
+  box.innerHTML = `<p class="tag">${file}</p>${note || ""}${rows}<p>${esc(s.summary)}</p>${button}`;
+  const apply = $("#apply");
+  if (apply) apply.addEventListener("click", () => applySetup(s.plan));
+}
+async function setup() {
+  try { showSetup(await get("/local/setup")); } catch (e) { $("#setup").innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+}
+async function applySetup(plan) {
+  const apply = $("#apply");
+  apply.disabled = true; apply.textContent = "Applying…";
+  let out;
+  try {
+    const res = await fetch("/local/setup/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan }) });
+    out = await res.json();
+  } catch (e) { out = { applied: 0, problem: e.message }; }
+  const note = out.problem
+    ? `<div class="notice"><strong>${out.applied ? `Applied ${out.applied}, then stopped.` : "Not applied."}</strong> ${esc(out.problem)}</div>`
+    : `<div class="notice"><strong>Applied ${out.applied} change${out.applied === 1 ? "" : "s"}.</strong></div>`;
+  if (out.setup) showSetup(out.setup, note); else { await setup(); $("#setup").insertAdjacentHTML("afterbegin", note); }
+  orchestrator();
+}
+
+function look() { orchestrator(); setup(); machine(); }
 $("#refresh").addEventListener("click", look);
 look();

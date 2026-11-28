@@ -37,6 +37,16 @@ All notable changes are recorded here. The format follows
   twice cannot be applied. A key the file writes in another case
   (`maxconcurrency`) is read as the same key, as the parser and the server
   read it. API keys, stored secrets and watched stacks are not in the file.
+- `differently console` shows the setup file: the file beside the command
+  (or `-f`) compared with the orchestrator, as `differently diff` prints it,
+  and an Apply button that does what `differently apply` does. The button
+  never deletes, applies nothing while something in the file cannot be
+  applied, and applies only the plan the page showed: if the file or the
+  server changed since, it is refused. The endpoint behind it is the first
+  of the local admin's own that changes anything, so beyond the run's
+  session it takes only a JSON body, which a form on another site cannot
+  send. Tested against the real control plane in one process and in a
+  browser against a demo-mode server.
 
 ## [0.1.0-alpha.8] — 2026-11-27
 

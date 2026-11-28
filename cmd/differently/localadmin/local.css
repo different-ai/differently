@@ -6,3 +6,6 @@ a { color: var(--accent); }
 a.button { display: inline-block; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); text-decoration: none; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 16px; margin: 8px 0 12px; } .facts dt { color: var(--muted); } .facts dd { margin: 0; }
 details { margin-top: 24px; } summary { cursor: pointer; }
+.plan td.act { white-space: nowrap; } .plan .create { color: var(--accent); } .plan .delete, .plan .blocked { color: var(--bad); } .plan .change { color: var(--warn); } .plan .extra { color: var(--muted); }
+.plan ul { margin: 0; padding-left: 16px; } .plan li { font: 12px ui-monospace, monospace; }
+button.primary { border-color: var(--accent); color: var(--accent); font-weight: 600; } button:disabled { cursor: default; color: var(--muted); border-color: var(--line); }

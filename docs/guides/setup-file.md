@@ -153,6 +153,16 @@ is partly in the old setup and partly in the new one.
 A deletion the server refuses (a pool that still hosts sandboxes, or that a
 template can run only on) stops the apply in the same way.
 
+## In the local admin
+
+`differently console`, started in the directory that holds the file (or
+with `-f`), shows the same comparison on its page: each difference, what
+cannot be applied, and what the file does not name. Its Apply button does
+what `differently apply` does and never deletes; `--prune` is the command
+line's alone. The button applies the plan the page shows: if the file or
+the server has changed since the page read them, it applies nothing and
+asks you to look again.
+
 ## In CI
 
 ```bash
@@ -173,6 +183,7 @@ already.
 Tested against the real control plane in one process (first apply, repeat,
 changes, exact sets, what cannot be applied, `--prune`, a refusal part-way,
 a new organization with its projects and policies, quotas and scoped
-policies changed whole, two organizations with one name) and by hand
-against a dev-mode server with `fake` and `devhost` pools. Not run against
+policies changed whole, two organizations with one name, the local admin's
+page and its Apply) and by hand against a dev-mode server with `fake` and
+`devhost` pools, the page in a browser against a demo-mode server. Not run against
 a real provider's pool or a server on Postgres.
