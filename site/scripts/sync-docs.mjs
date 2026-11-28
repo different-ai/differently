@@ -241,7 +241,7 @@ ${link('sdks/go/', 'the Go client the CLI is built on')}
 ${link('guides/baselines/', 'one template name for each provider\'s own image or snapshot, and what stays on its pool')}
 ${link('guides/organization-onboarding/', 'organizations, projects, quotas, scoped keys and policies')}
 ${link('guides/keys-and-providers/', 'storing provider keys, switching providers, rotating keys')}
-${link('guides/setup-file/', 'pools, the global policy and templates in a file, with differently diff and apply')}
+${link('guides/setup-file/', 'pools, policies, templates, organizations and quotas in a file, with differently diff and apply')}
 
 ## Deploy and operate
 

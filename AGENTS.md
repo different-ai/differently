@@ -92,8 +92,9 @@ that covers it, and say in the PR what did not run.
 - Interfaces: `internal/dashboard` (the built-in dashboard), `console/` (the
   separate admin app, static or on Node with sign-in), `site/` (the website;
   its docs sync from `docs/**`).
-- The setup file: `cmd/differently/apply.go` (`differently diff` and
-  `apply`: pools, the global policy and templates from `differently.yaml`,
+- The setup file: `cmd/differently/apply.go` and `apply_tenancy.go`
+  (`differently diff` and `apply`: pools, policies, templates,
+  organizations, projects and quotas from `differently.yaml`,
   [guide](docs/guides/setup-file.md)). Its tests run against the real
   control plane in process. A field the admin API learns to change belongs
   in its comparison too, or `apply` will call it something that cannot be

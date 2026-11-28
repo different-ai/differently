@@ -18,7 +18,7 @@ at [Use Differently with a coding agent](guides/agents.md).
 | [Hybrid overflow](guides/hybrid-overflow.md) | Authorizing Daytona or Freestyle as policy-gated external capacity |
 | [OpenWork on Differently](guides/openwork.md) | OpenWork's sandbox contract mapped onto Differently; Workbot computers routed across OpenSandbox, Daytona and Freestyle |
 | [Keys and providers](guides/keys-and-providers.md) | Storing provider keys in Differently, switching providers for new sandboxes, rotating provider and API keys, the bootstrap token, backing up the secrets key |
-| [Keep the setup in a file](guides/setup-file.md) | `differently diff` and `differently apply`: pools, the global policy and templates in a file in your repository |
+| [Keep the setup in a file](guides/setup-file.md) | `differently diff` and `differently apply`: pools, policies, templates, organizations, projects and quotas in a file in your repository |
 | [OpenSandbox pools](guides/opensandbox-pools.md) | The default private runtime: registering an OpenSandbox server you (or someone else) run |
 | [Admin console](../console/README.md) | The separate admin app: static files on any host, or on Node with Better Auth sign-in; CORS and reaching a private Differently |
 | [Provider catalog](providers/README.md) | Every backend Differently can place sandboxes on, with its tested status, capabilities and configuration, and how to add one |
