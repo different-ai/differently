@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/different-ai/differently/internal/config"
 	"github.com/different-ai/differently/pkg/api"
+	"github.com/different-ai/differently/pkg/client"
 )
 
 // diff and apply keep an installation's setup in a file in the repository:
@@ -214,18 +216,17 @@ type serverState struct {
 	projects []api.Project
 }
 
-func readServer(withOrgs bool) (serverState, error) {
+func readServer(ctx context.Context, c *client.Client, withOrgs bool) (serverState, error) {
 	s := serverState{pools: map[string]api.Pool{}, templates: map[string]api.Template{}, policies: map[string]api.PlacementPolicy{}}
-	c := cli()
 	var pools api.List[api.Pool]
-	if err := c.Do(ctx(), "GET", "/v1/admin/pools", nil, &pools); err != nil {
+	if err := c.Do(ctx, "GET", "/v1/admin/pools", nil, &pools); err != nil {
 		return s, fmt.Errorf("read the pools: %w", err)
 	}
 	for _, p := range pools.Items {
 		s.pools[p.Name] = p
 	}
 	var policies api.List[api.PlacementPolicy]
-	if err := c.Do(ctx(), "GET", "/v1/policies", nil, &policies); err != nil {
+	if err := c.Do(ctx, "GET", "/v1/policies", nil, &policies); err != nil {
 		return s, fmt.Errorf("read the policies: %w", err)
 	}
 	for _, p := range policies.Items {
@@ -235,7 +236,7 @@ func readServer(withOrgs bool) (serverState, error) {
 		}
 	}
 	var templates api.List[api.Template]
-	if err := c.Do(ctx(), "GET", "/v1/templates", nil, &templates); err != nil {
+	if err := c.Do(ctx, "GET", "/v1/templates", nil, &templates); err != nil {
 		return s, fmt.Errorf("read the templates: %w", err)
 	}
 	for _, t := range templates.Items {
@@ -243,11 +244,11 @@ func readServer(withOrgs bool) (serverState, error) {
 	}
 	if withOrgs {
 		var orgs api.List[api.Organization]
-		if err := c.Do(ctx(), "GET", "/v1/admin/organizations", nil, &orgs); err != nil {
+		if err := c.Do(ctx, "GET", "/v1/admin/organizations", nil, &orgs); err != nil {
 			return s, fmt.Errorf("read the organizations: %w", err)
 		}
 		var projects api.List[api.Project]
-		if err := c.Do(ctx(), "GET", "/v1/projects", nil, &projects); err != nil {
+		if err := c.Do(ctx, "GET", "/v1/projects", nil, &projects); err != nil {
 			return s, fmt.Errorf("read the projects: %w", err)
 		}
 		s.orgs, s.projects = orgs.Items, projects.Items
@@ -636,16 +637,50 @@ func summary(items []planned, file string, prune bool) string {
 	return strings.Join(parts, ", ") + "."
 }
 
-func loadPlan(file string, prune bool) ([]planned, error) {
+// loadPlan reads the file and the server and compares them. The commands
+// and the local admin (console.go) both start here.
+func loadPlan(ctx context.Context, c *client.Client, file string, prune bool) ([]planned, error) {
 	d, err := readApplyFile(file)
 	if err != nil {
 		return nil, err
 	}
-	s, err := readServer(d.managesOrgs)
+	s, err := readServer(ctx, c, d.managesOrgs)
 	if err != nil {
 		return nil, err
 	}
 	return plan(d, s, prune), nil
+}
+
+// runPlan makes the planned calls in order and stops at the first the
+// server refuses. started is told of each item as its calls begin. It
+// returns how many items were applied in full.
+func runPlan(ctx context.Context, c *client.Client, items []planned, started func(planned)) (done int, err error) {
+	todo, _, _ := pending(items)
+	// ids holds what this run creates, for the steps that need it.
+	ids := map[string]string{}
+	for _, it := range items {
+		if len(it.steps) == 0 {
+			continue
+		}
+		if started != nil {
+			started(it)
+		}
+		for _, st := range it.steps {
+			path, body := st.path, st.body
+			if st.resolve != nil {
+				path, body = st.resolve(ids)
+			}
+			var response []byte
+			if err := c.Do(ctx, st.method, path, body, &response); err != nil {
+				return done, fmt.Errorf("%s %s: %w (applied %d of %d; the rest is unchanged, and applying again goes on from here)", it.Kind, it.Name, err, done, todo)
+			}
+			if st.capture != nil {
+				st.capture(response, ids)
+			}
+		}
+		done++
+	}
+	return done, nil
 }
 
 func diffCmd() *cobra.Command {
@@ -663,7 +698,7 @@ server that the file does not name is listed and left alone; with --prune
 it is shown as a deletion.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			items, err := loadPlan(file, prune)
+			items, err := loadPlan(ctx(), cli(), file, prune)
 			if err != nil {
 				return err
 			}
@@ -741,7 +776,8 @@ environment variable, a file or a stored secret
 (differently admin secret).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			items, err := loadPlan(file, prune)
+			c := cli()
+			items, err := loadPlan(ctx(), c, file, prune)
 			if err != nil {
 				return err
 			}
@@ -756,29 +792,9 @@ environment variable, a file or a stored secret
 				fmt.Fprintln(out, summary(items, file, prune))
 				return nil
 			}
-			done := 0
-			c := cli()
-			// ids holds what this run creates, for the steps that need it.
-			ids := map[string]string{}
-			for _, it := range items {
-				if len(it.steps) == 0 {
-					continue
-				}
-				printPlan(out, []planned{it})
-				for _, st := range it.steps {
-					path, body := st.path, st.body
-					if st.resolve != nil {
-						path, body = st.resolve(ids)
-					}
-					var response []byte
-					if err := c.Do(ctx(), st.method, path, body, &response); err != nil {
-						return fmt.Errorf("%s %s: %w (applied %d of %d; the rest is unchanged, and applying again goes on from here)", it.Kind, it.Name, err, done, todo)
-					}
-					if st.capture != nil {
-						st.capture(response, ids)
-					}
-				}
-				done++
+			done, err := runPlan(ctx(), c, items, func(it planned) { printPlan(out, []planned{it}) })
+			if err != nil {
+				return err
 			}
 			// What the file does not name, last, so it is not lost among
 			// the changes.

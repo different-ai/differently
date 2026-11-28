@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -325,5 +327,163 @@ func TestConsoleCommandPrintsItsAddressAndStops(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Local admin: "+address) {
 		t.Errorf("output = %q", out.String())
+	}
+}
+
+// localAdminOnRealServer is a local admin whose orchestrator is the real
+// control plane in this process, with a setup file beside it.
+func localAdminOnRealServer(t *testing.T, file string) (*localAdmin, *http.Client, string) {
+	t.Helper()
+	realServer(t)
+	a, base := startLocalAdmin(t, settings{URL: os.Getenv("DIFFERENTLY_URL"), APIKey: os.Getenv("DIFFERENTLY_API_KEY")})
+	a.setupFile = file
+	return a, signedIn(t, a, base), base
+}
+
+func getSetupStatus(t *testing.T, c *http.Client, base string) setupStatus {
+	t.Helper()
+	code, out := body(t)(c.Get(base + "/local/setup"))
+	var st setupStatus
+	if err := json.Unmarshal([]byte(out), &st); code != 200 || err != nil {
+		t.Fatalf("GET /local/setup: status %d, %v\n%s", code, err, out)
+	}
+	return st
+}
+
+func postApply(t *testing.T, c *http.Client, base, plan string) (int, map[string]any) {
+	t.Helper()
+	req, _ := http.NewRequest("POST", base+"/local/setup/apply", strings.NewReader(`{"plan":"`+plan+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	code, out := body(t)(c.Do(req))
+	var got map[string]any
+	_ = json.Unmarshal([]byte(out), &got)
+	return code, got
+}
+
+// The page's plan is the CLI's plan, and its Apply applies exactly the plan
+// it showed: after it the server matches, and a plan that is no longer the
+// current one is refused before anything changes.
+func TestLocalAdminShowsAndAppliesTheSetupFile(t *testing.T) {
+	file := setup(t, firstSetup)
+	_, c, base := localAdminOnRealServer(t, file)
+
+	st := getSetupStatus(t, c, base)
+	if !st.Exists || st.Problem != "" || st.ToApply != 4 || st.Blocked != 0 || len(st.Changes) != 4 || st.Plan == "" {
+		t.Fatalf("setup = %+v", st)
+	}
+	if st.Changes[0].Kind != "policy" || st.Changes[1].Action != actCreate || st.Changes[1].Name != "private-a" {
+		t.Errorf("changes = %+v", st.Changes)
+	}
+	// What the CLI prints for the same file is the same plan.
+	if out := mustCLI(t, "diff", "-f", file); !strings.Contains(out, "4 to apply.") {
+		t.Errorf("the CLI's diff:\n%s", out)
+	}
+
+	// A plan the page never showed is refused, and nothing is created.
+	code, got := postApply(t, c, base, "0000")
+	if code != http.StatusConflict || !strings.Contains(got["problem"].(string), "look again") {
+		t.Fatalf("a stale plan: status %d, %+v", code, got)
+	}
+	if out := mustCLI(t, "diff", "-f", file); !strings.Contains(out, "4 to apply.") {
+		t.Fatalf("a refused apply changed the server:\n%s", out)
+	}
+
+	code, got = postApply(t, c, base, st.Plan)
+	if code != 200 || got["applied"].(float64) != 4 || got["problem"] != nil {
+		t.Fatalf("apply: status %d, %+v", code, got)
+	}
+	after := getSetupStatus(t, c, base)
+	if after.ToApply != 0 || !strings.Contains(after.Summary, "The server matches") {
+		t.Errorf("after apply = %+v", after)
+	}
+	if out := mustCLI(t, "diff", "-f", file, "--exit-code"); !strings.Contains(out, "The server matches") {
+		t.Errorf("the CLI's diff after the page applied:\n%s", out)
+	}
+
+	// The file changes after the page read it: the old plan no longer applies.
+	if err := os.WriteFile(file, []byte(strings.Replace(firstSetup, "maxConcurrency: 20", "maxConcurrency: 9", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := postApply(t, c, base, after.Plan); code != http.StatusConflict {
+		t.Errorf("applying a plan from before the file changed: status %d", code)
+	}
+	changed := getSetupStatus(t, c, base)
+	if changed.ToApply != 1 || changed.Plan == after.Plan {
+		t.Errorf("after the file changed = %+v", changed)
+	}
+}
+
+// The button never deletes, and never applies around something that cannot
+// be applied.
+func TestLocalAdminApplyNeverDeletesAndStopsOnWhatCannotBeApplied(t *testing.T) {
+	file := setup(t, firstSetup)
+	_, c, base := localAdminOnRealServer(t, file)
+	st := getSetupStatus(t, c, base)
+	postApply(t, c, base, st.Plan)
+
+	// A file that names less: the rest is listed, never planned for deletion.
+	os.WriteFile(file, []byte("pools:\n  - {name: private-a, adapter: fake, trust: private}\n"), 0o600)
+	less := getSetupStatus(t, c, base)
+	if less.ToApply != 0 || less.Extra != 2 {
+		t.Fatalf("a file that names less = %+v", less)
+	}
+	for _, ch := range less.Changes {
+		if ch.Action == actDelete {
+			t.Errorf("the page plans a deletion: %+v", ch)
+		}
+	}
+
+	// Something that cannot be applied, beside something that could.
+	os.WriteFile(file, []byte(strings.Replace(strings.Replace(firstSetup, "trust: private", "trust: external", 1), "maxConcurrency: 5", "maxConcurrency: 6", 1)), 0o600)
+	blocked := getSetupStatus(t, c, base)
+	if blocked.Blocked != 1 || blocked.ToApply != 1 {
+		t.Fatalf("blocked = %+v", blocked)
+	}
+	code, got := postApply(t, c, base, blocked.Plan)
+	if code != http.StatusConflict || !strings.Contains(got["problem"].(string), "nothing was changed") {
+		t.Errorf("apply with something that cannot be applied: status %d, %+v", code, got)
+	}
+	if again := getSetupStatus(t, c, base); again.ToApply != 1 {
+		t.Errorf("the change beside it was applied: %+v", again)
+	}
+}
+
+// No file, a file with a mistake, and an orchestrator that does not answer
+// are states the page shows, not failures. And the apply endpoint is behind
+// the same session as the rest, with a JSON body on top.
+func TestLocalAdminSetupStatesAndGuard(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "differently.yaml")
+	a, c, base := localAdminOnRealServer(t, missing)
+	if st := getSetupStatus(t, c, base); st.Exists || st.Problem != "" || st.File != missing {
+		t.Errorf("no file = %+v", st)
+	}
+	os.WriteFile(missing, []byte("pools:\n  - name: a\n"), 0o600)
+	if st := getSetupStatus(t, c, base); !st.Exists || !strings.Contains(st.Problem, "has no adapter") || st.Plan != "" {
+		t.Errorf("a file with a mistake = %+v", st)
+	}
+
+	// Without the session: nothing, for reading and for applying.
+	if code, _ := body(t)(http.Get(base + "/local/setup")); code != http.StatusForbidden {
+		t.Errorf("GET /local/setup with no session: status %d", code)
+	}
+	if code, _ := body(t)(http.Post(base+"/local/setup/apply", "application/json", strings.NewReader(`{"plan":"x"}`))); code != http.StatusForbidden {
+		t.Errorf("POST apply with no session: status %d", code)
+	}
+	// With the session, but as a form another site could post: refused.
+	if code, _ := body(t)(c.Post(base+"/local/setup/apply", "text/plain", strings.NewReader(`{"plan":"x"}`))); code != http.StatusUnsupportedMediaType {
+		t.Errorf("POST apply without a JSON content type: status %d", code)
+	}
+	if code, _ := body(t)(c.Post(base+"/local/setup/apply", "application/json", strings.NewReader(`{}`))); code != http.StatusBadRequest {
+		t.Errorf("POST apply with no plan: status %d", code)
+	}
+	if code, _ := body(t)(c.Get(base + "/local/setup/apply")); code == 200 {
+		t.Error("GET on the apply endpoint answered 200")
+	}
+
+	// An orchestrator that does not answer.
+	os.WriteFile(missing, []byte(firstSetup), 0o600)
+	a.orch.URL = "http://127.0.0.1:1"
+	if st := getSetupStatus(t, c, base); !st.Exists || !strings.Contains(st.Problem, "read the pools") {
+		t.Errorf("no orchestrator = %+v", st)
 	}
 }
