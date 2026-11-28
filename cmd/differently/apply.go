@@ -19,7 +19,9 @@ import (
 )
 
 // diff and apply keep an installation's setup in a file in the repository:
-// the pools work may run on, the global placement policy and the templates.
+// the pools work may run on, the global placement policy, the templates,
+// and the organizations with their projects, quotas and policies
+// (apply_tenancy.go).
 // diff says what differs between the file and the server; apply makes the
 // server match, through the same admin API the other commands use, and a
 // second apply finds nothing to do.
@@ -38,6 +40,9 @@ type applyFile struct {
 	Pools     []config.PoolConfig  `json:"pools,omitempty"`
 	Policy    *api.PlacementPolicy `json:"policy,omitempty"`
 	Templates []fileTemplate       `json:"templates,omitempty"`
+	// Organizations is nil when the file has no such key: tenancy is then
+	// not this file's business, and nothing about it is compared or listed.
+	Organizations []fileOrg `json:"organizations,omitempty"`
 }
 
 type fileTemplate struct {
@@ -52,6 +57,8 @@ type fileTemplate struct {
 type desired struct {
 	applyFile
 	poolKeys []map[string]json.RawMessage
+	// managesOrgs says the file has an organizations key, even an empty one.
+	managesOrgs bool
 }
 
 func readApplyFile(path string) (desired, error) {
@@ -100,11 +107,19 @@ func readApplyFile(path string) (desired, error) {
 	}
 	if p := d.Policy; p != nil {
 		if p.Scope != "" && p.Scope != "global" {
-			return d, fmt.Errorf("%s: policy is the global placement policy; scope %q cannot be set here", path, p.Scope)
+			return d, fmt.Errorf("%s: policy is the global placement policy; scope %q cannot be set here (an organization's or a project's policy goes under it, in organizations)", path, p.Scope)
 		}
 		if !p.UpdatedAt.IsZero() || p.UpdatedBy != "" {
 			return d, fmt.Errorf("%s: policy.updatedAt and policy.updatedBy are the server's to write", path)
 		}
+	}
+	var keys struct {
+		Organizations json.RawMessage `json:"organizations"`
+	}
+	_ = yaml.Unmarshal(b, &keys)
+	d.managesOrgs = keys.Organizations != nil
+	if err := checkOrgs(path, d.Organizations); err != nil {
+		return d, err
 	}
 	return d, nil
 }
@@ -125,13 +140,23 @@ type planned struct {
 	Action  string   `json:"action"`
 	Details []string `json:"details,omitempty"`
 	steps   []step
+	// prunable marks something not in the file that --prune would delete.
+	// Organizations and projects are never deleted by this command.
+	prunable bool
 }
 
-// step is one API call.
+// step is one API call. Most are known when the plan is made. One that
+// needs the ID of something an earlier step creates (a project in a new
+// organization) works its path and body out when it runs, from ids, and a
+// step that creates something records its ID there.
 type step struct {
 	method, path string
 	body         any
+	resolve      func(ids map[string]string) (path string, body any)
+	capture      func(response []byte, ids map[string]string)
 }
+
+func call(method, path string, body any) step { return step{method: method, path: path, body: body} }
 
 // show renders a value for a diff line.
 func show(v any) string {
@@ -181,10 +206,16 @@ type serverState struct {
 	policy    api.PlacementPolicy
 	hasPolicy bool
 	templates map[string]api.Template
+	// policies holds every stored policy by scope (global, org:ID,
+	// project:ID). orgs and projects are read only for a file that has
+	// organizations.
+	policies map[string]api.PlacementPolicy
+	orgs     []api.Organization
+	projects []api.Project
 }
 
-func readServer() (serverState, error) {
-	s := serverState{pools: map[string]api.Pool{}, templates: map[string]api.Template{}}
+func readServer(withOrgs bool) (serverState, error) {
+	s := serverState{pools: map[string]api.Pool{}, templates: map[string]api.Template{}, policies: map[string]api.PlacementPolicy{}}
 	c := cli()
 	var pools api.List[api.Pool]
 	if err := c.Do(ctx(), "GET", "/v1/admin/pools", nil, &pools); err != nil {
@@ -198,6 +229,7 @@ func readServer() (serverState, error) {
 		return s, fmt.Errorf("read the policies: %w", err)
 	}
 	for _, p := range policies.Items {
+		s.policies[p.Scope] = p
 		if p.Scope == "global" {
 			s.policy, s.hasPolicy = p, true
 		}
@@ -209,12 +241,24 @@ func readServer() (serverState, error) {
 	for _, t := range templates.Items {
 		s.templates[t.Name] = t
 	}
+	if withOrgs {
+		var orgs api.List[api.Organization]
+		if err := c.Do(ctx(), "GET", "/v1/admin/organizations", nil, &orgs); err != nil {
+			return s, fmt.Errorf("read the organizations: %w", err)
+		}
+		var projects api.List[api.Project]
+		if err := c.Do(ctx(), "GET", "/v1/projects", nil, &projects); err != nil {
+			return s, fmt.Errorf("read the projects: %w", err)
+		}
+		s.orgs, s.projects = orgs.Items, projects.Items
+	}
 	return s, nil
 }
 
 // plan compares the file with the server. The order of the result is the
 // order apply works in: the policy, then pools, then templates (which name
-// pools), then removals, templates before the pools they name.
+// pools), then organizations with their projects and policies (which name
+// pools too), then removals, templates before the pools they name.
 func plan(d desired, s serverState, prune bool) []planned {
 	var out []planned
 	if d.Policy != nil {
@@ -236,15 +280,18 @@ func plan(d desired, s serverState, prune bool) []planned {
 			out = append(out, item)
 		}
 	}
+	if d.managesOrgs {
+		out = append(out, planOrgs(d.Organizations, s)...)
+	}
 	for _, name := range sortedKeys(s.templates) {
 		t := s.templates[name]
 		if namedT[name] || t.Source != api.TemplateSourceAPI {
 			continue // the server's config file declares it; that file manages it
 		}
-		item := planned{Kind: "template", Name: name, Action: actExtra, Details: []string{"on the server, not in the file"}}
+		item := planned{Kind: "template", Name: name, Action: actExtra, Details: []string{"on the server, not in the file"}, prunable: true}
 		if prune {
 			item.Action = actDelete
-			item.steps = []step{{"DELETE", "/v1/admin/templates/" + url.PathEscape(name), nil}}
+			item.steps = []step{call("DELETE", "/v1/admin/templates/"+url.PathEscape(name), nil)}
 		}
 		out = append(out, item)
 	}
@@ -253,10 +300,10 @@ func plan(d desired, s serverState, prune bool) []planned {
 		if named[name] || p.Source != "api" {
 			continue
 		}
-		item := planned{Kind: "pool", Name: name, Action: actExtra, Details: []string{"on the server, not in the file"}}
+		item := planned{Kind: "pool", Name: name, Action: actExtra, Details: []string{"on the server, not in the file"}, prunable: true}
 		if prune {
 			item.Action = actDelete
-			item.steps = []step{{"DELETE", "/v1/admin/pools/" + url.PathEscape(name), nil}}
+			item.steps = []step{call("DELETE", "/v1/admin/pools/"+url.PathEscape(name), nil)}
 		}
 		out = append(out, item)
 	}
@@ -287,7 +334,7 @@ func planPolicy(want api.PlacementPolicy, s serverState) (planned, bool) {
 		return planned{}, false
 	}
 	item := planned{Kind: "policy", Name: "global", Action: actChange,
-		steps: []step{{"PUT", "/v1/policies/global", body}}}
+		steps: []step{call("PUT", "/v1/policies/global", body)}}
 	if !s.hasPolicy {
 		item.Action = actCreate
 	}
@@ -328,7 +375,14 @@ func zeroAsUnset(v any) any {
 }
 
 func planPool(want config.PoolConfig, keys map[string]json.RawMessage, s serverState) (planned, bool) {
-	has := func(k string) bool { _, ok := keys[k]; return ok }
+	// Keys are matched without regard to case, as the file's parser and the
+	// server's both do: "maxconcurrency" sets maxConcurrency, so it must
+	// count as written here too.
+	written := map[string]bool{}
+	for k := range keys {
+		written[strings.ToLower(k)] = true
+	}
+	has := func(k string) bool { return written[strings.ToLower(k)] }
 	item := planned{Kind: "pool", Name: want.Name}
 	have, exists := s.pools[want.Name]
 	if !exists {
@@ -339,7 +393,7 @@ func planPool(want config.PoolConfig, keys map[string]json.RawMessage, s serverS
 		}
 		// Send the entry as the file has it: the server validates it and
 		// fills in what the file leaves out.
-		item.steps = []step{{"POST", "/v1/admin/pools", keys}}
+		item.steps = []step{call("POST", "/v1/admin/pools", keys)}
 		return item, true
 	}
 
@@ -421,7 +475,7 @@ func planPool(want config.PoolConfig, keys map[string]json.RawMessage, s serverS
 	default:
 		item.Action = actChange
 		item.Details = changes
-		item.steps = []step{{"PATCH", "/v1/admin/pools/" + url.PathEscape(want.Name), patch}}
+		item.steps = []step{call("PATCH", "/v1/admin/pools/"+url.PathEscape(want.Name), patch)}
 	}
 	return item, true
 }
@@ -496,7 +550,7 @@ func planTemplate(want fileTemplate, s serverState) (planned, bool) {
 	}
 	var steps []step
 	if len(put) > 0 {
-		steps = append(steps, step{"PUT", path, put})
+		steps = append(steps, call("PUT", path, put))
 	}
 	// Images are an exact set when the file gives any: one the server holds
 	// and the file does not would run the template on a pool the file does
@@ -505,7 +559,7 @@ func planTemplate(want fileTemplate, s serverState) (planned, bool) {
 	if exists && len(want.Images) > 0 {
 		for _, pool := range sortedKeys(have.Images) {
 			if _, ok := want.Images[pool]; !ok {
-				steps = append(steps, step{"DELETE", path + "/images/" + url.PathEscape(pool), nil})
+				steps = append(steps, call("DELETE", path+"/images/"+url.PathEscape(pool), nil))
 				changes = append(changes, differs("images."+pool, have.Images[pool], ""))
 			}
 		}
@@ -566,11 +620,18 @@ func summary(items []planned, file string, prune bool) string {
 	if blocked > 0 {
 		parts = append(parts, fmt.Sprintf("%d that cannot be applied", blocked))
 	}
-	if extra > 0 && !prune {
-		parts = append(parts, fmt.Sprintf("%d on the server that the file does not name (left alone; --prune deletes them)", extra))
+	if extra > 0 {
+		note := "left alone"
+		if !prune && slices.ContainsFunc(items, func(it planned) bool { return it.Action == actExtra && it.prunable }) {
+			note += "; --prune deletes the pools and templates among them"
+		}
+		parts = append(parts, fmt.Sprintf("%d on the server that the file does not name (%s)", extra, note))
 	}
-	if len(parts) == 0 {
-		return "The server matches " + file + "."
+	if todo == 0 && blocked == 0 {
+		if extra == 0 {
+			return "The server matches " + file + "."
+		}
+		return "The server matches " + file + ", apart from " + parts[0] + "."
 	}
 	return strings.Join(parts, ", ") + "."
 }
@@ -580,7 +641,7 @@ func loadPlan(file string, prune bool) ([]planned, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := readServer()
+	s, err := readServer(d.managesOrgs)
 	if err != nil {
 		return nil, err
 	}
@@ -593,9 +654,9 @@ func diffCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diff",
 		Short: "Show what differs between a setup file and the server",
-		Long: `Compares a setup file (differently.yaml: pools, the global placement policy
-and templates) with the server and prints what "differently apply" would do.
-It changes nothing.
+		Long: `Compares a setup file (differently.yaml: pools, the global placement
+policy, templates and organizations) with the server and prints what
+"differently apply" would do. It changes nothing.
 
 A field the file leaves out is not compared. A pool or template on the
 server that the file does not name is listed and left alone; with --prune
@@ -639,9 +700,10 @@ func applyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Make the server match a setup file",
-		Long: `Reads a setup file (differently.yaml: pools, the global placement policy and
-templates) and changes the server to match, with the same admin API the
-other commands use. Applying the same file again changes nothing.
+		Long: `Reads a setup file (differently.yaml: pools, the global placement policy,
+templates and organizations) and changes the server to match, with the same
+admin API the other commands use. Applying the same file again changes
+nothing.
 
   pools:
     - name: daytona
@@ -655,16 +717,24 @@ other commands use. Applying the same file again changes nothing.
   templates:
     - name: python
       images: {daytona: python-3.12}
+  organizations:
+    - name: acme
+      quota: {maxActiveSandboxes: 50, maxCPU: 100}
+      projects:
+        - name: default
+          quota: {maxActiveSandboxes: 10}
 
 The file states what it names. A field it leaves out stays as the server has
 it; a pool or template it does not name is left alone unless --prune is
-given. A pool's attestations, a template's images and the policy are exact
-when the file gives them, because each decides where work may run.
+given. A pool's attestations, a template's images, a policy and a quota are
+exact when the file gives them, because each decides where work may run or
+how much of it. Organizations and projects are found by name, created when
+missing and never deleted.
 
 If something in the file cannot be applied (an existing pool's adapter,
 trust, labels or config, or anything the server's own config file
 declares), nothing is changed. Otherwise the changes are made in order: the
-policy, pools, templates, then deletions. They are separate API calls, not
+policy, pools, templates, organizations and their projects, then deletions. They are separate API calls, not
 one transaction: if one fails, the ones before it stay, and applying again
 goes on from there. Credentials are never in the file: a pool names an
 environment variable, a file or a stored secret
@@ -688,14 +758,24 @@ environment variable, a file or a stored secret
 			}
 			done := 0
 			c := cli()
+			// ids holds what this run creates, for the steps that need it.
+			ids := map[string]string{}
 			for _, it := range items {
 				if len(it.steps) == 0 {
 					continue
 				}
 				printPlan(out, []planned{it})
 				for _, st := range it.steps {
-					if err := c.Do(ctx(), st.method, st.path, st.body, nil); err != nil {
+					path, body := st.path, st.body
+					if st.resolve != nil {
+						path, body = st.resolve(ids)
+					}
+					var response []byte
+					if err := c.Do(ctx(), st.method, path, body, &response); err != nil {
 						return fmt.Errorf("%s %s: %w (applied %d of %d; the rest is unchanged, and applying again goes on from here)", it.Kind, it.Name, err, done, todo)
+					}
+					if st.capture != nil {
+						st.capture(response, ids)
 					}
 				}
 				done++

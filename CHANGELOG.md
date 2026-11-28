@@ -23,11 +23,20 @@ All notable changes are recorded here. The format follows
   anything the server's own config file declares). The calls are made in
   order and are not one transaction: a refusal part-way leaves the earlier
   ones, and applying again goes on. `diff --exit-code` and `-o json` are
-  for CI. Credentials are never in the file. Organizations, projects,
-  quotas, scoped policies, keys and secrets are not covered yet. Tested
-  against the real control plane in one process and by hand against a
-  dev-mode server; not against a real provider's pool or a server on
-  Postgres.
+  for CI. Credentials are never in the file. Tested against the real
+  control plane in one process and by hand against a dev-mode server; not
+  against a real provider's pool or a server on Postgres.
+- The setup file also holds `organizations`, each with its `quota`, its
+  placement `policy` and its `projects`, which have the same two
+  ([guide](docs/guides/setup-file.md#organizations-and-projects)). The file
+  has no IDs: an organization is found by name and a project by name within
+  it. One that is missing is created, with its projects and policies in the
+  same apply; none is ever deleted, renamed or suspended from the file,
+  with or without `--prune`. A quota and a scoped policy are whole when the
+  file gives them and not compared when it does not. A name the server has
+  twice cannot be applied. A key the file writes in another case
+  (`maxconcurrency`) is read as the same key, as the parser and the server
+  read it. API keys, stored secrets and watched stacks are not in the file.
 
 ## [0.1.0-alpha.8] — 2026-11-27
 

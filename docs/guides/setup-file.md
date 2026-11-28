@@ -1,8 +1,8 @@
 # Keep the setup in a file
 
-Put the pools work may run on, the global placement policy and the templates
-in one file in your repository, and let two commands keep a server in step
-with it:
+Put the pools work may run on, the global placement policy, the templates
+and the organizations with their projects and quotas in one file in your
+repository, and let two commands keep a server in step with it:
 
 ```bash
 differently diff     # what differs between differently.yaml and the server
@@ -52,6 +52,18 @@ templates:
     images:
       opensandbox: python:3.12-slim
       daytona: python-3.12
+
+organizations:
+  - name: acme
+    quota: {maxActiveSandboxes: 50, maxCPU: 100}
+    policy:
+      allowedPools: [opensandbox]
+    projects:
+      - name: web
+        quota: {maxActiveSandboxes: 10}
+      - name: research
+        policy:
+          maxQueueSeconds: 600
 ```
 
 - **`pools`** has the same shape as `pools` in the server's config file, so
@@ -59,6 +71,10 @@ templates:
   ([OpenSandbox pools](opensandbox-pools.md), [providers](../providers/README.md)).
 - **`policy`** is the global [placement policy](../scheduling/placement-policy.md).
 - **`templates`** gives [one name on every pool](baselines.md).
+- **`organizations`** are the tenants, each with its `quota`, its placement
+  `policy` and its `projects`, which have the same two
+  ([organization onboarding](organization-onboarding.md)). See
+  [Organizations and projects](#organizations-and-projects).
 
 Credentials are never in the file. A pool names an environment variable or
 a file on the server, or a secret stored in Differently
@@ -85,6 +101,32 @@ The file states what it names.
     In it, leaving `strategy` or `external` out means their defaults,
     `private-first` and `never`.
 
+## Organizations and projects
+
+The server gives organizations and projects IDs and lets names repeat. The
+file has no IDs: it finds an organization by name, and a project by name
+within its organization.
+
+- **One that is missing is created**, with its projects and policies in the
+  same apply.
+- **None is ever deleted, renamed or suspended from the file**, with or
+  without `--prune`: each of those ends or interrupts someone's work. One
+  the server has and the file does not name is listed and left alone. Use
+  `differently admin org` and `differently project` for those.
+- **A `quota` is the whole quota when the file gives one.** A limit taken
+  out of it is taken off. With no `quota` key, the quota is not compared;
+  a new organization or project then gets the server's default.
+- **A `policy` under an organization or a project is that scope's whole
+  policy** when given. It can only narrow what the global policy allows.
+  With no `policy` key, it is not compared.
+- **A name the server has twice cannot be applied.** The file cannot say
+  which one it means; rename all but one first.
+- With no `organizations` key, the file says nothing about tenants and none
+  is listed. `organizations: []` lists them all as not in the file.
+
+A quota of active sandboxes does not refuse the next one: it waits in the
+queue until one ends.
+
 ## What cannot be applied
 
 `apply` changes nothing at all when the file asks for something the API
@@ -99,8 +141,9 @@ cannot do, and says which:
 
 ## How it applies
 
-In this order: the policy, pools, templates (which name pools), then with
-`--prune` the deletions, templates before the pools they name.
+In this order: the policy, pools, templates (which name pools),
+organizations with their policies and projects, then with `--prune` the
+deletions, templates before the pools they name.
 
 These are separate API calls, not one transaction. If the server refuses
 one, the ones before it stay, the error says how far it got, and applying
@@ -122,12 +165,14 @@ Run `diff --exit-code` on pull requests to see what a change would do, and
 
 ## What it does not cover yet
 
-Organizations, projects and their quotas, policies for one organization or
-project, API keys, stored secrets and watched stacks are not in the file:
-use their own commands. Nothing here creates infrastructure: a pool's
-backend has to exist already.
+API keys, stored secrets and watched stacks are not in the file: use their
+own commands. A key is a secret shown once, so it cannot be written down
+here. Nothing here creates infrastructure: a pool's backend has to exist
+already.
 
 Tested against the real control plane in one process (first apply, repeat,
-changes, exact sets, what cannot be applied, `--prune`, a refusal part-way)
-and by hand against a dev-mode server with `fake` and `devhost` pools. Not
-run against a real provider's pool or a server on Postgres.
+changes, exact sets, what cannot be applied, `--prune`, a refusal part-way,
+a new organization with its projects and policies, quotas and scoped
+policies changed whole, two organizations with one name) and by hand
+against a dev-mode server with `fake` and `devhost` pools. Not run against
+a real provider's pool or a server on Postgres.

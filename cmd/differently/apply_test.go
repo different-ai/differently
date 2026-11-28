@@ -473,7 +473,23 @@ func TestTheGuidesExampleIsAValidSetupFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the guide's example is refused: %v", err)
 	}
-	if len(d.Pools) != 2 || d.Policy == nil || len(d.Templates) != 1 || d.Pools[1].Credentials.String() != "secret:daytona" {
+	if len(d.Pools) != 2 || d.Policy == nil || len(d.Templates) != 1 || d.Pools[1].Credentials.String() != "secret:daytona" ||
+		len(d.Organizations) != 1 || len(d.Organizations[0].Projects) != 2 || d.Organizations[0].Quota.MaxCPU != 100 || !d.managesOrgs {
 		t.Errorf("the guide's example reads as %+v", d.applyFile)
+	}
+}
+
+// Keys are read without regard to case, by the file's parser and by the
+// server. A key written in another case is still a key the file wrote.
+func TestKeysInAnotherCaseAreStillManaged(t *testing.T) {
+	c := realServer(t)
+	mustCLI(t, "apply", "-f", setup(t, "pools:\n  - name: private-a\n    adapter: fake\n    trust: private\n    maxConcurrency: 20\n"))
+	lower := setup(t, "pools:\n  - name: private-a\n    adapter: fake\n    trust: private\n    maxconcurrency: 7\n")
+	if out := mustCLI(t, "diff", "-f", lower); !strings.Contains(out, "maxConcurrency: 20 → 7") {
+		t.Fatalf("a key in lower case is not compared:\n%s", out)
+	}
+	mustCLI(t, "apply", "-f", lower)
+	if got := pool(t, c, "private-a").MaxConcurrency; got != 7 {
+		t.Errorf("maxConcurrency = %d", got)
 	}
 }
